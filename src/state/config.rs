@@ -42,8 +42,15 @@ pub(crate) struct AppConfig {
     pub dark_theme: Option<String>,
     pub language: AppLanguage,
     pub notifications: super::notifications::Preferences,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_check_updates: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skipped_update: Option<String>,
 }
 impl AppConfig {
+    pub fn checks_updates_automatically(&self) -> bool {
+        self.auto_check_updates.unwrap_or(cfg!(feature = "bundled"))
+    }
     pub fn pi_executable(&self) -> PathBuf {
         self.pi_command.as_deref().unwrap_or("pi").into()
     }
@@ -113,6 +120,9 @@ pub(crate) enum PreferenceChange {
     Keybinding(String, Option<String>),
     ResetKeybindings,
     Notifications(super::notifications::Preferences),
+    AutoCheckUpdates(bool),
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    SkipUpdate(String),
     Shortcuts(super::shortcuts::Shortcuts),
     Language(AppLanguage),
     Theme(ThemeMode),
@@ -123,6 +133,9 @@ pub(crate) enum PreferenceChange {
 impl PreferenceChange {
     fn apply(self, config: &mut AppConfig) {
         match self {
+            Self::AutoCheckUpdates(value) => config.auto_check_updates = Some(value),
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            Self::SkipUpdate(value) => config.skipped_update = Some(value),
             Self::Notifications(value) => config.notifications = value,
             Self::ResetKeybindings => {
                 config.keybindings.clear();
@@ -283,6 +296,12 @@ fn write_config(
             if value.notifications != baseline.notifications {
                 latest.notifications = value.notifications;
             }
+            if value.auto_check_updates != baseline.auto_check_updates {
+                latest.auto_check_updates = value.auto_check_updates;
+            }
+            if value.skipped_update != baseline.skipped_update {
+                latest.skipped_update = value.skipped_update;
+            }
             if value.shortcuts != baseline.shortcuts {
                 latest.shortcuts = value.shortcuts;
             }
@@ -329,6 +348,7 @@ pub(crate) struct ConfigController {
     pub draining: bool,
     path: Result<PathBuf, String>,
 }
+
 impl ConfigController {
     pub fn new(form: &Entity<Form<AppConfig>>, cx: &mut Context<Self>) -> Self {
         Self::at_path(
@@ -591,5 +611,46 @@ impl ConfigController {
             }),
         });
         cx.notify();
+    }
+}
+
+#[cfg(test)]
+mod update_preference_tests {
+    use super::{AppLanguage, PendingConfig, PreferenceChange, read_config, write_config};
+
+    #[test]
+    fn update_preference_preserves_external_edits_and_reads_older_config() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("config.toml");
+        std::fs::write(&path, "language = 'english'\n").unwrap();
+        let baseline = read_config(path.clone(), false)
+            .unwrap()
+            .configured()
+            .unwrap()
+            .clone();
+        assert_eq!(
+            baseline.checks_updates_automatically(),
+            cfg!(feature = "bundled")
+        );
+        std::fs::write(&path, "language = 'chinese'\n").unwrap();
+        let mut value = baseline.clone();
+        PreferenceChange::AutoCheckUpdates(false).apply(&mut value);
+        write_config(
+            path.clone(),
+            PendingConfig {
+                value,
+                baseline: Some(baseline),
+                version: None,
+            },
+            false,
+            false,
+            None,
+        )
+        .unwrap();
+        let saved = read_config(path, false).unwrap();
+        let value = saved.configured().unwrap();
+        assert_eq!(value.language, AppLanguage::Chinese);
+        assert_eq!(value.auto_check_updates, Some(false));
+        assert!(!value.checks_updates_automatically());
     }
 }

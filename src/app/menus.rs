@@ -14,6 +14,7 @@ actions!(
         ShowCommandPalette,
         ShowTemporaryWindow,
         About,
+        CheckForUpdates,
         Minimize,
         Zoom,
         Fullscreen,
@@ -75,7 +76,7 @@ pub(crate) fn init(cx: &mut App) {
     cx.on_action(|_: &Zoom, cx| with_window(cx, |window, _| window.zoom_window()));
     cx.on_action(|_: &Fullscreen, cx| with_window(cx, |window, _| window.toggle_fullscreen()));
     cx.on_action(|_: &UserGuide, cx| {
-        cx.open_url("https://github.com/suxiaoshao/gupi/blob/main/docs/user-guide.md")
+        cx.open_url("https://github.com/suxiaoshao/gupi/blob/main/README.md#usage")
     });
     cx.on_action(|_: &PiDocs, cx| cx.open_url("https://pi.dev/docs/latest/"));
     cx.on_action(|_: &ReportIssue, cx| {
@@ -83,6 +84,7 @@ pub(crate) fn init(cx: &mut App) {
     });
     cx.on_action(|_: &ShowLogs, cx| show_logs(cx));
     cx.on_action(|_: &CopyDiagnostics, cx| copy_diagnostics(cx));
+    cx.on_action(|_: &CheckForUpdates, cx| cx.defer(super::check_for_updates));
     cx.on_action(|_: &About, cx| {
         with_window(cx, |window, cx| {
             if window.has_active_dialog(cx) {
@@ -177,6 +179,7 @@ fn app_menus(cx: &App) -> Vec<Menu> {
     };
     let mut app_items = vec![
         MenuItem::action(t(cx, "menu-about"), About),
+        MenuItem::action(t(cx, "menu-check-updates"), CheckForUpdates),
         MenuItem::separator(),
         MenuItem::action(t(cx, "menu-settings"), ShowSettings),
     ];

@@ -659,3 +659,25 @@ resource-edit-in-composer = 在這裡選擇資源，參數回訊息輸入框編�
 resource-template-unclosed-quote = 範本參數中有未閉合的引號，請補全後再傳送檔案引用。
 
 resource-answer-required = 請選擇一個答案後提交。
+
+menu-check-updates = 檢查更新…
+updates-title = 更新
+updates-check = 檢查更新
+updates-automatic = 自動檢查更新
+updates-automatic-help = 每小時透過 GitHub 檢查新版本，由你選擇何時下載。
+updates-idle = 檢查是否有新版 Gupi。
+updates-checking = 正在檢查更新
+updates-current = 已是最新版本
+updates-unpublished = 尚未發佈正式版本。
+updates-available = Gupi { $version } 已發佈
+updates-release = 更新說明與下載
+updates-install-help = 請使用原來的安裝程式或套件管理器更新 Gupi。
+updates-error-network = 無法檢查更新，請檢查網路連線後重試。
+updates-error-rate-limit = GitHub 請求次數已達上限，請稍後重試。
+updates-error-response = 無法讀取版本資訊，請稍後重試。
+
+updates-install = 下載並安裝…
+updates-native-progress = 請在更新視窗中完成更新。
+updates-install-failed = 無法完成更新。請重試，或重新開啟 Gupi 並查看日誌。
+updates-restart-help = 安裝時會儲存草稿、關閉 Pi 連線並重新啟動 Gupi。
+updates-show-progress = 查看更新進度…

@@ -5,6 +5,7 @@ pub(crate) mod notifications;
 pub(crate) mod shortcuts;
 pub(crate) mod temporary;
 mod tray;
+pub(crate) mod updater;
 use crate::{
     features::startup::StartupView,
     foundation::{assets::Assets, i18n, paths},
@@ -152,20 +153,39 @@ pub(crate) fn instance_ready(cx: &mut App) -> bool {
     }
     notifications::init(cx);
     tray::init(cx);
+    updater::init(cx);
     log_warning
 }
 fn quit(cx: &mut App) {
+    quit_then(cx, |cx| cx.quit());
+}
+fn quit_then(cx: &mut App, finish: impl FnOnce(&mut App) + 'static) {
     let main = cx
         .try_global::<MainWindow>()
         .map(|m| (m.window, m.view.clone()));
     if let Some((window, view)) = main {
         if let Err(error) = window.update(cx, |_, window, cx| {
-            view.update(cx, |view, cx| view.quit(window, cx))
+            view.update(cx, |view, cx| view.quit_then(window, cx, finish))
         }) {
             tracing::error!(%error, "start managed quit failed");
         }
     } else {
         cx.quit();
+    }
+}
+fn check_for_updates(cx: &mut App) {
+    show(None, cx);
+    if let Some(main) = cx.try_global::<MainWindow>() {
+        // Dialog helpers access Root themselves; do not lease it through a typed update.
+        let window: AnyWindowHandle = main.window.into();
+        if main.view.read(cx).is_quitting() {
+            return;
+        }
+        cx.defer(move |cx| {
+            let _ = window.update(cx, |_, window, cx| {
+                crate::features::updates::open(true, window, cx);
+            });
+        });
     }
 }
 fn show(settings: Option<bool>, cx: &mut App) {
@@ -201,3 +221,6 @@ fn show(settings: Option<bool>, cx: &mut App) {
         }
     }
 }
+
+#[cfg(test)]
+mod update_tests;

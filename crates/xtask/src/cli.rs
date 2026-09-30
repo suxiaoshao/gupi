@@ -5,7 +5,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use crate::error::{Result, XtaskError};
 
 #[derive(Parser)]
-#[command(name = "xtask", about = "Build Gupi application packages")]
+#[command(name = "xtask", about = "Build and release Gupi application packages")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -13,29 +13,68 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Prepare native updater SDKs or generate an update signing key.
+    Updater {
+        #[command(subcommand)]
+        command: UpdaterCommand,
+    },
     /// Build and package Gupi for the current operating system.
     Bundle(BundleArgs),
+    /// Prepare a release tag or collect its packages and distribution manifests.
+    Release {
+        #[command(subcommand)]
+        command: ReleaseCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum UpdaterCommand {
+    /// Fetch the pinned, checksum-verified SDK for macos or windows.
+    Prepare { platform: String },
+    /// Create a new private seed file; print only its public key. Never overwrites a key.
+    Keygen { output: PathBuf },
+}
+
+#[derive(Subcommand)]
+pub enum ReleaseCommand {
+    /// Check the existing tag against HEAD and Cargo.toml; emit GitHub job outputs.
+    Prepare(ReleaseArgs),
+    /// Collect packages in dist/, write checksums and distribution/, optionally create a draft.
+    Collect {
+        #[command(flatten)]
+        release: ReleaseArgs,
+        #[arg(long)]
+        draft: bool,
+    },
+}
+
+#[derive(Args)]
+pub struct ReleaseArgs {
+    #[arg(long)]
+    pub tag: String,
+    #[arg(long, value_enum, default_value_t = MacosSigning::Development)]
+    pub macos_signing: MacosSigning,
 }
 
 #[derive(Args)]
 pub struct BundleArgs {
     /// Rust target triple; defaults to the native host target.
-    #[arg(long)]
+    #[arg(long, env = "GUPI_TARGET")]
     pub target: Option<String>,
     /// Open the English MSI after packaging (Windows only).
     #[arg(short = 'i', long)]
     pub install: bool,
     /// Development uses an ad-hoc signature; developer-id requires notarization.
-    #[arg(long, value_enum, default_value_t = MacosSigning::Development)]
+    #[arg(long, env = "GUPI_MACOS_SIGNING", value_enum, default_value_t = MacosSigning::Development)]
     pub macos_signing: MacosSigning,
     /// Full Developer ID Application identity already installed in a keychain.
-    #[arg(long)]
+    #[arg(long, env = "GUPI_MACOS_SIGNING_IDENTITY")]
     pub signing_identity: Option<String>,
     /// Existing notarytool keychain profile used for notarization.
-    #[arg(long)]
+    #[arg(long, env = "GUPI_MACOS_NOTARY_PROFILE")]
     pub notary_profile: Option<String>,
     /// Keychain containing both the signing identity and notarization profile.
-    #[arg(long)]
+    #[arg(long, env = "GUPI_MACOS_KEYCHAIN")]
     pub keychain: Option<PathBuf>,
     /// Optional hardened-runtime entitlements plist, relative to the project root.
     #[arg(long)]
@@ -46,6 +85,15 @@ pub struct BundleArgs {
 pub enum MacosSigning {
     Development,
     DeveloperId,
+}
+
+impl MacosSigning {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Development => "development",
+            Self::DeveloperId => "developer-id",
+        }
+    }
 }
 
 impl BundleArgs {
@@ -101,7 +149,9 @@ mod tests {
             "--install",
         ])
         .unwrap();
-        let Commands::Bundle(args) = cli.command;
+        let Commands::Bundle(args) = cli.command else {
+            panic!("expected bundle")
+        };
         assert!(args.install);
         assert_eq!(args.target.as_deref(), Some("x86_64-pc-windows-msvc"));
         assert_eq!(args.macos_signing, MacosSigning::Development);
@@ -130,7 +180,9 @@ mod tests {
         ] {
             let mut argv = vec!["xtask", "bundle"];
             argv.extend(options);
-            let Commands::Bundle(args) = Cli::try_parse_from(argv).unwrap().command;
+            let Commands::Bundle(args) = Cli::try_parse_from(argv).unwrap().command else {
+                panic!("expected bundle")
+            };
             assert!(args.validate_signing().is_err());
         }
 
@@ -145,7 +197,10 @@ mod tests {
             "gupi",
         ])
         .unwrap()
-        .command;
+        .command
+        else {
+            panic!("expected bundle")
+        };
         assert!(args.validate_signing().is_ok());
     }
 }

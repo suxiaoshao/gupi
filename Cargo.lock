@@ -4535,6 +4535,7 @@ version = "0.1.0"
 dependencies = [
  "app-theme",
  "base64 0.23.1",
+ "cc",
  "dirs-next",
  "fluent-bundle",
  "get-selected-text",
@@ -4549,10 +4550,13 @@ dependencies = [
  "ignore",
  "image",
  "libc",
+ "libloading",
  "markdown",
  "pi-rpc",
  "platform-ext",
  "regex",
+ "reqwest",
+ "semver",
  "serde",
  "serde_json",
  "serde_yaml_ng",
@@ -4571,6 +4575,7 @@ dependencies = [
  "url",
  "uuid",
  "window-ext",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6081,6 +6086,18 @@ checksum = "bb85c154ba489f01b25c0d36ae69a87e4a1c73a72631fc6c0eb6dde34a73e44b"
 dependencies = [
  "num-traits",
  "pxfm",
+]
+
+[[package]]
+name = "msi"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0325f8473ef1f5c38ee42345e2cd1678299cbbfa169d1776654a2a682867420"
+dependencies = [
+ "byteorder",
+ "cfb",
+ "encoding_rs",
+ "uuid",
 ]
 
 [[package]]
@@ -12858,10 +12875,17 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 name = "xtask"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "clap",
+ "ed25519-dalek",
+ "getrandom 0.4.3",
  "image",
+ "msi",
  "plist",
+ "semver",
  "serde",
+ "serde_json",
+ "sha2 0.11.0",
  "tauri-bundler",
  "tauri-utils",
  "tempfile",

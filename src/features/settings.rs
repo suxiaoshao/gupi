@@ -55,6 +55,7 @@ pub(crate) struct SettingsView {
     transition_serial: u64,
     page_scroll: [ScrollHandle; 4],
     language: Entity<ComboboxState<SearchableVec<LanguageItem>>>,
+    updates: Entity<super::updates::UpdatesView>,
 }
 impl SettingsView {
     pub fn new(
@@ -185,6 +186,7 @@ impl SettingsView {
             this.refresh_language(window, cx)
         });
         Self {
+            updates: cx.new(super::updates::UpdatesView::new),
             focus_handle,
             form,
             controller,

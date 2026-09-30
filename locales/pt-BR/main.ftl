@@ -658,3 +658,25 @@ resource-edit-in-composer = Escolha um recurso aqui e edite os argumentos no cam
 resource-template-unclosed-quote = Feche as aspas nos argumentos do modelo antes de enviar referências a arquivos.
 
 resource-answer-required = Escolha uma resposta antes de enviar.
+
+menu-check-updates = Buscar atualizações…
+updates-title = Atualizações
+updates-check = Buscar atualizações
+updates-automatic = Buscar atualizações automaticamente
+updates-automatic-help = Busca novas versões no GitHub a cada hora. Você escolhe quando baixar.
+updates-idle = Verifique se há uma nova versão do Gupi.
+updates-checking = Buscando atualizações
+updates-current = Você está na versão mais recente
+updates-unpublished = Nenhuma versão estável foi publicada ainda.
+updates-available = Gupi { $version } está disponível
+updates-release = Notas da versão e downloads
+updates-install-help = Atualize com o instalador ou gerenciador de pacotes usado para instalar o Gupi.
+updates-error-network = Não foi possível buscar atualizações. Verifique a conexão e tente novamente.
+updates-error-rate-limit = O limite de solicitações do GitHub foi atingido. Tente novamente mais tarde.
+updates-error-response = Não foi possível ler as informações da versão. Tente novamente mais tarde.
+
+updates-install = Baixar e instalar…
+updates-native-progress = Conclua a atualização na janela de atualização.
+updates-install-failed = Não foi possível concluir a atualização. Tente novamente ou reabra o Gupi e verifique os logs.
+updates-restart-help = A instalação salva os rascunhos, fecha as conexões com o Pi e reinicia o Gupi.
+updates-show-progress = Ver o progresso da atualização…

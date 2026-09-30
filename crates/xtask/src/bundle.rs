@@ -43,6 +43,7 @@ pub fn run(args: BundleArgs) -> Result<()> {
     bundle_icons.apply_to_bundle_settings(&mut bundle_settings);
     let product_name = package_settings.product_name.clone();
     let version = package_settings.version.clone();
+    let updater_key = crate::updater::public_key()?;
 
     #[cfg(target_os = "macos")]
     macos::prepare_bundle_settings(&mut bundle_settings, &localizations)?;
@@ -55,13 +56,64 @@ pub fn run(args: BundleArgs) -> Result<()> {
             "build",
             "-p",
             "gupi",
+            "--bin",
+            "gupi",
             "--release",
             "--locked",
+            "--features",
+            "bundled",
             "--target",
             target,
         ],
         Some(&project_dir),
     )?;
+
+    #[cfg(target_os = "windows")]
+    if updater_key.is_some() {
+        run_cmd(
+            "cargo",
+            &[
+                "build",
+                "-p",
+                "gupi",
+                "--bin",
+                "gupi-update-helper",
+                "--release",
+                "--locked",
+                "--features",
+                "bundled",
+                "--target",
+                target,
+            ],
+            Some(&project_dir),
+        )?;
+        let sdk = crate::updater::sdk(&project_dir, "windows")?.join("WinSparkle-0.9.4");
+        let resources = bundle_settings.resources_map.get_or_insert_default();
+        resources.insert(
+            sdk.join("x64/Release/WinSparkle.dll")
+                .to_string_lossy()
+                .into_owned(),
+            "WinSparkle.dll".into(),
+        );
+        resources.insert(
+            target_root
+                .join(target)
+                .join("release/gupi-update-helper.exe")
+                .to_string_lossy()
+                .into_owned(),
+            "gupi-update-helper.exe".into(),
+        );
+        resources.insert(
+            sdk.join("COPYING").to_string_lossy().into_owned(),
+            "WinSparkle-COPYING.txt".into(),
+        );
+        resources.insert(
+            sdk.join("COPYING.expat").to_string_lossy().into_owned(),
+            "WinSparkle-LICENSE.txt".into(),
+        );
+    }
+    #[cfg(target_os = "linux")]
+    let _ = updater_key;
 
     let out_dir = prepare_bundle_staging(&target_root, target, &main_bin_name)?;
     #[cfg(target_os = "macos")]
@@ -95,6 +147,9 @@ pub fn run(args: BundleArgs) -> Result<()> {
     {
         let app_path = macos::find_app_bundle(&out_dir.join("bundle"), &product_name)?
             .ok_or_else(|| XtaskError::msg("bundler did not produce a macOS .app"))?;
+        if let Some(key) = updater_key {
+            macos::embed_updater(&project_dir, &app_path, target, &key)?;
+        }
         macos::inject_liquid_glass_icon(&project_dir, &app_path, &bundle_icons)?;
         macos::finalize_codesign(&project_dir, &app_path, &args)?;
         reset_directory(&dist_dir)?;
@@ -107,6 +162,9 @@ pub fn run(args: BundleArgs) -> Result<()> {
         let archive = dist_dir.join(format!("{product_name}_{version}_{arch}_macos{suffix}.zip"));
         macos::archive_app(&app_path, &archive)?;
         info!(artifact = %archive.display());
+        let dmg = archive.with_extension("dmg");
+        macos::create_dmg(&app_path, &dmg, &product_name, &args)?;
+        info!(artifact = %dmg.display());
         let _ = bundles;
     }
 

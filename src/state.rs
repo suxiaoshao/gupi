@@ -9,5 +9,6 @@ pub(crate) mod notifications;
 pub(crate) mod pi;
 pub(crate) mod resources;
 pub(crate) mod theme;
+pub(crate) mod updates;
 
 pub(crate) mod shortcuts;

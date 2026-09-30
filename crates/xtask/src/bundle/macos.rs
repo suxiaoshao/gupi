@@ -51,6 +51,48 @@ pub fn find_app_bundle(bundle_dir: &Path, product_name: &str) -> Result<Option<P
     Ok(None)
 }
 
+pub(crate) fn embed_updater(root: &Path, app: &Path, target: &str, key: &str) -> Result<()> {
+    let sdk = crate::updater::sdk(root, "macos")?;
+    let destination = app.join("Contents/Frameworks/Sparkle.framework");
+    fs::create_dir_all(destination.parent().unwrap())?;
+    run_cmd_os(
+        "ditto",
+        &[
+            sdk.join("Sparkle.framework").as_os_str(),
+            destination.as_os_str(),
+        ],
+        None,
+    )?;
+    fs::copy(
+        sdk.join("LICENSE"),
+        app.join("Contents/Resources/Sparkle-LICENSE.txt"),
+    )?;
+    let path = app.join("Contents/Info.plist");
+    let mut value = plist::Value::from_file(&path)?;
+    let dict = value
+        .as_dictionary_mut()
+        .ok_or_else(|| XtaskError::msg("invalid app plist"))?;
+    dict.insert("SUPublicEDKey".into(), plist::Value::String(key.into()));
+    let arch = target.split('-').next().unwrap();
+    dict.insert(
+        "SUFeedURL".into(),
+        plist::Value::String(format!(
+            "https://github.com/suxiaoshao/gupi/releases/latest/download/appcast-macos-{arch}.xml"
+        )),
+    );
+    for name in [
+        "SUEnableAutomaticChecks",
+        "SUAutomaticallyUpdate",
+        "SUAllowsAutomaticUpdates",
+        "SUSendProfileInfo",
+        "SUShowReleaseNotes",
+    ] {
+        dict.insert(name.into(), plist::Value::Boolean(false));
+    }
+    value.to_file_xml(path)?;
+    Ok(())
+}
+
 pub fn inject_liquid_glass_icon(
     app_dir: &Path,
     app_path: &Path,
@@ -212,6 +254,81 @@ pub(crate) fn archive_app(app_path: &Path, archive: &Path) -> Result<()> {
     )
 }
 
+/// Package the finalized app, keeping all mutations before the outer DMG signature.
+pub(crate) fn create_dmg(
+    app_path: &Path,
+    dmg: &Path,
+    product_name: &str,
+    args: &BundleArgs,
+) -> Result<()> {
+    let staging = tempfile::Builder::new().prefix("gupi-dmg-").tempdir()?;
+    let staged_app = staging.path().join(format!("{product_name}.app"));
+    run_cmd_os(
+        "ditto",
+        &[app_path.as_os_str(), staged_app.as_os_str()],
+        None,
+    )?;
+    std::os::unix::fs::symlink("/Applications", staging.path().join("Applications"))?;
+    run_cmd_os(
+        "hdiutil",
+        &[
+            OsStr::new("create"),
+            OsStr::new("-volname"),
+            OsStr::new(product_name),
+            OsStr::new("-srcfolder"),
+            staging.path().as_os_str(),
+            OsStr::new("-fs"),
+            OsStr::new("HFS+"),
+            OsStr::new("-format"),
+            OsStr::new("UDZO"),
+            dmg.as_os_str(),
+        ],
+        None,
+    )?;
+    run_cmd_os("hdiutil", &[OsStr::new("verify"), dmg.as_os_str()], None)?;
+    if args.macos_signing == MacosSigning::DeveloperId {
+        let mut sign_args = vec![
+            OsStr::new("--force"),
+            OsStr::new("--timestamp"),
+            OsStr::new("--sign"),
+            OsStr::new(
+                args.signing_identity
+                    .as_deref()
+                    .expect("validated identity"),
+            ),
+        ];
+        if let Some(keychain) = &args.keychain {
+            sign_args.extend([OsStr::new("--keychain"), keychain.as_os_str()]);
+        }
+        sign_args.push(dmg.as_os_str());
+        run_cmd_os("codesign", &sign_args, None)?;
+        run_cmd_os(
+            "codesign",
+            &[
+                OsStr::new("--verify"),
+                OsStr::new("--strict"),
+                dmg.as_os_str(),
+            ],
+            None,
+        )?;
+        notarize(dmg, args)?;
+        staple(dmg)?;
+        run_cmd_os(
+            "spctl",
+            &[
+                OsStr::new("--assess"),
+                OsStr::new("--type"),
+                OsStr::new("open"),
+                OsStr::new("--context"),
+                OsStr::new("context:primary-signature"),
+                dmg.as_os_str(),
+            ],
+            None,
+        )?;
+    }
+    Ok(())
+}
+
 fn sign_developer_id(project_dir: &Path, app_path: &Path, args: &BundleArgs) -> Result<()> {
     run_cmd_os("xattr", &[OsStr::new("-cr"), app_path.as_os_str()], None)?;
     let entitlements = args
@@ -271,8 +388,14 @@ fn sign_developer_id(project_dir: &Path, app_path: &Path, args: &BundleArgs) -> 
         if let Some(keychain) = &args.keychain {
             sign_args.extend([OsStr::new("--keychain"), keychain.as_os_str()]);
         }
-        if let Some(path) = &entitlements {
+        if target == app_path
+            && let Some(path) = &entitlements
+        {
             sign_args.extend([OsStr::new("--entitlements"), path.as_os_str()]);
+        } else {
+            // Keep native updater helpers' own entitlements; application
+            // entitlements must not be applied to third-party nested code.
+            sign_args.push(OsStr::new("--preserve-metadata=entitlements"));
         }
         sign_args.push(target.as_os_str());
         run_cmd_os("codesign", &sign_args, None)?;
@@ -300,6 +423,21 @@ fn notarize_and_staple(app_path: &Path, args: &BundleArgs) -> Result<()> {
         .tempdir()?;
     let archive = staging.path().join("Gupi.zip");
     archive_app(app_path, &archive)?;
+    notarize(&archive, args)?;
+    staple(app_path)?;
+    run_cmd_os(
+        "spctl",
+        &[
+            OsStr::new("--assess"),
+            OsStr::new("--type"),
+            OsStr::new("execute"),
+            app_path.as_os_str(),
+        ],
+        None,
+    )
+}
+
+fn notarize(archive: &Path, args: &BundleArgs) -> Result<()> {
     let mut notary_args = vec![
         OsStr::new("notarytool"),
         OsStr::new("submit"),
@@ -323,13 +461,16 @@ fn notarize_and_staple(app_path: &Path, args: &BundleArgs) -> Result<()> {
         )));
     }
     let response = plist::Value::from_reader(Cursor::new(&output.stdout))?;
-    require_accepted_notarization(&response)?;
+    require_accepted_notarization(&response)
+}
+
+fn staple(artifact: &Path) -> Result<()> {
     run_cmd_os(
         "xcrun",
         &[
             OsStr::new("stapler"),
             OsStr::new("staple"),
-            app_path.as_os_str(),
+            artifact.as_os_str(),
         ],
         None,
     )?;
@@ -338,17 +479,7 @@ fn notarize_and_staple(app_path: &Path, args: &BundleArgs) -> Result<()> {
         &[
             OsStr::new("stapler"),
             OsStr::new("validate"),
-            app_path.as_os_str(),
-        ],
-        None,
-    )?;
-    run_cmd_os(
-        "spctl",
-        &[
-            OsStr::new("--assess"),
-            OsStr::new("--type"),
-            OsStr::new("execute"),
-            app_path.as_os_str(),
+            artifact.as_os_str(),
         ],
         None,
     )

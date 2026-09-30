@@ -30,6 +30,7 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: '0'
   RUST_BACKTRACE: '1'
+  CARGO_TARGET_DIR: target/native
 
 jobs:
   prepare:
@@ -47,17 +48,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: '3.12'
+      - name: Set up pinned Rust toolchain
+        run: rustup show
 
       - name: Verify tag and package version
         id: release
         env:
           GUPI_TAG: ${{ inputs.tag || github.ref_name }}
           GUPI_MACOS_SIGNING: ${{ inputs.macos_signing || vars.MACOS_SIGNING_MODE || 'development' }}
-        run: python .github/scripts/verify-release.py
+        run: cargo run -p xtask --locked -- release prepare --tag "$GUPI_TAG" --macos-signing "$GUPI_MACOS_SIGNING"
 
   build:
     name: ${{ matrix.name }}
@@ -85,7 +84,8 @@ jobs:
         shell: bash
     env:
       GUPI_TARGET: ${{ matrix.target }}
-      GUPI_MACOS_SIGNING: ${{ needs.prepare.outputs.macos_signing }}
+      GUPI_MACOS_SIGNING: ${{ contains(matrix.target, '-apple-darwin') && needs.prepare.outputs.macos_signing || 'development' }}
+      GUPI_UPDATE_PUBLIC_KEY: ${{ vars.GUPI_UPDATE_PUBLIC_KEY }}
     steps:
       - name: Checkout verified commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -97,14 +97,6 @@ jobs:
         uses: ./.github/actions/setup
         with:
           target: ${{ matrix.target }}
-
-      - name: Set up Python for packaging scripts
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: '3.12'
-
-      - name: Test workspace
-        run: cargo test --workspace --locked
 
       - name: Prepare Developer ID signing and notarization
         if: runner.os == 'macOS' && needs.prepare.outputs.macos_signing == 'developer-id'
@@ -118,10 +110,7 @@ jobs:
         run: bash .github/scripts/import-macos-signing.sh
 
       - name: Build packages
-        run: bash .github/scripts/bundle.sh
-
-      - name: Verify expected package files
-        run: python .github/scripts/verify-artifacts.py
+        run: cargo run -p xtask --locked -- bundle
 
       - name: Upload packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -140,10 +129,9 @@ jobs:
           fi
           rm -f "$RUNNER_TEMP/gupi-certificate.p12" "$RUNNER_TEMP/gupi-notary-key.p8"
 
-  draft:
-    name: Create draft release
+  collect:
+    name: Prepare distribution manifests and draft release
     needs: [prepare, build]
-    if: github.event_name == 'push' || inputs.create_draft
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -161,15 +149,28 @@ jobs:
           merge-multiple: true
           path: dist
 
-      - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-        with:
-          python-version: '3.12'
+      - name: Set up pinned Rust toolchain
+        run: rustup show
 
-      - name: Create checksums and draft release
+      - name: Collect packages, manifests and optional draft release
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
           GUPI_TAG: ${{ needs.prepare.outputs.tag }}
           GUPI_MACOS_SIGNING: ${{ needs.prepare.outputs.macos_signing }}
-        run: python .github/scripts/create-draft-release.py
+          GUPI_CREATE_DRAFT: ${{ github.event_name == 'push' || inputs.create_draft }}
+          GUPI_UPDATE_PUBLIC_KEY: ${{ vars.GUPI_UPDATE_PUBLIC_KEY }}
+          GUPI_UPDATE_PRIVATE_KEY: ${{ secrets.GUPI_UPDATE_PRIVATE_KEY }}
+        run: |
+          args=(release collect --tag "$GUPI_TAG" --macos-signing "$GUPI_MACOS_SIGNING")
+          if [[ "$GUPI_CREATE_DRAFT" == true ]]; then
+            args+=(--draft)
+          fi
+          cargo run -p xtask --locked -- "${args[@]}"
+
+      - name: Upload distribution manifests
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: distribution-manifests
+          path: distribution/
+          if-no-files-found: error
+          retention-days: 30

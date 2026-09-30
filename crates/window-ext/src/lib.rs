@@ -196,6 +196,9 @@ impl NativeWindowHandle {
         bounds: Bounds<Pixels>,
         display_id: Option<DisplayId>,
     ) -> Result<(), WindowExtError> {
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        let _ = (bounds, display_id);
+
         match self.raw_window {
             #[allow(unused_variables)]
             RawWindowHandle::AppKit(handle) => {
@@ -468,6 +471,9 @@ impl WindowExt for Window {
         bounds: Bounds<Pixels>,
         display_id: Option<DisplayId>,
     ) -> Result<(), WindowExtError> {
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        let _ = (bounds, display_id);
+
         let raw_window = get_raw_window(self)?;
         match raw_window {
             #[allow(unused_variables)]

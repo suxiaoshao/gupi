@@ -1,0 +1,45 @@
+name: Set up native Gupi toolchain
+description: Install the pinned Rust toolchain and operating-system build dependencies.
+
+inputs:
+  target:
+    description: Rust target triple
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python for packaging scripts
+      uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+      with:
+        python-version: '3.12'
+
+    - name: Install Linux native dependencies
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install --no-install-recommends -y \
+          build-essential pkg-config clang libclang-dev dpkg-dev binutils \
+          libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
+          libegl1-mesa-dev libvulkan-dev libfontconfig1-dev libfreetype6-dev \
+          libxcb1-dev libx11-dev libxcursor-dev libxi-dev libxrandr-dev libgbm-dev
+
+    - name: Ensure Xcode Metal compiler
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        if ! /usr/bin/xcrun metal --version; then
+          /usr/bin/xcodebuild -downloadComponent MetalToolchain
+        fi
+        /usr/bin/xcrun metal --version
+        printf '%s\n' 'MACOSX_DEPLOYMENT_TARGET=11.0' >> "$GITHUB_ENV"
+
+    - name: Install Rust from rust-toolchain.toml
+      shell: bash
+      env:
+        GUPI_TARGET: ${{ inputs.target }}
+      run: |
+        rustup show
+        rustup target add "$GUPI_TARGET"
+        cargo --version

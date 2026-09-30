@@ -30,7 +30,7 @@
 
 ## 实现分工
 
-| 位置（相对 `app/gupi/src`） | 职责 |
+| 位置（相对 `src`） | 职责 |
 | --- | --- |
 | `app/temporary.rs` | 应用 Global 持有唯一临时窗口、ConversationState、焦点恢复目标、600 秒窗口回收与清理任务 |
 | `state/conversation.rs`、`conversation/temporary.rs` | 普通/临时模式、每会话实例和独立 cwd；临时模式跳过扫描与草稿持久化，以 `--no-session` 启动 |
@@ -43,7 +43,7 @@
 | `state/config.rs` | 新 `[shortcuts]` 与 `[[shortcuts.tasks]]` 接入原配置事务、字段合并、注册预检和失败回滚 |
 | `foundation/attachments.rs`、`features/home/attachments.rs` | 附件读取/编码、选择/粘贴/拖拽与预览；提交复用原 prompt 流程 |
 | `app/tray.rs`、`app/menus.rs` | 系统入口和语言更新；退出统一走 StartupView.quit |
-| `crates/platform-ext/src/app.rs` | macOS/Windows 前台目标捕获与恢复；保留 Jaco 原接口 |
+| [共享 platform-ext](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/crates/platform-ext/src/app.rs) | macOS/Windows 前台目标捕获与恢复 |
 
 临时窗口列表沿用 List 的导航与虚拟列表，条目使用与命令面板一致的圆角选中背景和会话图标，不使用默认蓝色选中描边。搜索框、会话序号与底部操作显示实际绑定的键帽。底部收为随输入状态变化的发送/回填主操作，以及 Cmd/Ctrl+K 上下文操作面板；面板右下角锚定，分组操作、底部搜索，关闭恢复原焦点。快捷键沿用统一设置，新增临时对话分组。
 
@@ -129,7 +129,7 @@ Pi 占位符包括 `$1`、`$@`、`$ARGUMENTS`、默认值和切片。命中占�
 - 初版 Gupi 自动化测试 168 项通过；新增临时双实例、`--no-session`、草稿不落盘、断线后不自动重建实例、取消准备、附件/模板失败保留与成功清空、原文件不变、文本模型拒绝图片、参数字符保真和重置保留任务定义的覆盖。
 - 本机 macOS 构建、`cargo clippy -p gupi --all-targets --offline -- -D warnings`、格式和 diff 检查通过。
 - 新临时页面的标准包已用隔离配置和离线 Pi fixture 启动：截图确认 960×620 双栏、顶部搜索、居中输入和隐藏交通灯；可重新打开，正常退出且日志无窗口重入/崩溃错误。Computer Use 的面板点击/键盘操作会将后方主窗口激活，触发临时面板隐藏，因此面板内真实键盘、拖动和跨屏仍待人工试用，不把工具抢焦点当作完整交互验收。测试实例与临时数据已清理。
-- 标准 `xtask bundle gupi` 生成 `target/release/bundle/macos/Gupi.app`；当前系统的 actool 导出 Liquid Glass 图标失败，打包器按既有逻辑保留普通图标，完成签名。
+- 迁移前标准 macOS 包生成于 `target/release/bundle/macos/Gupi.app`；当时系统的 actool 导出 Liquid Glass 图标失败，打包器按既有逻辑保留普通图标，完成签名。现行独立打包入口见 [发行指南](../../releasing.md)。
 - 使用隔离配置、数据目录和真实 Pi 的离线 faux 模型验证：两个临时会话分别发送到两个独立 cwd；普通会话目录无临时 JSONL、草稿列表为空；关闭/重新打开保持临时状态，空闲 Esc 隐藏，退出完成 Pi 收尾。最近一次显隐复测无 `RefCell already borrowed` 错误。
 - 模板任务弹窗可读取个人模板及模型选项，显示预填值与保存/取消按钮。Computer Use 下界面/可访问性偶有刷新滞后，缩放原生窗口后才能观察新帧；不据此宣称全部控件交互与视觉验收完成。
 - 选择器统一与按钮重排后，模型选择器 7 项、快捷键页 3 项定向回归及 Clippy 通过。未重启用户正在使用的窗口，新布局仍待试用确认。

@@ -1,6 +1,6 @@
 # 会话阅读、正文查找与信息查看
 
-归属 [#242](https://github.com/suxiaoshao/gpui/issues/242)，父 Issue #217。状态：**应用侧实现完成**。插件持久消息、会话信息弹窗与正文查找均已实现并通过受影响回归。无障碍长文定位与中文混排裁切由后续正式依赖升级承接，不作为本轮应用侧未完成工作；具体限制与验证见 [GPUI Kit 0.7.0 及依赖升级](../../../../../docs/dev/dependency-refresh-0.7.0/README.md)。Token / Questionnaire 不在本轮范围。
+归属 [#242](https://github.com/suxiaoshao/gpui/issues/242)，父 Issue #217。状态：**应用侧实现完成**。插件持久消息、会话信息弹窗与正文查找均已实现并通过受影响回归。无障碍长文定位与中文混排裁切由后续正式依赖升级承接，不作为本轮应用侧未完成工作；具体限制与验证见 [GPUI Kit 0.7.0 及依赖升级](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/docs/dev/dependency-refresh-0.7.0/README.md)。Token / Questionnaire 不在本轮范围。
 
 2026-09-28 已核对正式 v0.7.0（`0c830f4d`）的发布包和源码，范围高亮与定位接口均已包含；workspace 已锁定 0.7.0。搜索使用正式范围 API；验证结果与限制记录在升级文档。Pi 相关调查维持下文 v0.87.1 的核对时点，本次没有重新审计协议或升级本机 Pi。
 
@@ -90,7 +90,7 @@ Dialog 拦截已有上下文切换动作；不为打不开的操作设计额外�
 
 ## 已确认的上游契约与接入前提
 
-[#3215](https://github.com/longbridge/gpui-kit/pull/3215) 与 [#3216](https://github.com/longbridge/gpui-kit/pull/3216) 的公共接口已随正式 **0.7.0** 发布并完成源码核对。按[本轮升级计划](../../../../../docs/dev/dependency-refresh-0.7.0/README.md)对齐 kit/component/assets 0.7.0 与 gpui-pre 0.3.7；不切 Git main、vendor 或修改 Cargo registry。下表契约以 v0.7.0 为准。
+[#3215](https://github.com/longbridge/gpui-kit/pull/3215) 与 [#3216](https://github.com/longbridge/gpui-kit/pull/3216) 的公共接口已随正式 **0.7.0** 发布并完成源码核对。按[本轮升级计划](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/docs/dev/dependency-refresh-0.7.0/README.md)对齐 kit/component/assets 0.7.0 与 gpui-pre 0.3.7；不切 Git main、vendor 或修改 Cargo registry。下表契约以 v0.7.0 为准。
 
 | API | 契约与 Gupi 用法 |
 | --- | --- |
@@ -130,7 +130,7 @@ Dialog 拦截已有上下文切换动作；不为打不开的操作设计额外�
 
 ### 已知组件边界
 
-- **本轮原生复现，用户确认等待上游**：GPUI 0.3.7 的 `Window::transact` 未回滚无障碍树，长回答定位触发列表第二次 prepaint 时会重复登记节点，调试版崩溃、发行版丢弃节点。保持正式依赖，不绕过断言或关闭无障碍；[复现和源码依据](../../../../../docs/dev/dependency-refresh-0.7.0/README.md#原生验收发现长消息定位与无障碍树)归升级记录。
+- **本轮原生复现，用户确认等待上游**：GPUI 0.3.7 的 `Window::transact` 未回滚无障碍树，长回答定位触发列表第二次 prepaint 时会重复登记节点，调试版崩溃、发行版丢弃节点。保持正式依赖，不绕过断言或关闭无障碍；[复现和源码依据](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/docs/dev/dependency-refresh-0.7.0/README.md#原生验收发现长消息定位与无障碍树)归升级记录。
 - Markdown 中文混排在 macOS 上还存在上游逐字估宽与整行排版不一致导致的行末裁切；Gupi 容器宽度约束已修复。两项依赖缺陷统一留在[总待处理文档](../follow-ups.md#等待上游的工作)，等待包含修复的正式版本后升级复测。
 
 - `reveal_range` 的成功返回表示范围合法且请求被接受，没有滚动完成回调；请求约一秒内未完成会被丢弃，只保留最新请求。普通查找按这一契约调用，不为缺少确认回调另造持久任务或将其列为新的上游前置条件。
@@ -189,11 +189,11 @@ D3 已确认：临时会话搜索框获得焦点后直接输入即过滤，不�
 - 真实 Pi 隔离 RPC：`/gupi-ui custom-message` 生成三个不同 ID 的条目，display 为 true/false/true；两条可见消息保留 text/image/text 顺序，未启动模型 turn，新会话文件未提前创建。可通过 `script/gupi-ui-gallery` 重现此场景。
 - macOS 原生检查已确认两条可见插件消息、图片预览及 Escape 关闭、会话菜单与命令面板入口、信息弹窗长路径换行、未保存状态、底部统计滚动、复制反馈及 Esc 关闭。临时窗口入口及动态复制由 GPUI 窗口交互回归覆盖；其他平台尚未原生目视检查。
 
-以上记录针对已实现的插件消息和信息弹窗；本轮正文搜索、快捷键与 0.7.0 升级的验证另见[升级记录](../../../../../docs/dev/dependency-refresh-0.7.0/README.md)，不复用前述计数。
+以上记录针对已实现的插件消息和信息弹窗；本轮正文搜索、快捷键与 0.7.0 升级的验证另见[升级记录](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/docs/dev/dependency-refresh-0.7.0/README.md)，不复用前述计数。
 
 ## 源码入口
 
-- Gupi：[历史投影](../../../src/state/history.rs)、[实时消息](../../../src/state/conversation/messages.rs)、[事件与回读](../../../src/state/conversation.rs)、[消息行](../../../src/features/home/messages.rs)、[过程投影](../../../src/features/home/messages/activity.rs)、[Markdown 增量呈现](../../../src/features/home/messages/markdown.rs)、[详情 Dialog](../../../src/features/home/messages/details.rs)、[消息列表与分支定位](../../../src/features/home.rs)、[现有统计呈现](../../../src/features/home/composer/metrics.rs)、[临时窗口键位](../../../src/features/temporary.rs)、[RPC 响应类型](../../../../../crates/pi-rpc/src/protocol.rs)。
+- Gupi：[历史投影](../../../src/state/history.rs)、[实时消息](../../../src/state/conversation/messages.rs)、[事件与回读](../../../src/state/conversation.rs)、[消息行](../../../src/features/home/messages.rs)、[过程投影](../../../src/features/home/messages/activity.rs)、[Markdown 增量呈现](../../../src/features/home/messages/markdown.rs)、[详情 Dialog](../../../src/features/home/messages/details.rs)、[消息列表与分支定位](../../../src/features/home.rs)、[现有统计呈现](../../../src/features/home/composer/metrics.rs)、[临时窗口键位](../../../src/features/temporary.rs)、[RPC 响应类型](../../../crates/pi-rpc/src/protocol.rs)。
 - Pi v0.87.1：[AgentSession / sendCustomMessage / getSessionStats](https://github.com/earendil-works/pi/blob/f07218c4d4bbc12bef056a7058c3dd49dfe41abe/packages/coding-agent/src/core/agent-session.ts)、[SessionManager](https://github.com/earendil-works/pi/blob/f07218c4d4bbc12bef056a7058c3dd49dfe41abe/packages/coding-agent/src/core/session-manager.ts)、[TUI 通用插件消息](https://github.com/earendil-works/pi/blob/f07218c4d4bbc12bef056a7058c3dd49dfe41abe/packages/coding-agent/src/modes/interactive/components/custom-message.ts)。
 - 组件正式源码：[0.7.0 TextView](https://docs.rs/crate/gpui-base/0.7.0/source/src/text/text_view.rs)、[TextViewState](https://docs.rs/crate/gpui-base/0.7.0/source/src/text/state.rs)、[Markdown 扩展](https://docs.rs/crate/gpui-base/0.7.0/source/src/text/markdown_ext.rs)。
 

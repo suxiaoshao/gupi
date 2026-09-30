@@ -1,0 +1,4 @@
+interface:
+  display_name: "GPUI Form"
+  short_description: "Build typed FormSchema sessions and bindings"
+  default_prompt: "Use $gpui-form to implement or review the requested typed Form flow against its current public contract."

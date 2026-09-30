@@ -1,6 +1,6 @@
 # 队列交互与输入框布局
 
-状态：当前 RPC 支持的队列交互已实现并通过构建与回归；原生点击/外观验证未完成，逐条操作延后。2026-09-20 更新。归属 #222。资源标签与 Skill/模板输入继续由[输入框资源接入计划](../issue-243/README.md)管理；扩展协议与体验环境见[扩展 UI 计划](README.md)。
+状态：文字队列展示与整队操作已实现并通过构建与回归；原生点击/外观验证未完成，逐条操作延后。2026-09-30 复核 Pi 0.99.1：新增输入 disposition，Gupi 尚未消费；逐条操作所需契约仍未提供。归属 #222。资源标签与 Skill/模板输入继续由[输入框资源接入计划](../issue-243/README.md)管理；扩展协议与体验环境见[扩展 UI 计划](README.md)。
 
 ## 本轮实施范围
 
@@ -12,7 +12,7 @@
 
 图片使用 `AttachmentGroup`／`Attachment`，放入共用 InputGroup 的 `BlockStart` 插槽，多附件横向滚动；没有附件时不渲染插槽。图片名下通过 `AttachmentDescription` 显示格式与大小（如 `PNG · 128 KB`），按原始字节计算，单位采用十进制 B/KB/MB。普通文件改为正文内联路径标签，见[输入资源](../issue-243/README.md)；保留图片预览及独立删除，点击删除不触发预览。附件入口与空闲发送使用 `InputGroupButton`，运行中的发送和模式菜单使用 `DropdownButton`，停止按钮独立保留。
 
-输入区保留原有 Attachment 横向卡片及 AttachmentMedia.src() 图片展示；点击图片打开窗口级预览，沿用组件弹层的窗口边距，按可用空间等比适配；提供缩放比例、放大/缩小（最高 800%）、Ctrl/Cmd＋滚轮及触控板捏合，放大后可滚动查看。关闭按钮、Esc 和图片外空白均可关闭；图片与工具栏操作不关闭预览。缩放几何由 Gupi 自有预览模块维护。预览与 RPC 使用同一份原始图片字节，不缩小或重编码。文件名使用浮动胶囊，关闭按钮独立放在右上角，底部使用 2.5rem 缩放按钮和比例读数。GUI 与 Pi 的职责整理见[边界收敛记录](../../../../../docs/dev/issue-217/gui-boundary.md)。
+输入区保留原有 Attachment 横向卡片及 AttachmentMedia.src() 图片展示；点击图片打开窗口级预览，沿用组件弹层的窗口边距，按可用空间等比适配；提供缩放比例、放大/缩小（最高 800%）、Ctrl/Cmd＋滚轮及触控板捏合，放大后可滚动查看。关闭按钮、Esc 和图片外空白均可关闭；图片与工具栏操作不关闭预览。缩放几何由 Gupi 自有预览模块维护。预览与 RPC 使用同一份原始图片字节，不缩小或重编码。文件名使用浮动胶囊，关闭按钮独立放在右上角，底部使用 2.5rem 缩放按钮和比例读数。GUI 与 Pi 的职责整理见[边界收敛记录](../../gui-boundary.md)。
 
 本轮不新增逐条编辑/删除、排队图片恢复、客户端调度队列或原输入备份；扩展问答和资源标签已通过正式组件接入，见 [#243](../issue-243/README.md)。以下逐条交互是后续目标，不能当成本轮已完成功能。
 
@@ -46,15 +46,16 @@
 
 ## Pi 接口边界与当前实现
 
-2026-09-20 核对本地 Pi 的 `packages/coding-agent/src/modes/rpc/rpc-types.ts`、`rpc-mode.ts` 和 `core/agent-session.ts`：
+2026-09-30 核对正式 Pi v0.99.1 `d86654ab`、main `1b347794` 及本机安装产物的 `rpc-types.ts`、`rpc-mode.ts` 和 AgentSession；隔离运行结果见 [RPC 盘点](../pi-rpc-gaps.md#pi-099-新增内容与-gupi-接入机会)：
 
 - 提供 `prompt`（含 streamingBehavior）、`steer`、`follow_up`，可提交文字与图片。
+- 成功响应新增 `data.disposition`：prompt 为 handled/queued/started，steer/follow_up 为 handled/queued。表示该份输入的处理结果，不携带消息 ID、完整内容或队列位置；queued 返回时消息也可能已被消费。
 - `queue_update` 提供 steering/followUp 两类字符串数组；不含稳定条目 ID 或完整附件。
 - `clear_queue` 清空两类队列并返回字符串数组；不是逐条撤回接口。
 - 尚无按 ID 修改/删除单条的 RPC，也没有包含图片的完整队列快照。
 - Pi 内部实际入队内容包含图片；文本事件不能代替完整消息。Skill/模板还会经过展开，不能假定队列文本等同于原输入。
 
-Gupi 已接入 `clear_queue` 的整队操作和 `queue_update` 文字展示，产品界面尚未接入逐条操作。已发布的 InputGroup 已接入普通 Composer，但控件升级不会补齐 Pi 的队列契约。
+Gupi 已接入 `clear_queue` 的整队操作和 `queue_update` 文字展示；`Client::prompt` 原样保留新响应，应用提交分支仍用 `Ok(_)`，尚未读取 disposition，也未接入逐条操作。可先适配输入处理结果，避免从文本差异或事件时序推断插件是否实际入队；不能由此建立可编辑条目或恢复附件。已发布的 InputGroup 已接入普通 Composer，但控件升级不会补齐 Pi 的队列契约。
 
 不能直接用“清空全部，再重新提交其他条目”实现逐条编辑/删除：这会涉及消息消费时机、顺序、附件保留和再次展开的差异。也不因设计要求自动新增客户端离线队列或第二套草稿备份。完整方案需先调研再确定，不能宣称现有 RPC 已支持。
 
@@ -63,7 +64,7 @@ Gupi 已接入 `clear_queue` 的整队操作和 `queue_update` 文字展示，�
 - [输入区](../../../src/features/home/composer.rs)、[新会话欢迎区](../../../src/features/home/welcome.rs)、[项目选择面板](../../../src/features/home/palette.rs)
 - [共用 Composer](../../../src/features/composer.rs)
 - [会话状态](../../../src/state/conversation.rs)
-- [RPC 客户端](../../../../../crates/pi-rpc/src/client.rs)
+- [RPC 客户端](../../../crates/pi-rpc/src/client.rs)
 
 ## 本轮确认的其他布局
 
@@ -108,7 +109,7 @@ Gupi 可参考的建议：逐条返回草稿时采用“撤回文字在前、原
 
 ## 逐条操作的可行性与实现边界
 
-继续核对同一本地 Pi checkout `71dca871b`，工作区无未提交改动。以下结论仅针对该源码版本，不推断远程新版本、后续迁移时间或本机安装包已经具备这些接口。
+下面的消费竞态和实验 Harness 细节来自早期 checkout `71dca871b` 的定向研究。2026-09-30 已重新核对正式 0.99.1 与 main：SDK 仍构造旧 Agent，标准 RPC 仍使用文字队列，新增 disposition 不包含单条身份或取消结果。实验接口的历史研究不作为当前 stdio 可用能力。
 
 ### 现有扩展接口不能直接补齐
 
@@ -176,7 +177,7 @@ Pi 在入队前执行 input handler，再展开 Skill 和模板；输入插件�
 | Gupi 自己持有全部待发内容 | 可控制本地编辑，但需重做调度；仅在 agent_end 发送会把 steer 变成 follow-up，也无法统一插件入队 | 不作为本轮默认方案 |
 | Pi 队列能力经正式 RPC 暴露 | 能保持 Pi 执行语义，Harness 已有部分基础 | 推荐方向；先与上游能力边界对齐，再接入 Gupi |
 
-当前范围：先交付现有 RPC 支持的文字展示和整队操作。逐条操作继续等待正式 RPC 契约，不维护平行队列，不在本轮修改 Pi 或创建上游 Issue/PR。另核对正式 v0.85.0、v0.85.1、[v0.86.0 SDK](https://github.com/earendil-works/pi/blob/v0.86.0/packages/coding-agent/src/core/sdk.ts) 和 [RPC 类型](https://github.com/earendil-works/pi/blob/v0.86.0/packages/coding-agent/src/modes/rpc/rpc-types.ts)：coding-agent 仍使用旧 Agent，2026-09-23 再次核对 [v0.87.1 SDK](https://github.com/earendil-works/pi/blob/v0.87.1/packages/coding-agent/src/core/sdk.ts) 与 [RPC 类型](https://github.com/earendil-works/pi/blob/v0.87.1/packages/coding-agent/src/modes/rpc/rpc-types.ts)：仍为 new Agent，rpc-types.ts/rpc-mode.ts 与 v0.86.0 完全相同。升级到 0.87.0 仍不会解除逐条队列限制；新的 context_edit、finishTurn 和插件边界钩子不构成队列 ID/单条操作接口。
+文字展示和整队操作已经交付；输入 disposition 现在可以单独适配，逐条操作继续等待正式契约。正式 [v0.99.1 SDK](https://github.com/earendil-works/pi/blob/d86654abb8862e201933517d6f1fce9f88dd117f/packages/coding-agent/src/core/sdk.ts) 仍为 new Agent，[RPC 类型](https://github.com/earendil-works/pi/blob/d86654abb8862e201933517d6f1fce9f88dd117f/packages/coding-agent/src/modes/rpc/rpc-types.ts) 无 get_queue、单条取消或位置恢复；已核对 main 相同。handled/queued/started、context_edit、finishTurn 和插件边界钩子都不能代替队列 ID/单条操作接口。继续保留 Pi 为队列所有者，不因文档复核启动私有桥接或 Pi runtime 迁移。
 
 ## 窗口与分栏的实际约束
 

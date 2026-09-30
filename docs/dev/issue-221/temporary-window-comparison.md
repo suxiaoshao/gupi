@@ -60,7 +60,7 @@
 ## 源码入口与验证边界
 
 - [Gupi 临时窗口所有者](../../../src/app/temporary.rs)、[HomeView 布局](../../../src/features/home.rs)、[标题栏](../../../src/features/home/titlebar.rs)、[临时页面](../../../src/features/temporary.rs)、[分栏](../../../src/features/home/panes.rs)、[输入区](../../../src/features/home/composer.rs)。
-- [窗口平台扩展](../../../../../crates/window-ext/src/lib.rs)：set_window_level 的平台差异。
+- [窗口平台扩展](../../../crates/window-ext/src/lib.rs)：set_window_level 的平台差异。
 - GPUI Kit 0.6.0 的 TitleBar::window_options、GPUI pre 0.3.3 的 WindowOptions::default 与 macOS window.rs：核对默认选项和 PopUp 对应原生类型，避免把未显式设置等同于未知或关闭。
 
 本次改动通过 `cargo check -p gupi --offline`、临时窗口相关 8 项回归、1 项页面级回归及 `cargo clippy -p gupi --all-targets --offline -- -D warnings`。自动化覆盖隐藏到期、重显取消回收、旧窗口计时器隔离、Global 状态保留、搜索导航和既有双实例运行；页面级测试验证 Tab 双向焦点切换与实际视图重建后的草稿保留。原生显隐与新布局另见 issue-221 README 验证记录；跨屏与 Windows 层级效果尚未实机验收。

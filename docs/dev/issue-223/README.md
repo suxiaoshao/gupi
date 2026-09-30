@@ -2,6 +2,12 @@
 
 状态：图标主题当前为七套；彩虹十格按行使用红橙黄、绿蓝、紫红橙、绿蓝，复用红、橙、黄、绿、蓝、紫六种纯色，不提供彩虹渐变。其余本机与跨平台验证边界见文末。关联 [#223](https://github.com/suxiaoshao/gpui/issues/223)。
 
+## 独立项目发行入口
+
+Gupi 已迁入独立仓库，根包和打包器只处理一个产品。当前命令为 `cargo run -p xtask --locked -- bundle`；macOS / Linux 先退出 Nix 开发环境，使用原生 Rustup 与 Xcode / 系统库并隔离构建缓存。指定架构使用 `--target <triple>`，可分发产物归集到 `dist/<triple>`。macOS 本机开发包默认 ad-hoc 签名，Developer ID 签名与公证通过显式打包参数启用；tag / 手动发布工作流默认创建 draft release。现行平台工具、凭据和产物命名由 [发行指南](../../releasing.md)维护，本次迁移结果见 [独立项目记录](../standalone-project/README.md)。
+
+下文保留图标、桌面功能及迁移前的原生验证证据；原生运行和正式签名的验证范围以其记录为准。
+
 ## 目标与范围
 
 - 让菜单栏标记在小尺寸、不同明暗背景下可辨认，继续展示原有未读数字。
@@ -26,7 +32,7 @@
 
 macOS 非默认主题优先加载 Assets.car 中具名图标；未打包的开发运行使用同源 Icon Composer 导出的 PNG。经典主题恢复 bundle 默认。Windows/Linux 目前只更新应用内标记，不声称改变系统任务栏或启动器图标。设置说明已明确范围。
 
-`script/generate-icon-themes.py` 从官方 SVG 路径与配色定义生成变体、各 `.icon` 源目录和应用运行所需的 PNG；源目录/运行资源提交，编译的 Assets.car、icns/iconset 等仍在打包阶段生成。xtask 读取 `build-assets/icon/default-icon` 选择默认图标并一次编译所有 `.icon`；其他应用只有单个图标时保持既有行为。
+`script/generate-icon-themes.py` 从官方 SVG 路径与配色定义生成变体、各 `.icon` 源目录和应用运行所需的 PNG；源目录/运行资源提交，编译的 Assets.car、icns/iconset 等仍在打包阶段生成。xtask 读取 `build-assets/icon/default-icon` 选择默认图标并一次编译所有 `.icon`。
 
 经典保留原有系统明暗外观；其余六款使用 Default / Dark 相同的有色基底（淡蓝紫、蓝灰、淡紫或明紫）。Pi 渐变遵循官方三色的空间关系，采用上方珊瑚、左下蓝、右下金的三向融合；乌克兰渐变在蓝黄两端之间加入亮青过渡，减少暗淡的橄榄色中段。乌克兰两款背景使用明紫 `#A67AD8`，Default / Dark 导出预览均已检查；此次仅更换背景，蓝黄 SVG 标记及其渐变保持原样。具体颜色与生成方法见[图标资源说明](../../../build-assets/icon/README.md)。
 
@@ -46,7 +52,7 @@ macOS 非默认主题优先加载 Assets.car 中具名图标；未打包的开�
 复现命令（从仓库根目录执行，需要 Xcode 的 actool、Swift、Icon Composer/ictool）：
 
 ```sh
-python3 app/gupi/docs/dev/issue-223/icon-probe/build.py
+python3 docs/dev/issue-223/icon-probe/build.py
 # 使用输出的确切路径打开 Gupi Icon Probe.app。
 # 验证结束退出该程序，临时目录中的产物可删除。
 ```
@@ -151,7 +157,7 @@ Pi 检测只属于设置检查；主窗口与临时窗口不等待应用级检�
 
 macOS 的明确语言选择在创建 GPUI 应用之前写入进程的 volatile `NSArgumentDomain/AppleLanguages`，保留该 domain 的其他键；不写系统全局或持久 defaults。“跟随系统”不创建覆盖。应用启动时保留覆盖前的系统语言，保证从明确语言切回“系统”时应用文案可以即时恢复。应用文案热切换，原生对话框在用户重启后应用新语言，不自动停止任务。
 
-打包使用应用自己的 `package.metadata.bundle.localizations` 声明，生成对应的 `.lproj`、InfoPlist.strings、CFBundleLocalizations 和 WiX 语言配置；其他应用不被迫补齐九种语言。Windows 继续 MSI，为每种语言生成对应安装包，内置 WiX UI 加自有 `.wxl` 文案覆盖安装、升级、卸载流程；`--install` 默认选择英文包，用户可直接使用其他语言产物。Windows 公共对话框跟随系统显示语言，应用提供的文字由应用翻译。不引入 NSIS/Tauri 运行时。
+打包使用根包的 `package.metadata.bundle.localizations` 声明，生成对应的 `.lproj`、InfoPlist.strings、CFBundleLocalizations 和 WiX 语言配置。Windows 继续 MSI，为每种语言生成对应安装包，内置 WiX UI 加自有 `.wxl` 文案覆盖安装、升级、卸载流程；`--install` 默认选择英文包，用户可直接使用其他语言产物。Windows 公共对话框跟随系统显示语言，应用提供的文字由应用翻译。不引入 NSIS/Tauri 运行时。
 
 ### 权限恢复、单实例与日志
 

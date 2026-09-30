@@ -3,9 +3,46 @@ name = "gupi"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+publish = false
 description = "A GPUI desktop host for Pi"
 authors = ["suxiaoshao <48886207+suxiaoshao@users.noreply.github.com>"]
-repository = "https://github.com/suxiaoshao/gpui"
+repository = "https://github.com/suxiaoshao/gupi"
+
+[workspace]
+members = [
+  ".",
+  "crates/gpui-lucide",
+  "crates/gpui-tokio",
+  "crates/pi-rpc",
+  "crates/window-ext",
+  "crates/xtask",
+]
+resolver = "2"
+
+[workspace.metadata.cargo-shear]
+# gpui-lucide/build.rs consumes the upstream icons-dir build metadata.
+ignored = ["gpui-component-assets"]
+
+[workspace.dependencies]
+# GPUI runtime and component versions are kept together.
+gpui = { package = "gpui-pre", version = "=0.3.7" }
+gpui-kit = "=0.7.0"
+gpui-component = "=0.7.0"
+gpui-component-assets = { package = "gpui-kit-assets", version = "=0.7.0" }
+
+# These services and their transitive workspace crates share one Git source.
+app-theme = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "ca2c45f9bd96d24e06acfb7f445dcd2f6227273d", default-features = false }
+gpui-form = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "ca2c45f9bd96d24e06acfb7f445dcd2f6227273d", features = ["garde-adapter"] }
+gpui-form-macros = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "ca2c45f9bd96d24e06acfb7f445dcd2f6227273d" }
+gpui-operation = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "ca2c45f9bd96d24e06acfb7f445dcd2f6227273d" }
+gpui-store = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "ca2c45f9bd96d24e06acfb7f445dcd2f6227273d" }
+platform-ext = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "ca2c45f9bd96d24e06acfb7f445dcd2f6227273d" }
+
+# Internal crates are released with Gupi.
+gpui-lucide = { version = "0.1.0", path = "crates/gpui-lucide" }
+gpui-tokio = { version = "0.1.0", path = "crates/gpui-tokio" }
+pi-rpc = { version = "0.1.0", path = "crates/pi-rpc" }
+window-ext = { version = "0.1.0", path = "crates/window-ext" }
 
 [package.metadata.bundle]
 name = "Gupi"
@@ -76,3 +113,36 @@ libc = "0.2.189"
 global-hotkey = { version = "0.8.0", features = ["serde", "tracing"] }
 get-selected-text = "0.1.6"
 tray-icon = { version = "0.25.1", default-features = false }
+
+[profile.dev]
+split-debuginfo = "unpacked"
+incremental = true
+codegen-units = 16
+
+[profile.dev.build-override]
+codegen-units = 16
+split-debuginfo = "unpacked"
+debug = true
+
+[profile.dev.package]
+proc-macro2 = { opt-level = 3 }
+quote = { opt-level = 3 }
+syn = { opt-level = 3 }
+taffy = { opt-level = 3 }
+resvg = { opt-level = 3 }
+gpui-pre = { opt-level = 3 }
+gpui-component = { opt-level = 3 }
+
+[profile.release]
+debug = "limited"
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+incremental = false
+
+[profile.release-fast]
+inherits = "release"
+debug = "full"
+lto = false
+codegen-units = 16

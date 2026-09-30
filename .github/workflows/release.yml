@@ -1,0 +1,170 @@
+name: Release packages
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build (for example v0.1.0)
+        required: true
+        type: string
+      macos_signing:
+        description: macOS signature mode
+        type: choice
+        options: [development, developer-id]
+        default: development
+      create_draft:
+        description: Create a draft GitHub release after all packages pass
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+  RUST_BACKTRACE: '1'
+
+jobs:
+  prepare:
+    name: Verify existing release tag
+    runs-on: ubuntu-22.04
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      sha: ${{ steps.release.outputs.sha }}
+      macos_signing: ${{ steps.release.outputs.macos_signing }}
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+
+      - name: Verify tag and package version
+        id: release
+        env:
+          GUPI_TAG: ${{ inputs.tag || github.ref_name }}
+          GUPI_MACOS_SIGNING: ${{ inputs.macos_signing || vars.MACOS_SIGNING_MODE || 'development' }}
+        run: python .github/scripts/verify-release.py
+
+  build:
+    name: ${{ matrix.name }}
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            runner: macos-26
+            target: aarch64-apple-darwin
+          - name: macOS Intel
+            runner: macos-26-intel
+            target: x86_64-apple-darwin
+          - name: Windows x64
+            runner: windows-2022
+            target: x86_64-pc-windows-msvc
+          - name: Linux x64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    defaults:
+      run:
+        shell: bash
+    env:
+      GUPI_TARGET: ${{ matrix.target }}
+      GUPI_MACOS_SIGNING: ${{ needs.prepare.outputs.macos_signing }}
+    steps:
+      - name: Checkout verified commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+
+      - name: Set up native toolchain
+        uses: ./.github/actions/setup
+        with:
+          target: ${{ matrix.target }}
+
+      - name: Test workspace
+        run: cargo test --workspace --locked
+
+      - name: Prepare Developer ID signing and notarization
+        if: runner.os == 'macOS' && needs.prepare.outputs.macos_signing == 'developer-id'
+        env:
+          MACOS_SIGNING_IDENTITY: ${{ vars.MACOS_SIGNING_IDENTITY }}
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_NOTARY_API_KEY_BASE64: ${{ secrets.MACOS_NOTARY_API_KEY_BASE64 }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+        run: bash .github/scripts/import-macos-signing.sh
+
+      - name: Build packages
+        run: bash .github/scripts/bundle.sh
+
+      - name: Verify expected package files
+        run: python .github/scripts/verify-artifacts.py
+
+      - name: Upload packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gupi-${{ matrix.target }}
+          path: dist/${{ matrix.target }}/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Remove temporary signing credentials
+        if: always() && runner.os == 'macOS' && needs.prepare.outputs.macos_signing == 'developer-id'
+        run: |
+          if [ -f "$RUNNER_TEMP/gupi-signing.keychain-db" ]; then
+            security delete-keychain "$RUNNER_TEMP/gupi-signing.keychain-db"
+          fi
+          rm -f "$RUNNER_TEMP/gupi-certificate.p12" "$RUNNER_TEMP/gupi-notary-key.p8"
+
+  draft:
+    name: Create draft release
+    needs: [prepare, build]
+    if: github.event_name == 'push' || inputs.create_draft
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout verified commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+
+      - name: Download all packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: gupi-*
+          merge-multiple: true
+          path: dist
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+
+      - name: Create checksums and draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          GUPI_TAG: ${{ needs.prepare.outputs.tag }}
+          GUPI_MACOS_SIGNING: ${{ needs.prepare.outputs.macos_signing }}
+        run: python .github/scripts/create-draft-release.py

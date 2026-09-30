@@ -296,7 +296,7 @@ Pi 路径生效已核对：ConversationState::set_command 只更新后续连接�
 - 包命令固定传入个人 `PI_CODING_AGENT_DIR`，使用单独 argv 和 `--no-approve`；定向更新使用 `update --extension SOURCE`。不通过 shell 拼接来源，不解析 `pi list` 人类文本，不加载扩展代码。
 - 正文编辑使用当前分类上的共用弹窗，关闭时确认未保存修改；不持久化草稿。Skill/模板创建名称输入互相独立。新建文件原子提交且拒绝覆盖已有文件，删除只将选中的自有文件移到废纸篓。
 - 已通过 `cargo test -p gupi --offline` 全部 160 项测试、`cargo clippy -p gupi --all-targets --offline -- -D warnings`、格式与差异检查。覆盖配置提交、资源过滤和保存、快捷键编辑及设置渲染；依赖仅有已有的 `block v0.1.6` future-incompatibility 提示。真实 Pi 的临时本地包安装、定向更新、移除烟测通过；同目录附近的项目配置保持原样，无网络下载、模型请求或真实用户包变更。
-- 通过 `xtask bundle gupi` 生成固定路径 `target/release/bundle/macos/Gupi.app`，Liquid Glass 图标及签名检查通过。2026-09-16 使用隔离配置和资源进行 computer use 功能检查：启动、打开设置、搜索提示词、编辑弹窗回填包含 frontmatter 的完整原文、修改并保存、成功关闭弹窗，并核对磁盘正文写入一致。关闭台前调度后完成补测：模板禁用及重新启用落盘、未保存编辑的取消/放弃不写文件、快捷键清除前不落盘、取消恢复原值、确认写入空绑定、全部恢复默认保留其他设置。本轮未再出现 ScreenCaptureKit -3812/-3811，但截图仍有刷新滞后，功能结果使用可访问性控件状态与磁盘内容交叉核对。桌面样式已由用户试用确认；这些重点功能检查不等同于完整跨平台发行验收。
+- 迁移前 macOS 包生成于 `target/release/bundle/macos/Gupi.app`，Liquid Glass 图标及签名检查通过。现行独立打包入口见 [发行指南](../../releasing.md)。2026-09-16 使用隔离配置和资源进行 computer use 功能检查：启动、打开设置、搜索提示词、编辑弹窗回填包含 frontmatter 的完整原文、修改并保存、成功关闭弹窗，并核对磁盘正文写入一致。关闭台前调度后完成补测：模板禁用及重新启用落盘、未保存编辑的取消/放弃不写文件、快捷键清除前不落盘、取消恢复原值、确认写入空绑定、全部恢复默认保留其他设置。本轮未再出现 ScreenCaptureKit -3812/-3811，但截图仍有刷新滞后，功能结果使用可访问性控件状态与磁盘内容交叉核对。桌面样式已由用户试用确认；这些重点功能检查不等同于完整跨平台发行验收。
 
 ### 页面整理
 
@@ -343,15 +343,15 @@ Pi 路径生效已核对：ConversationState::set_command 只更新后续连接�
 ## 源码索引
 
 - Gupi：[设置入口](../../../src/features/settings.rs)、[现有字段](../../../src/features/settings/preferences.rs)。
-- Zed：[字段搜索与页面选择](/Users/sushao/Documents/code/zed/crates/settings_ui/src/settings_ui.rs:2275)。
+- Zed：[字段搜索与页面选择](https://github.com/zed-industries/zed/blob/ba7da93e5ccc2b630077b2ae26c7581f3c21f984/crates/settings_ui/src/settings_ui.rs)。
 - 初次调研组件：`gpui-component 0.6.0` 的 `src/setting/settings.rs` 与 `src/setting/item.rs`；当前使用正式 GPUI Kit 0.7.0。
 
 本轮补充源码：
 
-- [Gupi 配置模型与提交](../../../src/state/config.rs)、[预览与已配置 Pi 探测所有权](../../../src/features/startup.rs)、[Pi 探测](../../../../../crates/pi-rpc/src/probe.rs)。
+- [Gupi 配置模型与提交](../../../src/state/config.rs)、[预览与已配置 Pi 探测所有权](../../../src/features/startup.rs)、[Pi 探测](../../../crates/pi-rpc/src/probe.rs)。
 - [Gupi 默认动作绑定](../../../src/features/home/actions.rs)、[应用入口](../../../src/app.rs)。
-- [Pi 包管理说明](/Users/sushao/Documents/code/pi/packages/coding-agent/docs/packages.md)、[Skill](/Users/sushao/Documents/code/pi/packages/coding-agent/docs/skills.md)、[提示词模板](/Users/sushao/Documents/code/pi/packages/coding-agent/docs/prompt-templates.md)。
-- [Pi 系统提示词发现](/Users/sushao/Documents/code/pi/packages/coding-agent/src/core/resource-loader.ts:1023)、[get_commands](/Users/sushao/Documents/code/pi/packages/coding-agent/src/modes/rpc/rpc-mode.ts:682)。
-- [Pi CLI 参数与个人作用域隔离](/Users/sushao/Documents/code/pi/packages/coding-agent/src/package-manager-cli.ts:743)、[未受信任项目不加载配置](/Users/sushao/Documents/code/pi/packages/coding-agent/src/core/settings-manager.ts:405)。
-- [Pi 包来源与安装路径](/Users/sushao/Documents/code/pi/packages/coding-agent/src/core/package-manager.ts:2066)、[过滤规则](/Users/sushao/Documents/code/pi/packages/coding-agent/src/core/package-manager.ts:739)、[个人资源发现](/Users/sushao/Documents/code/pi/packages/coding-agent/src/core/package-manager.ts:2397)、[TUI 启停写入](/Users/sushao/Documents/code/pi/packages/coding-agent/src/modes/interactive/components/config-selector.ts:531)。
-- 初次调研键位 API：`gpui-pre 0.3.3` 的 `src/keymap.rs`（完整绑定枚举与清理）与 `src/keymap/binding.rs`（KeyBinding 公开访问接口）；[本地组件过滤实现](/Users/sushao/Documents/code/gpui-component/crates/component/src/setting/settings.rs:112)。
+- [Pi 包管理说明](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/docs/packages.md)、[Skill](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/docs/skills.md)、[提示词模板](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/docs/prompt-templates.md)。
+- [Pi 系统提示词发现](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/src/core/resource-loader.ts)、[get_commands](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/src/modes/rpc/rpc-mode.ts)。
+- [Pi CLI 参数与个人作用域隔离](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/src/package-manager-cli.ts)、[未受信任项目不加载配置](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/src/core/settings-manager.ts)。
+- [Pi 包来源与安装路径](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/src/core/package-manager.ts)、[过滤规则](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/src/core/package-manager.ts)、[个人资源发现](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/src/core/package-manager.ts)、[TUI 启停写入](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/src/modes/interactive/components/config-selector.ts)。
+- 初次调研键位 API：`gpui-pre 0.3.3` 的 `src/keymap.rs`（完整绑定枚举与清理）与 `src/keymap/binding.rs`（KeyBinding 公开访问接口）；[正式组件过滤实现](https://github.com/longbridge/gpui-kit/blob/v0.7.0/crates/component/src/setting/settings.rs)。

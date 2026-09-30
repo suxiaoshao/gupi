@@ -1,8 +1,7 @@
 # Gupi：第一阶段应用设计
 
-- 根计划：[issue-218](../../../../../docs/dev/issue-218/README.md)
-- 应用目录：`app/gupi`。
-- 消费根契约：D-01 至 D-08、C-01 至 C-03、ERR-01 至 ERR-06。
+- 应用目录：根 `src`。
+- 早期编号与根契约 D-01 至 D-08、C-01 至 C-03、ERR-01 至 ERR-06 来自 [原仓库第一阶段记录](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/docs/dev/issue-218/README.md)。
 - 本文拥有 F/L/ST/R/T-100 段与 WP-100 至 WP-103。下列契约指导本阶段实施；实际验证结果见应用 README。
 
 - [运行时契约](runtime.md)：配置 Operation 数据、合法转移、表单处理、Pi 和退出；该专题是这些精确契约的权威定义，本文保留职责概览。
@@ -12,7 +11,7 @@
 ## 文件与依赖方向
 
 ```text
-app/gupi/
+./
 ├── Cargo.toml                       # F-100 新增；应用依赖与 bundle 元数据
 ├── src/main.rs                      # F-101 新增；只调用 app::run
 ├── src/app.rs                       # F-102 新增；初始化、窗口和退出编排
@@ -105,7 +104,7 @@ pub(crate) struct LayoutState {
 
 调用契约见根 C-01，执行与取消细节见运行时 L-112。整体 deadline 为 15 秒，包含排队、命令查找、启动和读取输出；失败后释放 Child，交由 kill_on_drop 与 Tokio 后台回收，不追加清理等待。stdout/stderr 分别限 16 KiB；超限、非零退出、空版本或不合法版本返回 ERR-05。stdin 置空，不弹终端窗口。开始即显示 loading 并禁用重复检查。Cancel/Drop 停止等待、关闭结果通道并触发 Child 终止；后台阻塞任务持有启动名额至返回，不承诺取消时已回收。只报告命令/版本可用，不宣布 RPC 兼容或登录成功。
 
-默认继承应用启动环境，不执行交互式 shell 读取 PATH。桌面无法找到命令时说明与终端环境可能不同，允许选择绝对路径；Node 脚本启动器依赖的 Node 环境缺失同样显示真实错误，不改写用户 shell 配置。Windows .cmd/.bat 的原生调用与进程收尾尚未完成实机验证。
+命令查找与子进程使用应用级环境快照：macOS GUI 启动会在后台读取登录交互式 Shell 的 PATH，终端启动和其他平台继承进程环境。具体 Shell、缓存、失败回退与 Windows 边界见 [命令搜索环境](../issue-223/README.md#命令搜索环境)。允许选择绝对路径；Node 环境缺失显示真实错误，不改写用户 Shell 配置。Windows .cmd/.bat 的原生调用与进程收尾尚未完成实机验证。
 
 ## L-104 / ST-102：启动状态、窗口与界面
 

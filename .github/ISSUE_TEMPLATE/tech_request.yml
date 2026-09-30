@@ -1,0 +1,20 @@
+name: Engineering request
+description: Track Gupi infrastructure, packaging, or refactoring work.
+title: "Gupi: "
+body:
+  - type: textarea
+    id: background
+    attributes:
+      label: Current problem
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Requested change
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Risks and validation

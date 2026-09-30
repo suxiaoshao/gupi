@@ -11,7 +11,7 @@
 
 ## 当前结论与恢复条件
 
-剩余依赖与工作归属见[总待处理文档](../follow-ups.md)，33 个 RPC 命令和事件/扩展 UI 的完整接入表见 [RPC/TUI 盘点](../pi-rpc-gaps.md)。组件发布只解除客户端控件依赖，不补充 Pi 的组合问卷协议；以下早期调研结论仍按实际 RPC 契约使用。
+剩余依赖与工作归属见[总待处理文档](../follow-ups.md)，33 个 RPC 命令和事件/扩展 UI 的完整接入表见 [RPC/TUI 盘点](../pi-rpc-gaps.md)。2026-09-30 已核对正式 0.99.1、本机安装产物和最新 main，九类扩展 UI 未变；输入 disposition 与嵌套工具字段的新增不补充组合问卷或 custom 协议。下方本机插件扫描仍是注明日期的历史证据，没有重新安装、运行或核对这些插件。
 
 2026-09-13 确认：
 
@@ -35,7 +35,7 @@ python3 script/gupi-ui-gallery
 
 在新窗口输入 `/gupi-ui` 打开场景菜单；直接输入 `/gupi-ui select`、`/gupi-ui confirm`、`/gupi-ui input`、`/gupi-ui editor` 可以跳过菜单。`/gupi-ui sequence` 连续展示四种交互。退出待答界面用其取消按钮，结束体验用 Cmd+Q。未匹配的普通输入会被临时插件拦截，不调用模型。
 
-实现位置：[临时插件](../../../tests/fixtures/ui-gallery.mjs)、[隔离启动脚本](../../../../../script/gupi-ui-gallery)。插件只通过本次 wrapper 的 `--extension` 加载，不注册到个人配置。用户已明确自行测试，后续不自动接管体验窗口或扩展测试范围。
+实现位置：[临时插件](../../../tests/fixtures/ui-gallery.mjs)、[隔离启动脚本](../../../script/gupi-ui-gallery)。插件只通过本次 wrapper 的 `--extension` 加载，不注册到个人配置。用户已明确自行测试，后续不自动接管体验窗口或扩展测试范围。
 
 ## 1. Pi RPC 究竟有多少种扩展 UI
 
@@ -91,7 +91,7 @@ Pi RPC 的 `custom()` 直接返回 undefined；`setHeader`、`setFooter`、`setE
 
 ### 开发入口
 
-应用归属的 fixture 位于 `app/gupi/tests/fixtures/ui-gallery.mjs`，配合开发启动脚本。该入口供手动体验，不加入 Cargo 自动测试。
+应用归属的 fixture 位于 `tests/fixtures/ui-gallery.mjs`，配合开发启动脚本。该入口供手动体验，不加入 Cargo 自动测试。
 
 预期操作流程：
 

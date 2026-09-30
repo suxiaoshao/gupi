@@ -2,7 +2,7 @@
 
 - 状态：Done。目录扫描与会话数据加载拆分已实现，必要验证完成，可交付试用。
 - 日期：2026-09-11。
-- 所属：Issue #220；关联[会话工作区设计](README.md)和[第三阶段开发计划](../../../../../docs/dev/issue-220/README.md)。
+- 所属：Issue #220；关联[会话工作区设计](README.md)和[第三阶段开发计划](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/docs/dev/issue-220/README.md)。
 
 ## 目标与本轮边界
 
@@ -29,7 +29,7 @@
 | [ConversationState](../../../src/state/conversation.rs) | 协调草稿加载与持久化、目录扫描和 Pi 连接；核心 snapshot 只读 state 与 entries，检查事件及模型版本后应用 |
 | [读取状态](../../../src/state/conversation/loading.rs)与[附加读取](../../../src/state/conversation/reads.rs) | 模型、思考能力、统计和 fork 信息分别持有数据、错误与读取任务；请求标识及会话 binding 校验完成结果 |
 | [模型修改](../../../src/state/conversation/model_change.rs) | 一个任务覆盖提交与实际状态读回；读回结束后单独加载思考档位，期间的核心刷新需求合并后处理 |
-| [Transition trait](../../../../../crates/gpui-operation/src/transition.rs) 只约定消息输入、接收者与输出类型 | 复用 trait 不会自动获得任务所有权、合法转换检查、取消恢复或过期结果保护 |
+| [Transition trait](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/crates/gpui-operation/src/transition.rs) 只约定消息输入、接收者与输出类型 | 复用 trait 不会自动获得任务所有权、合法转换检查、取消恢复或过期结果保护 |
 
 Pi 0.85.1 的 `--resume` 选择器通过会话扫描的进度回调显示 `Loading loaded/total`；这里是计数文字，不是填充式进度条。扫描在取得候选文件集合后，以有界并发读取元数据，每处理完一个文件便更新计数，失败或无效文件也计入已处理数，最终统一更新列表。它衡量文件处理数量，不估算剩余时间。[Pi session-manager 源码](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/core/session-manager.ts)、[选择器源码](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/modes/interactive/components/session-selector.ts)
 

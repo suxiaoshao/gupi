@@ -14,7 +14,7 @@
 - 设置页每个偏好是独立 `SettingItem`。Dock 复用 `platform-ext` 的 objc2 接口，托盘复用 `tray-icon`；`platform-ext` 直接声明已被 GPUI 锁定的 `objc2-user-notifications 0.3.2`，补充 Badge 授权，不新增第三方通知封装。Windows 展示托盘菜单/提示计数及原生注意力，不实现任务栏数字覆盖图标。
 - 未读与临时提示在当前进程内保存；不做跨重启通知历史。进入来源等同查看，不逐条跟踪提示阅读；内容仍留在“会话提醒”中，直到用户清除。
 - 验证：`cargo test -p gupi --locked` **233 项通过**；`cargo clippy -p gupi -p platform-ext --all-targets --locked -- -D warnings`、格式与差异检查通过。专项覆盖路由默认值、逐请求提醒/撤回、未读计数与待答分离、前台打开清除未读、设置页不代替阅读、同一 owner 不重复投递、取消/最终失败分流、回源不新建/重连/代答、发送回执不阻塞最终提醒。配置回归同时覆盖通知偏好写入磁盘、保留 Pi 编辑草稿和后续保存不覆盖通知设置。
-- `cargo run -p xtask --locked -- bundle gupi` 已生成独立 `.app`。隔离配置与模拟 Pi 实测：通知开关、完成模式切换与配置写入；多条插件提醒展开、严重等级区分与清除；后台完成后来源项目显示未读计数 1；待答显示“等待输入”和确认控件，确认后恢复输入框。实测修复了配置差异合并遗漏 `notifications` 导致设置保存仍为旧值的问题，并通过定向回归、Clippy、格式检查和重新打包。
+- 迁移前标准 `.app` 的隔离配置与模拟 Pi 实测：通知开关、完成模式切换与配置写入；多条插件提醒展开、严重等级区分与清除；后台完成后来源项目显示未读计数 1；待答显示“等待输入”和确认控件，确认后恢复输入框。实测修复了配置差异合并遗漏 `notifications` 导致设置保存仍为旧值的问题，并通过定向回归、Clippy、格式检查和重新打包。现行独立打包入口见 [发行指南](../../releasing.md)。
 - 系统通知中心、Dock 自动化读取出现超时或只返回无关窗口，此前未能由工具取得完整系统界面证据；后续用户截图确认完成通知，手测确认 Tray 菜单计数与数字、修复后的 Dock 数字正常。系统点击回源、Dock 跳动、真实前台激活后清除未读及 Windows 原生效果仍未完成实机验收。上述路由/计数/回源的自动化回归通过，但不能代替原生验收。
 - 当前没有产品待确定项。未完成的原生验证边界见上述记录；测试使用临时目录与本地模拟 Pi，没有连接真实模型，也没有安装或替换日常应用。
 
@@ -200,7 +200,7 @@ Gupi 应从已消费的标准 `extension_ui_request` / `pending_ui` 得到“需
 
 原始协议不提供任意插件 notify 的撤销事件，不能承诺像 pending_ui 一样随插件内部状态即时撤回。待答请求则沿用已有答复/超时/取消/断连清理，不额外延长生命周期。
 
-依据：[Pi RPC notify 实现](/Users/sushao/Documents/code/pi/packages/coding-agent/src/modes/rpc/rpc-mode.ts:152)、[协议映射](../../../../../crates/pi-rpc/src/protocol.rs)、[Gupi 消费](../../../src/state/conversation.rs)、[窗口内提醒](../../../src/features/home.rs)。
+依据：[Pi RPC notify 实现](https://github.com/earendil-works/pi/blob/898ab804050730e9dcefb4443875d5a932aa6a32/packages/coding-agent/src/modes/rpc/rpc-mode.ts)、[协议映射](../../../crates/pi-rpc/src/protocol.rs)、[Gupi 消费](../../../src/state/conversation.rs)、[窗口内提醒](../../../src/features/home.rs)。
 
 ### Tauri 的底层是什么，能否独立使用
 
@@ -221,7 +221,7 @@ Tauri 通知插件的当前桌面实现主要使用 title/body/icon/sound，声�
 
 ### 已确认的 Dock 接入方式
 
-**macOS 复用现有 objc2 生态。** `crates/platform-ext/Cargo.toml` 已直接依赖 objc2 0.6.4、objc2-app-kit 0.3.2、objc2-foundation 0.3.2，默认 feature 已包含 NSApplication/NSDockTile/NSString；当前 typed API 已提供 sharedApplication、dockTile、setBadgeLabel。
+**macOS 复用现有 objc2 生态。** [共享 platform-ext manifest](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/crates/platform-ext/Cargo.toml) 已直接依赖 objc2 0.6.4、objc2-app-kit 0.3.2、objc2-foundation 0.3.2，默认 feature 已包含 NSApplication/NSDockTile/NSString；当前 typed API 已提供 sharedApplication、dockTile、setBadgeLabel。
 
 - 在现有 `platform-ext::app` 添加应用级设置角标的薄接口；业务层给出数量，平台层只负责显示/清除，不拥有会话、未读规则或计数缓存。
 - 在 GPUI 主线程调用，通过安全的 MainThreadMarker 检查访问 AppKit；无需采用 Tao 源码里的 new_unchecked 或手写 msg_send。

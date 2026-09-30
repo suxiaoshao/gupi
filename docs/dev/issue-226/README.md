@@ -122,7 +122,7 @@ Zed 的有用结构：
 | 侧栏行 | 有焦点时 Enter/Space 激活 | `features/home/navigation.rs` |
 | 历史画布 | 方向键选择；Enter 预览；E 展开；0 全图；+ / - 缩放；Space 配合平移 | `features/home/history/canvas.rs` |
 | 控件局部 | 消息展开、思考滑杆和设置等存在局部按键处理 | 对应 presentation/pickers/preferences 模块 |
-| Pi 命令 | pi-rpc 有 get_commands；主窗口没有调用，也没有命令面板或 Cmd+P | `crates/pi-rpc/src/client.rs` 与 app/gupi/src 搜索 |
+| Pi 命令 | pi-rpc 有 get_commands；主窗口没有调用，也没有命令面板或 Cmd+P | `crates/pi-rpc/src/client.rs` 与 src 搜索 |
 
 不要误解 `super`：cmd/super/win 都视为 platform modifier，非 macOS 的 Super/Win 不等于 Ctrl；secondary 表示 macOS Cmd、其他平台 Ctrl。初次接入时已核对 gpui-kit 0.6.0 配套的 gpui-pre 0.3.3 支持 secondary；当前配套版本见根 manifest，该语义继续用于现有绑定，可用于这组可移植桌面动作。既有 super-enter 是已有行为，不在本次文档阶段悄悄改动。
 

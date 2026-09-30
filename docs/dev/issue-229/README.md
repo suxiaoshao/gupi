@@ -25,7 +25,7 @@
 
 ## 数据契约与实现边界
 
-修改集中于 `src/foundation/session_catalog.rs` 的单文件元数据读取；`app/gupi/Cargo.toml` 与锁文件接入 sonic-rs 0.5.8。
+修改集中于 `src/foundation/session_catalog.rs` 的单文件元数据读取；`Cargo.toml` 与锁文件接入 sonic-rs 0.5.8。
 
 现有目录发现、header 读取、SessionInfo 公共结构、后台任务和 CatalogState 保持原有职责。header 发现耗时较小，沿用现有解析即可，不要求统一迁移解析库。
 
@@ -117,7 +117,7 @@ Pi session 是 JSONL 文件，首行是 session header，后续消息与元数�
 
 覆盖消息区的 Brain、BookOpen（技能）、FileText（普通读取）、FilePlus、FilePenLine、Terminal、Search、Folder、Wrench，历史树同步读取和技能图标。Skill 读取仍属于 read，没有额外编造一种 Skill RPC 消息。此场景用于观察 #229 的实际表现，不表示这些类型已发现缺陷。
 
-插件位于 `app/gupi/tests/fixtures/runtime-gallery.mjs`。使用 Pi 自带 fauxProvider，`tokensPerSecond: 2`、固定小块输出，便于中途停止、切走再切回，以及对比历史折叠。只在测试项目和测试模型下执行。项目路径用 realpath 比较，兼容 macOS `/var` 与 `/private/var` 指向同一目录；此前字符串路径比较误报会导致 before_agent_start 未填充响应队列，随后出现 `No more faux responses queued`，现已复现并修复。
+插件位于 `tests/fixtures/runtime-gallery.mjs`。使用 Pi 自带 fauxProvider，`tokensPerSecond: 2`、固定小块输出，便于中途停止、切走再切回，以及对比历史折叠。只在测试项目和测试模型下执行。项目路径用 realpath 比较，兼容 macOS `/var` 与 `/private/var` 指向同一目录；此前字符串路径比较误报会导致 before_agent_start 未填充响应队列，随后出现 `No more faux responses queued`，现已复现并修复。
 
 已完成 JavaScript 语法检查、隔离环境准备和安装版 Pi 的模型注册检查，并在实际 RPC 发送中确认能收到思考输出。另用临时副本仅加速输出和工具等待，连续完整运行两次：26 次工具调用、10 段思考、2 次最终回答、无工具或扩展错误。正式插件仍保留慢速参数；未自动操作 Gupi 窗口，实际界面展示由用户体验。
 

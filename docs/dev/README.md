@@ -1,4 +1,8 @@
-# Gupi development plans
+# Gupi 开发文档
+
+**[独立项目记录](standalone-project/README.md)**：仓库分离、依赖归属、单产品工具和本次迁移验证。
+
+**[Gupi 与 Pi 的职责边界](../gui-boundary.md)**：输入、附件、会话内容、资源与进程生命周期的归属。
 
 **[剩余工作与能力边界](follow-ups.md)**：应用收尾、上游依赖、独立后续、能力候选与发行验证的统一入口。
 
@@ -7,7 +11,7 @@
 - [原生体验与应用图标](issue-223/README.md)：图标、菜单/Tray、Startup、九种语言、平台资源、单实例和验证边界。
 - [通知与用户提醒](issue-241/README.md)：应用内/系统投递、会话未读、Dock/托盘计数与验证边界。
 - [会话阅读与查找 #242](issue-242/README.md)：插件消息、会话信息和正文查找的实现、范围与键位；应用侧已完成，无障碍定位和中文混排缺陷由后续正式依赖升级承接。
-- [GPUI Kit 0.7.0 升级与搜索](../../../../docs/dev/dependency-refresh-0.7.0/README.md)：本轮正式依赖迁移、其他依赖更新和现有实现简化的统一入口。
+- [GPUI Kit 0.7.0 升级与搜索](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/docs/dev/dependency-refresh-0.7.0/README.md)：原多应用 workspace 的固定升级与原生验证记录。
 - [消息摘要与工具详情的查看和复制](issue-238/README.md)：摘要/工具详情 Dialog、分区复制、运行中局部更新与已确认的历史定位交互。
 - [事件同步、重试进度与会话局部刷新](issue-236/README.md)：Pi 事件契约、会话变更批次、定向目录发现与回读、消息局部测量、设置按需加载及验证边界；用户提醒体系归 #241。
 - [队列交互与输入框布局](issue-222/queue-composer.md)：逐条返回草稿、编辑、删除；新会话项目选择器、累计用量及 Pi 接口限制与待确定项。
@@ -19,8 +23,8 @@
 - [运行状态与过程展示](issue-229/runtime-display-plan.md)：工作计时、过程折叠、工具组摘要、技能图标统一与验证边界。
 
 - [第一阶段：应用骨架、启动引导与恢复入口](issue-218/README.md)
-- [第二阶段：Pi RPC 与进程生命周期](../../../../docs/dev/issue-219/README.md)：独立 crate、应用多实例管理、退出接入与集成验证计划。
-- [第三阶段：会话页面功能与交互](issue-220/README.md)：功能要求与当前交互；范围、职责、四个实现提交和必要验证见[开发计划](../../../../docs/dev/issue-220/README.md)。
+- [第二阶段：Pi RPC 与进程生命周期](issue-219/README.md)：内部 crate、应用多实例管理和现行退出契约。
+- [第三阶段：会话页面功能与交互](issue-220/README.md)：功能要求与当前交互；早期范围、职责和实施验证见[原仓库记录](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/docs/dev/issue-220/README.md)。
 - [会话历史](issue-220/history.md)：树/列表、三级内容、列表分支范围、过程折叠、视口与必要验证。
 - [数据获取与加载状态](issue-220/data-loading.md)：目录扫描进度、自定义状态机及会话数据加载边界的设计与实施安排。
 - [统一标题栏](issue-220/titlebar.md)：单行窗口顶部、侧栏对齐、会话菜单、当前 session 刷新与原生窗口行为。

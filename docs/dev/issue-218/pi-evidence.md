@@ -1,10 +1,10 @@
 # Pi 进程与窗口：证据及阶段边界
 
-所属 [应用计划](README.md)，状态见[根计划](../../../../../docs/dev/issue-218/README.md)。本轮仅阅读源码，不运行 Pi、不安装参考项目依赖。
+所属 [应用计划](README.md)。本轮仅阅读源码，不运行 Pi、不安装参考项目依赖。
 
 ## 官方证据
 
-本地 Pi：`/Users/sushao/Documents/code/pi`，提交 `da840b6216578c2a571d0374ac6a2091a83f9d91`。
+Pi 源码基线：提交 `da840b6216578c2a571d0374ac6a2091a83f9d91`。
 
 - [官方 RPC 文档](https://pi.dev/docs/latest/rpc)：原生宿主可以通过 `pi --mode rpc` 的 stdin/stdout JSONL 集成；Node/TypeScript 应用另外可直接采用 AgentSession。Gupi 是 Rust 宿主，保留已选定的 CLI 子进程边界。
 - [官方 rpc-client.ts](https://github.com/earendil-works/pi/blob/da840b6216578c2a571d0374ac6a2091a83f9d91/packages/coding-agent/src/modes/rpc/rpc-client.ts)：start 使用 node+CLI、独立管道、cwd/env，监听退出与 stdin 错误，退出后拒绝挂起请求；stop 发送 SIGTERM，1 秒后尝试 SIGKILL。这是 TypeScript 客户端实现证据，不是所有平台的强制推荐时限，也未证明强杀后已完成 wait。
@@ -15,7 +15,7 @@
 
 已克隆 `StarkInternationalAI/pi-desktop` 到 `/tmp/gupi-reference-pi-desktop-20260907`，提交 `7ffbc1606475a22bfbcec4252ab0577b821305ff`。选取理由是 Rust/Tauri 后端实际包装本机 Pi RPC，与 Gupi 边界接近；没有核实其用户规模，不称其为业界标准。
 
-[process_manager.rs](https://github.com/StarkInternationalAI/pi-desktop/blob/7ffbc1606475a22bfbcec4252ab0577b821305ff/src-tauri/src/process_manager.rs) 持有 stdin writer、stdout reader、退出监听任务，并以 abort、关闭 stdin、延迟 SIGTERM 的顺序关闭。参考其职责拆分；不照抄固定 sleep 后按 PID 发信号、随后 abort 退出监听的方式，当前 Gupi 协议关闭与 Child Drop 边界见[第二阶段计划](../../../../../docs/dev/issue-219/README.md)，无需为确认操作系统回收另加等待。
+[process_manager.rs](https://github.com/StarkInternationalAI/pi-desktop/blob/7ffbc1606475a22bfbcec4252ab0577b821305ff/src-tauri/src/process_manager.rs) 持有 stdin writer、stdout reader、退出监听任务，并以 abort、关闭 stdin、延迟 SIGTERM 的顺序关闭。参考其职责拆分；不照抄固定 sleep 后按 PID 发信号、随后 abort 退出监听的方式，当前 Gupi 协议关闭与 Child Drop 边界见[第二阶段计划](../issue-219/README.md)，无需为确认操作系统回收另加等待。
 
 另查看 [justhil/pi-app](https://github.com/justhil/pi-app) 项目说明：它采用 Pi SDK。可参考产品交互，但该集成边界不能替代本机 CLI 进程管理契约；本轮未审查其进程代码。
 

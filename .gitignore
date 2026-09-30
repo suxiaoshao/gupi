@@ -1,0 +1,24 @@
+.DS_Store
+.idea/
+.fleet/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+/target/
+/dist/
+/WixTools/
+.env
+.env.*
+*.env
+!.env.example
+dhat-heap.json
+
+# Derived bundle icons; the source assets remain tracked.
+/build-assets/icon/app-icon.ico
+/build-assets/icon/app-icon.iconset/
+/build-assets/icon/*.icon/Assets/app-icon-liquid-glass.png

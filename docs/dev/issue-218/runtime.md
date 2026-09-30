@@ -1,12 +1,12 @@
 # Gupi：配置与启动运行时契约
 
-所属 [应用计划](README.md)，根状态与未决问题见 [根计划](../../../../../docs/dev/issue-218/README.md)。本文拥有 L-110 至 115、ST-110 至 113、R/T-110 至 113，由 WP-101 至 WP-103 实施。声明为目标契约；上游 API 的事实与应用自定义类型分开说明。
+所属 [应用计划](README.md)。本文拥有 L-110 至 115、ST-110 至 113、R/T-110 至 113，由 WP-101 至 WP-103 实施。声明为目标契约；上游 API 的事实与应用自定义类型分开说明。
 
 ## E-110：已核对的 API
 
-- `crates/gpui-operation/src/{lib,message,repair,refresh}.rs`：完整 Operation 接受 Transition 消息；Ready 可 Refresh，问题态通过显式 Repair 恢复；Complete 只用于运行态。Operation 拥有 Task，不负责启动或磁盘回滚。
-- `app/gupi/src/state/config.rs`：ConfigOperation 放在 Store 中，配置写入前重读最新文件并应用本次修改的字段；普通失败重试和损坏配置的备份重置由应用处理。
-- `crates/gpui-form-gpui-component/src/{input,select}.rs`：实际适配器为 FormInput、FormSelect，通过 new 接收 owner、typed path 和 control builder。最终泛型调用受依赖升级后的类型一致性检查约束。
+- [共享 Operation](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/crates/gpui-operation/src/lib.rs) 的 `lib/message/repair/refresh` 模块：完整 Operation 接受 Transition 消息；Ready 可 Refresh，问题态通过显式 Repair 恢复；Complete 只用于运行态。Operation 拥有 Task，不负责启动或磁盘回滚。
+- `src/state/config.rs`：ConfigOperation 放在 Store 中，配置写入前重读最新文件并应用本次修改的字段；普通失败重试和损坏配置的备份重置由应用处理。
+- 共享表单适配器 [FormInput](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/crates/gpui-form-gpui-component/src/input.rs)、[FormSelect](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/crates/gpui-form-gpui-component/src/select.rs)：通过 new 接收 owner、typed path 和 control builder。最终泛型调用受锁定依赖的类型一致性检查约束。
 
 ## L-110 / ST-110：唯一配置权威
 

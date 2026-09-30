@@ -185,8 +185,9 @@ impl SettingsView {
         let store_sub = store.observe_in(cx, window, |this, _, window, cx| {
             this.refresh_language(window, cx)
         });
+        let controller_sub = cx.observe(&controller, |_, _, cx| cx.notify());
         Self {
-            updates: cx.new(super::updates::UpdatesView::new),
+            updates: cx.new(|cx| super::updates::UpdatesView::new(controller.clone(), cx)),
             focus_handle,
             form,
             controller,
@@ -203,6 +204,7 @@ impl SettingsView {
                 input_sub,
                 form_sub,
                 store_sub,
+                controller_sub,
                 language_sub,
                 locale_sub,
                 pi_sub,

@@ -181,9 +181,10 @@ fn check_for_updates(cx: &mut App) {
         if main.view.read(cx).is_quitting() {
             return;
         }
+        let config = main.view.read(cx).config.clone();
         cx.defer(move |cx| {
             let _ = window.update(cx, |_, window, cx| {
-                crate::features::updates::open(true, window, cx);
+                crate::features::updates::open(true, config, window, cx);
             });
         });
     }

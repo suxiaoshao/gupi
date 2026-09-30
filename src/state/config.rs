@@ -346,6 +346,8 @@ pub(crate) struct ConfigController {
     pub form: WeakEntity<Form<AppConfig>>,
     pub pi_form: Entity<Form<PiSettings>>,
     pub draining: bool,
+    updates: Entity<super::updates::Updates>,
+    _updates_subscription: Subscription,
     path: Result<PathBuf, String>,
 }
 
@@ -364,21 +366,31 @@ impl ConfigController {
         path: Result<PathBuf, String>,
         cx: &mut Context<Self>,
     ) -> Self {
+        let updates = super::updates::get(cx);
+        let updates_subscription = cx.observe(&updates, |_, _, cx| cx.notify());
         Self {
             store: Store::new(cx, ConfigOperation::new()),
             form: form.downgrade(),
             pi_form: cx.new(|_| Form::new(PiSettings::default())),
             draining: false,
+            updates,
+            _updates_subscription: updates_subscription,
             path,
         }
     }
     pub fn busy(&self, cx: &App) -> bool {
-        self.draining || self.store.read(cx, |op| op.is_running())
+        self.draining || self.is_running(cx) || self.updates.read(cx).is_installing()
+    }
+    pub fn is_running(&self, cx: &App) -> bool {
+        self.store.read(cx, |op| op.is_running())
     }
     pub fn path(&self) -> Option<&std::path::Path> {
         self.path.as_deref().ok()
     }
     pub fn reload(&mut self, cx: &mut Context<Self>) {
+        if self.busy(cx) {
+            return;
+        }
         self.start(ConfigRepair::Reload, None, cx);
     }
     pub fn is_onboarding(&self, cx: &App) -> bool {
@@ -398,6 +410,22 @@ impl ConfigController {
     }
     pub fn set_preference(&mut self, change: PreferenceChange, cx: &mut Context<Self>) {
         if self.busy(cx) {
+            return;
+        }
+        self.save_preference(change, cx);
+    }
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    pub fn skip_update(&mut self, cx: &mut Context<Self>) {
+        let super::updates::Status::Installing(release) = &self.updates.read(cx).status else {
+            return;
+        };
+        let version = release.version.to_string();
+        // The native update session excludes other configuration operations. Its own
+        // skip action can save while the session still keeps settings disabled.
+        self.save_preference(PreferenceChange::SkipUpdate(version), cx);
+    }
+    fn save_preference(&mut self, change: PreferenceChange, cx: &mut Context<Self>) {
+        if self.draining || self.is_running(cx) {
             return;
         }
         if self.is_onboarding(cx) {
@@ -514,7 +542,7 @@ impl ConfigController {
         pending: Option<PendingConfig>,
         cx: &mut Context<Self>,
     ) {
-        if self.busy(cx) {
+        if self.draining || self.is_running(cx) {
             return;
         }
         if matches!(action, ConfigRepair::BackupAndReset)
@@ -652,5 +680,93 @@ mod update_preference_tests {
         assert_eq!(value.language, AppLanguage::Chinese);
         assert_eq!(value.auto_check_updates, Some(false));
         assert!(!value.checks_updates_automatically());
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[gpui_kit::test]
+    async fn native_update_excludes_settings_and_persists_skip_before_unlocking(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        use super::{AppConfig, ConfigController, ThemeMode};
+        use crate::{
+            foundation::releases::Release,
+            state::updates::{self, Status},
+        };
+        use gpui_form::Form;
+        use gpui_kit::{AppContext, Task};
+        use gpui_operation::{Complete, Load, Transition};
+
+        cx.executor().allow_parking();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("config.toml");
+        std::fs::write(&path, "language = 'english'\n").unwrap();
+        let (_form, config, updates) = cx.update(|cx| {
+            gpui_kit::init(cx);
+            let form = cx.new(|_| Form::new(AppConfig::default()));
+            let config = cx.new(|cx| ConfigController::at_path(&form, Ok(path.clone()), cx));
+            let store = config.read(cx).store.clone();
+            store.update(cx, |op| {
+                op.transition(Load(Task::ready(())));
+                op.transition(Complete(Ok(read_config(path.clone(), false).unwrap())));
+            });
+            let updates = updates::get(cx);
+            updates.update(cx, |owner, cx| {
+                owner.status = Status::Available(Release {
+                    version: semver::Version::new(2, 0, 0),
+                    url: "https://github.com/suxiaoshao/gupi/releases/tag/v2.0.0".into(),
+                });
+                owner.start_install(cx).unwrap();
+            });
+            (form, config, updates)
+        });
+        config.update(cx, |owner, cx| {
+            assert!(owner.busy(cx));
+            owner.set_preference(PreferenceChange::Theme(ThemeMode::Dark), cx);
+            owner.reload(cx);
+            assert!(
+                !owner.is_running(cx),
+                "ordinary settings and reload must be blocked"
+            );
+            owner.skip_update(cx);
+            assert!(
+                owner.is_running(cx),
+                "skip must start saving during the native session"
+            );
+        });
+        updates.update(cx, |owner, cx| owner.finish_install(false, cx));
+        config.update(cx, |owner, cx| {
+            assert!(
+                owner.busy(cx),
+                "closing the window must not unlock an in-flight save"
+            );
+            owner.set_preference(PreferenceChange::Theme(ThemeMode::Dark), cx);
+        });
+        cx.condition(&config, |owner, cx| !owner.busy(cx)).await;
+        let saved = read_config(path.clone(), false).unwrap();
+        assert_eq!(
+            saved.configured().unwrap().skipped_update.as_deref(),
+            Some("2.0.0")
+        );
+        assert_eq!(saved.configured().unwrap().theme, ThemeMode::System);
+
+        // Closing or failing another update restores the same settings entry point.
+        for failed in [false, true] {
+            updates.update(cx, |owner, cx| {
+                owner.start_install(cx).unwrap();
+            });
+            assert!(config.read_with(cx, |owner, cx| owner.busy(cx)));
+            updates.update(cx, |owner, cx| owner.finish_install(failed, cx));
+            assert!(!config.read_with(cx, |owner, cx| owner.busy(cx)));
+        }
+        config.update(cx, |owner, cx| {
+            owner.set_preference(PreferenceChange::Theme(ThemeMode::Dark), cx)
+        });
+        cx.condition(&config, |owner, cx| !owner.busy(cx)).await;
+        let saved = read_config(path, false).unwrap();
+        assert_eq!(saved.configured().unwrap().theme, ThemeMode::Dark);
+        assert_eq!(
+            saved.configured().unwrap().skipped_update.as_deref(),
+            Some("2.0.0")
+        );
     }
 }

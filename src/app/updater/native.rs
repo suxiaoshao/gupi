@@ -51,6 +51,13 @@ pub(crate) fn install(cx: &mut App) {
         cx.global::<Updater>().driver.as_ref().unwrap().show();
         return;
     }
+    let Some(main) = cx.try_global::<super::super::MainWindow>() else {
+        return;
+    };
+    let config = main.view.read(cx).config.clone();
+    if config.read(cx).busy(cx) {
+        return;
+    }
     let Some(release) = owner.update(cx, |owner, cx| owner.start_install(cx)) else {
         return;
     };
@@ -65,20 +72,9 @@ pub(crate) fn install(cx: &mut App) {
 fn handle(event: Event, cx: &mut App) {
     match event {
         Event::Skipped => {
-            let owner = updates::get(cx);
-            let updates::Status::Installing(release) = &owner.read(cx).status else {
-                return;
-            };
-            let version = release.version.to_string();
-            owner.update(cx, |owner, _| owner.skipped = Some(version.clone()));
             if let Some(main) = cx.try_global::<super::super::MainWindow>() {
                 let config = main.view.read(cx).config.clone();
-                config.update(cx, |owner, cx| {
-                    owner.set_preference(
-                        crate::state::config::PreferenceChange::SkipUpdate(version),
-                        cx,
-                    )
-                });
+                config.update(cx, |owner, cx| owner.skip_update(cx));
             }
         }
         #[cfg(target_os = "macos")]

@@ -243,6 +243,8 @@ Choose **Gupi → Check for updates…**, or open **Settings → About → Updat
 
 On macOS and Windows, choose **Download and install…** when a new version is available, then follow the update window. Use **Show update progress…** to bring that window back. Before installation, Gupi saves drafts, closes Pi connections, and restarts into the new version. Downloads begin only when you choose. Skipping a version stops automatic reminders for that version; you can still check and install it manually.
 
+While settings are being saved, **Download and install…** is disabled. Settings changes are disabled while the update window is open and become available again when it closes and any pending save finishes.
+
 If the install button is unavailable, use the release page or your original package manager. Linux updates use the system package manager. Checking for updates does not interrupt Pi or change its version, extensions, or sessions.
 
 ## FAQ

@@ -4547,6 +4547,7 @@ dependencies = [
  "gpui-operation",
  "gpui-store",
  "gpui-tokio",
+ "http",
  "ignore",
  "image",
  "libc",

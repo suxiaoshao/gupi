@@ -32,61 +32,80 @@ fn stable_versions_use_semver_precedence_and_a_fixed_download_origin() {
 
 #[tokio::test]
 async fn conditional_requests_keep_the_release_and_report_server_failures() {
-    use std::io::{Read, Write};
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let endpoint = format!("http://{}/latest", listener.local_addr().unwrap());
-    let server = std::thread::spawn(move || {
-        for (ix, response) in [
-            "HTTP/1.1 200 OK\r\nETag: \"v2\"\r\nContent-Length: 54\r\n\r\n{\"tag_name\":\"v2.0.0\",\"draft\":false,\"prerelease\":false}",
-            "HTTP/1.1 304 Not Modified\r\n\r\n",
-            "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n",
-            "HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\n\r\n",
-            "HTTP/1.1 500 Server Error\r\nContent-Length: 0\r\n\r\n",
-            "HTTP/1.1 200 OK\r\nContent-Length: 1048577\r\n\r\n",
-            "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nnull",
-        ].into_iter().enumerate() {
-            let (mut stream, _) = listener.accept().unwrap();
-            stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-            let mut request = Vec::new();
-            let mut byte = [0];
-            while !request.ends_with(b"\r\n\r\n") {
-                stream.read_exact(&mut byte).unwrap();
-                request.push(byte[0]);
-            }
-            if ix == 1 {
-                assert!(String::from_utf8(request).unwrap().to_lowercase().contains("if-none-match: \"v2\""));
-            }
-            stream.write_all(response.as_bytes()).unwrap();
-        }
-    });
-    let client = Client::builder()
-        .no_proxy()
-        .timeout(Duration::from_secs(5))
-        .build()
+    // Exercise the production request/response paths entirely in memory: no server,
+    // ports, proxy, connection reuse, or timing-dependent disconnects.
+    let initial = http::Response::builder()
+        .status(200)
+        .header(header::ETAG, "\"v2\"")
+        .body(r#"{"tag_name":"v2.0.0","draft":false,"prerelease":false}"#)
         .unwrap();
-    let cache = fetch(&client, &endpoint, None).await.unwrap();
+    let cache = read_response(initial.into(), None).await.unwrap();
     assert_eq!(
         cache.release.as_ref().unwrap().version,
         Version::new(2, 0, 0)
     );
-    let cached = fetch(&client, &endpoint, Some(cache.clone()))
+    let client = Client::new();
+    let conditional = request(&client, LATEST, Some(&cache)).build().unwrap();
+    assert_eq!(conditional.headers()[header::IF_NONE_MATCH], "\"v2\"");
+    assert_eq!(
+        conditional.headers()[header::ACCEPT],
+        "application/vnd.github+json"
+    );
+    assert_eq!(conditional.headers()["X-GitHub-Api-Version"], "2022-11-28");
+    assert_eq!(conditional.url().as_str(), LATEST);
+    let unconditional = request(&client, LATEST, None).build().unwrap();
+    assert!(!unconditional.headers().contains_key(header::IF_NONE_MATCH));
+    let cached = read_response(response(304, ""), Some(cache.clone()))
         .await
         .unwrap();
     assert_eq!(cached.release, cache.release);
+    assert_eq!(cached.etag, cache.etag);
     assert!(
-        fetch(&client, &endpoint, Some(cache))
+        read_response(response(404, ""), Some(cache))
             .await
             .unwrap()
             .release
             .is_none()
     );
-    for expected in [
-        Problem::RateLimited,
-        Problem::Network,
-        Problem::InvalidResponse,
-        Problem::InvalidResponse,
+    for (status, expected) in [
+        (304, Problem::InvalidResponse),
+        (403, Problem::RateLimited),
+        (429, Problem::RateLimited),
+        (500, Problem::Network),
     ] {
-        assert_eq!(fetch(&client, &endpoint, None).await.unwrap_err(), expected);
+        assert_eq!(
+            read_response(response(status, ""), None).await.unwrap_err(),
+            expected
+        );
     }
-    server.join().unwrap();
+    assert_eq!(
+        read_response(response(200, "null"), None)
+            .await
+            .unwrap_err(),
+        Problem::InvalidResponse
+    );
+}
+
+#[tokio::test]
+async fn response_size_limit_accepts_the_boundary_and_rejects_larger_valid_json() {
+    let mut body = br#"{"tag_name":"v2.0.0","draft":false,"prerelease":false}"#.to_vec();
+    body.resize(MAX_RESPONSE_BYTES, b' ');
+    assert!(
+        read_response(response(200, body.clone()), None)
+            .await
+            .is_ok()
+    );
+    body.push(b' ');
+    assert_eq!(
+        read_response(response(200, body), None).await.unwrap_err(),
+        Problem::InvalidResponse
+    );
+}
+
+fn response(status: u16, body: impl Into<reqwest::Body>) -> reqwest::Response {
+    http::Response::builder()
+        .status(status)
+        .body(body)
+        .unwrap()
+        .into()
 }

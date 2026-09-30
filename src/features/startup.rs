@@ -104,14 +104,17 @@ impl StartupView {
         let updates_sub = cx.subscribe_in(
             &updates,
             window,
-            |_, _, event: &crate::state::updates::Available, window, cx| {
+            |this, _, event: &crate::state::updates::Available, window, cx| {
+                let config = this.config.clone();
                 window.push_notification(
                     gpui_kit::component::notification::Notification::info(
                         super::updates::available_text(&event.0, cx),
                     )
                     .id::<crate::state::updates::Available>()
                     .autohide(false)
-                    .on_click(|_, window, cx| super::updates::open(false, window, cx)),
+                    .on_click(move |_, window, cx| {
+                        super::updates::open(false, config.clone(), window, cx)
+                    }),
                     cx,
                 );
             },

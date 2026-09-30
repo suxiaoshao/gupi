@@ -91,14 +91,28 @@ pub(crate) async fn latest(cache: Option<Cache>) -> Result<Cache, Problem> {
 }
 
 async fn fetch(client: &Client, endpoint: &str, cache: Option<Cache>) -> Result<Cache, Problem> {
+    let response = request(client, endpoint, cache.as_ref())
+        .send()
+        .await
+        .map_err(|_| Problem::Network)?;
+    read_response(response, cache).await
+}
+
+fn request(client: &Client, endpoint: &str, cache: Option<&Cache>) -> reqwest::RequestBuilder {
     let mut request = client
         .get(endpoint)
         .header(header::ACCEPT, "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28");
-    if let Some(etag) = cache.as_ref().and_then(|cache| cache.etag.as_ref()) {
+    if let Some(etag) = cache.and_then(|cache| cache.etag.as_ref()) {
         request = request.header(header::IF_NONE_MATCH, etag.clone());
     }
-    let mut response = request.send().await.map_err(|_| Problem::Network)?;
+    request
+}
+
+async fn read_response(
+    mut response: reqwest::Response,
+    cache: Option<Cache>,
+) -> Result<Cache, Problem> {
     match response.status() {
         StatusCode::NOT_MODIFIED => return cache.ok_or(Problem::InvalidResponse),
         // The fixed public repository has no published Latest release yet.

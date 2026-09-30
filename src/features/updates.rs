@@ -3,7 +3,10 @@ use crate::{
         i18n::{t, t_with_args},
         releases::Release,
     },
-    state::updates::{self, Status, Updates},
+    state::{
+        config::ConfigController,
+        updates::{self, Status, Updates},
+    },
 };
 use fluent_bundle::FluentArgs;
 use gpui_kit::component::{
@@ -17,7 +20,12 @@ pub(crate) fn available_text(release: &Release, cx: &App) -> String {
     t_with_args(cx, "updates-available", &args)
 }
 
-pub(crate) fn open(check: bool, window: &mut Window, cx: &mut App) {
+pub(crate) fn open(
+    check: bool,
+    config: Entity<ConfigController>,
+    window: &mut Window,
+    cx: &mut App,
+) {
     if window.has_active_dialog(cx) {
         return;
     }
@@ -25,7 +33,7 @@ pub(crate) fn open(check: bool, window: &mut Window, cx: &mut App) {
     if check {
         owner.update(cx, |owner, cx| owner.check(true, cx));
     }
-    let panel = cx.new(UpdatesView::new);
+    let panel = cx.new(|cx| UpdatesView::new(config, cx));
     window.open_dialog(cx, move |dialog, _, cx| {
         dialog.title(t(cx, "updates-title")).child(
             v_flex()
@@ -38,16 +46,19 @@ pub(crate) fn open(check: bool, window: &mut Window, cx: &mut App) {
 
 pub(crate) struct UpdatesView {
     owner: Entity<Updates>,
-    _subscription: Subscription,
+    config: Entity<ConfigController>,
+    _subscriptions: [Subscription; 2],
 }
 
 impl UpdatesView {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(config: Entity<ConfigController>, cx: &mut Context<Self>) -> Self {
         let owner = updates::get(cx);
         let subscription = cx.observe(&owner, |_, _, cx| cx.notify());
+        let config_subscription = cx.observe(&config, |_, _, cx| cx.notify());
         Self {
             owner,
-            _subscription: subscription,
+            config,
+            _subscriptions: [subscription, config_subscription],
         }
     }
 }
@@ -76,6 +87,7 @@ impl Render for UpdatesView {
                 view = view.child(
                     Button::new("updates-install")
                         .label(t(cx, "updates-install"))
+                        .disabled(self.config.read(cx).busy(cx))
                         .on_click(|_, _, cx| cx.defer(crate::app::updater::install)),
                 );
             }

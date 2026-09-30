@@ -246,6 +246,92 @@ struct SettingsPageFixture {
     settings: gpui_kit::Entity<SettingsView>,
     page: usize,
 }
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[gpui_kit::test]
+fn native_update_disables_settings_controls_until_closed(cx: &mut TestAppContext) {
+    use crate::state::{
+        config::{ConfigContents, ConfigData},
+        updates::{self, Status},
+    };
+    use gpui_kit::{Task, test::TestWindowExt};
+    use gpui_operation::{Complete, Load, Transition};
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        app_theme::init(cx);
+        crate::state::theme::init(cx);
+        crate::foundation::i18n::apply(AppLanguage::Chinese, cx);
+    });
+    let directory = tempfile::tempdir().unwrap();
+    let mut fixture = None;
+    let (_, visual) = cx.add_window_view(|window, cx| {
+        let form = cx.new(|_| {
+            Form::new(AppConfig {
+                auto_check_updates: Some(false),
+                ..Default::default()
+            })
+        });
+        let controller = cx.new(|cx| {
+            ConfigController::at_path(&form, Ok(directory.path().join("config.toml")), cx)
+        });
+        let store = controller.read(cx).store.clone();
+        store.update(cx, |op| {
+            op.transition(Load(Task::ready(())));
+            op.transition(Complete(Ok(ConfigData {
+                path: directory.path().join("config.toml"),
+                contents: ConfigContents::Missing,
+                backup: None,
+            })));
+        });
+        let draft = cx.new(|_| PiProbeController::new());
+        let applied = cx.new(|_| {
+            let mut probe = PiProbeController::new();
+            probe.draining = true;
+            probe
+        });
+        let settings = cx.new(|cx| {
+            SettingsView::new(
+                form.clone(),
+                controller.clone(),
+                draft,
+                applied,
+                cx.focus_handle(),
+                window,
+                cx,
+            )
+        });
+        fixture = Some((form, controller));
+        let view = cx.new(|_| SettingsPageFixture { settings, page: 8 });
+        Root::new(view, window, cx)
+    });
+    let (form, controller) = fixture.unwrap();
+    let updates = visual.update(|_, cx| updates::get(cx));
+    visual.update(|window, cx| {
+        window.render_frame(cx);
+        window.click("updates-automatic", cx);
+        assert_eq!(AppConfig::AUTO_CHECK_UPDATES.get(&form, cx), Some(true));
+    });
+    updates.update(visual, |owner, cx| {
+        owner.status = Status::Available(crate::foundation::releases::Release {
+            version: semver::Version::new(2, 0, 0),
+            url: "https://github.com/suxiaoshao/gupi/releases/tag/v2.0.0".into(),
+        });
+        owner.start_install(cx).unwrap();
+    });
+    visual.update(|window, cx| {
+        assert!(controller.read(cx).busy(cx));
+        window.render_frame(cx);
+        window.click("updates-automatic", cx);
+        assert_eq!(AppConfig::AUTO_CHECK_UPDATES.get(&form, cx), Some(true));
+        assert!(!controller.read(cx).is_running(cx));
+    });
+    updates.update(visual, |owner, cx| owner.finish_install(false, cx));
+    visual.update(|window, cx| {
+        window.render_frame(cx);
+        window.click("updates-automatic", cx);
+        assert_eq!(AppConfig::AUTO_CHECK_UPDATES.get(&form, cx), Some(false));
+    });
+}
 impl gpui_kit::Render for SettingsPageFixture {
     fn render(
         &mut self,

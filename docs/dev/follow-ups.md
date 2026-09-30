@@ -32,7 +32,7 @@
 | 输入提交结果 | 可消费正式 `data.disposition`，区分当前输入被插件处理、入队和启动；Gupi 当前成功分支仍忽略 Response.data | 结果不关联队列 ID，不代表任务完成；插件可另行启动工作，已有运行不得因 handled 被清空 |
 | codemode/MCP 工具展示 | 可消费 `parentToolCallId`、实时结构化结果和父结果的 `nestedCalls`，补足子调用的归属、详情与历史记录 | 上游只持久化有限子调用记录，不保存完整子输出；现有通用卡片不等于已适配这些字段，不复刻 TUI renderer |
 | 普通会话首轮失败后的历史 | Pi 已在第一条用户消息时创建会话文件；直接沿用上游修复，不需要 Gupi 另存正文 | 临时 `--no-session` 仍不持久化；环境代理与诊断日志两项收尾继续成立 |
-| Pi 配置管理 #244 | 既有四个 setter 仍可接入；新增 defaultTools/codemode、内置扩展与 mcp.json 可在选字段时评估 | 没有新增通用设置 RPC；MCP 管理范围需单独选择，不能自动扩大 #244；包市场 #245 的目录/元数据前提未解除 |
+| Pi 配置管理 [Gupi #2](https://github.com/suxiaoshao/gupi/issues/2) | 既有四个 setter 仍可接入；新增 defaultTools/codemode、内置扩展与 mcp.json 可在选字段时评估 | 没有新增通用设置 RPC；MCP 管理范围需单独选择，不能自动扩大 [Gupi #2](https://github.com/suxiaoshao/gupi/issues/2)；包市场 [Gupi #3](https://github.com/suxiaoshao/gupi/issues/3) 的目录/元数据前提未解除 |
 | 原先其他 RPC/TUI 缺口 | 补全、插件快捷键、自定义 UI、组合问卷、树导航和进程内 reload 的直接契约仍缺失 | 继续保留原边界；0.99 没有新增对应命令或 UI method |
 
 ## RPC 与 TUI 功能差距
@@ -41,7 +41,7 @@
 
 | 分类 | 仍需关注的内容 | 后续归属 |
 | --- | --- | --- |
-| RPC 已有，Gupi 没有入口 | `set_steering_mode`、`set_follow_up_mode`、`set_auto_compaction`、`set_auto_retry`；直接 `bash` / `abort_bash` 与 `bash_execution_update` | 前四项归 Pi 配置 #244 的字段选择；直接 Bash 尚未选择实施 |
+| RPC 已有，Gupi 没有入口 | `set_steering_mode`、`set_follow_up_mode`、`set_auto_compaction`、`set_auto_retry`；直接 `bash` / `abort_bash` 与 `bash_execution_update` | 前四项归 Pi 配置 [Gupi #2](https://github.com/suxiaoshao/gupi/issues/2) 的字段选择；直接 Bash 尚未选择实施 |
 | RPC 已有，可选参数或专用动作未接 | `compact.customInstructions`、`get_entries.since`、循环模型/思考、仅取消重试、普通新建的 `parentSession` | 可选能力或优化；不影响已有压缩、历史、显式选择、停止与新建，不自动增加任务 |
 | RPC 新字段尚未接入 | 输入的 `data.disposition`、嵌套工具的 `parentToolCallId` / `nestedCalls`、实时结构化结果 | 已解除相应数据契约限制；按上方复核结果选择接入，不再记为等待 Pi 提供输入处理结果 |
 | TUI 有，标准 RPC 缺契约 | 插件参数/子命令补全、插件键位、任意 TUI 组件及消息/工具 renderer、组合问卷、输入回读/插入式粘贴/主动撤销通知、插件显示控制、同文件任意节点续聊、进程内 reload | 保留协议差距；标准问答、通用工具详情、历史预览/fork、重连替代已经可用。不自建私有协议或终端组件桥接 |
@@ -56,8 +56,8 @@
 
 | 工作 | 范围与前提 | 统一入口 |
 | --- | --- | --- |
-| Pi 配置图形化与项目级覆盖 | 管理 Pi 自身配置，显示继承、来源与生效范围；先选择默认模型/思考、范围、自动压缩、重试、队列模式、图片处理等实际字段。保留未知字段，不另存 Gupi 同义配置；现有会话仍沿用用户手动刷新规则 | [#244](https://github.com/suxiaoshao/gpui/issues/244) |
-| 插件包市场与资源发现 | 包搜索、详情与资源发现；复用现有个人包安装、更新、移除和资源管理入口 | [#245](https://github.com/suxiaoshao/gpui/issues/245) |
+| Pi 配置图形化与项目级覆盖 | 管理 Pi 自身配置，显示继承、来源与生效范围；先选择默认模型/思考、范围、自动压缩、重试、队列模式、图片处理等实际字段。保留未知字段，不另存 Gupi 同义配置；现有会话仍沿用用户手动刷新规则 | [Gupi #2](https://github.com/suxiaoshao/gupi/issues/2) |
+| 插件包市场与资源发现 | 包搜索、详情与资源发现；复用现有个人包安装、更新、移除和资源管理入口 | [Gupi #3](https://github.com/suxiaoshao/gupi/issues/3) |
 | 自研共享库契约修复与精简 | 窗口句柄生命周期、Windows 显示器/坐标契约、Form 校验依赖与错误归属、阻塞写入的退出收尾；再按消费者价值评估 Store/Operation 等精简。已有结论含静态风险，开始时重核当前源码，不能写成已复现崩溃或数据丢失 | [#248](https://github.com/suxiaoshao/gpui/issues/248) |
 
 

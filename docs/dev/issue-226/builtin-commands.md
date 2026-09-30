@@ -14,7 +14,7 @@
 
 | TUI 命令 | Pi RPC 支持 | Gupi 当前实现 | 接入建议与理由 |
 | --- | --- | --- | --- |
-| `/settings` | 无通用 Pi 设置界面接口 | 有 Gupi 自身设置 | Pi 配置图形化及项目覆盖归 #244；不能把 Gupi 设置当作等价实现 |
+| `/settings` | 无通用 Pi 设置界面接口 | 有 Gupi 自身设置 | Pi 配置图形化及项目覆盖归 [Gupi #2](https://github.com/suxiaoshao/gupi/issues/2)；不能把 Gupi 设置当作等价实现 |
 | `/model` | get_available_models、set_model | 已有模型选择器与动作 | 复用已有能力；可作为命令模式入口 |
 | `/tree` | get_tree/get_entries 可读；无 navigate_tree | 有历史树预览，无同文件切分支续聊 | tree、fork 作为会话历史候选的搜索别名，打开现有面板；不冒充节点导航 |
 | `/thinking` | get_available_thinking_levels、set_thinking_level | 已有思考等级选择 | 复用已有能力；修改会话等级与保存默认值区分 |

@@ -1,5 +1,7 @@
 # Gupi 开发文档
 
+历史 `issue-*` 目录及未注明仓库的历史编号沿用原 `suxiaoshao/gpui`；已关闭议题和关联 PR 保留在[原仓库](https://github.com/suxiaoshao/gpui/issues?q=is%3Aissue+is%3Aclosed+gupi)。新项目议题使用明确的 `Gupi #N` 链接。
+
 **[独立项目记录](standalone-project/README.md)**：仓库分离、依赖归属、单产品工具和本次迁移验证。
 
 **[Gupi 与 Pi 的职责边界](../gui-boundary.md)**：输入、附件、会话内容、资源与进程生命周期的归属。

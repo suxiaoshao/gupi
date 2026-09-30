@@ -24,7 +24,7 @@
 | 嵌套工具的实时父子关系 | `ctx.executeTool()` 的三类 `tool_execution_*` 事件带 `parentToolCallId`，独立 `toolCallId` 关联该子调用 | 可给 codemode/MCP 的子调用增加归属和实时展示。Gupi 当前 ToolActivity 未保存父 ID，正文工具投影依赖 assistant 中的顶层 toolCall，不能把收到子事件算作已显示子调用 |
 | 嵌套调用的历史记录 | 父工具的 toolResult 消息保存 `nestedCalls: { calls, complete }`；记录 ID、名称、参数、状态、耗时和截断后的错误，不保存子工具的完整结果 | 可在重新打开历史后显示有限调用记录；最多 256 次、单项参数 8 KiB、总参数 32 KiB，`complete:false` 时必须保留不完整语义。Gupi 保留原 JSON，但尚未将此字段投影到工具详情；不能承诺重启后恢复完整子输出 |
 | 工具结构化输出与费用 | 实时工具结果可带 `structuredContent`、`isError` 和 usage；MCP 工具提供结构化 CallToolResult，嵌套模型用量计入父结果及 `get_session_stats` | 可补工具详情对结构化输出的读取；现有详情主要读 content/details。`structuredContent` 未由普通 ToolResultMessage 持久化，不能承诺它与实时事件在历史中一致；累计费用继续以 Pi stats 为准，不重复累加 nestedCalls |
-| 内置 MCP / codemode / tool_search | Pi 负责连接、工具发现、执行和权限钩子；`get_commands` 可返回 `sourceInfo.path = builtin:mcp` 的 `/mcp` 扩展命令。RPC 下无参数 `/mcp` 降级为 notify，login/logout/reconnect 子命令支持无 TUI 调用；图形管理器仍属 TUI | 已配置的 Pi 能通过既有 RPC 执行这些工具，无需 Gupi 自建 MCP runtime。管理配置可在 #244 选字段时另行评估；安装包市场 #245 的目录/元数据前提没有因此解决。`builtin:*` 是来源标识，不能当成文件路径 |
+| 内置 MCP / codemode / tool_search | Pi 负责连接、工具发现、执行和权限钩子；`get_commands` 可返回 `sourceInfo.path = builtin:mcp` 的 `/mcp` 扩展命令。RPC 下无参数 `/mcp` 降级为 notify，login/logout/reconnect 子命令支持无 TUI 调用；图形管理器仍属 TUI | 已配置的 Pi 能通过既有 RPC 执行这些工具，无需 Gupi 自建 MCP runtime。管理配置可在 [Gupi #2](https://github.com/suxiaoshao/gupi/issues/2) 选字段时另行评估；安装包市场 [Gupi #3](https://github.com/suxiaoshao/gupi/issues/3) 的目录/元数据前提没有因此解决。`builtin:*` 是来源标识，不能当成文件路径 |
 | 首条用户消息及时落盘 | SessionManager 在第一条 user 或 assistant 消息出现时创建文件，setup 元数据独自不落盘；不再等待第一条 assistant 回复 | 解除普通持久会话首次回复前退出导致输入未保存的问题。Gupi 沿用 Pi 存储即可；临时会话的 `--no-session` 及缺诊断日志不受此修复影响 |
 | 虚拟模型、图片/分类模型与 HTML 导出 | 虚拟模型可经既有聊天模型选择，实际回答记录物理模型；图片生成/分类是 ModelRuntime 与扩展能力，没有新增对应 RPC 命令。HTML 导出新增 display:false 插件消息的手动显隐 | 模型选择和 export_html 可复用已有入口；实际模型展示、图片/分类专用界面是可选范围，不能视为新增 stdio API。新的 provider_stream_event 仅发给扩展，不新增客户端事件 handler |
 
@@ -61,9 +61,9 @@
 | `get_last_assistant_text` | 未直接调用；从实际执行分支的原始历史提取最后回答 | 0.87 的此 RPC 从 Pi 的上下文投影取值，受 context_edit 省略/替换影响，不再假定与界面最后可见回答始终一致。现有复制/回填继续以用户看到的回答为准 |
 | `abort_retry` | 未直接调用；通用 `abort` 已会取消重试 | 仅缺“只取消重试”的专用动作，不能列为无法停止重试 |
 | `clear_queue` | 直接调用；清空全部、全部文字取回草稿 | 返回值仅含两类文字数组，排队图片无法恢复；逐条操作继续延后 |
-| `set_steering_mode`、`set_follow_up_mode` | 未接入 typed 方法和设置 UI | 由后续 #244 选择字段与生效范围。Pi setter 会写其设置，不能当作纯临时会话字段 |
-| `set_auto_compaction` | 未接入开关；只展示已有状态 | Pi 自动压缩仍正常工作；修改入口归后续 #244 的字段选择，setter 会写 Pi 设置 |
-| `set_auto_retry` | 未接入开关 | Pi 自动重试仍工作；修改入口归后续 #244 的字段选择，setter 会写 Pi 设置 |
+| `set_steering_mode`、`set_follow_up_mode` | 未接入 typed 方法和设置 UI | 由后续 [Gupi #2](https://github.com/suxiaoshao/gupi/issues/2) 选择字段与生效范围。Pi setter 会写其设置，不能当作纯临时会话字段 |
+| `set_auto_compaction` | 未接入开关；只展示已有状态 | Pi 自动压缩仍正常工作；修改入口归后续 [Gupi #2](https://github.com/suxiaoshao/gupi/issues/2) 的字段选择，setter 会写 Pi 设置 |
+| `set_auto_retry` | 未接入开关 | Pi 自动重试仍工作；修改入口归后续 [Gupi #2](https://github.com/suxiaoshao/gupi/issues/2) 的字段选择，setter 会写 Pi 设置 |
 | `bash`、`abort_bash` | 未接入用户命令执行及独立中止 | TUI 的 `!` / `!!`、`excludeFromContext`、输出流和取消需要一起定范围。已有模型工具的 bash 卡片不是此能力；不能通过普通 prompt 冒充执行 |
 
 ## 实时事件接入
@@ -149,8 +149,8 @@
 | --- | --- |
 | 插件／包管理 | 已由 #231 使用 Pi CLI 接入个人包安装、更新、移除及资源启停；无需把无 RPC 等同为无法管理 |
 | Skill、模板、全局提示词管理 | #231 已接入个人资源文件、配置及 SYSTEM.md/APPEND_SYSTEM.md；包内资源只读，修改后由用户手动刷新会话 |
-| Pi 设置、模型范围管理 | 部分设置有专用 RPC；其余读写由独立后续 #244 确定，没有通用设置编辑 RPC |
-| MCP、codemode 配置 | 已有 Pi 的 mcp.json、defaultTools/codemode/内置扩展设置和 `pi mcp` CLI；配置管理没有新增通用 RPC。#244 实施时可评估字段、继承/项目信任和生效规则，不将其自动纳入已确认范围 |
+| Pi 设置、模型范围管理 | 部分设置有专用 RPC；其余读写由独立后续 [Gupi #2](https://github.com/suxiaoshao/gupi/issues/2) 确定，没有通用设置编辑 RPC |
+| MCP、codemode 配置 | 已有 Pi 的 mcp.json、defaultTools/codemode/内置扩展设置和 `pi mcp` CLI；配置管理没有新增通用 RPC。[Gupi #2](https://github.com/suxiaoshao/gupi/issues/2) 实施时可评估字段、继承/项目信任和生效规则，不将其自动纳入已确认范围 |
 | 登录／退出登录、信任管理 | 无对应 RPC 工作流，沿用外部 Pi 管理；若改变此范围，需要另行确定认证／信任机制 |
 | JSONL 导入导出、分享 | 可由应用提供文件管理或发布能力；不属于复用一个现成 RPC 的工作 |
 | 参数表单、必填项及忙碌可用性 | get_commands 缺少结构化元数据，无法自动生成可靠 UI；不自行猜测 |

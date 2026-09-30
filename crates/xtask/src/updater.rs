@@ -219,6 +219,7 @@ mod tests {
         assert!(signing_key(&BASE64_STANDARD.encode([8; 32]), &public).is_err());
         let packages = [
             "Gupi_1.2.3_aarch64_macos.zip",
+            "Gupi_1.2.3_x86_64_macos_development.zip",
             "Gupi_1.2.3_x64_zh-CN.msi",
             "Gupi_1.2.3_amd64.deb",
         ];

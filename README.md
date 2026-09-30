@@ -245,7 +245,7 @@ On macOS and Windows, choose **Download and install…** when a new version is a
 
 While settings are being saved, **Download and install…** is disabled. Settings changes are disabled while the update window is open and become available again when it closes and any pending save finishes.
 
-If the install button is unavailable, use the release page or your original package manager. Linux updates use the system package manager. Checking for updates does not interrupt Pi or change its version, extensions, or sessions.
+If the install button is unavailable, use the release page or your original package manager. Development macOS packages use manual downloads; Linux updates use the system package manager. Checking for updates does not interrupt Pi or change its version, extensions, or sessions.
 
 ## FAQ
 

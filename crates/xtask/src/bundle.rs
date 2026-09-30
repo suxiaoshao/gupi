@@ -147,7 +147,9 @@ pub fn run(args: BundleArgs) -> Result<()> {
     {
         let app_path = macos::find_app_bundle(&out_dir.join("bundle"), &product_name)?
             .ok_or_else(|| XtaskError::msg("bundler did not produce a macOS .app"))?;
-        if let Some(key) = updater_key {
+        if args.macos_signing == MacosSigning::DeveloperId
+            && let Some(key) = updater_key
+        {
             macos::embed_updater(&project_dir, &app_path, target, &key)?;
         }
         macos::inject_liquid_glass_icon(&project_dir, &app_path, &bundle_icons)?;

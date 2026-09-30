@@ -155,7 +155,7 @@ With this configuration, collection signs the exact bytes of the two formal macO
 
 The app opens the **specific version's** appcast after the user chooses installation. Publishing that version must include its appcasts and matching packages. Do not replace either asset under an existing version. A GitHub draft or a tag alone is not an update. Do not rotate the public key casually: already-installed clients trust the old key, so key rotation requires the native engine's supported migration procedure.
 
-Builds without a public key keep check-for-updates and manual downloads. They cannot install updates in-app; Windows also requires a recognized MSI installation. Ed25519 signing authenticates update packages and does not replace macOS Developer ID/notarization or Windows Authenticode signing. Validate an actual old-to-new update on each intended platform when changing the updater or installer integration, rather than adding repeated install/uninstall checks to every tag.
+Builds without a public key keep check-for-updates and manual downloads. Development macOS bundles also use this path, even when a public key is configured: only `developer-id` bundles with a public key embed Sparkle. Windows also requires a recognized MSI installation for in-app updates. Ed25519 signing authenticates update packages and does not replace macOS Developer ID/notarization or Windows Authenticode signing. Validate an actual old-to-new update on each intended platform when changing the updater or installer integration, rather than adding repeated install/uninstall checks to every tag.
 
 ## Homebrew and WinGet
 

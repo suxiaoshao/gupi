@@ -285,4 +285,4 @@ macOS 和 Windows 发现新版后，可选择**下载并安装…**，并在更�
 
 ## 许可
 
-Gupi 源码采用 [MIT License](LICENSE)。第三方资产保留各自的来源与许可，详情见[图标来源记录](build-assets/icon/README.md)。
+Gupi 源码采用 [MIT License](LICENSE)。应用图标派生自 Earendil Inc. and contributors 的 Pi 视觉资源；署名、来源与上游 MIT 许可原文收录于[第三方声明](THIRD_PARTY_NOTICES.md)，并随应用分发。Gupi 的具体改动见[图标来源记录](build-assets/icon/README.md)。Gupi 是独立项目，不代表 Pi 或 Earendil 的官方背书。

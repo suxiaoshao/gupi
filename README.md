@@ -285,4 +285,4 @@ Report problems or suggestions through [GitHub Issues](https://github.com/suxiao
 
 ## License
 
-Gupi's source is licensed under the [MIT License](LICENSE). Third-party assets retain their own provenance and permissions; see the [icon source notes](build-assets/icon/README.md).
+Gupi's source is licensed under the [MIT License](LICENSE). Its icons are derived from Pi visual assets by Earendil Inc. and contributors; the attribution, source references, and upstream MIT license are included in [Third-party notices](THIRD_PARTY_NOTICES.md) and distributed with the application. See the [icon source notes](build-assets/icon/README.md) for Gupi's adaptations. Gupi is an independent project and is not endorsed by Pi or Earendil.

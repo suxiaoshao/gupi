@@ -1,9 +1,12 @@
-# 开发期图标
+# 图标来源与派生
 
 来源：Pi 官方 README 引用的 https://pi.dev/logo-auto.svg ，获取于 2026-09-07。
 源 SVG SHA-256：`03d509c104b9570063fa268fd3235ed7e0e41dafd93124ca94cae3726f58f117`。
 
-按本轮用户决定临时用于开发；官方许可邮件尚待回复，发布前重新确认。
+版权署名：`Copyright (c) 2026 Earendil Inc. and contributors`。官方 [pi-website 仓库中的 logo.svg](https://github.com/earendil-works/pi-website/blob/2f5e410b97474d0a34ec2500aa1aa58d6c3f992c/src/logo.svg) 与本地基础图标的两条 SVG 路径一致，该固定版本仓库采用 MIT License。彩色图标来自标注 MIT 的[官方 Press Kit](https://pi.dev/press-kit)；2026-09-30 核对时，本地 `assets/brand/logo-color.svg` 与官网下载文件完全一致，SHA-256 为 `abd66e7868b2d24f0f0895f9237ee8a6dcb22337583b0dc54aeb595acecb4d6b`。
+
+完整来源、Gupi 的改动范围与上游 MIT 许可原文见根目录 [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md)。该文件随 macOS、Windows 和 Linux 安装包分发。Gupi 是独立项目；版权许可记录不代表 Pi 或 Earendil 的官方背书或单独商标授权。
+
 SVG 内容原样保留；PNG 由 `rsvg-convert -w 1024 -h 1024 pi-logo.svg -o app-icon.png` 生成。
 Gupi.icon 使用 Assets/logo.svg 矢量图层：默认浅灰背景、黑色标记，Dark 深灰背景、白色标记；切换由 macOS 图标外观设置控制。已通过 actool 编译，并在 Icon Composer 查看 Default / Dark 预览。普通平台图标仍由 app-icon.png 派生。
 

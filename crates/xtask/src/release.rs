@@ -224,7 +224,7 @@ impl Release {
         };
         write!(
             notes,
-            "Gupi {} packages for review.\n\n- macOS: {status}. Open the DMG and drag Gupi to Applications, or extract the ZIP.\n- Windows x64: open the MSI matching your installer language; packages are unsigned.\n- Linux x64: install the unsigned deb package.\n- Pi is an external runtime and is not bundled.\n- Review platform installation and current brand-asset permission before publishing.\n",
+            "Gupi {} packages for review.\n\n- macOS: {status}. Open the DMG and drag Gupi to Applications, or extract the ZIP.\n- Windows x64: open the MSI matching your installer language; packages are unsigned.\n- Linux x64: install the unsigned deb package.\n- Pi is an external runtime and is not bundled.\n- Pi icon attribution and the upstream MIT license are included in THIRD_PARTY_NOTICES.md in each package. Gupi is an independent project.\n- Review platform installation before publishing.\n",
             self.tag
         )?;
         let status = Command::new("gh")

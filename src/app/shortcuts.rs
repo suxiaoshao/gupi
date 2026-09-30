@@ -203,22 +203,21 @@ pub fn shutdown(cx: &mut App) {
     });
 }
 
-pub fn cancel_preparation(_key: &str, cx: &mut App) {
-    if !cx.has_global::<ShortcutsRuntime>() {
-        return;
-    }
+pub fn cancel_preparation(_key: &str, _cx: &mut App) {
     #[cfg(any(target_os = "macos", target_os = "windows"))]
-    cx.update_global::<ShortcutsRuntime, _>(|rt, _| {
-        let id = rt
-            .active
-            .iter()
-            .find(|(_, key)| key.as_str() == _key)
-            .map(|(id, _)| id.clone());
-        if let Some(id) = id {
-            rt.jobs.remove(&id);
-            rt.active.remove(&id);
-        }
-    });
+    if _cx.has_global::<ShortcutsRuntime>() {
+        _cx.update_global::<ShortcutsRuntime, _>(|rt, _| {
+            let id = rt
+                .active
+                .iter()
+                .find(|(_, key)| key.as_str() == _key)
+                .map(|(id, _)| id.clone());
+            if let Some(id) = id {
+                rt.jobs.remove(&id);
+                rt.active.remove(&id);
+            }
+        });
+    }
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]

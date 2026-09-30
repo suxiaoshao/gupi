@@ -129,67 +129,64 @@ pub fn refresh(_cx: &App) {
     }
 }
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub(crate) struct Entry {
     pub title: String,
     pub activity: crate::state::conversation::Activity,
     pub unread: bool,
     pub target: super::notifications::Target,
 }
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub fn update(count: usize, entries: Vec<Entry>, cx: &mut App) {
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
-    {
-        use crate::state::conversation::Activity;
-        use tray_icon::menu::{MenuItem, PredefinedMenuItem};
-        let unread = t(cx, "notification-unread");
-        let waiting = t(cx, "notification-waiting");
-        let running = t(cx, "notification-running");
-        if !cx.has_global::<Tray>() {
-            return;
-        }
-        let tray = cx.global_mut::<Tray>();
-        #[cfg(target_os = "macos")]
-        tray.icon.set_title(Some(if count == 0 {
-            String::new()
+    use crate::state::conversation::Activity;
+    use tray_icon::menu::{MenuItem, PredefinedMenuItem};
+    let unread = t(cx, "notification-unread");
+    let waiting = t(cx, "notification-waiting");
+    let running = t(cx, "notification-running");
+    if !cx.has_global::<Tray>() {
+        return;
+    }
+    let tray = cx.global_mut::<Tray>();
+    #[cfg(target_os = "macos")]
+    tray.icon.set_title(Some(if count == 0 {
+        String::new()
+    } else {
+        count.to_string()
+    }));
+    let _ = tray
+        .icon
+        .set_tooltip(Some(format!("Gupi — {unread}: {count}")));
+    // Two window entries and the separator/settings/quit footer stay in place.
+    while tray.menu.items().len() > 5 {
+        tray.menu.remove_at(2);
+    }
+    tray.targets.clear();
+    if entries.is_empty() {
+        return;
+    }
+    let _ = tray.menu.insert(&PredefinedMenuItem::separator(), 2);
+    let _ = tray
+        .menu
+        .insert(&MenuItem::new(format!("{unread}: {count}"), false, None), 3);
+    // One entry per source. Waiting is the actionable state even when unread too.
+    let mut entries = entries;
+    entries.sort_by_key(|entry| match (entry.activity, entry.unread) {
+        (Activity::Waiting, _) => 0,
+        (_, true) => 1,
+        _ => 2,
+    });
+    for entry in entries {
+        let label = if entry.activity == Activity::Waiting {
+            &waiting
+        } else if entry.unread {
+            &unread
         } else {
-            count.to_string()
-        }));
-        let _ = tray
-            .icon
-            .set_tooltip(Some(format!("Gupi — {unread}: {count}")));
-        // Two window entries and the separator/settings/quit footer stay in place.
-        while tray.menu.items().len() > 5 {
-            tray.menu.remove_at(2);
-        }
-        tray.targets.clear();
-        if entries.is_empty() {
-            return;
-        }
-        let _ = tray.menu.insert(&PredefinedMenuItem::separator(), 2);
-        let _ = tray
-            .menu
-            .insert(&MenuItem::new(format!("{unread}: {count}"), false, None), 3);
-        // One entry per source. Waiting is the actionable state even when unread too.
-        let mut entries = entries;
-        entries.sort_by_key(|entry| match (entry.activity, entry.unread) {
-            (Activity::Waiting, _) => 0,
-            (_, true) => 1,
-            _ => 2,
-        });
-        for entry in entries {
-            let label = if entry.activity == Activity::Waiting {
-                &waiting
-            } else if entry.unread {
-                &unread
-            } else {
-                &running
-            };
-            let item = MenuItem::new(format!("{label} — {}", entry.title), true, None);
-            let position = tray.menu.items().len() - 3;
-            if tray.menu.insert(&item, position).is_ok() {
-                tray.targets.insert(item.id().clone(), entry.target);
-            }
+            &running
+        };
+        let item = MenuItem::new(format!("{label} — {}", entry.title), true, None);
+        let position = tray.menu.items().len() - 3;
+        if tray.menu.insert(&item, position).is_ok() {
+            tray.targets.insert(item.id().clone(), entry.target);
         }
     }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let _ = (count, entries, cx);
 }

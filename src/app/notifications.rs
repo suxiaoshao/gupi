@@ -1,8 +1,10 @@
 //! One delivery owner for main and temporary conversations, independent of windows.
+#[cfg(any(test, target_os = "macos", target_os = "windows"))]
+use crate::state::conversation::Activity;
 use crate::{
     foundation::i18n::t,
     state::{
-        conversation::{Activity, ConversationEvent, ConversationState},
+        conversation::{ConversationEvent, ConversationState},
         notifications::{Kind, Notice, Preferences, Severity},
     },
 };
@@ -77,6 +79,7 @@ struct Delivered {
     target: Target,
     window: Option<AnyWindowHandle>,
 }
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 #[derive(PartialEq, Eq)]
 struct TrayRow {
     owner: EntityId,
@@ -96,6 +99,7 @@ struct Delivery {
     // Retaining the completed task also prevents repeated authorization attempts.
     #[cfg(all(target_os = "macos", not(test)))]
     badge_authorization: Option<gpui_kit::Task<()>>,
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     tray: Vec<TrayRow>,
 }
 pub fn init(cx: &mut App) {
@@ -112,6 +116,7 @@ pub fn init(cx: &mut App) {
         badge: 0,
         #[cfg(all(target_os = "macos", not(test)))]
         badge_authorization: None,
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         tray: Vec::new(),
     });
     cx.set_global(Notifications(entity.clone()));
@@ -127,6 +132,7 @@ pub fn refresh_labels(cx: &mut App) {
     if let Some(manager) = cx.try_global::<Notifications>().map(|g| g.0.clone()) {
         cx.defer(move |cx| {
             manager.update(cx, |s, cx| {
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
                 s.tray.clear();
                 s.refresh(cx);
             })
@@ -400,15 +406,18 @@ impl Delivery {
                 }
             }
         }
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         let mut rows = Vec::new();
         let mut count = 0;
-        for (id, source) in &self.sources {
+        for source in self.sources.values() {
             if let Some(owner) = source.state.upgrade() {
-                for (key, s) in &owner.read(cx).sessions {
-                    count += usize::from(s.unread);
+                let state = owner.read(cx);
+                count += state.sessions.values().filter(|s| s.unread).count();
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                for (key, s) in &state.sessions {
                     if s.unread || matches!(s.activity(), Activity::Waiting | Activity::Running) {
                         rows.push(TrayRow {
-                            owner: *id,
+                            owner: owner.entity_id(),
                             key: key.clone(),
                             title: crate::features::home::navigation::display_title(&s.info, cx),
                             activity: s.activity(),
@@ -419,6 +428,7 @@ impl Delivery {
                 }
             }
         }
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         rows.sort_by(|a, b| a.owner.cmp(&b.owner).then(a.key.cmp(&b.key)));
         if count != self.badge {
             tracing::info!(
@@ -454,6 +464,7 @@ impl Delivery {
                 tracing::warn!(%error, "set application badge failed");
             }
         }
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         if rows != self.tray {
             let entries = rows
                 .iter()

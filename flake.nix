@@ -62,9 +62,10 @@
               rust
               pkgs.pkg-config
               pkgs.nodejs_24
-              pkgs.python3
+              pkgs.python3 # UI gallery and icon generation scripts.
             ];
-            nativeBuildInputs = [ pkgs.rustPlatform.bindgenHook ];
+            # Selected-text support generates AppKit bindings on macOS.
+            nativeBuildInputs = lib.optionals pkgs.stdenv.isDarwin [ pkgs.rustPlatform.bindgenHook ];
             shellHook = lib.optionalString pkgs.stdenv.isDarwin ''
               export PATH="${appleTools}/bin:$PATH"
             '';

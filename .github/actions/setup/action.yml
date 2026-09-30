@@ -9,18 +9,13 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Set up Python for packaging scripts
-      uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
-      with:
-        python-version: '3.12'
-
     - name: Install Linux native dependencies
       if: runner.os == 'Linux'
       shell: bash
       run: |
         sudo apt-get update
         sudo apt-get install --no-install-recommends -y \
-          build-essential pkg-config clang libclang-dev dpkg-dev binutils \
+          build-essential pkg-config clang dpkg-dev binutils \
           libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
           libegl1-mesa-dev libvulkan-dev libfontconfig1-dev libfreetype6-dev \
           libxcb1-dev libx11-dev libxcursor-dev libxi-dev libxrandr-dev libgbm-dev

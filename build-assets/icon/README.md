@@ -14,14 +14,14 @@ Gupi.icon 使用 Assets/logo.svg 矢量图层：默认浅灰背景、黑色标�
 `assets/brand/tray-template.svg` 沿用经典标记，收紧 viewBox 至 `120 120 560 560`。macOS 托盘使用 36×36 透明 PNG，由 tray-icon 按 18pt 显示并标为 template；此 PNG 是启动时需要的运行资源，随 SVG 提交。修改 SVG 后从仓库根目录重新生成：
 
 ```sh
-rsvg-convert -w 36 -h 36 app/gupi/assets/brand/tray-template.svg -o app/gupi/assets/brand/tray-template.png
+rsvg-convert -w 36 -h 36 assets/brand/tray-template.svg -o assets/brand/tray-template.png
 ```
 
 `assets/brand/logo-color.svg` 为 2026-09-24 获取的 https://pi.dev/logo-auto.svg 原始内容，颜色为 `#F09082`、`#4D9ABF`、`#F1BE58`。用于正式 Pi 彩色主题与派生变体；默认仍保留经典。主题范围、打包与动态切换边界见[开发计划](../../docs/dev/issue-223/README.md)。
 
 ## 主题资源
 
-运行 `python3 app/gupi/script/generate-icon-themes.py` 重新生成七种主题（需要 Xcode Icon Composer 的 ictool）。官方 SVG 是几何来源，脚本只更换配色；经典 `Gupi.icon` 为材质/外观模板。生成的各 `.icon/icon.json`、SVG 图层和运行时 PNG 需要同步提交；Assets.car 与 icns/iconset 由 xtask 在临时目录派生，不提交。`default-icon` 明确指定 Gupi，xtask 会一次编译目录下全部主题。
+运行 `python3 script/generate-icon-themes.py` 重新生成七种主题（需要 Xcode Icon Composer 的 ictool）。官方 SVG 是几何来源，脚本只更换配色；经典 `Gupi.icon` 为材质/外观模板。生成的各 `.icon/icon.json`、SVG 图层和运行时 PNG 需要同步提交；Assets.car 与 icns/iconset 由 xtask 在临时目录派生，不提交。`default-icon` 明确指定 Gupi，xtask 会一次编译目录下全部主题。
 
 彩虹主题的十格按行使用红橙黄、绿蓝、紫红橙、绿蓝，复用红、橙、黄、绿、蓝、紫六种纯色；不提供彩虹渐变。彩虹与乌克兰主题均用官方路径裁切外轮廓。彩虹按方格赋色；乌克兰主题继续使用上下蓝黄双色。
 

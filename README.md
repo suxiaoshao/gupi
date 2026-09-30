@@ -55,6 +55,8 @@ CARGO_TARGET_DIR=target/native cargo run -p xtask --locked -- bundle
 
 目录边界与验证约定见 [AGENTS.md](AGENTS.md)。现行设计及能力边界由 [开发索引](docs/dev/README.md)导航，本次仓库分离决策见 [独立项目记录](docs/dev/standalone-project/README.md)。
 
+开发脚本使用 Python 3（UI 体验、图标生成）和 Node.js（RPC 体验），`nix develop` 已提供。Python 不参与 Gupi 的 Rust 构建，也不是运行应用的前置要求。
+
 已有隔离体验脚本：
 
 ```sh

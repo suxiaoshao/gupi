@@ -33,7 +33,6 @@ gpui-component-assets = { package = "gpui-kit-assets", version = "=0.7.0" }
 # These services and their transitive workspace crates share one Git source.
 app-theme = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "ca2c45f9bd96d24e06acfb7f445dcd2f6227273d", default-features = false }
 gpui-form = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "ca2c45f9bd96d24e06acfb7f445dcd2f6227273d", features = ["garde-adapter"] }
-gpui-form-macros = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "ca2c45f9bd96d24e06acfb7f445dcd2f6227273d" }
 gpui-operation = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "ca2c45f9bd96d24e06acfb7f445dcd2f6227273d" }
 gpui-store = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "ca2c45f9bd96d24e06acfb7f445dcd2f6227273d" }
 platform-ext = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "ca2c45f9bd96d24e06acfb7f445dcd2f6227273d" }

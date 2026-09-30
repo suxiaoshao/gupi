@@ -10,30 +10,21 @@ pub fn init(cx: &mut App) {
         .enable_all()
         .build()
         .expect("failed to initialize Tokio runtime");
-    let handle = runtime.handle().clone();
     cx.set_global(GlobalTokio {
-        owned_runtime: Some(runtime),
-        handle,
-    });
-}
-
-pub fn init_from_handle(cx: &mut App, handle: tokio::runtime::Handle) {
-    cx.set_global(GlobalTokio {
-        owned_runtime: None,
-        handle,
+        runtime: Some(runtime),
     });
 }
 
 struct GlobalTokio {
-    owned_runtime: Option<tokio::runtime::Runtime>,
-    handle: tokio::runtime::Handle,
+    // shutdown_background consumes the runtime, so Drop takes it from this slot.
+    runtime: Option<tokio::runtime::Runtime>,
 }
 
 impl Global for GlobalTokio {}
 
 impl Drop for GlobalTokio {
     fn drop(&mut self) {
-        if let Some(runtime) = self.owned_runtime.take() {
+        if let Some(runtime) = self.runtime.take() {
             runtime.shutdown_background();
         }
     }
@@ -49,12 +40,14 @@ impl Tokio {
         R: Send + 'static,
     {
         cx.read_global(|tokio: &GlobalTokio, cx| {
-            let task = tokio_util::task::AbortOnDropHandle::new(tokio.handle.spawn(future));
+            let task = tokio_util::task::AbortOnDropHandle::new(
+                tokio
+                    .runtime
+                    .as_ref()
+                    .expect("Tokio runtime is initialized")
+                    .spawn(future),
+            );
             cx.background_spawn(task)
         })
-    }
-
-    pub fn handle(cx: &App) -> tokio::runtime::Handle {
-        cx.read_global(|tokio: &GlobalTokio, _| tokio.handle.clone())
     }
 }

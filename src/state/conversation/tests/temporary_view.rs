@@ -855,3 +855,97 @@ fn find_expands_recorded_skill_instructions_and_copy_keeps_original(cx: &mut Tes
         window.remove_window();
     });
 }
+
+#[gpui_kit::test]
+fn session_editors_preserve_composition_selection_and_undo_across_switches(
+    cx: &mut TestAppContext,
+) {
+    use crate::features::home::HomeView;
+    use gpui_kit::EntityInputHandler;
+    init_interactions(cx);
+    let state = cx.new(|cx| ConversationState::temporary("unused-pi".into(), cx));
+    state.update(cx, |state, _| {
+        for key in ["first", "second"] {
+            state.sessions.insert(key.into(), fixture_session(key));
+        }
+        state.selected = Some("first".into());
+    });
+    let mut home = None;
+    let (_, visual) = cx.add_window_view(|window, cx| {
+        let view = cx.new(|cx| HomeView::with_state(state.clone(), window, cx));
+        home = Some(view.clone());
+        Root::new(view, window, cx)
+    });
+    let home = home.unwrap();
+    visual.run_until_parked();
+    let first = visual.update(|window, cx| {
+        let input = home.read(cx).input.clone();
+        input.update(cx, |input, cx| {
+            input.replace_text_in_range(None, "abcd", window, cx);
+        });
+        input
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        first.update(cx, |input, cx| {
+            input.set_selected_range(2..2, cx);
+            input.replace_and_mark_text_in_range(None, "ni", Some(2..2), window, cx);
+        });
+        state.update(cx, |_, cx| super::super::notify_controls("first", cx));
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        assert_eq!(first.read(cx).value().as_ref(), "abnicd");
+        assert_eq!(first.read(cx).cursor(), 4);
+        first.update(cx, |input, cx| {
+            assert!(input.marked_text_range(window, cx).is_some());
+        });
+        state.update(cx, |state, cx| {
+            state.selected = Some("second".into());
+            super::super::notify_selection(cx);
+        });
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        let second = home.read(cx).input.clone();
+        assert_ne!(first.entity_id(), second.entity_id());
+        second.update(cx, |input, cx| {
+            input.replace_text_in_range(None, "second", window, cx)
+        });
+        state.update(cx, |state, cx| {
+            state.selected = Some("first".into());
+            super::super::notify_selection(cx);
+        });
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        assert_eq!(home.read(cx).input.entity_id(), first.entity_id());
+        assert_eq!(first.read(cx).value().as_ref(), "abnicd");
+        first.update(cx, |input, cx| {
+            assert!(input.marked_text_range(window, cx).is_some());
+            input.replace_text_in_range(None, "你", window, cx);
+            input.focus(window, cx);
+        });
+    });
+    visual.run_until_parked();
+    visual.update(|_, cx| {
+        assert_eq!(first.read(cx).value().as_ref(), "ab你cd");
+        assert_eq!(
+            state.read(cx).sessions["second"].draft.text().as_ref(),
+            "second"
+        );
+    });
+    visual.dispatch_action(gpui_kit::component::input::Undo);
+    visual.run_until_parked();
+    visual.update(|_, cx| {
+        assert_eq!(first.read(cx).value().as_ref(), "abcd");
+    });
+    // An explicit external edit still replaces the retained editor.
+    visual.update(|_, cx| {
+        state.update(cx, |state, cx| {
+            state.set_draft("first", "external".into(), cx)
+        });
+    });
+    visual.run_until_parked();
+    visual.update(|_, cx| assert_eq!(first.read(cx).value().as_ref(), "external"));
+}

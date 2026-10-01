@@ -42,6 +42,10 @@ use std::{
 };
 
 struct SessionView {
+    input: Entity<TextareaState>,
+    // Last persisted/external snapshot, excluding the editor's uncommitted IME text.
+    input_draft: gpui_kit::component::input::InputContent,
+    _input_subscriptions: Vec<Subscription>,
     history_canvas: Entity<history::canvas::HistoryCanvas>,
     history_projection: Option<(u64, HistoryDetail)>,
     model_picker: Entity<pickers::Picker>,
@@ -59,6 +63,7 @@ struct SessionView {
 }
 pub(crate) struct HomeView {
     pub state: Entity<ConversationState>,
+    // Handle to the selected session editor; SessionView owns its lifetime and subscriptions.
     pub(crate) input: Entity<TextareaState>,
     extension_input: Entity<TextareaState>,
     extension_line: Entity<InputState>,
@@ -245,7 +250,6 @@ impl HomeView {
                     cx,
                 );
             }),
-            cx.observe(&input, |_, _, cx| cx.notify()),
             cx.observe(&history_list, |_, _, cx| cx.notify()),
             cx.subscribe_in(
                 &state,
@@ -284,34 +288,6 @@ impl HomeView {
                     ConversationEvent::Notify { .. } | ConversationEvent::Attention(_) => {}
                 },
             ),
-            cx.subscribe_in(&input, window, |this, input, event, window, cx| {
-                let Some(key) = this.shown_key.clone() else {
-                    return;
-                };
-                if this.state.read(cx).selected.as_ref() != Some(&key) {
-                    return;
-                }
-                match event {
-                    InputEvent::Change => {
-                        if this.state.read(cx).sessions[&key].submitting() {
-                            this.sync(false, window, cx);
-                            return;
-                        }
-                        let content = input.read(cx).content();
-                        let value = content.text().to_string();
-                        this.state
-                            .update(cx, |s, cx| s.set_draft_content(&key, content, cx));
-                        this.open_slash_if_needed(&value, window, cx);
-                    }
-                    InputEvent::PressEnter {
-                        secondary,
-                        shift: false,
-                    } => {
-                        this.submit_or_paste(*secondary, window, cx);
-                    }
-                    _ => {}
-                }
-            }),
             cx.subscribe_in(&extension_input, window, |this, input, event, _, cx| {
                 let Some((key, id)) = this.shown_request.clone() else {
                     return;
@@ -435,8 +411,6 @@ impl HomeView {
                 self.shown_request = None;
                 self.questionnaire_subscriptions.clear();
                 self.input_questionnaire = None;
-                self.input
-                    .update(cx, |input, cx| input.set_value("", window, cx));
                 self.extension_input
                     .update(cx, |input, cx| input.set_value("", window, cx));
                 let owner = cx.weak_entity();
@@ -538,9 +512,59 @@ impl HomeView {
                     });
                 },
             ));
+            let draft = self.state.read(cx).sessions[&key].draft.clone();
+            let input = cx.new(|cx| {
+                let mut input = TextareaState::new(window, cx)
+                    .auto_grow(2, 8)
+                    .submit_on_enter(true);
+                input.set_value(draft.clone(), window, cx);
+                input
+            });
+            let input_key = key.clone();
+            let input_subscriptions = vec![
+                cx.observe(&input, |_, _, cx| cx.notify()),
+                cx.subscribe_in(
+                    &input,
+                    window,
+                    move |this, input, event, window, cx| match event {
+                        InputEvent::Change => {
+                            let Some(session) = this.state.read(cx).sessions.get(&input_key) else {
+                                return;
+                            };
+                            if session.submitting() {
+                                let draft = session.draft.clone();
+                                input.update(cx, |input, cx| input.set_value(draft, window, cx));
+                                return;
+                            }
+                            let content = input.read(cx).content();
+                            let value = content.text().to_string();
+                            this.state.update(cx, |state, cx| {
+                                state.set_draft_content(&input_key, content, cx);
+                            });
+                            if let Some(view) = this.views.get_mut(&input_key) {
+                                view.input_draft =
+                                    this.state.read(cx).sessions[&input_key].draft.clone();
+                            }
+                            if this.shown_key.as_ref() == Some(&input_key) {
+                                this.open_slash_if_needed(&value, window, cx);
+                            }
+                        }
+                        InputEvent::PressEnter {
+                            secondary,
+                            shift: false,
+                        } if this.shown_key.as_ref() == Some(&input_key) => {
+                            this.submit_or_paste(*secondary, window, cx);
+                        }
+                        _ => {}
+                    },
+                ),
+            ];
             self.views.insert(
                 key.clone(),
                 SessionView {
+                    input,
+                    input_draft: draft,
+                    _input_subscriptions: input_subscriptions,
                     history_canvas,
                     history_projection: None,
                     model_picker,
@@ -558,6 +582,8 @@ impl HomeView {
                 },
             );
         }
+        // The page selects the session's retained editor; switching never resets it.
+        self.input = self.views[&key].input.clone();
         let view = self.views.get_mut(&key).unwrap();
         view.model_picker
             .update(cx, |picker, cx| picker.sync_controls(window, cx));
@@ -707,9 +733,13 @@ impl HomeView {
             self.state
                 .update(cx, |state, cx| state.read_visible_history(&key, cx));
         }
-        if changed || self.input.read(cx).content() != draft {
-            self.input
-                .update(cx, |input, cx| input.set_value(draft, window, cx));
+        let view = self.views.get_mut(&key).unwrap();
+        if view.input_draft != draft {
+            // Only a changed external snapshot replaces editor content. Ordinary
+            // refreshes must preserve selection, undo history and IME composition.
+            view.input
+                .update(cx, |input, cx| input.set_value(draft.clone(), window, cx));
+            view.input_draft = draft;
         }
         if let Some((id, text, method, selection)) = request {
             let request_key = (key, id);

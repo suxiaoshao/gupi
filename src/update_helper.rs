@@ -53,34 +53,42 @@ fn run() -> std::io::Result<()> {
     if line.trim() != "install" {
         return Ok(());
     } // EOF/crash before graceful flush: never install.
-    if unsafe { WaitForSingleObject(parent.0, 60_000) } != WAIT_OBJECT_0 {
-        return Err(std::io::Error::other("Gupi did not finish exiting"));
-    }
-    let mut system = vec![0u16; 32768];
-    let length = unsafe { GetSystemDirectoryW(system.as_mut_ptr(), system.len() as u32) };
-    if length == 0 || length as usize >= system.len() {
-        return Err(std::io::Error::last_os_error());
-    }
-    let installer = std::path::PathBuf::from(String::from_utf16_lossy(&system[..length as usize]))
-        .join("msiexec.exe");
-    // MSI owns elevation and rollback. The helper stays unelevated and relaunches
-    // the installed app itself, including the old version after cancellation.
-    let mut destination = std::ffi::OsString::from("INSTALLDIR=");
-    destination.push(
-        plan.executable
-            .parent()
-            .ok_or_else(|| std::io::Error::other("missing install directory"))?,
-    );
-    let status = Command::new(installer)
-        .arg("/i")
-        .arg(&plan.installer)
-        .arg(destination)
-        .args(["/passive", "/norestart", "/L*v"])
-        .arg(&plan.log)
-        .status();
+    // After commitment, installation errors must still reach relaunch and cleanup.
+    let status = (|| -> std::io::Result<std::process::ExitStatus> {
+        if unsafe { WaitForSingleObject(parent.0, 60_000) } != WAIT_OBJECT_0 {
+            return Err(std::io::Error::other("Gupi did not finish exiting"));
+        }
+        let mut system = vec![0u16; 32768];
+        let length = unsafe { GetSystemDirectoryW(system.as_mut_ptr(), system.len() as u32) };
+        if length == 0 || length as usize >= system.len() {
+            return Err(std::io::Error::last_os_error());
+        }
+        let installer =
+            std::path::PathBuf::from(String::from_utf16_lossy(&system[..length as usize]))
+                .join("msiexec.exe");
+        // MSI owns elevation and rollback. The helper stays unelevated and relaunches
+        // the installed app itself, including the old version after cancellation.
+        let mut destination = std::ffi::OsString::from("INSTALLDIR=");
+        destination.push(
+            plan.executable
+                .parent()
+                .ok_or_else(|| std::io::Error::other("missing install directory"))?,
+        );
+        Command::new(installer)
+            .arg("/i")
+            .arg(&plan.installer)
+            .arg(destination)
+            .args(["/passive", "/norestart", "/L*v"])
+            .arg(&plan.log)
+            .status()
+    })();
     let success = matches!(status.as_ref().ok().and_then(|s| s.code()), Some(0 | 3010));
     let _ = std::fs::remove_file(&plan.installer);
-    let relaunched = Command::new(&plan.executable).spawn();
+    let relaunched = Command::new(&plan.executable)
+        .arg(plan::CLEANUP_ARGUMENT)
+        .arg(std::process::id().to_string())
+        .arg(plan.installer.parent().expect("absolute installer path"))
+        .spawn();
     if !success || relaunched.is_err() {
         if let Err(error) = &relaunched {
             let _ = std::fs::OpenOptions::new()

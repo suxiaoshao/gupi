@@ -232,11 +232,19 @@ impl Drop for PreparedInstall {
 }
 impl PreparedInstall {
     pub async fn commit(mut self) -> Result<(), String> {
-        self.input
-            .write_all(b"install\n")
-            .await
-            .map_err(|e| e.to_string())?;
-        self.input.flush().await.map_err(|e| e.to_string())?;
+        let sent = async {
+            self.input.write_all(b"install\n").await?;
+            self.input.flush().await
+        }
+        .await;
+        if let Err(error) = sent {
+            // Reap the failed helper before TempDir tries to remove its executable.
+            if let Some(mut child) = self.child.take() {
+                let _ = child.kill().await;
+            }
+            return Err(error.to_string());
+        }
+        // The relaunched application waits for the helper and removes this directory.
         let _ = self.directory.take().unwrap().keep();
         self.child.take(); // Detached helper waits for this process to exit before opening MSI.
         Ok(())

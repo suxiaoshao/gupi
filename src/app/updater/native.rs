@@ -113,10 +113,11 @@ fn handle(event: Event, cx: &mut App) {
                         Ok(prepared) => super::super::quit_then(cx, move |cx| {
                             let commit = gpui_tokio::Tokio::spawn(cx, prepared.commit());
                             let task = cx.spawn(async move |cx| {
-                                if !matches!(commit.await, Ok(Ok(()))) {
-                                    tracing::error!("update helper commit failed; the installed version is unchanged");
-                                }
-                                cx.update(|cx| cx.quit());
+                                let result = commit
+                                    .await
+                                    .map_err(|error| error.to_string())
+                                    .and_then(|result| result);
+                                cx.update(|cx| finish_handoff(result, cx));
                             });
                             cx.global_mut::<Updater>().prepare = Some(task);
                         }),
@@ -125,5 +126,32 @@ fn handle(event: Event, cx: &mut App) {
             });
             cx.global_mut::<Updater>().prepare = Some(task);
         }
+    }
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn finish_handoff(result: Result<(), String>, cx: &mut App) {
+    match result {
+        Ok(()) => cx.quit(),
+        Err(error) => {
+            tracing::error!(%error, "update helper commit failed; restarting the installed version");
+            // Managed shutdown already stopped the application's services. Restart
+            // through GPUI, which waits for this process to exit on Windows.
+            cx.restart();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[gpui_kit::test]
+    async fn failed_handoff_restarts_the_existing_application(cx: &mut gpui_kit::TestAppContext) {
+        let restarted = cx.expect_restart();
+        cx.update(|cx| super::finish_handoff(Err("helper pipe closed".into()), cx));
+        let (path, arguments) = restarted
+            .await
+            .expect("failed handoff must request a restart");
+        assert!(path.is_none(), "use the current installed executable");
+        assert!(arguments.is_empty());
     }
 }

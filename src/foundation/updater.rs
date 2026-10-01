@@ -1,3 +1,5 @@
+#[cfg(any(target_os = "windows", test))]
+mod cleanup;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "windows")]
@@ -26,6 +28,8 @@ pub(crate) fn feed_url(release_url: &str, name: &str) -> String {
     )
 }
 
+#[cfg(target_os = "windows")]
+pub(crate) use cleanup::after_update;
 #[cfg(target_os = "windows")]
 pub(crate) use windows::prepare_install;
 #[cfg(target_os = "windows")]

@@ -1,3 +1,5 @@
+pub(crate) const CLEANUP_ARGUMENT: &str = "--gupi-cleanup-update";
+
 // Passed over a private stdin pipe, never a globally writable command file.
 #[derive(serde::Serialize, serde::Deserialize)]
 pub(crate) struct InstallPlan {

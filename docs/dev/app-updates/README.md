@@ -47,6 +47,8 @@ WinSparkle 完成下载与 Ed25519 校验后，通过 `user_run_installer_callba
 
 Gupi 完成保存和 Pi 关闭后，通过同一管道提交 `install`，随后退出。helper 持有父进程句柄并等待真正退出，使用系统目录下的 `msiexec.exe` 安装原语言 MSI，传入原安装目录、`/passive /norestart` 和日志路径。Windows Installer 负责 UAC、升级和回滚；helper 保持普通用户身份，并在成功、取消或安装失败后重新启动安装目录中的 Gupi。MSI 失败会显示错误，日志位于 Gupi 日志目录的 `update-install.log`。父进程在提交前崩溃或关闭管道时，helper 不安装。
 
+如果提交 `install` 失败，应用等待失败的 helper 结束、释放临时目录，然后通过 GPUI 重启现有版本，重新初始化已经停止的服务。成功提交后，临时目录保留至更新完成：helper 重启 Gupi 时携带自己的进程 ID 和本次目录，新进程等待 helper 退出，再删除 MSI、helper 文件和空目录。清理仅接受系统临时目录下的 `gupi-update-*` 目录，拒绝目录链接或未知内容，不递归删除；清理失败不会阻止 Gupi 正常启动。
+
 MSI 的原生运行、UAC 取消、回滚与重启仍需在 Windows 机器验证，跨目标类型检查不能替代这些证据。
 
 ## 发布与信任

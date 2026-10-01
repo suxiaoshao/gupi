@@ -57,11 +57,11 @@ CARGO_TARGET_DIR=target/native MACOSX_DEPLOYMENT_TARGET=11.0 \
   --notary-profile gupi-notary
 ```
 
-`--keychain /path/to/keychain-db` selects a keychain containing both the identity and profile. `--entitlements /path/to/entitlements.plist` optionally adds the entitlements required by a particular distribution configuration; relative paths resolve from the project root.
+`--keychain /path/to/keychain-db` selects a keychain containing both the identity and profile. The keychain must also be in the user search list so `codesign` can resolve intermediate certificates; an explicit `--keychain` path alone does not configure that search list. `--entitlements /path/to/entitlements.plist` optionally adds the entitlements required by a particular distribution configuration; relative paths resolve from the project root.
 
 Formal signing happens after all bundle mutations. xtask signs nested Mach-O files/code bundles from the inside out using hardened runtime and a secure timestamp, verifies the result, submits a ZIP to Apple, requires an `Accepted` status, staples and validates the ticket, and runs Gatekeeper assessment. It then exports a ZIP and creates a compressed, read-only HFS+ DMG from that stapled app. The DMG receives its own Developer ID signature, notarization submission, stapled ticket and Gatekeeper assessment. Neither final filename carries the `_development` suffix. A failed packaging or notarization step fails the job; no packages are uploaded. Notarization waits up to 30 minutes; a timeout or rejection fails the build. Use the reported submission ID with `notarytool log` to investigate; a first submission may need more time.
 
-The project's current macOS formal-signing path has been implemented but has not been exercised with real credentials. Windows installers and Linux packages are currently unsigned.
+The v0.1.0 macOS arm64 and Intel packages passed Developer ID signing, Apple notarization, stapling, and Gatekeeper assessment. The arm64 DMG was also used for an isolated installation and startup check. Windows installers and Linux packages are currently unsigned.
 
 ## GitHub Actions
 
@@ -83,7 +83,7 @@ To enable `developer-id` builds, configure these repository values:
 | Secret | `MACOS_NOTARY_KEY_ID` | Team API key ID |
 | Secret | `MACOS_NOTARY_ISSUER_ID` | Team API key issuer UUID |
 
-Each signed macOS job imports credentials into a temporary keychain with a generated password and stores a validated notarization profile there. It removes temporary key files and deletes the keychain in its cleanup step. Signing credentials are available only to the signed macOS jobs.
+Each signed macOS job imports credentials into a temporary keychain with a generated password, adds it to the job's user search list, and stores a validated notarization profile there. It removes temporary key files and deletes the keychain in its cleanup step. Signing credentials are available only to the signed macOS jobs.
 
 Release logic lives in Rust `xtask`: `release prepare` verifies the tag and version; `bundle` owns package construction and required signatures; `release collect` checks the combined artifact set once, hashes the files, reads MSI identity directly and generates distribution manifests. GitHub Actions coordinates the runners and uploads. The only release shell script imports temporary macOS signing credentials.
 
@@ -92,6 +92,8 @@ Workspace tests run in normal CI. Tag builds do not repeat the complete test sui
 After all builds pass, the workflow requires the complete set of **14 packages** (two macOS architectures × ZIP/DMG, nine Windows MSI languages, one Linux deb), generates `SHA256SUMS`, and creates a **draft** release with `gh release create --draft --verify-tag`. Only the collection job has `contents: write`. It requires an existing tag, leaves an existing release for manual review, and never changes a release to published.
 
 Before publishing a draft, verify installation/launch on the intended platforms. [Third-party notices](../THIRD_PARTY_NOTICES.md) records the Pi icon sources, attribution, adaptations, and upstream MIT license and is included as a resource in every platform package. See [the icon provenance](../build-assets/icon/README.md) for asset details. Draft notes identify development DMGs/ZIPs and unsigned installers. Creating tags and publishing a reviewed draft are separate maintainer actions.
+
+For v0.1.0, native checks covered the macOS arm64 package and the Simplified Chinese MSI on Windows 11 x64: initial setup, main window and settings, preference persistence, quit/relaunch, and Pi detection. Windows validation also covered first-install UAC and manual update checking while no public release existed. Both macOS architectures passed artifact verification; all 11 update feeds passed Ed25519 verification against the actual packages. Windows old-to-new native updating, physical Intel Mac runtime behavior, Linux desktop runtime behavior, and package-manager installation/upgrade/uninstall remain outside this validation. First installation and update discovery do not establish that the native upgrade handoff works.
 
 References: [GitHub runner labels](https://docs.github.com/en/actions/reference/runners/github-hosted-runners), [GitHub certificate import](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications), [Tauri macOS signing](https://v2.tauri.app/distribute/sign/macos/), [Apple notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow), and [GitHub CLI release creation](https://cli.github.com/manual/gh_release_create).
 
@@ -107,6 +109,7 @@ References: [GitHub runner labels](https://docs.github.com/en/actions/reference/
 
 3. Follow **Release packages** in Actions. Tag creation triggers all builds, package checks, distribution-manifest generation and a draft Release automatically. No automatic version increment or tag creation is performed.
 4. Download the packages and verify intended-platform launch. Review the release notes and publish the draft when ready, selecting **Set as the latest release** for the stable version users should receive. The draft is created with `--latest=false`; the application reads GitHub's `/releases/latest` endpoint, so merely pushing a tag or leaving a draft does not announce an update. Tag automation intentionally stops at the draft.
+5. Update download links and installation instructions in both READMEs, verify the public package and appcast URLs, and record any outstanding validation or distribution work in the issue. Keep release-status tracking out of the product documentation.
 
 To retry a failed tag build, rerun failed jobs in Actions or dispatch the existing tag:
 

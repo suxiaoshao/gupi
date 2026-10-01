@@ -12,15 +12,8 @@
 
 ## Quick Start
 
-1. Set up your local **Pi** installation and [build environment](#installation). Confirm `pi --version` works in a terminal and configure your model account in Pi.
-2. Get the source and launch Gupi:
-
-   ```sh
-   git clone https://github.com/suxiaoshao/gupi.git
-   cd gupi
-   cargo run -p gupi --locked
-   ```
-
+1. [Install and configure **Pi**](#prepare-pi). Confirm `pi --version` works in a terminal and configure your model account in Pi.
+2. [Download Gupi for your platform](#download-gupi), install it, and launch the application.
 3. Choose your language and appearance in the welcome flow. Let Gupi find Pi automatically, or enter its executable's absolute path. You can also configure this later in **Settings → Pi**.
 4. Choose **New conversation** and select a project folder. Once connected, choose a model below the composer, write a request, and press **Enter**.
 
@@ -28,7 +21,7 @@ For a first task, try: `Read this project's README and explain what it does and 
 
 ## Installation
 
-**Run from source or install a package you build locally.** Public releases, Homebrew, and WinGet distribution are not available yet; local packaging produces DMG/ZIP on macOS.
+Download a prebuilt package from [GitHub Releases](https://github.com/suxiaoshao/gupi/releases/latest). Homebrew and WinGet distribution are not available yet.
 
 ### Prepare Pi
 
@@ -44,9 +37,29 @@ In Pi, use `/login` for a supported subscription, or follow its [provider setup]
 
 On Windows, also configure your command environment using Pi's [Windows instructions](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/windows.md). If you use a Node.js version manager, make sure the process launching Gupi can find both Pi and Node.js.
 
-### Platform requirements
+### Download Gupi
 
-Install Git and [Rustup](https://rustup.rs/). The repository's [rust-toolchain.toml](rust-toolchain.toml) selects the required Rust version. Prepare your platform's dependencies below, then run the commands in Quick Start above.
+| Platform | Download v0.1.0 | Installation |
+| --- | --- | --- |
+| macOS · Apple silicon | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.0/Gupi_0.1.0_aarch64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.0/Gupi_0.1.0_aarch64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
+| macOS · Intel | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.0/Gupi_0.1.0_x86_64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.0/Gupi_0.1.0_x86_64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
+| Windows · x64 | [English MSI](https://github.com/suxiaoshao/gupi/releases/download/v0.1.0/Gupi_0.1.0_x64_en-US.msi) · [All installer languages](https://github.com/suxiaoshao/gupi/releases/tag/v0.1.0) | Run the MSI, complete the installation, and open Gupi from the Start menu. |
+| Linux · x64 Debian/Ubuntu | [deb](https://github.com/suxiaoshao/gupi/releases/download/v0.1.0/Gupi_0.1.0_amd64.deb) | Run `sudo apt install ./Gupi_0.1.0_amd64.deb`, then launch Gupi in a graphical desktop session. |
+
+macOS packages require macOS 11 or later and are signed with Developer ID and notarized by Apple. Windows installers are not yet Authenticode-signed, so Windows may show an unknown publisher. Linux packages are also unsigned. The release includes `SHA256SUMS` for checking downloaded files.
+
+<details>
+<summary>Build from source or create local packages</summary>
+
+### Build requirements
+
+Install Git and [Rustup](https://rustup.rs/). The repository's [rust-toolchain.toml](rust-toolchain.toml) selects the required Rust version. Prepare your platform's dependencies below, then clone and run Gupi:
+
+```sh
+git clone https://github.com/suxiaoshao/gupi.git
+cd gupi
+cargo run -p gupi --locked
+```
 
 <details>
 <summary>macOS · Apple silicon and Intel</summary>
@@ -128,6 +141,8 @@ cargo run -p xtask --locked -- bundle
 </details>
 
 Local macOS packages default to development ad-hoc signing and are not notarized; downloaded development packages remain subject to Gatekeeper checks. Windows and Linux packages are currently unsigned. See [Release packaging](docs/releasing.md) for formal signing and target options.
+
+</details>
 
 ## Usage
 

@@ -12,15 +12,8 @@
 
 ## 快速开始
 
-1. 准备好本机 **Pi** 和[构建环境](#安装)。在终端确认 `pi --version` 正常，并在 Pi 中配置好模型账户。
-2. 获取源码并启动 Gupi：
-
-   ```sh
-   git clone https://github.com/suxiaoshao/gupi.git
-   cd gupi
-   cargo run -p gupi --locked
-   ```
-
+1. [安装并配置 **Pi**](#准备-pi)。在终端确认 `pi --version` 正常，并在 Pi 中配置好模型账户。
+2. [下载适合系统的 Gupi 安装包](#下载-gupi)，完成安装并启动应用。
 3. 在首次引导中选择语言与外观，自动查找 Pi，或填写其可执行文件的绝对路径。也可以稍后在 **设置 → Pi** 中配置。
 4. 点击 **新建会话**，选择项目文件夹。连接就绪后，在输入框下方选择模型，输入需求并按 **Enter**。
 
@@ -28,7 +21,7 @@
 
 ## 安装
 
-**目前从源码运行，或安装自己构建的应用包。** 公开 Release、Homebrew 和 WinGet 分发尚未提供；macOS 本地打包已支持 DMG/ZIP。
+从 [GitHub Releases](https://github.com/suxiaoshao/gupi/releases/latest) 下载预编译安装包。Homebrew 和 WinGet 分发尚未提供。
 
 ### 准备 Pi
 
@@ -44,9 +37,29 @@ pi
 
 Windows 用户还需按 Pi 的 [Windows 说明](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/windows.md)配置命令环境。通过版本管理器安装 Node.js 时，请确保启动 Gupi 的进程也能找到 Pi 和 Node.js。
 
-### 平台要求
+### 下载 Gupi
 
-安装 Git 和 [Rustup](https://rustup.rs/)，仓库的 [rust-toolchain.toml](rust-toolchain.toml)会选择所需 Rust 版本。完成对应平台的依赖准备后，执行上方 Quick Start 中的命令。
+| 平台 | 下载 v0.1.0 | 安装方法 |
+| --- | --- | --- |
+| macOS · Apple 芯片 | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.0/Gupi_0.1.0_aarch64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.0/Gupi_0.1.0_aarch64_macos.zip) | 打开 DMG，将 `Gupi.app` 拖到“应用程序”；也可以解压 ZIP 后将应用移入该目录。 |
+| macOS · Intel | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.0/Gupi_0.1.0_x86_64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.0/Gupi_0.1.0_x86_64_macos.zip) | 打开 DMG，将 `Gupi.app` 拖到“应用程序”；也可以解压 ZIP 后将应用移入该目录。 |
+| Windows · x64 | [简体中文 MSI](https://github.com/suxiaoshao/gupi/releases/download/v0.1.0/Gupi_0.1.0_x64_zh-CN.msi) · [全部安装语言](https://github.com/suxiaoshao/gupi/releases/tag/v0.1.0) | 运行 MSI 完成安装，再从开始菜单打开 Gupi。 |
+| Linux · x64 Debian/Ubuntu | [deb](https://github.com/suxiaoshao/gupi/releases/download/v0.1.0/Gupi_0.1.0_amd64.deb) | 执行 `sudo apt install ./Gupi_0.1.0_amd64.deb`，然后在图形桌面会话中启动 Gupi。 |
+
+macOS 安装包要求 macOS 11 或更高版本，已使用 Developer ID 签名并通过 Apple 公证。Windows 安装包尚未做 Authenticode 签名，系统可能显示“未知发布者”；Linux 包也未签名。Release 中提供 `SHA256SUMS`，用于校验下载文件。
+
+<details>
+<summary>从源码运行或创建本地安装包</summary>
+
+### 构建环境
+
+安装 Git 和 [Rustup](https://rustup.rs/)，仓库的 [rust-toolchain.toml](rust-toolchain.toml)会选择所需 Rust 版本。完成下方对应平台的依赖准备后，获取源码并运行 Gupi：
+
+```sh
+git clone https://github.com/suxiaoshao/gupi.git
+cd gupi
+cargo run -p gupi --locked
+```
 
 <details>
 <summary>macOS · Apple 芯片与 Intel</summary>
@@ -128,6 +141,8 @@ cargo run -p xtask --locked -- bundle
 </details>
 
 本地 macOS 包默认使用开发期 ad-hoc 签名，未公证；下载得到的开发包仍受 Gatekeeper 检查。Windows 和 Linux 包目前未签名。正式签名及目标架构选项见[发行指南](docs/releasing.md)。
+
+</details>
 
 ## 使用方法
 

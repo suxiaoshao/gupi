@@ -89,7 +89,7 @@ Release logic lives in Rust `xtask`: `release prepare` verifies the tag and vers
 
 Workspace tests run in normal CI. Tag builds do not repeat the complete test suite, mount DMGs again, or install/uninstall MSI packages on every release. First-public-release validation and changes to installer behavior should include a targeted native install, launch and upgrade check; an English MSI install/uninstall without launch or an old-version upgrade would provide only limited evidence.
 
-After all builds pass, the workflow requires the complete set of **14 packages** (two macOS architectures × ZIP/DMG, nine Windows MSI languages, one Linux deb), generates `SHA256SUMS`, and creates a **draft** release with `gh release create --draft --verify-tag`. Only the collection job has `contents: write`. It requires an existing tag, leaves an existing release for manual review, and never changes a release to published.
+After all builds pass, the workflow requires the complete set of **14 packages** (two macOS architectures × ZIP/DMG, nine Windows MSI languages, one Linux deb), generates `SHA256SUMS` and `Gupi_<version>_distribution.tar.gz`, and creates a **draft** release with `gh release create --draft --verify-tag`. The archive contains the same reviewable Cask and WinGet manifests as `distribution/`, with normalized file metadata. Only the collection job has `contents: write`. It requires an existing tag, leaves an existing release for manual review, and never changes a release to published.
 
 Before publishing a draft, verify installation/launch on the intended platforms. [Third-party notices](../THIRD_PARTY_NOTICES.md) records the Pi icon sources, attribution, adaptations, and upstream MIT license and is included as a resource in every platform package. See [the icon provenance](../build-assets/icon/README.md) for asset details. Draft notes identify development DMGs/ZIPs and unsigned installers. Creating tags and publishing a reviewed draft are separate maintainer actions.
 
@@ -162,26 +162,30 @@ Builds without a public key keep check-for-updates and manual downloads. Develop
 
 ## Homebrew and WinGet
 
-The collection job produces a **distribution-manifests** Actions artifact containing reviewable files generated from the actual packages, not placeholder URLs or hashes. Nothing is submitted to an external repository. Package artifacts expire after 14 days; manifest artifacts after 30 days. Download the manifests when preparing a release.
+The collection job produces `Gupi_<version>_distribution.tar.gz` as a permanent release asset and a **distribution-manifests** Actions artifact. Both contain reviewable files generated from the actual packages, not placeholder URLs or hashes. Package artifacts expire after 14 days and manifest artifacts after 30 days; channel updates use the release asset so retries do not depend on Actions retention. Collection itself does not submit to external repositories. The v0.1.0 archive was backfilled from its successful build's manifests, with Homebrew formatting corrected; its installers and update feeds were not replaced.
 
 - Homebrew: `homebrew/Casks/g/gupi.rb`, with architecture-specific DMG URLs and SHA256. Generated only in `developer-id` mode; development runs omit the Cask so unsigned/unnotarized downloads are not presented as a supported Homebrew installation.
 - WinGet: `winget/manifests/s/suxiaoshao/Gupi/<version>/`, containing version, default English locale and installer manifests. All nine MSI languages are listed. The cross-platform Rust MSI reader extracts ProductCode, UpgradeCode and publisher directly from each installer, checking its version, architecture, scope and language against bundle settings. Hashes are calculated from those same files; there is no separate metadata artifact or Windows inspection script. The proposed identifier is `suxiaoshao.Gupi`; it is not yet registered in the community repository.
 
 These manifests reference the corresponding GitHub Release download URLs, which become available after publication. Only publish package-manager changes for a stable, public Release. Never replace assets under a published version; use a new version for changed binaries. Pi remains a separate prerequisite; neither channel silently installs it or deletes Pi data on uninstall.
 
-### Homebrew: maintain a tap
+### Homebrew: maintainer tap
 
-Start with a maintainer repository such as `suxiaoshao/homebrew-tap`. It does not exist as part of this code change and needs to be created before the following command can work. Copy the generated `Casks/g/gupi.rb` into that repository after publishing the signed release. On macOS, audit the Cask, install and launch Gupi, then verify uninstall and upgrade from the previous available release:
+The public [suxiaoshao/homebrew-tap](https://github.com/suxiaoshao/homebrew-tap) repository owns the distributed Cask. Gupi's Rust xtask remains its generator; correct generation issues here. The Cask uses architecture-specific signed DMGs, declares `depends_on :macos`, and has no `zap` stanza, preserving preferences and Pi data on uninstall.
 
 ```sh
 brew tap suxiaoshao/tap
 brew audit --cask --online suxiaoshao/tap/gupi
 brew install --cask suxiaoshao/tap/gupi
-brew upgrade --cask suxiaoshao/tap/gupi
+brew upgrade --cask --greedy suxiaoshao/tap/gupi
 brew uninstall --cask suxiaoshao/tap/gupi
 ```
 
-The Cask uses the normal `app` install and has no `zap` stanza, preserving configuration and Pi sessions. Run installation on both Apple Silicon and Intel before advertising both. Once the tap is working, a stable-release publication job can open a PR updating only this Cask with a GitHub App or token scoped to the tap; the current workflow needs no cross-repository credential. Central `homebrew/cask` submission can be considered separately under its acceptance rules.
+The tap's **Update Gupi** workflow checks the latest public stable release every six hours. Its manual trigger also accepts an existing stable tag. It rejects draft/prerelease versions and downgrades, downloads the matching permanent manifest archive, runs Homebrew style and online audit, and opens a versioned PR. Repeated runs reuse an existing proposal; a failed PR creation can be retried against the existing unchanged branch. Review and merge the PR to make the version available. Central `homebrew/cask` submission is separate.
+
+The workflow uses only the tap repository's `GITHUB_TOKEN`, with `contents: write` and `pull-requests: write`; Gupi does not hold a cross-repository token. GitHub's **Allow GitHub Actions to create and approve pull requests** setting must be enabled in the tap. The workflow does not approve or merge PRs. GitHub may require maintainer approval for additional PR workflows created by `GITHUB_TOKEN`; style and audit already run in the update job before it creates the PR. Scheduled workflows can be delayed or disabled by GitHub's public-repository inactivity policy; use the manual trigger when needed.
+
+Validate installation, launch, uninstall and data retention when introducing a channel or changing installer behavior. Record the actual architectures and upgrade paths tested. `auto_updates true` advertises the app's own updater; `--greedy` explicitly includes this Cask in Homebrew upgrades. Homebrew upgrade checks and the application's native update handoff are separate validations.
 
 ### WinGet: submit manifests
 

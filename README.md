@@ -21,7 +21,7 @@ For a first task, try: `Read this project's README and explain what it does and 
 
 ## Installation
 
-Download a prebuilt package from [GitHub Releases](https://github.com/suxiaoshao/gupi/releases/latest). Homebrew and WinGet distribution are not available yet.
+Install with Homebrew on macOS, or download a prebuilt package from [GitHub Releases](https://github.com/suxiaoshao/gupi/releases/latest). WinGet distribution is not available yet.
 
 ### Prepare Pi
 
@@ -36,6 +36,22 @@ pi
 In Pi, use `/login` for a supported subscription, or follow its [provider setup](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md) for API credentials. Select a model with `/model`. Gupi's current integration baseline is **Pi 0.99.1**.
 
 On Windows, also configure your command environment using Pi's [Windows instructions](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/windows.md). If you use a Node.js version manager, make sure the process launching Gupi can find both Pi and Node.js.
+
+### Homebrew (macOS)
+
+```sh
+brew install --cask suxiaoshao/tap/gupi
+```
+
+The [maintainer tap](https://github.com/suxiaoshao/homebrew-tap) installs the signed, notarized DMG for your Mac's architecture. Pi remains a separate prerequisite. To update or uninstall:
+
+```sh
+brew update
+brew upgrade --cask --greedy suxiaoshao/tap/gupi
+brew uninstall --cask suxiaoshao/tap/gupi
+```
+
+`--greedy` includes Gupi's Cask even though the app has its own updater. Uninstall keeps your Gupi preferences and Pi data.
 
 ### Download Gupi
 

@@ -86,7 +86,7 @@ end
             .join(&self.version);
         fs::create_dir_all(&winget)?;
         self.write_yaml(&winget, "", "version", "DefaultLocale: en-US\n")?;
-        self.write_yaml(&winget, ".installer", "installer", &format!("InstallerType: wix\nScope: machine\nUpgradeBehavior: install\nInstallers:\n{installers}"))?;
+        self.write_yaml(&winget, ".installer", "installer", &format!("InstallerType: wix\nScope: machine\nElevationRequirement: elevationRequired\nUpgradeBehavior: install\nInstallers:\n{installers}"))?;
         self.write_yaml(&winget, ".locale.en-US", "defaultLocale", &format!(
             "PackageLocale: en-US\nPublisher: {}\nPackageName: Gupi\nPackageUrl: {homepage}\nLicense: MIT\nLicenseUrl: {homepage}/blob/{}/LICENSE\nShortDescription: Native desktop workspace for Pi\nReleaseNotesUrl: {homepage}/releases/tag/{}\n",
             quoted(&self.publisher), self.tag, self.tag))

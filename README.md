@@ -21,7 +21,7 @@ For a first task, try: `Read this project's README and explain what it does and 
 
 ## Installation
 
-Install with Homebrew on macOS, or download a prebuilt package from [GitHub Releases](https://github.com/suxiaoshao/gupi/releases/latest). WinGet distribution is not available yet.
+Install with Homebrew on macOS, or download a prebuilt package from [GitHub Releases](https://github.com/suxiaoshao/gupi/releases/latest). WinGet is pending community inclusion; use the Windows MSI until the package appears in the public source. [Distribution progress](https://github.com/suxiaoshao/gupi/issues/5).
 
 ### Prepare Pi
 

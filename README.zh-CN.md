@@ -21,7 +21,7 @@
 
 ## 安装
 
-从 [GitHub Releases](https://github.com/suxiaoshao/gupi/releases/latest) 下载预编译安装包。Homebrew 和 WinGet 分发尚未提供。
+macOS 可以通过 Homebrew 安装，也可以从 [GitHub Releases](https://github.com/suxiaoshao/gupi/releases/latest) 下载预编译安装包。WinGet 分发尚未提供。
 
 ### 准备 Pi
 
@@ -36,6 +36,22 @@ pi
 在 Pi 中使用 `/login` 登录支持的订阅，或按[提供方配置说明](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md)配置 API 凭据，再用 `/model` 选择模型。当前 Gupi 的接入基线为 **Pi 0.99.1**。
 
 Windows 用户还需按 Pi 的 [Windows 说明](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/windows.md)配置命令环境。通过版本管理器安装 Node.js 时，请确保启动 Gupi 的进程也能找到 Pi 和 Node.js。
+
+### Homebrew（macOS）
+
+```sh
+brew install --cask suxiaoshao/tap/gupi
+```
+
+[维护者 tap](https://github.com/suxiaoshao/homebrew-tap) 会按 Mac 架构选择已签名、公证的 DMG。Pi 仍需单独安装配置。更新或卸载：
+
+```sh
+brew update
+brew upgrade --cask --greedy suxiaoshao/tap/gupi
+brew uninstall --cask suxiaoshao/tap/gupi
+```
+
+Gupi 带有内置更新功能，`--greedy` 会将它的 Cask 纳入 Homebrew 升级。卸载会保留 Gupi 偏好和 Pi 数据。
 
 ### 下载 Gupi
 

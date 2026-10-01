@@ -83,6 +83,21 @@ fn packages(root: &Path, release: &Release) {
     }
 }
 
+fn archived_manifests(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    let source = File::open(root.join("dist/Gupi_1.2.3_distribution.tar.gz")).unwrap();
+    tar::Archive::new(flate2::read::GzDecoder::new(source))
+        .entries()
+        .unwrap()
+        .map(|entry| {
+            let mut entry = entry.unwrap();
+            let path = entry.path().unwrap().into_owned();
+            let mut bytes = Vec::new();
+            entry.read_to_end(&mut bytes).unwrap();
+            (path, bytes)
+        })
+        .collect()
+}
+
 #[test]
 fn collect_reads_msi_identity_and_removes_stale_cask_on_development_rebuild() {
     let root = tempfile::tempdir().unwrap();
@@ -98,6 +113,17 @@ fn collect_reads_msi_identity_and_removes_stale_cask_on_development_rebuild() {
     assert!(installers.contains("InstallerLocale: zh-TW"));
     assert!(installers.contains("InstallerLocale: es-ES"));
     assert!(output.join("homebrew/Casks/g/gupi.rb").is_file());
+    let archived = archived_manifests(root.path());
+    assert_eq!(archived.len(), 5);
+    assert_eq!(
+        archived[Path::new("homebrew/Casks/g/gupi.rb")],
+        fs::read(output.join("homebrew/Casks/g/gupi.rb")).unwrap()
+    );
+    assert_eq!(
+        archived
+            [Path::new("winget/manifests/s/suxiaoshao/Gupi/1.2.3/suxiaoshao.Gupi.installer.yaml")],
+        installers.as_bytes()
+    );
 
     for arch in ["aarch64", "x86_64"] {
         for ext in ["dmg", "zip"] {
@@ -112,6 +138,7 @@ fn collect_reads_msi_identity_and_removes_stale_cask_on_development_rebuild() {
     release.signing = MacosSigning::Development;
     release.collect(root.path(), false).unwrap();
     assert!(!output.join("homebrew").exists());
+    assert!(!archived_manifests(root.path()).contains_key(Path::new("homebrew/Casks/g/gupi.rb")));
     assert!(
         fs::read_to_string(root.path().join("dist/SHA256SUMS"))
             .unwrap()

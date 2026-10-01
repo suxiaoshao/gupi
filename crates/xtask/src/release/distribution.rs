@@ -41,9 +41,8 @@ impl Release {
   name "Gupi"
   desc "Native desktop workspace for Pi"
   homepage "{homepage}"
-{auto_updates}
 
-  depends_on macos: ">= :big_sur"
+{auto_updates}  depends_on :macos
 
   app "Gupi.app"
 

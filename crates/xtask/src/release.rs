@@ -5,7 +5,7 @@ mod tests;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use semver::Version;
@@ -189,14 +189,60 @@ impl Release {
                 self.tag
             ),
         )?;
+        let manifests = self.archive_distribution(root)?;
         info!(
             packages = packages.len(),
             "release checksums and distribution manifests generated"
         );
         if draft {
-            self.create_draft(root, &packages, &feeds)?;
+            self.create_draft(root, &packages, &feeds, &manifests)?;
         }
         Ok(())
+    }
+
+    fn archive_distribution(&self, root: &Path) -> Result<PathBuf> {
+        let directory = root.join("distribution");
+        let path = root
+            .join("dist")
+            .join(format!("Gupi_{}_distribution.tar.gz", self.version));
+        let compressed = flate2::GzBuilder::new()
+            .mtime(0)
+            .write(File::create(&path)?, flate2::Compression::default());
+        let mut archive = tar::Builder::new(compressed);
+        let mut entries = walkdir::WalkDir::new(&directory)
+            .min_depth(1)
+            .into_iter()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|error| XtaskError::msg(format!("cannot archive manifests: {error}")))?;
+        entries.sort_by_key(|entry| entry.path().to_owned());
+        for entry in entries {
+            if entry.file_type().is_dir() {
+                continue;
+            }
+            if !entry.file_type().is_file() {
+                return Err(XtaskError::msg(
+                    "distribution manifests must be regular files",
+                ));
+            }
+            let mut source = File::open(entry.path())?;
+            let mut header = tar::Header::new_gnu();
+            header.set_size(source.metadata()?.len());
+            header.set_mode(0o644);
+            header.set_uid(0);
+            header.set_gid(0);
+            header.set_mtime(0);
+            header.set_cksum();
+            archive.append_data(
+                &mut header,
+                entry
+                    .path()
+                    .strip_prefix(&directory)
+                    .expect("manifest path"),
+                &mut source,
+            )?;
+        }
+        archive.into_inner()?.finish()?;
+        Ok(path)
     }
 
     fn create_draft(
@@ -204,6 +250,7 @@ impl Release {
         root: &Path,
         packages: &BTreeMap<String, String>,
         feeds: &[String],
+        manifests: &Path,
     ) -> Result<()> {
         let existing = Command::new("gh")
             .args(["release", "view", &self.tag, "--repo", &self.repository])
@@ -245,6 +292,7 @@ impl Release {
             .args(packages.keys().map(|name| root.join("dist").join(name)))
             .arg(root.join("dist/SHA256SUMS"))
             .args(feeds.iter().map(|name| root.join("dist").join(name)))
+            .arg(manifests)
             .status()?;
         if !status.success() {
             return Err(XtaskError::msg("GitHub draft release creation failed"));

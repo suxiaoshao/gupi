@@ -107,7 +107,11 @@ jobs:
           MACOS_NOTARY_API_KEY_BASE64: ${{ secrets.MACOS_NOTARY_API_KEY_BASE64 }}
           MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-        run: bash .github/scripts/import-macos-signing.sh
+        run: |
+          bash .github/scripts/import-macos-signing.sh
+          # codesign resolves intermediate certificates through the search list,
+          # even when its signing identity uses an explicit --keychain path.
+          security list-keychains -d user -s "$RUNNER_TEMP/gupi-signing.keychain-db"
 
       - name: Build packages
         run: cargo run -p xtask --locked -- bundle

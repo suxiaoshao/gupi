@@ -80,6 +80,10 @@ impl StartupView {
                 crate::app::temporary::set_command(value.pi_executable(), cx);
                 i18n::apply(value.language, cx);
                 crate::app::notifications::configure(value.notifications.clone(), cx);
+                crate::state::updates::get(cx).update(cx, |owner, cx| {
+                    owner.skipped = value.skipped_update.clone();
+                    owner.configure(value.checks_updates_automatically(), cx);
+                });
                 theme::apply(value, window, cx);
                 crate::state::keybindings::apply(&value.keybindings, cx);
                 if !op.is_running() {
@@ -96,6 +100,25 @@ impl StartupView {
             menus::refresh(cx);
         });
         let preview_config = config.clone();
+        let updates = crate::state::updates::get(cx);
+        let updates_sub = cx.subscribe_in(
+            &updates,
+            window,
+            |this, _, event: &crate::state::updates::Available, window, cx| {
+                let config = this.config.clone();
+                window.push_notification(
+                    gpui_kit::component::notification::Notification::info(
+                        super::updates::available_text(&event.0, cx),
+                    )
+                    .id::<crate::state::updates::Available>()
+                    .autohide(false)
+                    .on_click(move |_, window, cx| {
+                        super::updates::open(false, config.clone(), window, cx)
+                    }),
+                    cx,
+                );
+            },
+        );
         let appearance = window.observe_window_appearance(move |window, cx| {
             theme::apply(&preview_config.read(cx).preferences(cx), window, cx);
         });
@@ -118,7 +141,7 @@ impl StartupView {
             log_warning,
             instance_error: instance.err().map(|error| error.to_string()),
             instance_retry: None,
-            _subscriptions: vec![config_sub, form_sub, appearance, accent],
+            _subscriptions: vec![config_sub, form_sub, appearance, accent, updates_sub],
             quit_task: None,
             palette: None,
         };
@@ -166,6 +189,14 @@ impl StartupView {
         cx.notify();
     }
     pub fn quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.quit_then(window, cx, |cx| cx.quit());
+    }
+    pub fn quit_then(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        finish: impl FnOnce(&mut App) + 'static,
+    ) {
         if self.is_quitting() {
             return;
         }
@@ -177,6 +208,7 @@ impl StartupView {
         tracing::info!("managed quit started");
         crate::app::shortcuts::shutdown(cx);
         self.config.update(cx, |owner, _| owner.draining = true);
+        crate::state::updates::get(cx).update(cx, |owner, cx| owner.stop(cx));
         self.applied_pi.update(cx, |pi, _| pi.stop());
         self.draft_pi.update(cx, |pi, _| pi.stop());
         self.settings
@@ -222,7 +254,7 @@ impl StartupView {
             }
             let _ = close_pi.await;
             tracing::info!("managed quit completed");
-            cx.update(|cx| cx.quit());
+            cx.update(finish);
         }));
         cx.notify();
     }

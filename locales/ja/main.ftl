@@ -652,3 +652,25 @@ resource-edit-in-composer = ここでリソースを選び、引数はメッセ�
 resource-template-unclosed-quote = ファイル参照を送信する前に、テンプレート引数の引用符を閉じてください。
 
 resource-answer-required = 回答を選択してから送信してください。
+
+menu-check-updates = アップデートを確認…
+updates-title = アップデート
+updates-check = アップデートを確認
+updates-automatic = アップデートを自動で確認
+updates-automatic-help = 毎時間 GitHub で新しいバージョンを確認します。ダウンロードは手動で開始します。
+updates-idle = Gupi の新しいバージョンがあるか確認します。
+updates-checking = アップデートを確認中
+updates-current = 最新バージョンです
+updates-unpublished = 安定版はまだ公開されていません。
+updates-available = Gupi { $version } が利用可能です
+updates-release = リリースノートとダウンロード
+updates-install-help = Gupi のインストールに使用したインストーラーまたはパッケージマネージャーで更新してください。
+updates-error-network = アップデートを確認できませんでした。接続を確認して再試行してください。
+updates-error-rate-limit = GitHub のリクエスト上限に達しました。しばらくしてから再試行してください。
+updates-error-response = リリース情報を読み取れませんでした。しばらくしてから再試行してください。
+
+updates-install = ダウンロードしてインストール…
+updates-native-progress = 更新ウィンドウで更新を完了してください。
+updates-install-failed = 更新を完了できませんでした。再試行するか、Gupi を開き直してログを確認してください。
+updates-restart-help = インストール時に下書きを保存し、Pi 接続を閉じて Gupi を再起動します。
+updates-show-progress = 更新の進行状況を表示…

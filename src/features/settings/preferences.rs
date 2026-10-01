@@ -189,7 +189,7 @@ impl SettingsView {
                     .primary()
                     .label(t(cx, "settings-save-pi"))
                     .disabled(busy || !dirty)
-                    .loading(self.controller.read(cx).busy(cx))
+                    .loading(self.controller.read(cx).is_running(cx))
                     .on_click(cx.listener(|this, _, window, cx| this.submit(window, cx))),
             )
         }));

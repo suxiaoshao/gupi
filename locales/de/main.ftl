@@ -659,3 +659,25 @@ resource-edit-in-composer = Hier eine Ressource wählen; Argumente im Nachrichte
 resource-template-unclosed-quote = Schließe die Anführungszeichen in den Vorlagenargumenten, bevor du Dateiverweise sendest.
 
 resource-answer-required = Wählen Sie vor dem Absenden eine Antwort.
+
+menu-check-updates = Nach Updates suchen…
+updates-title = Updates
+updates-check = Nach Updates suchen
+updates-automatic = Automatisch nach Updates suchen
+updates-automatic-help = Sucht stündlich auf GitHub nach neuen Versionen. Downloads starten nur auf Ihren Wunsch.
+updates-idle = Prüfen, ob eine neue Version von Gupi verfügbar ist.
+updates-checking = Suche nach Updates
+updates-current = Sie verwenden die aktuelle Version
+updates-unpublished = Es wurde noch keine stabile Version veröffentlicht.
+updates-available = Gupi { $version } ist verfügbar
+updates-release = Versionshinweise und Downloads
+updates-install-help = Verwenden Sie zum Aktualisieren das ursprüngliche Installationsprogramm oder Ihren Paketmanager.
+updates-error-network = Updates konnten nicht geprüft werden. Prüfen Sie die Verbindung und versuchen Sie es erneut.
+updates-error-rate-limit = Das GitHub-Anfragelimit wurde erreicht. Versuchen Sie es später erneut.
+updates-error-response = Die Versionsinformationen konnten nicht gelesen werden. Versuchen Sie es später erneut.
+
+updates-install = Herunterladen und installieren…
+updates-native-progress = Schließen Sie das Update im Update-Fenster ab.
+updates-install-failed = Das Update konnte nicht abgeschlossen werden. Versuchen Sie es erneut oder öffnen Sie Gupi neu und prüfen Sie die Protokolle.
+updates-restart-help = Die Installation speichert Entwürfe, schließt Pi-Verbindungen und startet Gupi neu.
+updates-show-progress = Update-Fortschritt anzeigen…

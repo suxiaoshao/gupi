@@ -39,4 +39,4 @@ Windows 使用相同协议和 Child Drop 边界；任意扩展自建进程或 sh
 
 上述归属来自迁移时的当前源码。crate 的现行自动化覆盖为内存协议序列化与解析；真实进程、Shell、文件系统及墙钟超时集成测试已移除。它们不会证明当前安装版 Pi 的互操作或操作系统进程退出。
 
-早期 Pi 0.85.1 的启动、标准扩展往返、双实例和关闭实验保留在 [原仓库固定快照](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/docs/dev/issue-219/README.md#实现依据与已知限制)，不替代独立仓库当前提交的验证。第一阶段探测依据见 [进程证据](../issue-218/pi-evidence.md)，当前应用能力见 [使用指南](../../user-guide.md)。
+早期 Pi 0.85.1 的启动、标准扩展往返、双实例和关闭实验保留在 [原仓库固定快照](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/docs/dev/issue-219/README.md#实现依据与已知限制)，不替代独立仓库当前提交的验证。第一阶段探测依据见 [进程证据](../issue-218/pi-evidence.md)，当前应用能力见 README 的[使用方法](../../../README.zh-CN.md#使用方法)。

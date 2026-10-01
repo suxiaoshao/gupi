@@ -333,6 +333,8 @@ impl SettingsView {
         })
         .collect();
         let gupi_item = about_items.remove(0);
+        let updates = self.updates.clone();
+        let controller = self.controller.clone();
         let about = SettingPage::new(t(cx, "settings-page-about"))
             .icon(IconName::Info)
             .resettable(false)
@@ -363,6 +365,40 @@ impl SettingsView {
                     )
                     .description(t(cx, "settings-diagnostics-help")),
                 ),
+            )
+            .group(
+                SettingGroup::new()
+                    .title(t(cx, "updates-title"))
+                    .item(
+                        SettingItem::render(move |_, _, _| updates.clone())
+                            .keywords(["updates version download 更新 版本 下载"]),
+                    )
+                    .item(
+                        SettingItem::new(
+                            t(cx, "updates-automatic"),
+                            SettingField::render(move |_, _, cx| {
+                                let checked = controller
+                                    .read(cx)
+                                    .preferences(cx)
+                                    .checks_updates_automatically();
+                                let busy = controller.read(cx).busy(cx);
+                                let controller = controller.clone();
+                                gpui_kit::component::switch::Switch::new("updates-automatic")
+                                    .accessibility_label(t(cx, "updates-automatic"))
+                                    .checked(checked)
+                                    .disabled(busy)
+                                    .on_click(move |checked, _, cx| {
+                                        controller.update(cx, |owner, cx| {
+                                            owner.set_preference(
+                                                PreferenceChange::AutoCheckUpdates(*checked),
+                                                cx,
+                                            )
+                                        });
+                                    })
+                            }),
+                        )
+                        .description(t(cx, "updates-automatic-help")),
+                    ),
             )
             .group(
                 SettingGroup::new()

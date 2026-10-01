@@ -11,6 +11,7 @@
 
 /target/
 /dist/
+/distribution/
 /WixTools/
 .env
 .env.*

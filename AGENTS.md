@@ -23,7 +23,7 @@ Rust 模块使用 `{module}.rs`，新增依赖写完整版本号，遵循根格�
 
 ## 文档与技能
 
-[README](README.md) 提供运行入口，[使用指南](docs/user-guide.md)维护产品行为，[开发索引](docs/dev/README.md)导航设计与能力边界，[发行指南](docs/releasing.md)维护产物和签名流程。
+[英文 README](README.md) 与[中文 README](README.zh-CN.md)统一维护产品介绍、安装和使用方法；[开发索引](docs/dev/README.md)导航设计与能力边界，[发行指南](docs/releasing.md)维护产物和签名流程。
 
 按实际任务使用 `.agents/skills/`：
 

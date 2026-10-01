@@ -1,5 +1,13 @@
 # Gupi 开发文档
 
+面向用户的入口：[English](../../README.md) · [简体中文](../../README.zh-CN.md)。每份 README 完整介绍产品、安装与日常使用。
+
+**[发行能力与中英文产品文档](issue-5/README.md)**：DMG、Homebrew、WinGet 和对外文档的职责、实施顺序及验证。
+
+**[应用更新](app-updates/README.md)**：检查、下载、签名验证、安装与重启的实现，原生引擎的退出协调、发行配置和验证范围。
+
+本地构建环境见 README 的[安装章节](../../README.zh-CN.md#安装)，可分发产物使用[发行指南](../releasing.md)中的原生工具链。UI 与 RPC 隔离体验入口分别为 `script/gupi-ui-gallery`、`script/gupi-runtime-gallery`；它们使用已有 Pi、临时配置和 `tests/fixtures/`，不会向日常 Pi 配置注册扩展。脚本分别需要 Python 3 和 Node.js，均由 `nix develop` 提供；Python 不是 Gupi 应用运行或 Rust 构建的前置要求。
+
 历史 `issue-*` 目录及未注明仓库的历史编号沿用原 `suxiaoshao/gpui`；已关闭议题和关联 PR 保留在[原仓库](https://github.com/suxiaoshao/gpui/issues?q=is%3Aissue+is%3Aclosed+gupi)。新项目议题使用明确的 `Gupi #N` 链接。
 
 **[独立项目记录](standalone-project/README.md)**：仓库分离、依赖归属、单产品工具和本次迁移验证。

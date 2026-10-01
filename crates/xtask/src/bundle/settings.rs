@@ -260,10 +260,15 @@ pub fn read_bundle_settings(
     bundle_settings.license = license;
     bundle_settings.license_file =
         license_file.map(|path| resolve_manifest_path(manifest_dir, &path));
-    bundle_settings.resources_map = Some(macos_bundle_localization_resources(
-        manifest_dir,
-        &localizations,
-    )?);
+    let mut resources = macos_bundle_localization_resources(manifest_dir, &localizations)?;
+    resources.insert(
+        manifest_dir
+            .join("THIRD_PARTY_NOTICES.md")
+            .to_string_lossy()
+            .into_owned(),
+        "THIRD_PARTY_NOTICES.md".into(),
+    );
+    bundle_settings.resources_map = Some(resources);
 
     if declared_localizations.is_some() {
         let wix_languages = localizations

@@ -4,6 +4,8 @@ mod cmd;
 mod context;
 mod error;
 mod manifest;
+mod release;
+mod updater;
 
 use clap::Parser;
 use tracing::{Level, event, level_filters::LevelFilter};
@@ -22,6 +24,8 @@ fn main() {
     let cli = cli::Cli::parse();
     let result = match cli.command {
         cli::Commands::Bundle(args) => bundle::run(args),
+        cli::Commands::Release { command } => release::run(command),
+        cli::Commands::Updater { command } => updater::run(command),
     };
 
     if let Err(err) = result {

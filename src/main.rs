@@ -11,6 +11,10 @@ mod pi;
 mod state;
 
 fn main() {
+    #[cfg(target_os = "windows")]
+    if let Err(error) = foundation::updater::after_update() {
+        eprintln!("Gupi update cleanup: {error}");
+    }
     #[cfg(target_os = "macos")]
     if std::env::args_os().nth(1).as_deref()
         == Some(std::ffi::OsStr::new("--gupi-print-shell-path"))

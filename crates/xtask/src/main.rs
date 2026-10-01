@@ -6,6 +6,7 @@ mod error;
 mod manifest;
 mod release;
 mod updater;
+mod winget;
 
 use clap::Parser;
 use tracing::{Level, event, level_filters::LevelFilter};
@@ -26,6 +27,7 @@ fn main() {
         cli::Commands::Bundle(args) => bundle::run(args),
         cli::Commands::Release { command } => release::run(command),
         cli::Commands::Updater { command } => updater::run(command),
+        cli::Commands::Winget(args) => winget::run(args),
     };
 
     if let Err(err) = result {

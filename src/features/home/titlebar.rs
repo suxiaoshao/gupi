@@ -12,6 +12,8 @@ impl HomeView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
+        #[cfg(feature = "performance")]
+        let _span = tracing::debug_span!(target: "gupi::performance", "titlebar.render").entered();
         let state = self.state.read(cx);
         let temporary = state.temporary;
         let current = state.current();

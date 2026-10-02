@@ -42,10 +42,10 @@ skill 若实际导致暂停或额外确认，链接并引用具体条款，说�
 
 ## 验证与交付
 
-- 根据改动选择受影响 crate 的构建、既有回归和必要启动检查；仅为未覆盖的具体风险补测试，删除实现时同步删除其专用测试。
+- 验证适度，新增测试前先判断必要性；测试针对正式产品代码，不给测试工具再写测试。删除实现时同步删除其专用测试。
 - 修复后只复测受影响部分，完成必要检查即可交付试用；完整验收按用户要求或集成范围执行。
 - 格式使用 `cargo fmt --all -- --check`。Gupi 检查入口为 `cargo check -p gupi --locked`、`cargo test -p gupi --locked`、`cargo clippy -p gupi --all-targets --locked -- -D warnings`；具体选择遵循改动范围和实际 CI。
-- 本机 Pi 和 UI 检查使用临时配置、会话和项目目录；现有体验入口为 `script/gupi-ui-gallery`、`script/gupi-runtime-gallery`，fixture 位于 `tests/fixtures`。
+- 使用用户要求的验证环境，不擅自改为模拟或隔离环境；测试结论与实际验证范围一致。
 - 提交和集成遵循实际 hooks 与 `.github/workflows/ci.yml`；Issue、PR 使用 `.github/` 模板。汇报实际结果和影响交付的限制。
 - macOS / Linux 本地开发依赖集中维护在 `flake.nix` / `flake.lock`，Rust 版本由 `rust-toolchain.toml` 声明。CI 与发行工作流使用原生 Rustup + Xcode / 系统库。发行包必须在 Nix 外构建，并使用独立 target 目录避免混用缓存；打包入口为 `cargo run -p xtask --locked -- bundle`，具体流程见发行指南。
 

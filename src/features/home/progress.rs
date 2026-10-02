@@ -26,7 +26,11 @@ impl ProcessClock {
             cx.spawn(async |owner, cx| {
                 loop {
                     cx.background_executor().timer(Duration::from_secs(1)).await;
-                    if owner.update(cx, |_, cx| cx.notify()).is_err() {
+                    if owner.update(cx, |_, cx| {
+                        #[cfg(feature = "performance")]
+                        tracing::debug!(target: "gupi::performance", cause = "clock_tick", view = ?cx.entity_id(), "ui.invalidate");
+                        cx.notify();
+                    }).is_err() {
                         break;
                     }
                 }
@@ -37,6 +41,10 @@ impl ProcessClock {
 }
 impl Render for ProcessClock {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        #[cfg(feature = "performance")]
+        let _span = tracing::debug_span!(target: "gupi::performance", "clock.render",
+            view = ?cx.entity_id())
+        .entered();
         // The disclosure already has a single-line title; ticking cannot change row height.
         div()
             .min_w_0()
@@ -81,6 +89,8 @@ impl RetryView {
                     cx.background_executor().timer(Duration::from_secs(1)).await;
                     let keep = owner
                         .update(cx, |this, cx| {
+                            #[cfg(feature = "performance")]
+                            tracing::debug!(target: "gupi::performance", cause = "retry_tick", view = ?cx.entity_id(), "ui.invalidate");
                             cx.notify();
                             this.retry
                                 .iter()
@@ -99,6 +109,10 @@ impl RetryView {
 }
 impl Render for RetryView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        #[cfg(feature = "performance")]
+        let _span = tracing::debug_span!(target: "gupi::performance", "retry.render",
+            view = ?cx.entity_id())
+        .entered();
         v_flex().gap_1().children(
             self.retry
                 .iter()

@@ -32,6 +32,30 @@ pub(super) struct ChatRow {
     kind: RowKind,
 }
 impl ChatRow {
+    pub(super) fn message_ids(&self) -> impl Iterator<Item = &str> {
+        let messages = match &self.kind {
+            RowKind::Run { messages, .. } => messages.as_slice(),
+            RowKind::User(message)
+            | RowKind::Compaction(message)
+            | RowKind::BranchSummary(message) => std::slice::from_ref(message),
+        };
+        messages.iter().map(|message| message.id.as_str())
+    }
+
+    pub(super) fn update_message(&mut self, updated: &DisplayMessage) -> bool {
+        let messages = match &mut self.kind {
+            RowKind::Run { messages, .. } => messages.as_mut_slice(),
+            RowKind::User(message)
+            | RowKind::Compaction(message)
+            | RowKind::BranchSummary(message) => std::slice::from_mut(message),
+        };
+        let Some(message) = messages.iter_mut().find(|message| message.id == updated.id) else {
+            return false;
+        };
+        message.clone_from(updated);
+        true
+    }
+
     /// Search the same user text and eligible assistant units that the row renders.
     pub(super) fn find_sources(&self) -> Vec<super::find::Source> {
         if let RowKind::User(message) = &self.kind {
@@ -168,6 +192,8 @@ enum RowKind {
     BranchSummary(DisplayMessage),
 }
 pub(super) fn project(session: &Session, preview: Option<&str>) -> Vec<ChatRow> {
+    #[cfg(feature = "performance")]
+    let _span = tracing::debug_span!(target: "gupi::performance", "messages.project", preview = preview.is_some()).entered();
     let active = session
         .active_messages()
         .filter(|_| preview.is_none_or(|id| session.history().on_current_path(id)));
@@ -279,8 +305,8 @@ fn project_rows(
 
 /// Steering can leave several chronological fragments active. Only the newest
 /// one owns the run-level status; earlier fragments still retain their content.
-fn current_run_id(rows: &[ChatRow]) -> Option<&str> {
-    rows.iter().rev().find_map(|row| {
+fn current_run_id<'a>(rows: impl DoubleEndedIterator<Item = &'a ChatRow>) -> Option<&'a str> {
+    rows.rev().find_map(|row| {
         matches!(row.kind, RowKind::Run { active: true, .. }).then_some(row.id.as_str())
     })
 }
@@ -299,6 +325,8 @@ impl HomeView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        #[cfg(feature = "performance")]
+        let _span = tracing::debug_span!(target: "gupi::performance", "messages.render").entered();
         let Some(key) = self.shown_key.clone() else {
             return self.render_welcome(None, cx);
         };
@@ -388,19 +416,21 @@ impl HomeView {
                         };
                         owner
                             .read_with(cx, |this, cx| {
+                                let content = this.render_row(&key, row, cx);
+                                #[cfg(feature = "performance")]
+                                let content =
+                                    crate::app::performance::measure("message_row", false, content);
                                 div()
                                     .w_full()
                                     .flex()
                                     .justify_center()
                                     .pt(row.spacing_before(
-                                        index.checked_sub(1).and_then(|i| rows.get(i)),
+                                        index
+                                            .checked_sub(1)
+                                            .and_then(|i| rows.get(i))
+                                            .map(Rc::as_ref),
                                     ))
-                                    .child(
-                                        div()
-                                            .w_full()
-                                            .max_w(px(820.))
-                                            .child(this.render_row(&key, row, cx)),
-                                    )
+                                    .child(div().w_full().max_w(px(820.)).child(content))
                                     .into_any_element()
                             })
                             .unwrap_or_else(|_| div().into_any_element())
@@ -434,6 +464,8 @@ impl HomeView {
         }
     }
     fn render_row(&self, key: &str, row: &ChatRow, cx: &App) -> AnyElement {
+        #[cfg(feature = "performance")]
+        let _span = tracing::debug_span!(target: "gupi::performance", "messages.render_row", active = row.active()).entered();
         match &row.kind {
             RowKind::User(m) => {
                 let state = self.state.clone();
@@ -599,7 +631,8 @@ impl HomeView {
                     .map(|session| session.tools.as_slice())
                     .unwrap_or_default();
                 let content = RunContent::project(messages, live, *active);
-                let current = current_run_id(&self.views[key].rows) == Some(row.id.as_str());
+                let current = current_run_id(self.views[key].rows.iter().map(Rc::as_ref))
+                    == Some(row.id.as_str());
                 let mut result = MessageGroup::new().w_full();
                 if !content.has_process()
                     && *active
@@ -743,10 +776,31 @@ mod tests {
             }
             assert!(event.get("message").is_none());
             let session = Session::from_rpc_messages(&events[..=index]);
-            let rows = project(&session, None);
+            let previous = Session::from_rpc_messages(&events[..index]);
+            let mut incremental = project(&previous, None);
+            let updated = session
+                .message_update_since(previous.content_revision)
+                .expect("consecutive stream update");
+            assert!(
+                incremental
+                    .iter_mut()
+                    .any(|row| row.update_message(updated))
+            );
+            assert!(
+                session
+                    .message_update_since(session.content_revision)
+                    .is_none()
+            );
+            if previous.content_revision > 0 {
+                assert!(
+                    session
+                        .message_update_since(previous.content_revision - 1)
+                        .is_none()
+                );
+            }
             let RowKind::Run {
                 messages, active, ..
-            } = &rows.last().unwrap().kind
+            } = &incremental.last().unwrap().kind
             else {
                 panic!("missing run")
             };
@@ -1024,9 +1078,9 @@ mod tests {
         );
         assert!(matches!(rows[1].kind, RowKind::Run { active: true, .. }));
         assert!(matches!(rows[3].kind, RowKind::Run { active: true, .. }));
-        assert_eq!(current_run_id(&rows), Some(rows[3].id.as_str()));
+        assert_eq!(current_run_id(rows.iter()), Some(rows[3].id.as_str()));
         let settled = project_rows(vec![message("u", "user"), message("a", "assistant")], None);
-        assert_eq!(current_run_id(&settled), None);
+        assert_eq!(current_run_id(settled.iter()), None);
     }
     #[test]
     fn compactions_preserve_chronological_messages_and_adjacent_answers() {
@@ -1085,7 +1139,7 @@ mod tests {
         user.value["timestamp"] = serde_json::json!(1000);
         let before = project_rows(vec![user.clone()], Some(&HashSet::new()));
         assert_eq!(before.len(), 2);
-        assert_eq!(current_run_id(&before), Some(before[1].id.as_str()));
+        assert_eq!(current_run_id(before.iter()), Some(before[1].id.as_str()));
         assert!(
             matches!(&before[1].kind, RowKind::Run { active: true, messages, started_at: Some(1000) } if messages.is_empty())
         );

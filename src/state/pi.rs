@@ -118,6 +118,8 @@ impl PiState {
                             continue;
                         };
                         if owner.update(cx, |_, cx| {
+                            #[cfg(feature = "performance")]
+                            let _span = tracing::debug_span!(target: "gupi::performance", "rpc.deliver_event", kind = event.raw()["type"].as_str().unwrap_or("unknown")).entered();
                             cx.emit(PiEvent { instance: id, event });
                         }).is_err() { break; }
                     }

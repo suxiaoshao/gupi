@@ -283,6 +283,11 @@ impl HomeView {
         cx.notify();
     }
     pub(crate) fn focus_composer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Selection notifications are deferred. Resolve the selected page before
+        // an explicit focus request so it cannot target the previous editor.
+        if self.shown_key != self.state.read(cx).selected {
+            self.sync(false, window, cx);
+        }
         if let Some(s) = self.state.read(cx).current() {
             if let Some(pending) = s.pending_ui.front() {
                 match &pending.request.method {

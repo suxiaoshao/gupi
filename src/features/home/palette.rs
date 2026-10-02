@@ -320,7 +320,7 @@ impl Palette {
                 let _ = self.owner.update(cx, |home, cx| {
                     home.state
                         .update(cx, |s, cx| s.new_or_reuse(Some(path), cx));
-                    home.input.update(cx, |input, cx| input.focus(window, cx));
+                    home.focus_composer(window, cx);
                 });
             }
             return;
@@ -596,7 +596,20 @@ mod tests {
         });
         let state = cx.new(|cx| ConversationState::new("unused-pi".into(), cx));
         state.update(cx, |s, _| {
-            s.selected = Some("unloaded".into());
+            let info = SessionInfo {
+                path: Default::default(),
+                id: "empty".into(),
+                cwd: Default::default(),
+                name: None,
+                first_message: String::new(),
+                activity: String::new(),
+                parent_session: None,
+            };
+            s.sessions.insert(
+                "empty".into(),
+                crate::state::conversation::Session::new(info, String::new()),
+            );
+            s.selected = Some("empty".into());
             s.catalog = CatalogState::Ready(Catalog {
                 sessions: vec![SessionInfo {
                     path: "/tmp/search-fixture.jsonl".into(),
@@ -620,7 +633,7 @@ mod tests {
         visual.simulate_resize(size(px(960.), px(740.)));
         visual.update(|window, cx| {
             home.update(cx, |home, cx| {
-                assert!(home.focus_handle.is_focused(window));
+                home.focus_handle.focus(window, cx);
                 home.open_palette(true, window, cx);
             })
         });
@@ -664,7 +677,14 @@ mod tests {
             cx.update(|_, cx| {
                 let panel = home.read(cx).palette.as_ref().unwrap().read(cx);
                 assert!(panel.mode == super::Mode::Projects);
-                assert!(home.read(cx).state.read(cx).sessions.is_empty());
+                assert!(
+                    home.read(cx)
+                        .state
+                        .read(cx)
+                        .current()
+                        .unwrap()
+                        .empty_conversation()
+                );
             });
             cx.simulate_keystrokes("escape");
             cx.update(|window, cx| {

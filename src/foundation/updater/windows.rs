@@ -1,4 +1,6 @@
+mod installation;
 use super::{Event, plan::InstallPlan};
+use installation::installed_culture;
 use std::{
     ffi::{CString, OsString, c_char},
     os::windows::ffi::OsStringExt,
@@ -6,9 +8,6 @@ use std::{
     sync::OnceLock,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
-use windows_sys::Win32::System::ApplicationInstallationAndServicing::{
-    MsiEnumRelatedProductsW, MsiGetProductInfoW,
-};
 
 static EVENTS: OnceLock<smol::channel::Sender<Event>> = OnceLock::new();
 fn send(event: Event) {
@@ -63,57 +62,6 @@ extern "C" fn installer(path: *const u16) -> i32 {
 }
 fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain([0]).collect()
-}
-
-fn installed_culture() -> Option<String> {
-    // Same stable UpgradeCode as tauri-bundler's Gupi MSI. Keep the language of
-    // the installed product: changing UI language must not change MSI identity.
-    let code = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_DNS, b"Gupi.exe.app.x64");
-    let code = wide(&format!("{{{code}}}"));
-    let current = std::env::current_exe()
-        .ok()?
-        .parent()?
-        .canonicalize()
-        .ok()?;
-    for ix in 0..100 {
-        let mut product = [0; 39];
-        if unsafe { MsiEnumRelatedProductsW(code.as_ptr(), 0, ix, product.as_mut_ptr()) } != 0 {
-            break;
-        }
-        let property = |name: &str| {
-            let mut value = vec![0; 32768];
-            let mut length = value.len() as u32;
-            let result = unsafe {
-                MsiGetProductInfoW(
-                    product.as_ptr(),
-                    wide(name).as_ptr(),
-                    value.as_mut_ptr(),
-                    &mut length,
-                )
-            };
-            (result == 0).then(|| String::from_utf16_lossy(&value[..length as usize]))
-        };
-        let Some(location) = property("InstallLocation") else {
-            continue;
-        };
-        if PathBuf::from(location).canonicalize().ok().as_ref() != Some(&current) {
-            continue;
-        }
-        return match property("Language")?.as_str() {
-            "1033" => Some("en-US"),
-            "2052" => Some("zh-CN"),
-            "1028" => Some("zh-TW"),
-            "1041" => Some("ja-JP"),
-            "1042" => Some("ko-KR"),
-            "1031" => Some("de-DE"),
-            "1036" => Some("fr-FR"),
-            "3082" => Some("es-ES"),
-            "1046" => Some("pt-BR"),
-            _ => None,
-        }
-        .map(str::to_owned);
-    }
-    None
 }
 
 pub(crate) struct Driver {

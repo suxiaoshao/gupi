@@ -99,7 +99,7 @@ References: [GitHub runner labels](https://docs.github.com/en/actions/reference/
 
 ## Create a versioned release
 
-1. Update the root package version and its `Cargo.lock` entry, run CI, and merge the release changes. The workflow file and scripts must be present at the tagged commit.
+1. Update the root `gupi` package version and its `Cargo.lock` entry, run CI, and merge the release changes. This version determines the application's About version, installer version and update comparison. Internal crate versions and the Rust compiler in `rust-toolchain.toml` do not need to change with each application release. The workflow file and scripts must be present at the tagged commit.
 2. Create and push the matching tag from that commit; for example, when `Cargo.toml` declares `0.1.0`:
 
    ```sh
@@ -119,6 +119,19 @@ gh workflow run release.yml --ref main -f tag=v0.1.0 \
 ```
 
 For a formal run, use `macos_signing=developer-id` after configuring the values above. A dispatch still checks out the tag's exact commit. Prefer rerunning the same workflow run when only one platform failed. The workflow refuses to replace an existing draft or published release; inspect the failure and existing assets before retrying release creation. Rebuilding an MSI can change its product code and hash, so always use manifests from the same successful run as the published assets.
+
+## Verify an old-to-new application update
+
+Start with the previous public release installed through its signed macOS package or Windows MSI. Use that published binary as the update client; a freshly built development app or direct installation of the new package does not validate the upgrade path.
+
+Before publication, check the new packages and their matching appcast signatures and perform targeted startup checks. The production client discovers updates through GitHub's public `/releases/latest` endpoint, so complete the real update check after publishing the new release as Latest. Drafts and tags alone are not discoverable. Keep the existing update signing key and never replace published assets to make a test pass.
+
+- With automatic checks enabled, launch the old app and allow its initial ten-second delay plus network time. Confirm the new version is offered; also verify manual checking.
+- Before installing, exercise cancel and skip. Cancel must leave the old app usable. A skipped version must remain suppressed for background notices after relaunch, while manual checking still finds it.
+- Choose the in-app download/install action. On macOS, verify Sparkle replaces the app and relaunches it. On Windows, verify the helper/MSI handoff, any UAC prompt, and automatic relaunch; check that the old installation is upgraded and the handoff's temporary directory is cleaned up.
+- In the relaunched app, verify the new About version, retained preferences, conversations and drafts, and that another update check reports the current version.
+
+Record the actual old/new versions, platform, package identity and results. A successful build, verified signature, first installation, or update notification alone is not a completed automatic upgrade. Homebrew/WinGet upgrades are separate channel checks; Linux currently uses manual package installation rather than this native update path.
 
 ## Release commands
 

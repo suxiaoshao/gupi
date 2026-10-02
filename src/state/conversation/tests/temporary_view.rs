@@ -861,7 +861,7 @@ fn session_editors_preserve_composition_selection_and_undo_across_switches(
     cx: &mut TestAppContext,
 ) {
     use crate::features::home::HomeView;
-    use gpui_kit::EntityInputHandler;
+    use gpui_kit::{EntityInputHandler, Focusable};
     init_interactions(cx);
     let state = cx.new(|cx| ConversationState::temporary("unused-pi".into(), cx));
     state.update(cx, |state, _| {
@@ -878,6 +878,7 @@ fn session_editors_preserve_composition_selection_and_undo_across_switches(
     });
     let home = home.unwrap();
     visual.run_until_parked();
+    let other_focus = visual.update(|_, cx| cx.focus_handle());
     let first = visual.update(|window, cx| {
         let input = home.read(cx).input.clone();
         input.update(cx, |input, cx| {
@@ -909,9 +910,11 @@ fn session_editors_preserve_composition_selection_and_undo_across_switches(
     visual.update(|window, cx| {
         let second = home.read(cx).input.clone();
         assert_ne!(first.entity_id(), second.entity_id());
+        assert!(second.read(cx).focus_handle(cx).is_focused(window));
         second.update(cx, |input, cx| {
             input.replace_text_in_range(None, "second", window, cx)
         });
+        other_focus.focus(window, cx);
         state.update(cx, |state, cx| {
             state.selected = Some("first".into());
             super::super::notify_selection(cx);
@@ -920,6 +923,7 @@ fn session_editors_preserve_composition_selection_and_undo_across_switches(
     visual.run_until_parked();
     visual.update(|window, cx| {
         assert_eq!(home.read(cx).input.entity_id(), first.entity_id());
+        assert!(other_focus.is_focused(window));
         assert_eq!(first.read(cx).value().as_ref(), "abnicd");
         first.update(cx, |input, cx| {
             assert!(input.marked_text_range(window, cx).is_some());
@@ -943,9 +947,29 @@ fn session_editors_preserve_composition_selection_and_undo_across_switches(
     // An explicit external edit still replaces the retained editor.
     visual.update(|_, cx| {
         state.update(cx, |state, cx| {
-            state.set_draft("first", "external".into(), cx)
+            state.set_draft_content("first", "external".into(), cx)
         });
     });
     visual.run_until_parked();
     visual.update(|_, cx| assert_eq!(first.read(cx).value().as_ref(), "external"));
+    // An explicit request resolves the deferred selection before focusing.
+    visual.update(|window, cx| {
+        other_focus.focus(window, cx);
+        state.update(cx, |state, cx| {
+            state.selected = Some("second".into());
+            super::super::notify_selection(cx);
+        });
+        home.update(cx, |home, cx| home.focus_composer(window, cx));
+        let input = home.read(cx).input.read(cx);
+        assert!(input.focus_handle(cx).is_focused(window));
+        assert_eq!(input.value().as_ref(), "second");
+    });
+    visual.simulate_input(" typed");
+    visual.update(|_, cx| {
+        assert_eq!(
+            state.read(cx).sessions["second"].draft.text().as_ref(),
+            "second typed"
+        );
+        assert_eq!(first.read(cx).value().as_ref(), "external");
+    });
 }

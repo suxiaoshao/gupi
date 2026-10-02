@@ -615,7 +615,14 @@ impl HomeView {
             );
         }
         // The page selects the session's retained editor; switching never resets it.
-        self.input = self.views[&key].input.clone();
+        let input = self.views[&key].input.clone();
+        if self.input.entity_id() != input.entity_id() {
+            let focused = self.input.read(cx).focus_handle(cx).is_focused(window);
+            self.input = input;
+            if focused {
+                self.input.update(cx, |input, cx| input.focus(window, cx));
+            }
+        }
         let view = self.views.get_mut(&key).unwrap();
         view.model_picker
             .update(cx, |picker, cx| picker.sync_controls(window, cx));
@@ -918,7 +925,7 @@ impl HomeView {
                 let _ = owner.update_in(cx, |this, window, cx| {
                     this.state
                         .update(cx, |s, cx| s.new_or_reuse(Some(path), cx));
-                    this.input.update(cx, |input, cx| input.focus(window, cx));
+                    this.focus_composer(window, cx);
                 });
             }
         })

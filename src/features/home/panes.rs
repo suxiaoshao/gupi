@@ -275,7 +275,22 @@ mod tests {
             cx.set_global(layout::LayoutState::default());
         });
         let state = cx.new(|cx| ConversationState::new("unused-pi".into(), cx));
-        state.update(cx, |state, _| state.selected = Some("unloaded".into()));
+        state.update(cx, |state, _| {
+            let info = crate::foundation::session_catalog::SessionInfo {
+                path: Default::default(),
+                id: "empty".into(),
+                cwd: Default::default(),
+                name: None,
+                first_message: String::new(),
+                activity: String::new(),
+                parent_session: None,
+            };
+            state.sessions.insert(
+                "empty".into(),
+                crate::state::conversation::Session::new(info, String::new()),
+            );
+            state.selected = Some("empty".into());
+        });
         let mut home = None;
         let (_, visual) = cx.add_window_view(|window, cx| {
             let view = cx.new(|cx| HomeView::with_state(state, window, cx));

@@ -602,7 +602,7 @@ impl HomeView {
         if self.state.read(cx).temporary {
             self.state
                 .update(cx, |state, cx| state.new_or_reuse(None, cx));
-            self.input.update(cx, |input, cx| input.focus(window, cx));
+            self.focus_composer(window, cx);
         } else {
             self.open_projects(window, cx);
         }

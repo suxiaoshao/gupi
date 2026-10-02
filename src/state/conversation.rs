@@ -171,7 +171,7 @@ impl Session {
         }
     }
 
-    fn new(info: SessionInfo, draft: String) -> Self {
+    pub(crate) fn new(info: SessionInfo, draft: String) -> Self {
         let transcript = if info.path.as_os_str().is_empty() {
             Transcript::New
         } else {

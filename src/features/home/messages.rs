@@ -2,7 +2,7 @@ use super::*;
 use crate::state::{conversation::Session, history::DisplayMessage};
 use gpui_kit::component::{
     bubble::{Bubble, BubbleContent, BubbleVariant},
-    marker::{Marker, MarkerContent, MarkerLoadingStyle},
+    marker::{Marker, MarkerContent, MarkerVariant},
     message::{
         Message, MessageAlignment, MessageContent, MessageFooter, MessageGroup, MessageHeader,
     },
@@ -275,6 +275,14 @@ fn project_rows(
         }
     }
     rows
+}
+
+/// Steering can leave several chronological fragments active. Only the newest
+/// one owns the run-level status; earlier fragments still retain their content.
+fn current_run_id(rows: &[ChatRow]) -> Option<&str> {
+    rows.iter().rev().find_map(|row| {
+        matches!(row.kind, RowKind::Run { active: true, .. }).then_some(row.id.as_str())
+    })
 }
 impl HomeView {
     fn text_view(&self, key: &str, row: &str, id: String, text: String) -> markdown::Markdown {
@@ -591,20 +599,19 @@ impl HomeView {
                     .map(|session| session.tools.as_slice())
                     .unwrap_or_default();
                 let content = RunContent::project(messages, live, *active);
+                let current = current_run_id(&self.views[key].rows) == Some(row.id.as_str());
                 let mut result = MessageGroup::new().w_full();
                 if !content.has_process()
                     && *active
+                    && current
                     && !content.interrupted
                     && !content.final_started
                     && content.answer_text.is_empty()
                 {
                     result = result.child(
                         Marker::new()
-                            .loading(true)
-                            .with_loading_style(MarkerLoadingStyle::Shimmer)
-                            .content(
-                                MarkerContent::new().text(t(cx, "conversation-thinking-running")),
-                            ),
+                            .with_variant(MarkerVariant::Border)
+                            .content(MarkerContent::new().child(self.views[key].clock.clone())),
                     );
                 }
                 for section in &content.sections {
@@ -637,7 +644,7 @@ impl HomeView {
                         }
                         RunSection::Process(range) if content.has_process() => {
                             let first = range.start == 0;
-                            let title = if first {
+                            let title = if first && (!*active || current) {
                                 metadata::process_title(messages, *active, *started_at, cx)
                             } else {
                                 t(cx, "conversation-process")
@@ -665,7 +672,7 @@ impl HomeView {
                                     &content.process_id(&row.id, range),
                                     Disclosure::run(title)
                                         .clock(
-                                            (*active && first)
+                                            (*active && current && first)
                                                 .then(|| self.views[key].clock.clone()),
                                         )
                                         .locked(
@@ -715,7 +722,7 @@ impl HomeView {
 
 #[cfg(test)]
 mod tests {
-    use super::{ChatRow, RowKind, RunContent, project_rows};
+    use super::{ChatRow, RowKind, RunContent, current_run_id, project_rows};
     use crate::state::history::DisplayMessage;
     use std::collections::{HashMap, HashSet};
     #[test]
@@ -1017,6 +1024,9 @@ mod tests {
         );
         assert!(matches!(rows[1].kind, RowKind::Run { active: true, .. }));
         assert!(matches!(rows[3].kind, RowKind::Run { active: true, .. }));
+        assert_eq!(current_run_id(&rows), Some(rows[3].id.as_str()));
+        let settled = project_rows(vec![message("u", "user"), message("a", "assistant")], None);
+        assert_eq!(current_run_id(&settled), None);
     }
     #[test]
     fn compactions_preserve_chronological_messages_and_adjacent_answers() {
@@ -1075,6 +1085,7 @@ mod tests {
         user.value["timestamp"] = serde_json::json!(1000);
         let before = project_rows(vec![user.clone()], Some(&HashSet::new()));
         assert_eq!(before.len(), 2);
+        assert_eq!(current_run_id(&before), Some(before[1].id.as_str()));
         assert!(
             matches!(&before[1].kind, RowKind::Run { active: true, messages, started_at: Some(1000) } if messages.is_empty())
         );

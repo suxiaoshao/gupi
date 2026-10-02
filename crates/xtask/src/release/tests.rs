@@ -112,6 +112,7 @@ fn collect_reads_msi_identity_and_removes_stale_cask_on_development_rebuild() {
     assert!(installers.contains("{00000000-0000-0000-0000-000000001028}"));
     assert!(installers.contains("InstallerLocale: zh-TW"));
     assert!(installers.contains("InstallerLocale: es-ES"));
+    assert!(installers.contains("ElevationRequirement: elevationRequired\n"));
     assert!(output.join("homebrew/Casks/g/gupi.rb").is_file());
     let archived = archived_manifests(root.path());
     assert_eq!(archived.len(), 5);

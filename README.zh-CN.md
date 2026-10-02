@@ -21,7 +21,7 @@
 
 ## 安装
 
-macOS 可以通过 Homebrew 安装，也可以从 [GitHub Releases](https://github.com/suxiaoshao/gupi/releases/latest) 下载预编译安装包。WinGet 分发尚未提供。
+macOS 可以通过 Homebrew 安装，也可以从 [GitHub Releases](https://github.com/suxiaoshao/gupi/releases/latest) 下载预编译安装包。WinGet 待社区收录，进入公共源前请使用 Windows MSI。
 
 ### 准备 Pi
 

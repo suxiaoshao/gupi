@@ -128,6 +128,8 @@ impl History {
         Some(candidate)
     }
     pub fn messages(&self, leaf: Option<&str>) -> Vec<DisplayMessage> {
+        #[cfg(feature = "performance")]
+        let _span = tracing::debug_span!(target: "gupi::performance", "messages.history_snapshot", entries = self.entries.len()).entered();
         self.path(leaf)
             .into_iter()
             .filter_map(DisplayMessage::from_entry)

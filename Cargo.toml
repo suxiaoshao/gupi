@@ -56,6 +56,8 @@ localizations = ["en-US", "zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es", "pt-BR
 [features]
 # Enabled by xtask for distributable builds; source runs do not poll for updates.
 bundled = []
+# Opt-in development tracing; never enabled by the bundle task.
+performance = ["dep:tracing-chrome", "dep:profiling", "profiling/profile-with-tracing"]
 
 [[bin]]
 name = "gupi-update-helper"
@@ -116,6 +118,8 @@ sys-locale = "0.3.2"
 thiserror = "2.0.21"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
+tracing-chrome = { version = "0.7.2", optional = true }
+profiling = { version = "1.0.18", optional = true }
 
 [dev-dependencies]
 gpui-kit = { workspace = true, features = ["test-support"] }
@@ -165,3 +169,8 @@ inherits = "release"
 debug = "full"
 lto = false
 codegen-units = 16
+
+[profile.performance]
+inherits = "release-fast"
+strip = "none"
+debug-assertions = true

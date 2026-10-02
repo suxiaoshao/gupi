@@ -10,6 +10,11 @@ mod foundation;
 mod pi;
 mod state;
 
+#[cfg(all(feature = "performance", not(debug_assertions)))]
+compile_error!(
+    "performance tracing is development-only; use --profile performance, never --release"
+);
+
 fn main() {
     #[cfg(target_os = "windows")]
     if let Err(error) = foundation::updater::after_update() {
@@ -24,5 +29,7 @@ fn main() {
         }
         return;
     }
+    #[cfg(feature = "performance")]
+    let _performance = app::performance::start();
     app::run();
 }

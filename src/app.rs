@@ -2,6 +2,8 @@ pub(crate) mod instance;
 mod logging;
 pub(crate) mod menus;
 pub(crate) mod notifications;
+#[cfg(feature = "performance")]
+pub(crate) mod performance;
 pub(crate) mod shortcuts;
 pub(crate) mod temporary;
 mod tray;
@@ -13,6 +15,8 @@ use crate::{
 };
 use gpui_kit::component::{Root, TitleBar};
 use gpui_kit::*;
+#[cfg(feature = "performance")]
+use tracing_subscriber::prelude::*;
 use window_ext::WindowExt;
 struct MainWindow {
     window: WindowHandle<Root>,
@@ -40,6 +44,10 @@ pub(crate) fn run() {
     let app = gpui_kit::application().with_assets(Assets::default());
     app.on_reopen(|cx| cx.defer(|cx| show(None, cx)));
     app.run(move |cx| {
+        #[cfg(feature = "performance")]
+        profiling::scope!("app.initialize");
+        #[cfg(feature = "performance")]
+        performance::install_quit_hook(cx);
         cx.set_app_identity("top.sushao.gupi", "Gupi");
         let instance = instance.and_then(|instance| instance.listen(cx));
         if let Err(error) = &instance {
@@ -142,6 +150,21 @@ pub(crate) fn instance_ready(cx: &mut App) -> bool {
     let log_warning = log.is_err();
     match log {
         Ok(file) => {
+            #[cfg(feature = "performance")]
+            if performance::is_recording() {
+                performance::set_log_writer(file);
+            } else {
+                let _ = tracing_subscriber::registry()
+                    .with(
+                        tracing_subscriber::fmt::layer()
+                            .with_writer(std::sync::Mutex::new(file))
+                            .with_filter(tracing_subscriber::filter::filter_fn(
+                                performance::diagnostic_metadata,
+                            )),
+                    )
+                    .try_init();
+            }
+            #[cfg(not(feature = "performance"))]
             let _ = tracing_subscriber::fmt()
                 .with_writer(std::sync::Mutex::new(file))
                 .try_init();

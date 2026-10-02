@@ -116,6 +116,8 @@ impl MarkdownState {
             if current == snapshot {
                 return; // Highlight/reveal notifications do not change row geometry.
             }
+            #[cfg(feature = "performance")]
+            tracing::debug!(target: "gupi::performance", cause = "markdown_parsed", "ui.remeasure");
             snapshot = current;
             cx.emit(Parsed);
             // Parsing finishes after the RPC update's initial row measurement.
@@ -139,6 +141,10 @@ impl MarkdownState {
     }
 
     pub fn sync(&mut self, text: String, cx: &mut App) {
+        #[cfg(feature = "performance")]
+        let _span =
+            tracing::debug_span!(target: "gupi::performance", "markdown.sync", bytes = text.len())
+                .entered();
         if text == self.text {
             return;
         }
@@ -177,6 +183,10 @@ impl MarkdownState {
 
 impl RenderOnce for Markdown {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        #[cfg(feature = "performance")]
+        let _span = tracing::debug_span!(target: "gupi::performance", "markdown.render",
+            view = ?window.current_view())
+        .entered();
         let retained = window.use_keyed_state(format!("markdown-{}", self.id), cx, |_, cx| {
             self.registry
                 .get(&self.id, self.text.clone(), self.scroller.clone(), cx)
@@ -188,12 +198,15 @@ impl RenderOnce for Markdown {
         });
         // MessageContent aligns children instead of stretching them. Give the
         // Markdown root the available width before its list items are measured.
-        TextView::new(&view)
+        let content = TextView::new(&view)
             .plugin(super::resources::ResourceLinks)
             .w_full()
             .min_w_0()
             .selectable(true)
-            .stream_fade(self.stream_fade)
+            .stream_fade(self.stream_fade);
+        #[cfg(feature = "performance")]
+        let content = crate::app::performance::measure("markdown", false, content);
+        content
     }
 }
 

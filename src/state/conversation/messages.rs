@@ -10,6 +10,9 @@ pub(super) struct MessageStream {
 
 impl Session {
     pub(super) fn receive_message(&mut self, kind: &str, raw: &Value) {
+        #[cfg(feature = "performance")]
+        let _span = tracing::debug_span!(target: "gupi::performance", "messages.receive", kind, live_messages = self.live.len()).entered();
+        self.last_message_update = None;
         // Custom messages gain their identity only in Pi's persisted entries.
         // Keep the assistant stream intact until the authoritative history read.
         if raw["message"]["role"] == "custom" {
@@ -85,6 +88,9 @@ impl Session {
         };
 
         let message = &self.live[index];
+        if kind == "message_update" {
+            self.last_message_update = Some((self.content_revision.wrapping_add(1), index));
+        }
         self.transcript.receive_message();
         self.run.record_message(message.signature());
         if message.role() == "assistant" {
@@ -204,6 +210,7 @@ impl Session {
         session.run.start();
         for event in events {
             session.receive_message(event["type"].as_str().unwrap(), event);
+            session.content_revision += 1;
         }
         session
     }

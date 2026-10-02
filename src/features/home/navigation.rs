@@ -602,13 +602,15 @@ impl HomeView {
         if self.state.read(cx).temporary {
             self.state
                 .update(cx, |state, cx| state.new_or_reuse(None, cx));
-            self.input.update(cx, |input, cx| input.focus(window, cx));
+            self.focus_composer(window, cx);
         } else {
             self.open_projects(window, cx);
         }
     }
 
     pub(super) fn render_sidebar(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        #[cfg(feature = "performance")]
+        let _span = tracing::debug_span!(target: "gupi::performance", "sidebar.render").entered();
         let state = self.state.read(cx);
         let groups = self
             .navigation

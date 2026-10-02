@@ -127,6 +127,7 @@ pub(crate) struct Session {
     transcript: Transcript,
     pub live: Vec<DisplayMessage>,
     message_stream: Option<messages::MessageStream>,
+    last_message_update: Option<(u64, usize)>,
     run: RunState,
     pub tools: Vec<ToolActivity>,
     pub models: ReadState<Vec<Model>>,
@@ -190,6 +191,7 @@ impl Session {
             transcript,
             live: vec![],
             message_stream: None,
+            last_message_update: None,
             run: RunState::Idle,
             tools: vec![],
             models: ReadState::Idle,
@@ -343,11 +345,15 @@ impl Session {
             .filter(|text| !text.is_empty())
     }
     pub fn messages(&self, preview: Option<&str>) -> Vec<DisplayMessage> {
+        #[cfg(feature = "performance")]
+        let _span = tracing::debug_span!(target: "gupi::performance", "messages.snapshot", history_entries = self.history().entries.len(), live_messages = self.live.len()).entered();
         let leaf = preview
             .and_then(|id| self.history().preview_leaf(id))
             .or_else(|| self.history().leaf.clone());
         let mut messages = self.history().messages(leaf.as_deref());
         if preview.is_none_or(|id| self.history().on_current_path(id)) {
+            #[cfg(feature = "performance")]
+            let _span = tracing::debug_span!(target: "gupi::performance", "messages.merge_live", history_messages = messages.len(), live_messages = self.live.len()).entered();
             for message in &self.live {
                 let signature = message.signature();
                 if let Some(existing) = messages.iter_mut().find(|m| m.signature() == signature) {
@@ -360,6 +366,15 @@ impl Session {
             }
         }
         messages
+    }
+
+    pub(crate) fn message_update_since(&self, revision: u64) -> Option<&DisplayMessage> {
+        // A skipped revision may include a history replacement or structural
+        // change. Only one consecutive streaming update can reuse the UI rows.
+        let (updated, index) = self.last_message_update?;
+        (revision.checked_add(1) == Some(self.content_revision) && updated == self.content_revision)
+            .then(|| self.live.get(index))
+            .flatten()
     }
 }
 #[derive(Default, Serialize, Deserialize)]
@@ -1815,6 +1830,8 @@ impl ConversationState {
         notify_session(key, cx);
     }
     fn on_event(&mut self, event: &PiEvent, cx: &mut Context<Self>) {
+        #[cfg(feature = "performance")]
+        let _span = tracing::debug_span!(target: "gupi::performance", "conversation.apply_event", kind = event.event.raw()["type"].as_str().unwrap_or("unknown")).entered();
         let Some(key) = self
             .sessions
             .iter()

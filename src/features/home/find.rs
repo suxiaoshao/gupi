@@ -380,7 +380,7 @@ impl HomeView {
         let sources = view
             .rows
             .iter()
-            .flat_map(messages::ChatRow::find_sources)
+            .flat_map(|row| row.find_sources())
             .collect();
         let find = cx.new(|cx| {
             FindBar::new(

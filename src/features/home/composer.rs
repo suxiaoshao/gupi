@@ -72,6 +72,8 @@ impl HomeView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        #[cfg(feature = "performance")]
+        let _span = tracing::debug_span!(target: "gupi::performance", "composer.render").entered();
         let Some(session) = self.state.read(cx).current() else {
             return div().into_any_element();
         };

@@ -609,6 +609,8 @@ impl HomeView {
     }
 
     pub(super) fn render_sidebar(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        #[cfg(feature = "performance")]
+        let _span = tracing::debug_span!(target: "gupi::performance", "sidebar.render").entered();
         let state = self.state.read(cx);
         let groups = self
             .navigation

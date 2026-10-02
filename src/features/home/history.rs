@@ -217,6 +217,8 @@ impl HomeView {
         cx.notify();
     }
     pub(super) fn render_history(&self, cx: &mut Context<Self>) -> AnyElement {
+        #[cfg(feature = "performance")]
+        let _span = tracing::debug_span!(target: "gupi::performance", "history.render").entered();
         let toolbar = h_flex()
             .px_2()
             .py_2()

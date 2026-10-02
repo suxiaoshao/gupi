@@ -56,7 +56,8 @@ struct SessionView {
     queue_open: bool,
     notices_open: bool,
     scroller: Entity<MessageScrollerState>,
-    rows: Rc<Vec<messages::ChatRow>>,
+    rows: Rc<Vec<Rc<messages::ChatRow>>>,
+    message_rows: HashMap<String, usize>,
     row_positions: Rc<std::cell::RefCell<HashMap<String, usize>>>,
     content_revision: u64,
     markdown: messages::markdown::Registry,
@@ -98,6 +99,9 @@ pub(crate) struct HomeView {
 }
 impl HomeView {
     fn sync_messages(&mut self, key: &str, force: bool, cx: &mut Context<Self>) {
+        #[cfg(feature = "performance")]
+        let _span = tracing::debug_span!(target: "gupi::performance", "home.sync_messages", force)
+            .entered();
         let Some(session) = self.state.read(cx).sessions.get(key) else {
             return;
         };
@@ -105,6 +109,29 @@ impl HomeView {
             return;
         };
         if force || view.content_revision != session.content_revision {
+            if !force
+                && view.preview.is_none()
+                && let Some(message) = session.message_update_since(view.content_revision)
+                && let Some(&index) = view.message_rows.get(&message.id)
+                && let Some(row) = Rc::make_mut(&mut view.rows).get_mut(index)
+                && Rc::make_mut(row).update_message(message)
+            {
+                view.content_revision = session.content_revision;
+                view.scroller.update(cx, |state, cx| {
+                    #[cfg(feature = "performance")]
+                    let _span = tracing::debug_span!(target: "gupi::performance", "messages.diff_rows", changed_rows = 1).entered();
+                    state.remeasure_items(index..index + 1, cx);
+                });
+                if let Some(find) = &self.find {
+                    let sources = view
+                        .rows
+                        .iter()
+                        .flat_map(|row| row.find_sources())
+                        .collect();
+                    find.update(cx, |find, cx| find.sync(sources, cx));
+                }
+                return;
+            }
             if view
                 .preview
                 .as_ref()
@@ -114,8 +141,13 @@ impl HomeView {
             }
             let rows = messages::project(session, view.preview.as_deref());
             let old = view.rows.clone();
-            view.rows = Rc::new(rows);
+            view.rows = Rc::new(rows.into_iter().map(Rc::new).collect());
             let new = view.rows.clone();
+            view.message_rows = new
+                .iter()
+                .enumerate()
+                .flat_map(|(index, row)| row.message_ids().map(move |id| (id.to_owned(), index)))
+                .collect();
             *view.row_positions.borrow_mut() = new
                 .iter()
                 .enumerate()
@@ -123,6 +155,8 @@ impl HomeView {
                 .collect();
             view.content_revision = session.content_revision;
             view.scroller.update(cx, |state, cx| {
+                #[cfg(feature = "performance")]
+                let _span = tracing::debug_span!(target: "gupi::performance", "messages.diff_rows", old_rows = old.len(), new_rows = new.len()).entered();
                 let prefix = old
                     .iter()
                     .zip(new.iter())
@@ -138,10 +172,7 @@ impl HomeView {
                 }
             });
             if let Some(find) = &self.find {
-                let sources = new
-                    .iter()
-                    .flat_map(messages::ChatRow::find_sources)
-                    .collect();
+                let sources = new.iter().flat_map(|row| row.find_sources()).collect();
                 find.update(cx, |find, cx| find.sync(sources, cx));
             }
         }
@@ -576,6 +607,7 @@ impl HomeView {
                     notices_open: false,
                     scroller,
                     rows: Rc::new(vec![]),
+                    message_rows: HashMap::new(),
                     row_positions: Rc::default(),
                     content_revision: u64::MAX,
                     markdown: Default::default(),
@@ -939,6 +971,8 @@ impl HomeView {
 }
 impl Render for HomeView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        #[cfg(feature = "performance")]
+        let _span = tracing::debug_span!(target: "gupi::performance", "home.render", view = ?cx.entity_id()).entered();
         let commands = crate::app::menus::CONVERSATION_COMMANDS.map(|kind| {
             !window.has_active_dialog(cx)
                 && !self.has_image_preview(cx)
@@ -971,7 +1005,7 @@ impl Render for HomeView {
                     .child(self.render_messages(window, cx))
                     .child(self.render_composer(window, cx))
             };
-            return v_flex()
+            let content = v_flex()
                 .size_full()
                 .when(empty, |view| view.children(self.find.clone()))
                 .child(content)
@@ -979,6 +1013,9 @@ impl Render for HomeView {
                 .key_context("Gupi")
                 .track_focus(&self.focus_handle)
                 .into_any_element();
+            #[cfg(feature = "performance")]
+            let content = crate::app::performance::measure("home", false, content);
+            return content;
         }
         if self.pane_layout.fit(
             f32::from(window.viewport_size().width),
@@ -1042,7 +1079,7 @@ impl Render for HomeView {
             );
         }
         shell = shell.child(panes::ResizeEvents(cx.weak_entity()));
-        v_flex()
+        let content = v_flex()
             .key_context("Gupi")
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::run_action))
@@ -1058,6 +1095,9 @@ impl Render for HomeView {
             .child(shell)
             .children(self.render_session_search(window, cx))
             .child(self.image_preview.clone())
-            .into_any_element()
+            .into_any_element();
+        #[cfg(feature = "performance")]
+        let content = crate::app::performance::measure("home", false, content);
+        content
     }
 }

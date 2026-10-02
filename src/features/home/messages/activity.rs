@@ -25,6 +25,28 @@ pub(super) enum RunSection {
     Process(Range<usize>),
     Custom(usize),
     Answer,
+    Error(usize),
+    Stopped,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RunOutcome {
+    Complete,
+    Failed,
+    Stopped,
+}
+
+/// Tool results and plugin messages do not supersede an assistant attempt.
+pub(super) fn run_outcome(messages: &[DisplayMessage]) -> RunOutcome {
+    match messages
+        .iter()
+        .rfind(|message| message.role() == "assistant")
+        .and_then(|message| message.value["stopReason"].as_str())
+    {
+        Some("error") => RunOutcome::Failed,
+        Some("aborted") => RunOutcome::Stopped,
+        _ => RunOutcome::Complete,
+    }
 }
 
 pub(super) enum Activity {
@@ -143,9 +165,7 @@ impl RunContent {
             // Pending prose remains visible but must not unlock the outer disclosure.
             m.value["stopReason"] == "stop" || (!active && m.value.get("stopReason").is_none())
         });
-        let interrupted = messages
-            .iter()
-            .any(|m| matches!(m.value["stopReason"].as_str(), Some("error" | "aborted")));
+        let interrupted = run_outcome(messages) != RunOutcome::Complete;
         let results: HashMap<_, _> = messages
             .iter()
             .filter(|m| m.role() == "toolResult")
@@ -166,11 +186,25 @@ impl RunContent {
             if m.role() == "custom" {
                 flush_process(&mut sections, &mut process_start, activities.len());
                 sections.push(RunSection::Custom(index));
+                append_status(
+                    &mut sections,
+                    &mut process_start,
+                    activities.len(),
+                    index,
+                    m,
+                );
                 continue;
             }
             if m.role() == "toolResult" {
                 let call_id = m.value["toolCallId"].as_str();
                 if call_id.is_some_and(|id| call_ids.contains(id)) {
+                    append_status(
+                        &mut sections,
+                        &mut process_start,
+                        activities.len(),
+                        index,
+                        m,
+                    );
                     continue;
                 }
                 // Partial/compacted history can legitimately lack the call.
@@ -182,6 +216,13 @@ impl RunContent {
                     result: m.value.clone(),
                     status: result_status(m),
                 }));
+                append_status(
+                    &mut sections,
+                    &mut process_start,
+                    activities.len(),
+                    index,
+                    m,
+                );
                 continue;
             }
             if let Some(parts) = m.value["content"].as_array() {
@@ -279,6 +320,13 @@ impl RunContent {
                 flush_process(&mut sections, &mut process_start, activities.len());
                 sections.push(RunSection::Answer);
             }
+            append_status(
+                &mut sections,
+                &mut process_start,
+                activities.len(),
+                index,
+                m,
+            );
         }
         flush_process(&mut sections, &mut process_start, activities.len());
         Self {
@@ -289,6 +337,26 @@ impl RunContent {
             interrupted,
             sections,
         }
+    }
+}
+
+fn append_status(
+    sections: &mut Vec<RunSection>,
+    process_start: &mut usize,
+    end: usize,
+    index: usize,
+    message: &DisplayMessage,
+) {
+    if message.value["stopReason"] == "aborted" {
+        flush_process(sections, process_start, end);
+        sections.push(RunSection::Stopped);
+    }
+    if message.value["errorMessage"]
+        .as_str()
+        .is_some_and(|error| !error.is_empty())
+    {
+        flush_process(sections, process_start, end);
+        sections.push(RunSection::Error(index));
     }
 }
 
@@ -355,6 +423,95 @@ mod tests {
     use super::*;
     use crate::foundation::session_catalog::text_content;
     use serde_json::json;
+
+    #[test]
+    fn retry_errors_stay_between_attempts_and_do_not_interrupt_recovered_answers() {
+        let messages = vec![
+            message(
+                "first",
+                json!({"role":"assistant", "stopReason":"error", "errorMessage":"timeout 1", "content":"Checking"}),
+            ),
+            message(
+                "second",
+                json!({"role":"assistant", "stopReason":"error", "errorMessage":"timeout 2", "content":[]}),
+            ),
+            message(
+                "retry",
+                json!({"role":"assistant", "stopReason":"toolUse", "content":[{"type":"toolCall", "id":"read-1", "name":"read", "arguments":{"path":"a"}}]}),
+            ),
+            tool_result("done", false),
+            message("plugin", json!({"role":"custom", "content":"Recovered"})),
+            message(
+                "final",
+                json!({"role":"assistant", "stopReason":"stop", "content":"Answer"}),
+            ),
+        ];
+        let content = RunContent::project(&messages, &[], false);
+        assert_eq!(
+            content.sections,
+            [
+                RunSection::Process(0..1),
+                RunSection::Error(0),
+                RunSection::Error(1),
+                RunSection::Process(1..2),
+                RunSection::Custom(4),
+                RunSection::Answer,
+            ]
+        );
+        assert_eq!(content.answer_text, "Answer");
+        assert!(content.final_started);
+        assert!(!content.interrupted);
+        assert_eq!(run_outcome(&messages), RunOutcome::Complete);
+        // A pending retry is still inspectable, and a subsequent tool result
+        // cannot replace the last assistant attempt's outcome.
+        assert_eq!(run_outcome(&messages[..2]), RunOutcome::Failed);
+        let mut final_failure = messages.clone();
+        final_failure[5].value["stopReason"] = json!("error");
+        final_failure[5].value["errorMessage"] = json!("Final failure");
+        final_failure.push(message(
+            "after",
+            json!({"role":"custom", "content":"Notice"}),
+        ));
+        let content = RunContent::project(&final_failure, &[], false);
+        assert!(content.interrupted);
+        assert_eq!(run_outcome(&final_failure), RunOutcome::Failed);
+        assert_eq!(
+            &content.sections[5..],
+            &[
+                RunSection::Answer,
+                RunSection::Error(5),
+                RunSection::Custom(6)
+            ]
+        );
+    }
+
+    #[test]
+    fn stopped_attempt_does_not_mark_later_completed_attempt_as_stopped() {
+        let mut messages = vec![message(
+            "stopped",
+            json!({"role":"assistant", "stopReason":"aborted", "content":"Partial"}),
+        )];
+        assert_eq!(run_outcome(&messages), RunOutcome::Stopped);
+        assert_eq!(
+            RunContent::project(&messages, &[], false).sections,
+            [RunSection::Answer, RunSection::Stopped]
+        );
+        messages.push(message(
+            "done",
+            json!({"role":"assistant", "stopReason":"stop", "content":"Done"}),
+        ));
+        let content = RunContent::project(&messages, &[], false);
+        assert!(!content.interrupted);
+        assert_eq!(
+            content.sections,
+            [
+                RunSection::Process(0..1),
+                RunSection::Stopped,
+                RunSection::Answer
+            ]
+        );
+        assert_eq!(run_outcome(&messages), RunOutcome::Complete);
+    }
 
     #[test]
     fn custom_sections_preserve_tool_pairing_and_answer_order() {

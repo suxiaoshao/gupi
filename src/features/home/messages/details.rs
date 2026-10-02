@@ -123,6 +123,12 @@ impl HomeView {
             failed,
             cx,
         );
+        #[cfg(feature = "performance")]
+        let marker = crate::app::performance::measure(
+            "tool_marker",
+            tool.status == ToolStatus::Running,
+            marker,
+        );
         let action: MarkerAction = Rc::new(move |window, cx| {
             let target = Target {
                 key: key.clone(),

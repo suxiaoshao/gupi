@@ -1,6 +1,6 @@
 # Gupi 开发文档
 
-**[性能采集](performance.md)**：开发专用全程时间线、真实 Pi 会话副本、发行隔离和前后对比。
+**[性能采集](performance.md)**：开发专用全程时间线、真实 Pi 会话、发行隔离和前后对比。
 
 面向用户的入口：[English](../../README.md) · [简体中文](../../README.zh-CN.md)。每份 README 完整介绍产品、安装与日常使用。
 

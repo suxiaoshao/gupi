@@ -325,6 +325,8 @@ impl HomeView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        #[cfg(feature = "performance")]
+        let _span = tracing::debug_span!(target: "gupi::performance", "messages.render").entered();
         let Some(key) = self.shown_key.clone() else {
             return self.render_welcome(None, cx);
         };
@@ -414,6 +416,10 @@ impl HomeView {
                         };
                         owner
                             .read_with(cx, |this, cx| {
+                                let content = this.render_row(&key, row, cx);
+                                #[cfg(feature = "performance")]
+                                let content =
+                                    crate::app::performance::measure("message_row", false, content);
                                 div()
                                     .w_full()
                                     .flex()
@@ -424,12 +430,7 @@ impl HomeView {
                                             .and_then(|i| rows.get(i))
                                             .map(Rc::as_ref),
                                     ))
-                                    .child(
-                                        div()
-                                            .w_full()
-                                            .max_w(px(820.))
-                                            .child(this.render_row(&key, row, cx)),
-                                    )
+                                    .child(div().w_full().max_w(px(820.)).child(content))
                                     .into_any_element()
                             })
                             .unwrap_or_else(|_| div().into_any_element())

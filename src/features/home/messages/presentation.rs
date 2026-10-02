@@ -45,7 +45,7 @@ pub(super) fn activity_marker(
 pub(super) fn marker_trigger(
     id: String,
     title: String,
-    marker: Marker,
+    marker: impl IntoElement,
     expanded: Option<bool>,
     action: Option<MarkerAction>,
     cx: &App,
@@ -192,6 +192,16 @@ impl HomeView {
             MarkerVariant::Plain
         })
         .when(!heading.locked, |m| m.child(arrow));
+        #[cfg(feature = "performance")]
+        let marker = crate::app::performance::measure(
+            match heading.level {
+                Level::Run => "run_marker",
+                Level::Group => "group_marker",
+                Level::Tool => "tool_marker",
+            },
+            heading.loading && heading.level != Level::Run,
+            marker,
+        );
         let trigger = marker_trigger(
             id,
             heading.title,

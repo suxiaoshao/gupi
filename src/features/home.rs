@@ -942,7 +942,7 @@ impl HomeView {
 impl Render for HomeView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         #[cfg(feature = "performance")]
-        let _span = tracing::debug_span!(target: "gupi::performance", "home.render").entered();
+        let _span = tracing::debug_span!(target: "gupi::performance", "home.render", view = ?cx.entity_id()).entered();
         let commands = crate::app::menus::CONVERSATION_COMMANDS.map(|kind| {
             !window.has_active_dialog(cx)
                 && !self.has_image_preview(cx)
@@ -975,7 +975,7 @@ impl Render for HomeView {
                     .child(self.render_messages(window, cx))
                     .child(self.render_composer(window, cx))
             };
-            return v_flex()
+            let content = v_flex()
                 .size_full()
                 .when(empty, |view| view.children(self.find.clone()))
                 .child(content)
@@ -983,6 +983,9 @@ impl Render for HomeView {
                 .key_context("Gupi")
                 .track_focus(&self.focus_handle)
                 .into_any_element();
+            #[cfg(feature = "performance")]
+            let content = crate::app::performance::measure("home", false, content);
+            return content;
         }
         if self.pane_layout.fit(
             f32::from(window.viewport_size().width),
@@ -1046,7 +1049,7 @@ impl Render for HomeView {
             );
         }
         shell = shell.child(panes::ResizeEvents(cx.weak_entity()));
-        v_flex()
+        let content = v_flex()
             .key_context("Gupi")
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::run_action))
@@ -1062,6 +1065,9 @@ impl Render for HomeView {
             .child(shell)
             .children(self.render_session_search(window, cx))
             .child(self.image_preview.clone())
-            .into_any_element()
+            .into_any_element();
+        #[cfg(feature = "performance")]
+        let content = crate::app::performance::measure("home", false, content);
+        content
     }
 }

@@ -13,7 +13,7 @@ GUPI_PERFORMANCE_TRACE=/tmp/gupi-before.json target/profiling/performance/gupi
 
 启动即记录，使用 Cmd+Q 完全退出后保存完整时间线。关闭窗口在 macOS 上可能只是隐藏，不代表退出。每次采集使用新的输出文件，已有 trace 不会被覆盖。进程被强杀时不能保证 trace 完整。
 
-记录 RPC 事件类型、消息投影、历史快照、实时合并、行差异检测、页面/消息行 render 和 GPUI 已有性能区间。只添加计数和事件类型，不记录消息正文、工具参数和认证内容；普通日志保持原有文件输出。性能 feature 也必须提供 `GUPI_PERFORMANCE_TRACE` 才会安装时间线 subscriber。
+记录 RPC 事件类型、消息投影、历史快照、实时合并、行差异检测、区域 render、绘制阶段和 GPUI 已有性能区间。字段仅包含计数、长度、事件/区域类型、内部 Entity ID 和界面状态，不记录消息正文、工具参数和认证内容；普通日志保持原有文件输出。性能 feature 也必须提供 `GUPI_PERFORMANCE_TRACE` 才会安装时间线 subscriber。
 
 `trace.json` 可在 Perfetto 中查看，无需 Chrome 浏览器。时间线区间反映操作的墙钟耗时；CPU 采样用于补充未埋点函数、分配和系统调用，二者不能等同。
 
@@ -41,3 +41,21 @@ GUPI_PERFORMANCE_TRACE=/tmp/gupi-before.json target/profiling/performance/gupi
 优化后运行阶段约每秒绘制 96–119 次，单次绘制中位数约 4.3 ms，绘制成为当前记录中的主要耗时区间。消息接收与组装总耗时约 46 ms；状态层文本追加和 Markdown 控件的 `push_str` 仍保留。展示同步仍复制当前消息快照，下一阶段需要分别测量动画调度、绘制范围和消息复制成本。
 
 原始时间线保留在本机 `/tmp/gupi-real-before.json` 和 `/tmp/gupi-real-after.json`，不随源码提交。
+
+## 绘制热点采集
+
+使用同一性能构建，将 `GUPI_PERFORMANCE_TRACE` 指向新的文件，例如 `/tmp/gupi-draw.json`。按日常方式使用真实 Pi：运行一轮，中间停留一段，适当展开工具详情、滚动消息，然后 Cmd+Q 退出。
+
+`ui.request_layout`、`ui.prepaint`、`ui.paint` 分别记录页面、消息行、Markdown 和运行/聚合/单次工具标记的子树耗时。`region` 区分区域，`view` 为所属 GPUI Entity ID；标记的 `shimmer` 字段表示加载效果已开启，`reduce_motion` 表示是否关闭装饰性动画。按每个 `draw` 内的标记区间计数，可观察加载标记数量及所属 View。`visible` 只判断元素与视口、当前裁剪区域是否相交，不判断遮挡、窗口隐藏或实际屏幕可见性。
+
+采集包装直接转发 Element 的三个阶段，复用子元素 LayoutId，不新增布局节点、ID、通知或帧请求。性能 feature 未启用时不存在包装；启用但未开始记录时直接返回原元素。新增的区域 render、Markdown 同步及计时器/解析重测事件用于区分页面构建、文本更新和既有周期通知。
+
+`request_layout` 是布局树构建阶段，不等于全局 Taffy 布局计算；全局布局计算仍包含在 GPUI 的 `draw` 中。标记的 `paint` 包含整个标记，不能单独等同于 shimmer 高光耗时。当前依赖没有公开动画请求拦截入口，动画来源只能结合加载标记、所属 View 和相邻帧推断。嵌套区域耗时不能直接相加，包装与更多埋点也会增加采集成本；框架对照应使用相同埋点。
+
+### 扩展采集结果（2026-10-02）
+
+用户使用真实 Pi 和模型运行约 17 分钟，包含 8 段模型运行。27,695 次流式更新全部命中增量路径；消息同步中位数为 0.0085 ms，P95 为 0.0457 ms。历史规模增长到最多 1,715 条，消息同步仍保持较低耗时。
+
+记录中有 21,760 次 draw，对应 21,749 次 HomeView、输入区、侧栏和标题栏构建。页面 prepaint 累计约 75.9 秒，占 draw 墙钟耗时约 46%；输入区占 HomeView 构建耗时约 63%。全部采集到的运行/聚合/工具标记 paint 累计约 0.48 秒，占 draw 耗时约 0.3%。加载标记均与裁剪可见区域相交，模型未运行的间隔没有加载标记绘制。
+
+本轮证据支持继续缩小页面构建与布局准备的范围，尚不能把整体绘制耗时归因到 shimmer 高光。原始记录 `/tmp/gupi-draw.json` 保留在本机；新增埋点带来的开销及工作量差异也需纳入后续对比。

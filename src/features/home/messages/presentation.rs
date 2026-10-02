@@ -71,7 +71,6 @@ pub(super) fn marker_trigger(
                 .when_some(expanded, |trigger, open| trigger.aria_expanded(open))
                 .focusable()
                 .tab_stop(true)
-                .cursor_pointer()
                 .focus_visible(|style| style.bg(cx.theme().muted))
                 .hover(|style| style.text_color(cx.theme().foreground))
                 .on_click(move |_, window, cx| click(window, cx))

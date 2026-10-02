@@ -13,6 +13,8 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Prepare archived WinGet manifests and check whether an update can be submitted.
+    Winget(WingetArgs),
     /// Prepare native updater SDKs or generate an update signing key.
     Updater {
         #[command(subcommand)]
@@ -25,6 +27,16 @@ pub enum Commands {
         #[command(subcommand)]
         command: ReleaseCommand,
     },
+}
+
+#[derive(Args)]
+pub struct WingetArgs {
+    /// Existing public stable Gupi release tag.
+    #[arg(long)]
+    pub tag: String,
+    /// New directory for the three archived manifests; existing output is not replaced.
+    #[arg(long)]
+    pub output: PathBuf,
 }
 
 #[derive(Subcommand)]

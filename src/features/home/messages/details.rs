@@ -2,7 +2,9 @@
 use super::{
     actions::copy_button,
     activity::Tool,
-    presentation::{code_fence, tool_action, tool_title},
+    presentation::{
+        MarkerAction, activity_marker, code_fence, marker_trigger, tool_action, tool_title,
+    },
     tool_details::{self, Detail, Section},
     *,
 };
@@ -109,42 +111,43 @@ impl HomeView {
                 .unwrap_or_default()
                 .to_owned()
         });
+        let id = format!("tool-details-{}", tool.id);
+        let marker = activity_marker(
+            MarkerContent::new()
+                .min_w_0()
+                .whitespace_nowrap()
+                .text_ellipsis()
+                .text(title.clone()),
+            Some(tool.kind().icon()),
+            tool.status == ToolStatus::Running,
+            failed,
+            cx,
+        );
+        let action: MarkerAction = Rc::new(move |window, cx| {
+            let target = Target {
+                key: key.clone(),
+                tool: tool.id.clone(),
+                preview: preview.clone(),
+            };
+            let view = cx.new(|cx| DetailsView::for_tool(&state, target, tool.clone(), window, cx));
+            let title = tool.name.clone();
+            window.open_dialog(cx, move |dialog, window, _| {
+                dialog
+                    .title(title.clone())
+                    .width(
+                        (window.rem_size() * 48.)
+                            .min(window.viewport_size().width - window.rem_size() * 2.),
+                    )
+                    .on_ok(|_, _, _| false)
+                    .content({
+                        let view = view.clone();
+                        move |content, _, _| content.min_h_0().child(view.clone())
+                    })
+            });
+        });
         v_flex()
             .min_w_0()
-            .child(
-                Button::new(format!("tool-details-{}", tool.id))
-                    .ghost()
-                    .small()
-                    .icon(tool.kind().icon())
-                    .label(title)
-                    .max_w_full()
-                    .when(failed, |button| button.text_color(cx.theme().danger))
-                    .tooltip(t(cx, "message-details-open"))
-                    .on_click(move |_, window, cx| {
-                        let target = Target {
-                            key: key.clone(),
-                            tool: tool.id.clone(),
-                            preview: preview.clone(),
-                        };
-                        let view = cx.new(|cx| {
-                            DetailsView::for_tool(&state, target, tool.clone(), window, cx)
-                        });
-                        let title = tool.name.clone();
-                        window.open_dialog(cx, move |dialog, window, _| {
-                            dialog
-                                .title(title.clone())
-                                .width(
-                                    (window.rem_size() * 48.)
-                                        .min(window.viewport_size().width - window.rem_size() * 2.),
-                                )
-                                .on_ok(|_, _, _| false)
-                                .content({
-                                    let view = view.clone();
-                                    move |content, _, _| content.min_h_0().child(view.clone())
-                                })
-                        });
-                    }),
-            )
+            .child(marker_trigger(id, title, marker, None, Some(action), cx))
             .when_some(error.filter(|s| !s.is_empty()), |body, error| {
                 body.child(
                     div()

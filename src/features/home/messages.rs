@@ -609,6 +609,24 @@ impl HomeView {
                 }
                 for section in &content.sections {
                     match section {
+                        RunSection::Error(index) => {
+                            result = result.child(
+                                div().text_sm().text_color(cx.theme().danger).child(
+                                    messages[*index].value["errorMessage"]
+                                        .as_str()
+                                        .unwrap_or_default()
+                                        .to_owned(),
+                                ),
+                            );
+                        }
+                        RunSection::Stopped => {
+                            result = result.child(
+                                div()
+                                    .text_sm()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(t(cx, "conversation-interrupted")),
+                            );
+                        }
                         RunSection::Custom(index) => {
                             result = result.child(self.render_plugin(
                                 key,
@@ -687,25 +705,6 @@ impl HomeView {
                                     )),
                             );
                         }
-                    }
-                }
-                if messages.iter().any(|m| m.value["stopReason"] == "aborted") {
-                    result = result.child(
-                        div()
-                            .text_sm()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(t(cx, "conversation-interrupted")),
-                    );
-                }
-                for m in messages {
-                    if let Some(error) = m.value["errorMessage"].as_str().filter(|s| !s.is_empty())
-                    {
-                        result = result.child(
-                            div()
-                                .text_sm()
-                                .text_color(cx.theme().danger)
-                                .child(error.to_owned()),
-                        );
                     }
                 }
                 result.into_any_element()

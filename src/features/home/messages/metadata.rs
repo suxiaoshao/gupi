@@ -1,3 +1,4 @@
+use super::activity::{RunOutcome, run_outcome};
 use super::*;
 use crate::foundation::i18n::t_with_args;
 use fluent_bundle::FluentArgs;
@@ -10,18 +11,23 @@ pub(in crate::features::home) fn process_title(
     cx: &App,
 ) -> String {
     let elapsed = elapsed_ms(messages, started_at, active, now_ms());
-    let key = if active {
-        "conversation-working-duration"
-    } else if messages.iter().any(|m| m.value["stopReason"] == "error") {
-        "conversation-processed-failed"
-    } else if messages.iter().any(|m| m.value["stopReason"] == "aborted") {
-        "conversation-processed-stopped"
-    } else {
-        "conversation-processed"
-    };
     let mut args = FluentArgs::new();
     args.set("duration", elapsed.map(duration_label).unwrap_or_default());
-    t_with_args(cx, key, &args).trim().to_owned()
+    t_with_args(cx, process_title_key(messages, active), &args)
+        .trim()
+        .to_owned()
+}
+
+fn process_title_key(messages: &[DisplayMessage], active: bool) -> &'static str {
+    if active {
+        "conversation-working-duration"
+    } else {
+        match run_outcome(messages) {
+            RunOutcome::Complete => "conversation-processed",
+            RunOutcome::Failed => "conversation-processed-failed",
+            RunOutcome::Stopped => "conversation-processed-stopped",
+        }
+    }
 }
 pub(super) fn now_ms() -> i64 {
     (OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000) as i64
@@ -113,8 +119,54 @@ pub(super) fn usage_fields(message: &DisplayMessage, cx: &App) -> Vec<(String, S
 
 #[cfg(test)]
 mod tests {
-    use super::{duration_label, elapsed_ms};
+    use super::{duration_label, elapsed_ms, process_title_key};
     use crate::state::history::DisplayMessage;
+    #[test]
+    fn process_title_tracks_the_last_attempt_instead_of_historical_errors() {
+        let message = |role, reason| DisplayMessage {
+            id: "m".into(),
+            entry: None,
+            value: serde_json::json!({"role":role, "stopReason":reason}),
+            final_answer_part: None,
+            completed_at: None,
+        };
+        let mut messages = vec![message("assistant", "error")];
+        assert_eq!(
+            process_title_key(&messages, true),
+            "conversation-working-duration"
+        );
+        assert_eq!(
+            process_title_key(&messages, false),
+            "conversation-processed-failed"
+        );
+        messages.push(message("assistant", "pending"));
+        assert_eq!(
+            process_title_key(&messages, true),
+            "conversation-working-duration"
+        );
+        messages[1] = message("assistant", "toolUse");
+        messages.push(message("toolResult", "error"));
+        assert_eq!(
+            process_title_key(&messages, true),
+            "conversation-working-duration"
+        );
+        messages.push(message("assistant", "stop"));
+        messages.push(message("custom", "error"));
+        assert_eq!(
+            process_title_key(&messages, false),
+            "conversation-processed"
+        );
+        messages[3] = message("assistant", "aborted");
+        assert_eq!(
+            process_title_key(&messages, false),
+            "conversation-processed-stopped"
+        );
+        messages[3] = message("assistant", "error");
+        assert_eq!(
+            process_title_key(&messages, false),
+            "conversation-processed-failed"
+        );
+    }
     #[test]
     fn duration_uses_completion_instead_of_last_request_start() {
         let message = |started, completed| DisplayMessage {

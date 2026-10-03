@@ -5,12 +5,12 @@
 ## E-110：已核对的 API
 
 - [共享 Operation](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/crates/gpui-operation/src/lib.rs) 的 `lib/message/repair/refresh` 模块：完整 Operation 接受 Transition 消息；Ready 可 Refresh，问题态通过显式 Repair 恢复；Complete 只用于运行态。Operation 拥有 Task，不负责启动或磁盘回滚。
-- `src/state/config.rs`：ConfigOperation 放在 Store 中，配置写入前重读最新文件并应用本次修改的字段；普通失败重试和损坏配置的备份重置由应用处理。
+- `crates/gupi-settings/src/config.rs`：ConfigOperation 放在 Store 中，配置写入前重读最新文件并应用本次修改的字段；普通失败重试和损坏配置的备份重置由应用处理。
 - 共享表单适配器 [FormInput](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/crates/gpui-form-gpui-component/src/input.rs)、[FormSelect](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/crates/gpui-form-gpui-component/src/select.rs)：通过 new 接收 owner、typed path 和 control builder。最终泛型调用受锁定依赖的类型一致性检查约束。
 
 ## L-110 / ST-110：唯一配置权威
 
-以下类型位于 `src/state/config.rs`；使用 `gpui_kit::Task` 和 repo `gpui_store::Store`，不再并列安装 Store<AppConfig>。
+以下类型位于 `crates/gupi-settings/src/config.rs`；使用 `gpui_kit::Task` 和 repo `gpui_store::Store`，不再并列安装 Store<AppConfig>。
 
 ```rust
 pub(crate) enum ConfigContents {

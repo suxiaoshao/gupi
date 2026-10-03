@@ -1,18 +1,28 @@
 //! One delivery owner for main and temporary conversations, independent of windows.
+use gpui_kit::AnyWindowHandle;
+use gpui_kit::App;
+use gpui_kit::AppContext;
+use gpui_kit::Context;
+use gpui_kit::Entity;
+use gpui_kit::EntityId;
+use gpui_kit::Global;
+use gpui_kit::SharedString;
+use gpui_kit::Subscription;
+use gpui_kit::SystemNotification;
+use gpui_kit::WeakEntity;
+use gpui_kit::Window;
+use gpui_kit::WindowId;
+use gpui_kit::component::WindowExt;
+use gpui_kit::component::notification::Notification;
 #[cfg(any(test, target_os = "macos", target_os = "windows"))]
-use crate::state::conversation::Activity;
-use crate::{
-    foundation::i18n::t,
-    state::{
-        conversation::{ConversationEvent, ConversationState},
-        notifications::{Kind, Notice, Preferences, Severity},
-    },
-};
-use gpui_kit::{
-    AnyWindowHandle, App, AppContext, Context, Entity, EntityId, Global, SharedString,
-    Subscription, SystemNotification, WeakEntity, Window, WindowId,
-    component::{WindowExt, notification::Notification},
-};
+use gupi_conversation::conversation::Activity;
+use gupi_conversation::conversation::ConversationEvent;
+use gupi_conversation::conversation::ConversationState;
+use gupi_settings::i18n::t;
+use gupi_settings::notifications::Kind;
+use gupi_settings::notifications::Notice;
+use gupi_settings::notifications::Preferences;
+use gupi_settings::notifications::Severity;
 use std::collections::HashMap;
 
 // macOS GPUI active_window() returns NSApplication.mainWindow even while the
@@ -321,7 +331,7 @@ impl Delivery {
                 .read(cx)
                 .sessions
                 .get(&notice.key)
-                .map(|s| crate::features::home::navigation::display_title(&s.info, cx))
+                .map(|s| gupi_conversation_ui::home::navigation::display_title(&s.info, cx))
                 .unwrap_or_default();
             let text = notice
                 .message
@@ -419,7 +429,9 @@ impl Delivery {
                         rows.push(TrayRow {
                             owner: owner.entity_id(),
                             key: key.clone(),
-                            title: crate::features::home::navigation::display_title(&s.info, cx),
+                            title: gupi_conversation_ui::home::navigation::display_title(
+                                &s.info, cx,
+                            ),
                             activity: s.activity(),
                             unread: s.unread,
                             binding: s.binding,
@@ -492,21 +504,25 @@ impl Delivery {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::{
-        conversation::{PendingUi, Session},
-        pi,
-    };
-    use gpui_kit::{IntoElement, Render, SystemNotificationResponse, TestAppContext, div};
-    use pi_rpc::protocol::{ExtensionRequest, UiMethod};
+    use gpui_kit::IntoElement;
+    use gpui_kit::Render;
+    use gpui_kit::SystemNotificationResponse;
+    use gpui_kit::TestAppContext;
+    use gpui_kit::div;
+    use gupi_conversation::conversation::PendingUi;
+    use gupi_conversation::conversation::Session;
+    use pi_rpc::protocol::ExtensionRequest;
+    use pi_rpc::protocol::UiMethod;
 
     fn setup(cx: &mut TestAppContext) -> Entity<ConversationState> {
         cx.update(|cx| {
             cx.set_app_identity("top.sushao.gupi.test", "Gupi Test");
             gpui_kit::init(cx);
+            crate::app::init_capability_hosts(cx);
             app_theme::init(cx);
-            crate::state::theme::init(cx);
-            crate::foundation::i18n::apply(crate::state::config::AppLanguage::English, cx);
-            pi::init(cx);
+            gupi_settings::theme::init(cx);
+            gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::English, cx);
+            gupi_pi_runtime::init(cx);
             init(cx);
         });
         let state = cx.new(|cx| ConversationState::new("unused".into(), cx));
@@ -603,7 +619,7 @@ mod tests {
                 session.unread = true;
             }
             s.sessions.get_mut("b").unwrap().error =
-                Some(crate::state::conversation::SessionError::Response);
+                Some(gupi_conversation::conversation::SessionError::Response);
         });
         cx.update(refresh);
         assert_eq!(badge(cx), 2);
@@ -617,7 +633,7 @@ mod tests {
         cx.update(|cx| {
             configure(
                 Preferences {
-                    completion: crate::state::notifications::CompletionMode::Off,
+                    completion: gupi_settings::notifications::CompletionMode::Off,
                     ..Default::default()
                 },
                 cx,

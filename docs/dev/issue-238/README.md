@@ -23,12 +23,12 @@
 
 使用现有 GPUI Kit 0.6.4 的 Dialog、TextView、Button 和滚动组件，无需升级依赖。
 
-- [details.rs](../../../src/features/home/messages/details.rs)：窗口持有的 `DetailsView`，负责摘要与工具入口、详情弹窗、可选择文本、工具定向更新和滚动跟随。
-- [tool_details.rs](../../../src/features/home/messages/tool_details.rs)：沿用工具分类、路径/参数、实际 patch 优先和混合结果投影，输出连续分区与各区可复制文本；图片和元数据不混入复制结果。
-- [actions.rs](../../../src/features/home/messages/actions.rs)：消息与详情共用复制按钮、短暂反馈和复制失败处理。
-- [messages.rs](../../../src/features/home/messages.rs)、[presentation.rs](../../../src/features/home/messages/presentation.rs)：摘要和单个工具改为详情入口；保留过程、分组、思考折叠。历史定位只展开必要过程和分组。
-- [activity.rs](../../../src/features/home/messages/activity.rs)：仍由 `RunContent::project` 统一投影历史消息与实时工具活动；工具调用标识在实时转历史后保持稳定。
-- [conversation.rs](../../../src/state/conversation.rs)：复用按来源 session 区分的 `ConversationEvent::Changed`；没有新增 RPC、全局刷新或结果存储。
+- [details.rs](../../../crates/gupi-conversation-ui/src/home/messages/details.rs)：窗口持有的 `DetailsView`，负责摘要与工具入口、详情弹窗、可选择文本、工具定向更新和滚动跟随。
+- [tool_details.rs](../../../crates/gupi-conversation-ui/src/home/messages/tool_details.rs)：沿用工具分类、路径/参数、实际 patch 优先和混合结果投影，输出连续分区与各区可复制文本；图片和元数据不混入复制结果。
+- [actions.rs](../../../crates/gupi-conversation-ui/src/home/messages/actions.rs)：消息与详情共用复制按钮、短暂反馈和复制失败处理。
+- [messages.rs](../../../crates/gupi-conversation-ui/src/home/messages.rs)、[presentation.rs](../../../crates/gupi-conversation-ui/src/home/messages/presentation.rs)：摘要和单个工具改为详情入口；保留过程、分组、思考折叠。历史定位只展开必要过程和分组。
+- [activity.rs](../../../crates/gupi-conversation-ui/src/home/messages/activity.rs)：仍由 `RunContent::project` 统一投影历史消息与实时工具活动；工具调用标识在实时转历史后保持稳定。
+- [conversation.rs](../../../crates/gupi-conversation/src/conversation.rs)：复用按来源 session 区分的 `ConversationEvent::Changed`；没有新增 RPC、全局刷新或结果存储。
 - [temporary.rs](../../../src/features/temporary.rs)：沿用现有 Dialog 优先动作路由，Esc 关闭详情后仍保留临时窗口及会话。
 
 稳定行为同步至[应用说明](../../../README.md)、[运行过程展示](../issue-229/runtime-display-plan.md)和[历史导航](../issue-220/history.md)。局部更新约束沿用[事件同步与局部刷新](../issue-236/README.md)。

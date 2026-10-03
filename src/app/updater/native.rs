@@ -1,8 +1,10 @@
-use crate::{
-    foundation::updater::{self, Driver, Event},
-    state::updates,
-};
-use gpui_kit::{App, Global, Task};
+use gpui_kit::App;
+use gpui_kit::Global;
+use gpui_kit::Task;
+use gupi_updates::updater;
+use gupi_updates::updater::Driver;
+use gupi_updates::updater::Event;
+use gupi_updates::updates;
 
 struct Updater {
     driver: Option<Driver>,
@@ -96,7 +98,7 @@ fn handle(event: Event, cx: &mut App) {
             if cx.global::<Updater>().prepare.is_some() {
                 return;
             }
-            let message = crate::foundation::i18n::t(cx, "updates-install-failed");
+            let message = gupi_settings::i18n::t(cx, "updates-install-failed");
             let worker = gpui_tokio::Tokio::spawn(cx, updater::prepare_install(directory, message));
             let task = cx.spawn(async move |cx| {
                 let result = worker

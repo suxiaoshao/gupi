@@ -1,14 +1,16 @@
 use super::*;
-use crate::{
-    features::home::actions::Kind,
-    state::keybindings::{self, COMMANDS},
-};
-use gpui_kit::component::{
-    Selectable, Sizable, WindowExt,
-    input::Escape,
-    setting::{RenderOptions, SettingField, SettingGroup, SettingItem},
-};
+use gpui_kit::component::Selectable;
+use gpui_kit::component::Sizable;
+use gpui_kit::component::WindowExt;
+use gpui_kit::component::input::Escape;
+use gpui_kit::component::setting::RenderOptions;
+use gpui_kit::component::setting::SettingField;
+use gpui_kit::component::setting::SettingGroup;
+use gpui_kit::component::setting::SettingItem;
 use gpui_kit::prelude::FluentBuilder;
+use gupi_settings::commands::Kind;
+use gupi_settings::keybindings;
+use gupi_settings::keybindings::COMMANDS;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Group {
@@ -203,7 +205,7 @@ impl KeysView {
         subscriptions.push(store.observe_in(cx, window, |this, _, window, cx| {
             this.sync(window, cx);
         }));
-        subscriptions.push(cx.observe_global_in::<crate::foundation::i18n::I18n>(
+        subscriptions.push(cx.observe_global_in::<gupi_settings::i18n::I18n>(
             window,
             |this, window, cx| {
                 let placeholder = t(cx, "settings-key-unbound");
@@ -495,22 +497,44 @@ impl KeysView {
 
 #[cfg(test)]
 mod tests {
-    use super::{AppConfig, AppLanguage, COMMANDS, ConfigController, KeysView};
+    use super::AppConfig;
+    use super::AppLanguage;
+    use super::COMMANDS;
+    use super::ConfigController;
+    use super::KeysView;
     use crate::features::settings::global_keys::GlobalKeys;
-    use crate::state::config::{ConfigContents, ConfigData};
     use gpui_form::Form;
-    use gpui_kit::component::{
-        Root, WindowExt,
-        group_box::GroupBoxVariant,
-        setting::{SettingGroup, SettingPage, Settings},
-    };
-    use gpui_kit::{
-        AppContext, Context, Entity, Focusable, InteractiveElement, IntoElement, KeyBinding,
-        Modifiers, ParentElement, Render, Styled, Task, TestAppContext, VisualTestContext, Window,
-        div, point, px,
-    };
-    use gpui_operation::{Complete, Load, Transition};
-    use std::{cell::Cell, rc::Rc};
+    use gpui_kit::AppContext;
+    use gpui_kit::Context;
+    use gpui_kit::Entity;
+    use gpui_kit::Focusable;
+    use gpui_kit::InteractiveElement;
+    use gpui_kit::IntoElement;
+    use gpui_kit::KeyBinding;
+    use gpui_kit::Modifiers;
+    use gpui_kit::ParentElement;
+    use gpui_kit::Render;
+    use gpui_kit::Styled;
+    use gpui_kit::Task;
+    use gpui_kit::TestAppContext;
+    use gpui_kit::VisualTestContext;
+    use gpui_kit::Window;
+    use gpui_kit::component::Root;
+    use gpui_kit::component::WindowExt;
+    use gpui_kit::component::group_box::GroupBoxVariant;
+    use gpui_kit::component::setting::SettingGroup;
+    use gpui_kit::component::setting::SettingPage;
+    use gpui_kit::component::setting::Settings;
+    use gpui_kit::div;
+    use gpui_kit::point;
+    use gpui_kit::px;
+    use gpui_operation::Complete;
+    use gpui_operation::Load;
+    use gpui_operation::Transition;
+    use gupi_settings::config::ConfigContents;
+    use gupi_settings::config::ConfigData;
+    use std::cell::Cell;
+    use std::rc::Rc;
 
     gpui_kit::actions!(keys_test, [UnrelatedAction]);
 
@@ -564,8 +588,8 @@ mod tests {
         cx.update(|cx| {
             gpui_kit::init(cx);
             app_theme::init(cx);
-            crate::state::theme::init(cx);
-            crate::foundation::i18n::apply(AppLanguage::Chinese, cx);
+            gupi_settings::theme::init(cx);
+            gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
             cx.bind_keys([KeyBinding::new("ctrl-alt-9", UnrelatedAction, None)]);
         });
         let mut keys = None;

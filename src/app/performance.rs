@@ -1,16 +1,14 @@
 //! Opt-in development tracing. The guard in main saves the complete process trace.
 use super::logging::LogWriter;
-use gpui_kit::*;
-use std::{
-    cell::RefCell,
-    fs::OpenOptions,
-    io::{self, Write},
-    sync::{
-        Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
-};
-use tracing_subscriber::{filter::filter_fn, prelude::*};
+use std::cell::RefCell;
+use std::fs::OpenOptions;
+use std::io;
+use std::io::Write;
+use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
+use tracing_subscriber::filter::filter_fn;
+use tracing_subscriber::prelude::*;
 
 static RECORDING: AtomicBool = AtomicBool::new(false);
 static LOG_WRITER: Mutex<Option<LogWriter>> = Mutex::new(None);
@@ -27,6 +25,7 @@ impl Drop for Recording {
 
 fn finish() {
     RECORDING.store(false, Ordering::Relaxed);
+    gupi_conversation_ui::performance::set_recording(false);
     GUARD.with(|guard| drop(guard.borrow_mut().take()));
 }
 
@@ -103,108 +102,11 @@ pub(crate) fn start() -> Option<Recording> {
         return None;
     }
     RECORDING.store(true, Ordering::Relaxed);
+    gupi_conversation_ui::performance::set_recording(true);
     GUARD.with(|slot| *slot.borrow_mut() = Some(guard));
     eprintln!(
         "Gupi performance trace: {}",
         std::path::Path::new(&path).display()
     );
     Some(Recording)
-}
-
-/// Delegate without adding layout nodes, identity, invalidation or frame requests.
-pub(crate) fn measure(
-    region: &'static str,
-    shimmer: bool,
-    element: impl IntoElement,
-) -> AnyElement {
-    let element = element.into_any_element();
-    if !is_recording() {
-        return element;
-    }
-    DrawProbe {
-        region,
-        shimmer,
-        element,
-    }
-    .into_any_element()
-}
-
-struct DrawProbe {
-    region: &'static str,
-    shimmer: bool,
-    element: AnyElement,
-}
-
-impl IntoElement for DrawProbe {
-    type Element = Self;
-
-    fn into_element(self) -> Self {
-        self
-    }
-}
-
-impl Element for DrawProbe {
-    type RequestLayoutState = ();
-    type PrepaintState = bool;
-
-    fn id(&self) -> Option<ElementId> {
-        None
-    }
-
-    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
-        None
-    }
-
-    fn request_layout(
-        &mut self,
-        _: Option<&GlobalElementId>,
-        _: Option<&InspectorElementId>,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> (LayoutId, ()) {
-        let _span = tracing::debug_span!(target: "gupi::performance", "ui.request_layout",
-            region = self.region, shimmer = self.shimmer, reduce_motion = cx.reduce_motion(),
-            view = ?window.current_view())
-        .entered();
-        (self.element.request_layout(window, cx), ())
-    }
-
-    fn prepaint(
-        &mut self,
-        _: Option<&GlobalElementId>,
-        _: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
-        _: &mut (),
-        window: &mut Window,
-        cx: &mut App,
-    ) -> bool {
-        // Geometric visibility only: this does not detect occluding overlays.
-        let visible = !bounds
-            .intersect(&window.content_mask().bounds)
-            .intersect(&Bounds::new(Point::default(), window.viewport_size()))
-            .is_empty();
-        let _span = tracing::debug_span!(target: "gupi::performance", "ui.prepaint",
-            region = self.region, shimmer = self.shimmer, visible,
-            view = ?window.current_view())
-        .entered();
-        self.element.prepaint(window, cx);
-        visible
-    }
-
-    fn paint(
-        &mut self,
-        _: Option<&GlobalElementId>,
-        _: Option<&InspectorElementId>,
-        _: Bounds<Pixels>,
-        _: &mut (),
-        visible: &mut bool,
-        window: &mut Window,
-        cx: &mut App,
-    ) {
-        let _span = tracing::debug_span!(target: "gupi::performance", "ui.paint",
-            region = self.region, shimmer = self.shimmer, visible = *visible,
-            view = ?window.current_view())
-        .entered();
-        self.element.paint(window, cx);
-    }
 }

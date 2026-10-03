@@ -2,7 +2,7 @@
 
 归属 [#241](https://github.com/suxiaoshao/gpui/issues/241)，父 Issue #217。状态：代码已实现、自动化验证通过；应用内实机检查通过，用户已确认 macOS 完成通知及 Dock/Tray 数字正常（产品决定已确认，计数按未读会话口径，提醒按请求处理）；系统通知、Dock 注意力、数字标记和托盘提示统一在此实现，不作为 #223 新增前置条件。保留已经存在的错误反馈、插件 `notify` 和交互请求，不把“暂不做”解释成删除或屏蔽它们。重试倒计时属于原位置的运行状态展示，已确认在 #236 中实施。
 
-**当前实现：** [事件消费](../../../src/state/conversation.rs) 发布带来源和实例绑定的 `Attention(Notice)`，保留 RPC request id 和完整严重等级；[统一投递](../../../src/app/notifications.rs) 在应用层只订阅每个会话 owner 一次，选择前台 toast / 后台系统通知，管理撤回与回源。`pending_ui`、运行和错误仍由原 Session 持有。阅读只增加 `Session.unread`，插件/压缩提醒保存在来源 `notices`；渲染不会重新发送提醒。
+**当前实现：** [事件消费](../../../crates/gupi-conversation/src/conversation.rs) 发布带来源和实例绑定的 `Attention(Notice)`，保留 RPC request id 和完整严重等级；[统一投递](../../../src/app/notifications.rs) 在应用层只订阅每个会话 owner 一次，选择前台 toast / 后台系统通知，管理撤回与回源。`pending_ui`、运行和错误仍由原 Session 持有。阅读只增加 `Session.unread`，插件/压缩提醒保存在来源 `notices`；渲染不会重新发送提醒。
 
 ## 实现边界与验证
 
@@ -200,7 +200,7 @@ Gupi 应从已消费的标准 `extension_ui_request` / `pending_ui` 得到“需
 
 原始协议不提供任意插件 notify 的撤销事件，不能承诺像 pending_ui 一样随插件内部状态即时撤回。待答请求则沿用已有答复/超时/取消/断连清理，不额外延长生命周期。
 
-依据：[Pi RPC notify 实现](https://github.com/earendil-works/pi/blob/898ab804050730e9dcefb4443875d5a932aa6a32/packages/coding-agent/src/modes/rpc/rpc-mode.ts)、[协议映射](../../../crates/pi-rpc/src/protocol.rs)、[Gupi 消费](../../../src/state/conversation.rs)、[窗口内提醒](../../../src/features/home.rs)。
+依据：[Pi RPC notify 实现](https://github.com/earendil-works/pi/blob/898ab804050730e9dcefb4443875d5a932aa6a32/packages/coding-agent/src/modes/rpc/rpc-mode.ts)、[协议映射](../../../crates/pi-rpc/src/protocol.rs)、[Gupi 消费](../../../crates/gupi-conversation/src/conversation.rs)、[窗口内提醒](../../../crates/gupi-conversation-ui/src/home.rs)。
 
 ### Tauri 的底层是什么，能否独立使用
 

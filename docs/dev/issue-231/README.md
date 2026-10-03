@@ -348,8 +348,8 @@ Pi 路径生效已核对：ConversationState::set_command 只更新后续连接�
 
 本轮补充源码：
 
-- [Gupi 配置模型与提交](../../../src/state/config.rs)、[预览与已配置 Pi 探测所有权](../../../src/features/startup.rs)、[Pi 探测](../../../crates/pi-rpc/src/probe.rs)。
-- [Gupi 默认动作绑定](../../../src/features/home/actions.rs)、[应用入口](../../../src/app.rs)。
+- [Gupi 配置模型与提交](../../../crates/gupi-settings/src/config.rs)、[预览与已配置 Pi 探测所有权](../../../src/features/startup.rs)、[Pi 探测](../../../crates/pi-rpc/src/probe.rs)。
+- [Gupi 默认动作绑定](../../../crates/gupi-conversation-ui/src/home/actions.rs)、[应用入口](../../../src/app.rs)。
 - [Pi 包管理说明](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/docs/packages.md)、[Skill](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/docs/skills.md)、[提示词模板](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/docs/prompt-templates.md)。
 - [Pi 系统提示词发现](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/src/core/resource-loader.ts)、[get_commands](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/src/modes/rpc/rpc-mode.ts)。
 - [Pi CLI 参数与个人作用域隔离](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/src/package-manager-cli.ts)、[未受信任项目不加载配置](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/src/core/settings-manager.ts)。

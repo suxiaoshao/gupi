@@ -6,9 +6,6 @@
 mod app;
 mod components;
 mod features;
-mod foundation;
-mod pi;
-mod state;
 
 #[cfg(all(feature = "performance", not(debug_assertions)))]
 compile_error!(
@@ -17,14 +14,14 @@ compile_error!(
 
 fn main() {
     #[cfg(target_os = "windows")]
-    if let Err(error) = foundation::updater::after_update() {
+    if let Err(error) = gupi_updates::updater::after_update() {
         eprintln!("Gupi update cleanup: {error}");
     }
     #[cfg(target_os = "macos")]
     if std::env::args_os().nth(1).as_deref()
         == Some(std::ffi::OsStr::new("--gupi-print-shell-path"))
     {
-        if foundation::shell_path::print_path().is_err() {
+        if gupi_pi_runtime::print_path().is_err() {
             std::process::exit(1);
         }
         return;

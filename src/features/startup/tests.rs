@@ -1,10 +1,17 @@
-use super::{StartupScreen, StartupView};
-use crate::{
-    app::temporary,
-    state::config::{AppConfig, ConfigContents, ConfigData},
-};
-use gpui_kit::{AppContext, Task, TestAppContext, component::Root};
-use gpui_operation::{Cancel, Retry, Settle, Transition};
+use super::StartupScreen;
+use super::StartupView;
+use crate::app::temporary;
+use gpui_kit::AppContext;
+use gpui_kit::Task;
+use gpui_kit::TestAppContext;
+use gpui_kit::component::Root;
+use gpui_operation::Cancel;
+use gpui_operation::Retry;
+use gpui_operation::Settle;
+use gpui_operation::Transition;
+use gupi_settings::config::AppConfig;
+use gupi_settings::config::ConfigContents;
+use gupi_settings::config::ConfigData;
 
 #[gpui_kit::test]
 fn configured_windows_and_sessions_do_not_wait_for_a_probe(cx: &mut TestAppContext) {
@@ -36,15 +43,15 @@ fn configured_windows_and_sessions_do_not_wait_for_a_probe(cx: &mut TestAppConte
     let startup = startup.unwrap();
     startup.update(visual, |view, cx| {
         assert!(matches!(view.screen(cx), StartupScreen::Home(command) if command == std::path::Path::new("missing-pi")));
-        assert!(!view.applied_pi.read(cx).operation.is_running());
-        assert!(view.applied_pi.read(cx).operation.data().is_none());
+        assert!(!view.applied_pi.read(cx).is_running());
+        assert!(view.applied_pi.read(cx).data().is_none());
         assert!(temporary::state(cx).is_some(), "template actions can create their session immediately");
         view.applied_pi.update(cx, |pi, _| {
-            pi.operation.transition(Settle(Err(pi_rpc::probe::ProbeFailure::InvalidVersion)));
+            pi.operation_mut_for_test().transition(Settle(Err(pi_rpc::probe::ProbeFailure::InvalidVersion)));
         });
         assert!(matches!(view.screen(cx), StartupScreen::Home(_)));
         view.applied_pi.update(cx, |pi, _| {
-            pi.operation.transition(Retry(Task::ready(())));
+            pi.operation_mut_for_test().transition(Retry(Task::ready(())));
         });
         assert!(matches!(view.screen(cx), StartupScreen::Home(_)));
         view.applied_pi.update(cx, |pi, _| pi.stop());
@@ -85,11 +92,11 @@ fn init(cx: &mut TestAppContext) {
         gpui_kit::init(cx);
         gpui_tokio::init(cx);
         app_theme::init(cx);
-        crate::state::theme::init(cx);
-        crate::foundation::i18n::apply(Default::default(), cx);
-        crate::state::pi::init(cx);
+        gupi_settings::theme::init(cx);
+        gupi_settings::i18n::apply(Default::default(), cx);
+        gupi_pi_runtime::init(cx);
         temporary::init(cx);
-        cx.set_global(crate::state::layout::LayoutState::default());
+        cx.set_global(gupi_settings::layout::LayoutState::default());
     });
 }
 

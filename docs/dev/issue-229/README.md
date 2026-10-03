@@ -25,7 +25,7 @@
 
 ## 数据契约与实现边界
 
-修改集中于 `src/foundation/session_catalog.rs` 的单文件元数据读取；`Cargo.toml` 与锁文件接入 sonic-rs 0.5.8。
+修改集中于 `crates/gupi-conversation/src/session_catalog.rs` 的单文件元数据读取；`Cargo.toml` 与锁文件接入 sonic-rs 0.5.8。
 
 现有目录发现、header 读取、SessionInfo 公共结构、后台任务和 CatalogState 保持原有职责。header 发现耗时较小，沿用现有解析即可，不要求统一迁移解析库。
 

@@ -1,10 +1,12 @@
 //! The window is a view of application-owned, non-persistent conversations.
-use crate::{
-    features::temporary::startup::TemporaryStartup, state::conversation::ConversationState,
-};
-use gpui_kit::{component::Root, *};
-use std::{path::PathBuf, time::Duration};
-use window_ext::{WindowExt as _, WindowLevel};
+use crate::features::temporary::startup::TemporaryStartup;
+use gpui_kit::component::Root;
+use gpui_kit::*;
+use gupi_conversation::conversation::ConversationState;
+use std::path::PathBuf;
+use std::time::Duration;
+use window_ext::WindowExt as _;
+use window_ext::WindowLevel;
 
 const WINDOW_SIZE: Size<Pixels> = size(px(960.), px(620.));
 const RECYCLE_DELAY: Duration = Duration::from_secs(600);
@@ -12,7 +14,7 @@ const RECYCLE_DELAY: Duration = Duration::from_secs(600);
 pub(crate) struct Temporary {
     pub command: Option<PathBuf>,
     pub state: Option<Entity<ConversationState>>,
-    pub config: Option<Entity<crate::state::config::ConfigController>>,
+    pub config: Option<Entity<gupi_settings::config::ConfigController>>,
     window: Option<WindowHandle<Root>>,
     pub draining: bool,
     pub cleanup: Option<Task<()>>,
@@ -77,13 +79,12 @@ pub fn remember_frontmost(cx: &mut App) {
     }
 }
 fn paste_failure(window: &mut Window, cx: &mut App) {
-    use gpui_kit::component::{
-        WindowExt as _,
-        notification::{Notification, NotificationType},
-    };
+    use gpui_kit::component::WindowExt as _;
+    use gpui_kit::component::notification::Notification;
+    use gpui_kit::component::notification::NotificationType;
     window.push_notification(
         Notification::new()
-            .message(crate::foundation::i18n::t(cx, "temporary-paste-failed"))
+            .message(gupi_settings::i18n::t(cx, "temporary-paste-failed"))
             .with_type(NotificationType::Warning),
         cx,
     );
@@ -357,7 +358,7 @@ pub fn clean_released(cx: &mut App) {
     if cx.global::<Temporary>().cleanup.is_some() || cx.global::<Temporary>().draining {
         return;
     }
-    let root = match crate::foundation::paths::temporary_dir() {
+    let root = match gupi_resources::paths::temporary_dir() {
         Ok(root) => root,
         Err(e) => {
             cx.global_mut::<Temporary>().cleanup_result = Some(Err(e.to_string()));
@@ -409,7 +410,7 @@ pub fn clean_released(cx: &mut App) {
                 smol::unblock(move || {
                     let mut count = 0;
                     for path in candidates {
-                        crate::state::conversation::temporary::trash_workspace(&path)?;
+                        gupi_conversation::conversation::temporary::trash_workspace(&path)?;
                         count += 1;
                     }
                     Ok(count)
@@ -433,13 +434,26 @@ pub(crate) fn make_visible_for_test(cx: &mut App) {
 
 #[cfg(test)]
 mod tests {
-    use super::{RECYCLE_DELAY, Temporary, WINDOW_SIZE, fitting_size, hide, init};
-    use crate::state::conversation::ConversationState;
+    use super::RECYCLE_DELAY;
+    use super::Temporary;
+    use super::WINDOW_SIZE;
+    use super::fitting_size;
+    use super::hide;
+    use super::init;
+    use gpui_kit::AppContext;
+    use gpui_kit::Context;
+    use gpui_kit::Entity;
+    use gpui_kit::IntoElement;
+    use gpui_kit::Render;
+    use gpui_kit::TestAppContext;
+    use gpui_kit::Window;
+    use gpui_kit::WindowHandle;
+    use gpui_kit::WindowOptions;
     use gpui_kit::component::Root;
-    use gpui_kit::{
-        AppContext, Context, Entity, IntoElement, Render, TestAppContext, Window, WindowHandle,
-        WindowOptions, div, px, size,
-    };
+    use gpui_kit::div;
+    use gpui_kit::px;
+    use gpui_kit::size;
+    use gupi_conversation::conversation::ConversationState;
     use std::time::Duration;
     struct EmptyView;
     impl Render for EmptyView {
@@ -450,7 +464,7 @@ mod tests {
     fn setup(cx: &mut TestAppContext) -> (WindowHandle<Root>, Entity<ConversationState>) {
         cx.update(|cx| {
             gpui_kit::init(cx);
-            crate::state::pi::init(cx);
+            gupi_pi_runtime::init(cx);
             init(cx);
             let state = cx.new(|cx| ConversationState::temporary("unused-pi".into(), cx));
             state.update(cx, |s, _| s.selected = Some("retained-selection".into()));
@@ -472,9 +486,9 @@ mod tests {
         cx.update(|cx| {
             gpui_kit::init(cx);
             app_theme::init(cx);
-            crate::state::theme::init(cx);
-            crate::foundation::i18n::apply(Default::default(), cx);
-            crate::state::pi::init(cx);
+            gupi_settings::theme::init(cx);
+            gupi_settings::i18n::apply(Default::default(), cx);
+            gupi_pi_runtime::init(cx);
             init(cx);
             super::show(cx);
             let owner = cx.global::<Temporary>();

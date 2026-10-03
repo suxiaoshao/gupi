@@ -1,10 +1,9 @@
 use super::*;
-use gpui_kit::component::{
-    Icon,
-    collapsible::Collapsible,
-    group_box::{GroupBox, GroupBoxVariants},
-    tooltip::Tooltip,
-};
+use gpui_kit::component::Icon;
+use gpui_kit::component::collapsible::Collapsible;
+use gpui_kit::component::group_box::GroupBox;
+use gpui_kit::component::group_box::GroupBoxVariants;
+use gpui_kit::component::tooltip::Tooltip;
 
 const RESOURCE_KINDS: [(Kind, &str, IconName); 4] = [
     (
@@ -32,7 +31,7 @@ const RESOURCE_KINDS: [(Kind, &str, IconName); 4] = [
 impl ResourcesView {
     pub(super) fn render_packages(&self, cx: &Context<Self>) -> AnyElement {
         let controller = self.controller.read(cx);
-        let Some(catalog) = controller.catalog.data() else {
+        let Some(catalog) = controller.catalog().data() else {
             return div().into_any_element();
         };
         let busy = controller.busy() || self.config.read(cx).busy(cx);

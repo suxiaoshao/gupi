@@ -1,24 +1,31 @@
-use super::{chrome, home, settings::SettingsView};
+use super::settings::SettingsView;
+use gupi_conversation_ui::chrome;
+use gupi_conversation_ui::home;
+use gupi_pi_runtime::PiProbeController;
 mod palette;
 #[cfg(test)]
 mod tests;
-use crate::{
-    app::{instance::Instance, menus},
-    components::recovery::recovery,
-    foundation::{
-        i18n::{self, t},
-        paths,
-    },
-    pi::PiProbeController,
-    state::{
-        config::{AppConfig, ConfigContents, ConfigController, ConfigRepair},
-        layout, theme,
-    },
-};
+use crate::app::instance::Instance;
+use crate::app::menus;
+use crate::components::recovery::recovery;
 use gpui_form::Form;
-use gpui_kit::component::{ActiveTheme, Disableable, WindowExt, button::Button, h_flex, v_flex};
+use gpui_kit::component::ActiveTheme;
+use gpui_kit::component::Disableable;
+use gpui_kit::component::WindowExt;
+use gpui_kit::component::button::Button;
+use gpui_kit::component::h_flex;
+use gpui_kit::component::v_flex;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
+use gupi_resources::paths;
+use gupi_settings::config::AppConfig;
+use gupi_settings::config::ConfigContents;
+use gupi_settings::config::ConfigController;
+use gupi_settings::config::ConfigRepair;
+use gupi_settings::i18n;
+use gupi_settings::i18n::t;
+use gupi_settings::layout;
+use gupi_settings::theme;
 
 enum StartupScreen {
     Quitting,
@@ -49,7 +56,7 @@ pub(crate) struct StartupView {
     instance_retry: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
     quit_task: Option<Task<()>>,
-    palette: Option<Entity<super::command_palette::CommandPalette>>,
+    palette: Option<Entity<gupi_conversation_ui::command_palette::CommandPalette>>,
 }
 impl StartupView {
     pub fn new(
@@ -80,12 +87,12 @@ impl StartupView {
                 crate::app::temporary::set_command(value.pi_executable(), cx);
                 i18n::apply(value.language, cx);
                 crate::app::notifications::configure(value.notifications.clone(), cx);
-                crate::state::updates::get(cx).update(cx, |owner, cx| {
-                    owner.skipped = value.skipped_update.clone();
+                gupi_updates::updates::get(cx).update(cx, |owner, cx| {
+                    owner.set_skipped(value.skipped_update.clone());
                     owner.configure(value.checks_updates_automatically(), cx);
                 });
                 theme::apply(value, window, cx);
-                crate::state::keybindings::apply(&value.keybindings, cx);
+                gupi_settings::keybindings::apply(&value.keybindings, cx);
                 if !op.is_running() {
                     crate::app::shortcuts::apply(value, cx);
                 }
@@ -100,17 +107,17 @@ impl StartupView {
             menus::refresh(cx);
         });
         let preview_config = config.clone();
-        let updates = crate::state::updates::get(cx);
+        let updates = gupi_updates::updates::get(cx);
         let updates_sub = cx.subscribe_in(
             &updates,
             window,
-            |this, _, event: &crate::state::updates::Available, window, cx| {
+            |this, _, event: &gupi_updates::updates::Available, window, cx| {
                 let config = this.config.clone();
                 window.push_notification(
                     gpui_kit::component::notification::Notification::info(
                         super::updates::available_text(&event.0, cx),
                     )
-                    .id::<crate::state::updates::Available>()
+                    .id::<gupi_updates::updates::Available>()
                     .autohide(false)
                     .on_click(move |_, window, cx| {
                         super::updates::open(false, config.clone(), window, cx)
@@ -208,12 +215,12 @@ impl StartupView {
         tracing::info!("managed quit started");
         crate::app::shortcuts::shutdown(cx);
         self.config.update(cx, |owner, _| owner.draining = true);
-        crate::state::updates::get(cx).update(cx, |owner, cx| owner.stop(cx));
+        gupi_updates::updates::get(cx).update(cx, |owner, cx| owner.stop(cx));
         self.applied_pi.update(cx, |pi, _| pi.stop());
         self.draft_pi.update(cx, |pi, _| pi.stop());
         self.settings
             .update(cx, |settings, cx| settings.stop_resources(cx));
-        let pi = crate::state::pi::global(cx);
+        let pi = gupi_pi_runtime::global(cx);
         let flush_temporary = crate::app::temporary::drain(cx);
         let close_pi = pi.update(cx, |state, cx| state.close_all(cx));
         let flush_home = self
@@ -226,8 +233,8 @@ impl StartupView {
                 let busy = owner
                     .read_with(cx, |owner, cx| {
                         owner.config.read(cx).store.read(cx, |op| op.is_running())
-                            || owner.applied_pi.read(cx).operation.is_running()
-                            || owner.draft_pi.read(cx).operation.is_running()
+                            || owner.applied_pi.read(cx).is_running()
+                            || owner.draft_pi.read(cx).is_running()
                     })
                     .unwrap_or(false);
                 if !busy {
@@ -474,7 +481,7 @@ impl Render for StartupView {
                                 view.child(chrome::control(
                                     "settings-back-control",
                                     chrome::button("settings-back")
-                                        .icon(crate::foundation::assets::IconName::ArrowLeft)
+                                        .icon(gupi_settings::assets::IconName::ArrowLeft)
                                         .accessibility_label(t(cx, "menu-show-main"))
                                         .tooltip(t(cx, "menu-show-main"))
                                         .disabled(self.is_quitting() || !configured)

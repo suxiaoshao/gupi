@@ -1,10 +1,12 @@
 use super::*;
-use crate::state::shortcuts::{ShortcutTask, Shortcuts};
-use gpui_kit::component::{
-    Sizable, WindowExt,
-    setting::{SettingField, SettingGroup, SettingItem},
-};
+use gpui_kit::component::Sizable;
+use gpui_kit::component::WindowExt;
+use gpui_kit::component::setting::SettingField;
+use gpui_kit::component::setting::SettingGroup;
+use gpui_kit::component::setting::SettingItem;
 use gpui_kit::prelude::FluentBuilder;
+use gupi_settings::shortcuts::ShortcutTask;
+use gupi_settings::shortcuts::Shortcuts;
 mod editor;
 
 pub(super) struct GlobalKeys {

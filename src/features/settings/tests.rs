@@ -1,15 +1,21 @@
-use super::{AppConfig, AppLanguage, ConfigController, PiProbeController, SettingsView};
+use super::AppConfig;
+use super::AppLanguage;
+use super::ConfigController;
+use super::PiProbeController;
+use super::SettingsView;
 use gpui_form::Form;
+use gpui_kit::AppContext;
+use gpui_kit::TestAppContext;
 use gpui_kit::component::Root;
-use gpui_kit::{AppContext, TestAppContext};
+use gpui_operation::{Complete, Load, Transition};
 
 #[gpui_kit::test]
 fn shared_settings_layout_renders_without_reentrant_entity_access(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_kit::init(cx);
         app_theme::init(cx);
-        crate::state::theme::init(cx);
-        crate::foundation::i18n::apply(AppLanguage::Chinese, cx);
+        gupi_settings::theme::init(cx);
+        gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
     });
     let (_, cx) = cx.add_window_view(|window, cx| {
         let form = cx.new(|_| {
@@ -58,8 +64,8 @@ fn theme_grid_contributes_height_and_wraps_in_settings(cx: &mut TestAppContext) 
     cx.update(|cx| {
         gpui_kit::init(cx);
         app_theme::init(cx);
-        crate::state::theme::init(cx);
-        crate::foundation::i18n::apply(AppLanguage::Chinese, cx);
+        gupi_settings::theme::init(cx);
+        gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
     });
     let mut fixture = None;
     let (_, cx) = cx.add_window_view(|window, cx| {
@@ -116,7 +122,9 @@ impl gpui_kit::Render for ThemeGridFixture {
         _: &mut gpui_kit::Window,
         cx: &mut gpui_kit::Context<Self>,
     ) -> impl gpui_kit::IntoElement {
-        use gpui_kit::{InteractiveElement, ParentElement, Styled};
+        use gpui_kit::InteractiveElement;
+        use gpui_kit::ParentElement;
+        use gpui_kit::Styled;
         let mut choices = app_theme::theme_choices(
             gpui_kit::component::ThemeRegistry::global(cx),
             gpui_kit::component::ThemeMode::Light,
@@ -141,13 +149,16 @@ impl gpui_kit::Render for ThemeGridFixture {
 
 #[gpui_kit::test]
 fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppContext) {
-    use crate::foundation::pi_resources::{Catalog, Kind, Package, Resource};
-    use gpui_operation::{Complete, Load, Transition};
+    use gupi_resources::pi_resources::Catalog;
+    use gupi_resources::pi_resources::Kind;
+    use gupi_resources::pi_resources::Package;
+    use gupi_resources::pi_resources::Resource;
+
     cx.update(|cx| {
         gpui_kit::init(cx);
         app_theme::init(cx);
-        crate::state::theme::init(cx);
-        crate::foundation::i18n::apply(AppLanguage::Chinese, cx);
+        gupi_settings::theme::init(cx);
+        gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
     });
     for page in 0..9 {
         let (_, window_cx) = cx.add_window_view(|window, cx| {
@@ -156,7 +167,7 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
             let draft = cx.new(|_| PiProbeController::new());
             let applied = cx.new(|_| {
                 let mut probe = PiProbeController::new();
-                probe.draining = true; // Layout fixture: no external executable probing.
+                probe.stop(); // Layout fixture: no external executable probing.
                 probe
             });
             let settings = cx.new(|cx| {
@@ -173,8 +184,7 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
             let resources = settings.read(cx).resources.read(cx).controller.clone();
             resources.update(cx, |owner, _| {
                 let root = std::path::PathBuf::from("/tmp/settings-layout-fixture");
-                owner.catalog.transition(Load(gpui_kit::Task::ready(())));
-                owner.catalog.transition(Complete(Ok(Catalog {
+                owner.set_catalog_for_test(Catalog {
                     root: root.clone(),
                     packages: vec![Package {
                         source: "local-review-package".into(),
@@ -195,7 +205,7 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
                         })
                         .collect(),
                     warnings: vec![],
-                })));
+                });
             });
             let view = cx.new(|_| SettingsPageFixture { settings, page });
             Root::new(view, window, cx)
@@ -250,17 +260,18 @@ struct SettingsPageFixture {
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 #[gpui_kit::test]
 fn native_update_disables_settings_controls_until_closed(cx: &mut TestAppContext) {
-    use crate::state::{
-        config::{ConfigContents, ConfigData},
-        updates::{self, Status},
-    };
-    use gpui_kit::{Task, test::TestWindowExt};
-    use gpui_operation::{Complete, Load, Transition};
+    use gpui_kit::Task;
+    use gpui_kit::test::TestWindowExt;
+    use gupi_settings::config::ConfigContents;
+    use gupi_settings::config::ConfigData;
+    use gupi_updates::updates;
+    use gupi_updates::updates::Status;
+
     cx.update(|cx| {
         gpui_kit::init(cx);
         app_theme::init(cx);
-        crate::state::theme::init(cx);
-        crate::foundation::i18n::apply(AppLanguage::Chinese, cx);
+        gupi_settings::theme::init(cx);
+        gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
     });
     let directory = tempfile::tempdir().unwrap();
     let mut fixture = None;
@@ -286,7 +297,7 @@ fn native_update_disables_settings_controls_until_closed(cx: &mut TestAppContext
         let draft = cx.new(|_| PiProbeController::new());
         let applied = cx.new(|_| {
             let mut probe = PiProbeController::new();
-            probe.draining = true;
+            probe.stop();
             probe
         });
         let settings = cx.new(|cx| {
@@ -312,10 +323,10 @@ fn native_update_disables_settings_controls_until_closed(cx: &mut TestAppContext
         assert_eq!(AppConfig::AUTO_CHECK_UPDATES.get(&form, cx), Some(true));
     });
     updates.update(visual, |owner, cx| {
-        owner.status = Status::Available(crate::foundation::releases::Release {
+        owner.set_status_for_test(Status::Available(gupi_updates::releases::Release {
             version: semver::Version::new(2, 0, 0),
             url: "https://github.com/suxiaoshao/gupi/releases/tag/v2.0.0".into(),
-        });
+        }));
         owner.start_install(cx).unwrap();
     });
     visual.update(|window, cx| {

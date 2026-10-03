@@ -1,5 +1,7 @@
 use super::*;
-use gpui_kit::component::dialog::{Cancel, Confirm, DialogButtonProps};
+use gpui_kit::component::dialog::Cancel;
+use gpui_kit::component::dialog::Confirm;
+use gpui_kit::component::dialog::DialogButtonProps;
 
 impl ResourcesView {
     fn show_editor_dialog(&self, window: &mut Window, cx: &mut Context<Self>) {
@@ -70,7 +72,7 @@ impl ResourcesView {
                                 Button::new("resource-editor-save")
                                     .primary()
                                     .label(t(cx, "settings-resource-save"))
-                                    .loading(this.controller.read(cx).mutation.is_running())
+                                    .loading(this.controller.read(cx).mutation().is_running())
                                     .disabled(
                                         busy || !editor.editable || (!editor.create && !dirty),
                                     )

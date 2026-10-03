@@ -1,6 +1,6 @@
 use super::*;
-use crate::features::command_palette::CommandPalette;
 use gpui_kit::component::WindowExt;
+use gupi_conversation_ui::command_palette::CommandPalette;
 impl StartupView {
     pub(super) fn open_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.is_quitting() {

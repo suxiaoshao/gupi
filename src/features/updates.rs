@@ -1,18 +1,18 @@
-use crate::{
-    foundation::{
-        i18n::{t, t_with_args},
-        releases::Release,
-    },
-    state::{
-        config::ConfigController,
-        updates::{self, Status, Updates},
-    },
-};
 use fluent_bundle::FluentArgs;
-use gpui_kit::component::{
-    ActiveTheme, Disableable, WindowExt, button::Button, link::Link, v_flex,
-};
+use gpui_kit::component::ActiveTheme;
+use gpui_kit::component::Disableable;
+use gpui_kit::component::WindowExt;
+use gpui_kit::component::button::Button;
+use gpui_kit::component::link::Link;
+use gpui_kit::component::v_flex;
 use gpui_kit::*;
+use gupi_settings::config::ConfigController;
+use gupi_settings::i18n::t;
+use gupi_settings::i18n::t_with_args;
+use gupi_updates::releases::Release;
+use gupi_updates::updates;
+use gupi_updates::updates::Status;
+use gupi_updates::updates::Updates;
 
 pub(crate) fn available_text(release: &Release, cx: &App) -> String {
     let mut args = FluentArgs::new();
@@ -66,7 +66,7 @@ impl UpdatesView {
 impl Render for UpdatesView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let owner = self.owner.read(cx);
-        let status = match &owner.status {
+        let status = match owner.status() {
             Status::Idle => t(cx, "updates-idle"),
             Status::Checking { .. } => t(cx, "updates-checking"),
             Status::Current => t(cx, "updates-current"),

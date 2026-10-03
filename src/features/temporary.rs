@@ -1,31 +1,43 @@
 //! A disposable window view over the application-owned temporary sessions.
 mod actions_panel;
 pub(crate) mod startup;
-use super::home::{
-    HomeView,
-    actions::{Kind, Run},
-    navigation,
-};
-use crate::{
-    app::{menus, temporary},
-    foundation::{assets::IconName, i18n::t},
-    state::conversation::{Activity, ConversationEvent, ConversationState},
-};
-use gpui_kit::{
-    component::{
-        ActiveTheme, Disableable, Icon, IndexPath, Selectable, Sizable, WindowExt as _,
-        button::{Button, ButtonVariants},
-        h_flex,
-        input::{self, Input, InputEvent, InputState, MoveDown, MoveUp},
-        kbd::Kbd,
-        list::{List, ListDelegate, ListState},
-        menu::ContextMenuExt,
-        popover::Popover,
-        resizable::{h_resizable, resizable_panel},
-        v_flex,
-    },
-    *,
-};
+use crate::app::menus;
+use crate::app::temporary;
+use gpui_kit::component::ActiveTheme;
+use gpui_kit::component::Disableable;
+use gpui_kit::component::Icon;
+use gpui_kit::component::IndexPath;
+use gpui_kit::component::Selectable;
+use gpui_kit::component::Sizable;
+use gpui_kit::component::WindowExt as _;
+use gpui_kit::component::button::Button;
+use gpui_kit::component::button::ButtonVariants;
+use gpui_kit::component::h_flex;
+use gpui_kit::component::input;
+use gpui_kit::component::input::Input;
+use gpui_kit::component::input::InputEvent;
+use gpui_kit::component::input::InputState;
+use gpui_kit::component::input::MoveDown;
+use gpui_kit::component::input::MoveUp;
+use gpui_kit::component::kbd::Kbd;
+use gpui_kit::component::list::List;
+use gpui_kit::component::list::ListDelegate;
+use gpui_kit::component::list::ListState;
+use gpui_kit::component::menu::ContextMenuExt;
+use gpui_kit::component::popover::Popover;
+use gpui_kit::component::resizable::h_resizable;
+use gpui_kit::component::resizable::resizable_panel;
+use gpui_kit::component::v_flex;
+use gpui_kit::*;
+use gupi_conversation::conversation::Activity;
+use gupi_conversation::conversation::ConversationEvent;
+use gupi_conversation::conversation::ConversationState;
+use gupi_conversation_ui::home::HomeView;
+use gupi_conversation_ui::home::actions::Kind;
+use gupi_conversation_ui::home::actions::Run;
+use gupi_conversation_ui::home::navigation;
+use gupi_settings::assets::IconName;
+use gupi_settings::i18n::t;
 
 use gpui_kit::prelude::FluentBuilder as _;
 
@@ -100,7 +112,7 @@ impl TemporaryView {
                     }) {
                         return;
                     }
-                    if !secondary && crate::state::keybindings::uses_enter(Kind::PasteAnswer, cx) {
+                    if !secondary && gupi_settings::keybindings::uses_enter(Kind::PasteAnswer, cx) {
                         this.run(&Run(Kind::PasteAnswer), window, cx);
                     }
                 }
@@ -163,7 +175,7 @@ impl TemporaryView {
         } else {
             self.answer_available = None;
         }
-        let make_row = |key: String, info: crate::foundation::session_catalog::SessionInfo| {
+        let make_row = |key: String, info: gupi_conversation::session_catalog::SessionInfo| {
             let title = navigation::display_title(&info, cx);
             if !matches_query(&title, &query) {
                 return None;
@@ -380,7 +392,7 @@ impl TemporaryView {
             .children(if sending {
                 Some(Kbd::new(Keystroke::parse("enter").unwrap()))
             } else {
-                crate::features::command_palette::binding(Kind::PasteAnswer, window)
+                gupi_conversation_ui::command_palette::binding(Kind::PasteAnswer, window)
             })
             .disabled(!enabled)
             .on_click(cx.listener(move |this, _, window, cx| {
@@ -406,7 +418,7 @@ impl TemporaryView {
                     .small()
                     .ghost()
                     .label(t(cx, "temporary-actions"))
-                    .children(crate::features::command_palette::binding(
+                    .children(gupi_conversation_ui::command_palette::binding(
                         Kind::TemporaryActions,
                         window,
                     )),
@@ -627,7 +639,7 @@ impl RenderOnce for SessionItem {
             .children(self.row.unread.then(|| navigation::unread_mark(cx)))
             .child(navigation::activity_mark(self.row.activity, cx))
             .children(self.shortcut.and_then(|n| {
-                crate::features::command_palette::binding(Kind::TemporarySession(n), window)
+                gupi_conversation_ui::command_palette::binding(Kind::TemporarySession(n), window)
             }))
             .context_menu(move |menu, _, cx| {
                 navigation::session_menu(
@@ -720,7 +732,8 @@ fn session_index(number: u8, count: usize) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::{matches_query, next_index};
+    use super::matches_query;
+    use super::next_index;
     #[test]
     fn search_and_navigation_handle_filtered_out_selection() {
         assert!(matches_query("Rust 临时会话", "rust"));

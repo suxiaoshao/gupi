@@ -65,4 +65,4 @@
 - Pi `packages/coding-agent/src/modes/interactive/interactive-mode.ts`：内置命令的参数解析与 TUI 分发。
 - Pi `packages/coding-agent/src/modes/rpc/rpc-mode.ts`：compact、export_html、clone、get_last_assistant_text、get_commands 等支持情况。
 - Pi `packages/coding-agent/src/core/agent-session.ts`：各会话操作语义。
-- Gupi `crates/pi-rpc/src/protocol.rs`、`client.rs`：当前 typed API；`src/state/conversation.rs` 和 `features/home/`：已接入动作与界面。
+- Gupi `crates/pi-rpc/src/protocol.rs`、`client.rs`：当前 typed API；`crates/gupi-conversation/src/conversation.rs` 和 `features/home/`：已接入动作与界面。

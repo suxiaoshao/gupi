@@ -8,29 +8,37 @@ mod resources;
 mod tests;
 mod theme_grid;
 
-use crate::foundation::assets::IconName;
-use crate::pi::PiProbeController;
-use crate::{
-    foundation::i18n::t,
-    state::config::{
-        AppConfig, AppLanguage, ConfigController, ConfigRepair, PiSettings, PreferenceChange,
-        ThemeMode,
-    },
-};
-use gpui_form::{ControlBinding, ControlProjection, Form};
-use gpui_kit::component::{
-    ActiveTheme, Disableable,
-    button::{Button, ButtonVariants},
-    h_flex,
-    input::{Input, InputEvent, InputGroup, InputGroupAddon, InputGroupAddonAlignment, InputState},
-    v_flex,
-};
-use gpui_kit::component::{
-    combobox::{ComboboxEvent, ComboboxState},
-    searchable_list::SearchableVec,
-};
+use gpui_form::ControlBinding;
+use gpui_form::ControlProjection;
+use gpui_form::Form;
+use gpui_kit::component::ActiveTheme;
+use gpui_kit::component::Disableable;
+use gpui_kit::component::button::Button;
+use gpui_kit::component::button::ButtonVariants;
+use gpui_kit::component::combobox::ComboboxEvent;
+use gpui_kit::component::combobox::ComboboxState;
+use gpui_kit::component::h_flex;
+use gpui_kit::component::input::Input;
+use gpui_kit::component::input::InputEvent;
+use gpui_kit::component::input::InputGroup;
+use gpui_kit::component::input::InputGroupAddon;
+use gpui_kit::component::input::InputGroupAddonAlignment;
+use gpui_kit::component::input::InputState;
+use gpui_kit::component::searchable_list::SearchableVec;
+use gpui_kit::component::v_flex;
 use gpui_kit::*;
-use preferences::{LanguageItem, language_items};
+use gupi_pi_runtime::PiProbeController;
+use gupi_settings::assets::IconName;
+use gupi_settings::config::AppConfig;
+use gupi_settings::config::AppLanguage;
+use gupi_settings::config::ConfigController;
+use gupi_settings::config::ConfigRepair;
+use gupi_settings::config::PiSettings;
+use gupi_settings::config::PreferenceChange;
+use gupi_settings::config::ThemeMode;
+use gupi_settings::i18n::t;
+use preferences::LanguageItem;
+use preferences::language_items;
 
 pub(crate) struct SettingsView {
     focus_handle: FocusHandle,
@@ -165,7 +173,7 @@ impl SettingsView {
             }
         });
         let locale_sub =
-            cx.observe_global_in::<crate::foundation::i18n::I18n>(window, |this, window, cx| {
+            cx.observe_global_in::<gupi_settings::i18n::I18n>(window, |this, window, cx| {
                 let selected = this.controller.read(cx).preferences(cx).language;
                 let items = language_items(cx);
                 this.language.update(cx, |control, cx| {
@@ -439,7 +447,9 @@ impl SettingsView {
 }
 
 fn dialog_buttons(label: &str, busy: bool, confirm_disabled: bool, cx: &App) -> impl IntoElement {
-    use gpui_kit::component::dialog::{Cancel, Confirm, DialogFooter};
+    use gpui_kit::component::dialog::Cancel;
+    use gpui_kit::component::dialog::Confirm;
+    use gpui_kit::component::dialog::DialogFooter;
     DialogFooter::new()
         .child(
             Button::new("cancel")

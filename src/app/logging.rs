@@ -1,9 +1,10 @@
 //! Bounded local diagnostics: current log plus three 5 MiB archives.
-use std::{
-    fs::{File, OpenOptions},
-    io::{self, Write},
-    path::{Path, PathBuf},
-};
+use std::fs::File;
+use std::fs::OpenOptions;
+use std::io;
+use std::io::Write;
+use std::path::Path;
+use std::path::PathBuf;
 
 const MAX_BYTES: u64 = 5 * 1024 * 1024;
 const ARCHIVES: usize = 3;

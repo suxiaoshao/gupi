@@ -1,9 +1,13 @@
 use super::*;
-use gpui_kit::base::actions::{Cancel, Confirm, SelectDown, SelectUp};
-use gpui_kit::component::{
-    command::{Command, CommandGroup, CommandItem, CommandState},
-    input::Escape,
-};
+use gpui_kit::base::actions::Cancel;
+use gpui_kit::base::actions::Confirm;
+use gpui_kit::base::actions::SelectDown;
+use gpui_kit::base::actions::SelectUp;
+use gpui_kit::component::command::Command;
+use gpui_kit::component::command::CommandGroup;
+use gpui_kit::component::command::CommandItem;
+use gpui_kit::component::command::CommandState;
+use gpui_kit::component::input::Escape;
 
 pub(super) struct ActionsPanel {
     owner: WeakEntity<TemporaryView>,
@@ -133,7 +137,7 @@ impl Render for ActionsPanel {
                                     })
                                     .child(label.clone()),
                             )
-                            .children(crate::features::command_palette::binding(kind, window))
+                            .children(gupi_conversation_ui::command_palette::binding(kind, window))
                     });
                 group = group.item(item);
                 rows.push(kind);

@@ -4535,49 +4535,174 @@ version = "0.1.2"
 dependencies = [
  "app-theme",
  "base64 0.23.1",
- "cc",
- "dirs-next",
  "fluent-bundle",
  "get-selected-text",
  "global-hotkey",
+ "gpui-form",
+ "gpui-kit",
+ "gpui-operation",
+ "gpui-tokio",
+ "gupi-conversation",
+ "gupi-conversation-ui",
+ "gupi-pi-runtime",
+ "gupi-resources",
+ "gupi-settings",
+ "gupi-updates",
+ "image",
+ "pi-rpc",
+ "platform-ext",
+ "profiling",
+ "semver",
+ "serde",
+ "serde_json",
+ "smol",
+ "sys-locale",
+ "tempfile",
+ "tracing",
+ "tracing-chrome",
+ "tracing-subscriber",
+ "tray-icon",
+ "uuid",
+ "window-ext",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "gupi-conversation"
+version = "0.1.2"
+dependencies = [
+ "base64 0.23.1",
+ "fluent-bundle",
+ "gpui-kit",
+ "gpui-operation",
+ "gupi-pi-runtime",
+ "gupi-resources",
+ "gupi-settings",
+ "image",
+ "markdown",
+ "pi-rpc",
+ "serde",
+ "serde_json",
+ "smol",
+ "sonic-rs",
+ "tempfile",
+ "time",
+ "tokio",
+ "toml 1.1.6+spec-1.1.0",
+ "tracing",
+ "trash",
+ "uuid",
+]
+
+[[package]]
+name = "gupi-conversation-ui"
+version = "0.1.2"
+dependencies = [
+ "app-theme",
+ "base64 0.23.1",
+ "fluent-bundle",
+ "gpui-kit",
+ "gpui-tokio",
+ "gupi-conversation",
+ "gupi-pi-runtime",
+ "gupi-resources",
+ "gupi-settings",
+ "ignore",
+ "image",
+ "markdown",
+ "pi-rpc",
+ "regex",
+ "serde_json",
+ "smol",
+ "time",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "gupi-pi-runtime"
+version = "0.1.0"
+dependencies = [
+ "dirs-next",
+ "gpui-kit",
+ "gpui-operation",
+ "gpui-tokio",
+ "libc",
+ "pi-rpc",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "gupi-resources"
+version = "0.1.2"
+dependencies = [
+ "dirs-next",
  "globset",
+ "gpui-kit",
+ "gpui-operation",
+ "gpui-tokio",
+ "gupi-pi-runtime",
+ "ignore",
+ "pi-rpc",
+ "regex",
+ "serde_json",
+ "serde_yaml_ng",
+ "smol",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "trash",
+ "url",
+]
+
+[[package]]
+name = "gupi-settings"
+version = "0.1.2"
+dependencies = [
+ "app-theme",
+ "fluent-bundle",
+ "global-hotkey",
  "gpui-form",
  "gpui-kit",
  "gpui-lucide",
  "gpui-operation",
  "gpui-store",
- "gpui-tokio",
- "http",
- "ignore",
- "image",
- "libc",
- "libloading",
- "markdown",
+ "gupi-resources",
+ "gupi-updates",
  "pi-rpc",
  "platform-ext",
- "profiling",
- "regex",
+ "semver",
+ "serde",
+ "serde_json",
+ "smol",
+ "sys-locale",
+ "tempfile",
+ "thiserror 2.0.21",
+ "toml 1.1.6+spec-1.1.0",
+ "tracing",
+]
+
+[[package]]
+name = "gupi-updates"
+version = "0.1.2"
+dependencies = [
+ "cc",
+ "gpui-kit",
+ "gpui-tokio",
+ "gupi-resources",
+ "http",
+ "libloading",
  "reqwest",
  "semver",
  "serde",
  "serde_json",
- "serde_yaml_ng",
  "smol",
- "sonic-rs",
- "sys-locale",
  "tempfile",
  "thiserror 2.0.21",
- "time",
  "tokio",
- "toml 1.1.6+spec-1.1.0",
- "tracing",
- "tracing-chrome",
- "tracing-subscriber",
- "trash",
- "tray-icon",
  "url",
  "uuid",
- "window-ext",
  "windows-sys 0.61.2",
 ]
 

@@ -1,0 +1,52 @@
+[package]
+name = "gupi-conversation"
+version.workspace = true
+edition = "2024"
+license = "MIT"
+publish = false
+
+[features]
+performance = []
+test-support = []
+
+[dependencies]
+# UI and workspace services.
+gpui-kit.workspace = true
+gpui-operation.workspace = true
+pi-rpc.workspace = true
+
+# Background tasks and Pi subprocess I/O.
+smol = "2.0.2"
+tokio = { version = "1.53.1", features = [
+  "process",
+  "io-util",
+  "time",
+  "macros",
+  "sync",
+  "fs",
+] }
+
+# Configuration, session data and local resources.
+base64 = "0.23.1"
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
+markdown = "1.0.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+sonic-rs = "0.5.10"
+tempfile = "3.27.0"
+time = { version = "0.3.55", features = ["parsing", "formatting", "local-offset"] }
+toml = "1.1.6"
+trash = "5.2.9"
+uuid = { version = "1.26.1", features = ["v4", "v5"] }
+
+# Localization and diagnostics.
+fluent-bundle = "0.16.0"
+tracing = "0.1.44"
+
+gupi-resources.workspace = true
+gupi-settings.workspace = true
+gupi-pi-runtime.workspace = true
+
+[dev-dependencies]
+gpui-kit = { workspace = true, features = ["test-support"] }
+gupi-pi-runtime = { workspace = true, features = ["test-support"] }

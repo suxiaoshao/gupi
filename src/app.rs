@@ -8,13 +8,14 @@ pub(crate) mod shortcuts;
 pub(crate) mod temporary;
 mod tray;
 pub(crate) mod updater;
-use crate::{
-    features::startup::StartupView,
-    foundation::{assets::Assets, i18n, paths},
-    state::layout,
-};
-use gpui_kit::component::{Root, TitleBar};
+use crate::features::startup::StartupView;
+use gpui_kit::component::Root;
+use gpui_kit::component::TitleBar;
 use gpui_kit::*;
+use gupi_resources::paths;
+use gupi_settings::assets::Assets;
+use gupi_settings::i18n;
+use gupi_settings::layout;
 #[cfg(feature = "performance")]
 use tracing_subscriber::prelude::*;
 use window_ext::WindowExt;
@@ -23,6 +24,26 @@ struct MainWindow {
     view: Entity<StartupView>,
 }
 impl Global for MainWindow {}
+pub(crate) fn init_capability_hosts(cx: &mut App) {
+    cx.set_global(gupi_settings::host::Host {
+        prepare_shortcuts: shortcuts::prepare,
+        apply_shortcuts: shortcuts::apply,
+        refresh_menus: menus::refresh_native,
+    });
+    cx.set_global(gupi_conversation::host::Host {
+        attach: notifications::attach,
+        cancel_preparation: shortcuts::cancel_preparation,
+    });
+    cx.set_global(gupi_conversation_ui::host::Host {
+        paste_answer: temporary::paste_answer,
+        hide: temporary::hide,
+        present: notifications::present,
+    });
+}
+#[cfg(test)]
+mod conversation_view_tests;
+#[cfg(test)]
+mod keybinding_tests;
 pub(crate) fn run() {
     let instance =
         match paths::config_dir().and_then(|directory| instance::Instance::acquire(&directory)) {
@@ -36,7 +57,7 @@ pub(crate) fn run() {
     // owns configuration, recovery, editing and persistence.
     let initial_language = paths::config_dir()
         .ok()
-        .and_then(|dir| crate::state::config::read_config(dir.join("config.toml"), false).ok())
+        .and_then(|dir| gupi_settings::config::read_config(dir.join("config.toml"), false).ok())
         .and_then(|data| data.configured().map(|config| config.language))
         .unwrap_or_default();
     #[cfg(target_os = "macos")]
@@ -54,18 +75,19 @@ pub(crate) fn run() {
             eprintln!("Gupi instance startup failed: {error}");
         }
         gpui_kit::init(cx);
+        init_capability_hosts(cx);
         gpui_tokio::init(cx);
-        crate::state::environment::init(cx);
-        crate::state::pi::init(cx);
+        gupi_pi_runtime::init_environment(cx);
+        gupi_pi_runtime::init(cx);
         temporary::init(cx);
         shortcuts::init(cx);
         app_theme::init(cx);
-        crate::state::theme::init(cx);
+        gupi_settings::theme::init(cx);
         cx.set_global(i18n::SystemLocale(system_locale));
         i18n::apply(initial_language, cx);
         menus::init(cx);
         menus::refresh(cx);
-        crate::state::keybindings::apply(&Default::default(), cx);
+        gupi_settings::keybindings::apply(&Default::default(), cx);
         cx.on_action(|_: &menus::ShowTemporaryWindow, cx| {
             cx.defer(|cx| {
                 if instance::is_owner(cx) {

@@ -1,20 +1,20 @@
 use super::*;
-use crate::features::composer::Composer;
-use crate::features::home::pickers::{Picker, PickerEvent, Projection};
-use crate::{
-    foundation::pi_resources,
-    state::{
-        pi,
-        shortcuts::{InputSource, ModelChoice},
-    },
-};
-use gpui_kit::component::{
-    combobox::Combobox,
-    form::{field, v_form},
-    input::{Textarea, TextareaState},
-    searchable_list::SearchableListItem,
-};
-use pi_rpc::{Client, LaunchOptions, protocol::Model};
+use gpui_kit::component::combobox::Combobox;
+use gpui_kit::component::form::field;
+use gpui_kit::component::form::v_form;
+use gpui_kit::component::input::Textarea;
+use gpui_kit::component::input::TextareaState;
+use gpui_kit::component::searchable_list::SearchableListItem;
+use gupi_conversation_ui::composer::Composer;
+use gupi_conversation_ui::home::pickers::Picker;
+use gupi_conversation_ui::home::pickers::PickerEvent;
+use gupi_conversation_ui::home::pickers::Projection;
+use gupi_resources::pi_resources;
+use gupi_settings::shortcuts::InputSource;
+use gupi_settings::shortcuts::ModelChoice;
+use pi_rpc::Client;
+use pi_rpc::LaunchOptions;
+use pi_rpc::protocol::Model;
 #[derive(Clone)]
 struct Choice {
     id: String,
@@ -96,7 +96,7 @@ struct Editor {
     saving: Option<Shortcuts>,
     error: Option<String>,
     loading: bool,
-    query: Option<pi::InstanceId>,
+    query: Option<gupi_pi_runtime::InstanceId>,
     client: Option<Client>,
     task: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
@@ -187,7 +187,7 @@ impl Editor {
         });
         cx.on_release(|this, cx| {
             if let Some(id) = this.query {
-                pi::global(cx)
+                gupi_pi_runtime::global(cx)
                     .update(cx, |pi, cx| pi.close(id, cx))
                     .detach();
             }
@@ -263,7 +263,7 @@ impl Editor {
             return;
         }
         if let Some(id) = self.query.take() {
-            pi::global(cx)
+            gupi_pi_runtime::global(cx)
                 .update(cx, |pi, cx| pi.close(id, cx))
                 .detach();
         }
@@ -277,7 +277,7 @@ impl Editor {
         let launch = command.and_then(|command| {
             let mut options = LaunchOptions::new(command, std::env::temp_dir());
             options.args.push("--no-session".into());
-            match pi::global(cx).update(cx, |pi, cx| pi.start(options, cx)) {
+            match gupi_pi_runtime::global(cx).update(cx, |pi, cx| pi.start(options, cx)) {
                 Ok(id) => {
                     self.query = Some(id);
                     Some(id)
@@ -288,8 +288,8 @@ impl Editor {
                 }
             }
         });
-        let pi = pi::global(cx);
-        let environment = crate::state::environment::current(cx);
+        let pi = gupi_pi_runtime::global(cx);
+        let environment = gupi_pi_runtime::environment(cx);
         let resources = gpui_tokio::Tokio::spawn(cx, async move {
             let snapshot = environment.load(false).await;
             let root = pi_resources::agent_dir()

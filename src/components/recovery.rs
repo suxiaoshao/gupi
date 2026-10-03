@@ -1,4 +1,5 @@
-use gpui_kit::component::{ActiveTheme, v_flex};
+use gpui_kit::component::ActiveTheme;
+use gpui_kit::component::v_flex;
 use gpui_kit::*;
 pub(crate) fn recovery(title: String, description: String, cx: &App) -> Div {
     v_flex()

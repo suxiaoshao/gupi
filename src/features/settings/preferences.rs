@@ -1,14 +1,14 @@
 use super::*;
-use crate::pi::ProbeFailureKey;
-use crate::state::theme;
-use gpui_kit::component::{
-    Sizable, ThemeMode as Mode,
-    combobox::Combobox,
-    form::{field, v_form},
-    searchable_list::SearchableListItem,
-    tooltip::Tooltip,
-};
+use gpui_kit::component::Sizable;
+use gpui_kit::component::ThemeMode as Mode;
+use gpui_kit::component::combobox::Combobox;
+use gpui_kit::component::form::field;
+use gpui_kit::component::form::v_form;
+use gpui_kit::component::searchable_list::SearchableListItem;
+use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::prelude::FluentBuilder;
+use gupi_settings::i18n::ProbeFailureKey;
+use gupi_settings::theme;
 
 #[derive(Clone)]
 pub(super) struct LanguageItem {
@@ -109,9 +109,9 @@ impl SettingsView {
                         let mut args = fluent_bundle::FluentArgs::new();
                         args.set(
                             "language",
-                            crate::foundation::i18n::system_language_autonym(cx).to_owned(),
+                            gupi_settings::i18n::system_language_autonym(cx).to_owned(),
                         );
-                        crate::foundation::i18n::t_with_args(cx, "setup-system-language", &args)
+                        gupi_settings::i18n::t_with_args(cx, "setup-system-language", &args)
                     }),
             )
             .into_any_element()
@@ -136,7 +136,7 @@ impl SettingsView {
                 .read(cx)
                 .controller
                 .read(cx)
-                .mutation
+                .mutation()
                 .is_running();
         let onboarding = self.controller.read(cx).is_onboarding(cx);
         let dirty = self.controller.read(cx).pi_form.read(cx).is_dirty();
@@ -157,16 +157,16 @@ impl SettingsView {
         let actions = h_flex().gap_2().child(
             Button::new("check-draft-pi")
                 .icon(IconName::RotateCw)
-                .loading(pi.operation.is_running())
+                .loading(pi.is_running())
                 .label(t(
                     cx,
-                    if pi.operation.is_running() {
+                    if pi.is_running() {
                         "startup-checking"
                     } else {
                         "setup-check-pi"
                     },
                 ))
-                .disabled(busy || pi.operation.is_running())
+                .disabled(busy || pi.is_running())
                 .on_click(cx.listener(|this, _, _, cx| {
                     match (PiSettings {
                         command: this.pi_command(cx),
@@ -208,8 +208,8 @@ impl SettingsView {
                     )),
             );
         }
-        if matching && !pi.operation.is_running() {
-            if let Some(problem) = pi.operation.problem() {
+        if matching && !pi.is_running() {
+            if let Some(problem) = pi.problem() {
                 view = view.child(
                     div()
                         .text_sm()
@@ -218,7 +218,7 @@ impl SettingsView {
                         .child(div().text_xs().child(problem.to_string())),
                 );
             } else if self.probe_ready(cx)
-                && let Some(data) = pi.operation.data()
+                && let Some(data) = pi.data()
             {
                 view = view.child(
                     v_flex()

@@ -11,13 +11,11 @@
 
 这是一个 Rust 单产品 workspace。根包为 `gupi`，入口为 `src/main.rs`；成员、版本和依赖以根 `Cargo.toml` / `Cargo.lock` 为准。
 
-- `src/app`：应用寿命、窗口、菜单、Tray、通知与退出协调。
-- `src/foundation`：文件、目录、序列化、资源发现和其他不拥有界面的支撑能力。
-- `src/state`：配置、会话、运行连接、历史投影和业务动作的权威状态。
-- `src/features`：页面与交互组合；共用控件位于 `src/components`。
-- `crates/pi-rpc`、`crates/window-ext`、`crates/gpui-tokio`、`crates/gpui-lucide`：本产品内部能力；`crates/xtask`：构建与打包。
+应用架构、状态所有权、文件组织、命名和公共接口遵循 [GPUI Kit Coding Guides](https://gpui-kit.com/docs/coding-guides/)。本项目不另行维护与其竞争的通用架构规则。
 
-保留以上边界。Pi 负责模型执行、扩展、配置加载及会话内容写入；Gupi 负责桌面交互和连接生命周期，具体见 [职责边界](docs/gui-boundary.md)。
+能力已拆到 `gupi-pi-runtime`、`gupi-resources`、`gupi-updates`、`gupi-settings`、`gupi-conversation` 和 `gupi-conversation-ui`。根包保留应用壳、设置/启动/临时窗口组合与原生生命周期；`src/state`、`src/foundation` 已移除。职责、依赖方向及 host 接口见 [能力架构](docs/dev/capability-architecture/README.md)。
+
+Pi 负责模型执行、扩展、配置加载及会话内容写入；Gupi 负责桌面交互和连接生命周期，具体见 [职责边界](docs/gui-boundary.md)。
 
 Rust 模块使用 `{module}.rs`，新增依赖写完整版本号，遵循根格式配置。应用通过 `gpui_kit`、`gpui_kit::component`、`gpui_kit::assets` 接入；依赖别名遵循根 manifest。共享服务从固定 Git revision 的 `suxiaoshao/gpui` 使用，不为一次应用改动擅自升级 revision 或复制依赖实现。
 

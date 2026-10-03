@@ -16,19 +16,19 @@
 ├── src/main.rs                      # F-101 新增；只调用 app::run
 ├── src/app.rs                       # F-102 新增；初始化、窗口和退出编排
 ├── src/foundation.rs                # F-103 新增；基础模块声明
-├── src/foundation/paths.rs          # F-103 新增；应用目录与环境覆盖
-├── src/foundation/persistence.rs    # F-103 新增；读取、备份与原子写入
-├── src/foundation/i18n.rs           # F-104 新增；Fluent、语言检测与菜单更新
-├── src/foundation/assets.rs         # F-105 新增；app-local runtime 资源入口
+├── crates/gupi-resources/src/paths.rs          # F-103 新增；应用目录与环境覆盖
+├── crates/gupi-resources/src/persistence.rs    # F-103 新增；读取、备份与原子写入
+├── crates/gupi-settings/src/i18n.rs           # F-104 新增；Fluent、语言检测与菜单更新
+├── crates/gupi-settings/src/assets.rs         # F-105 新增；app-local runtime 资源入口
 ├── src/state.rs                     # F-106 新增；状态模块声明
-├── src/state/config.rs              # F-106 新增；配置 owner、提交和重读
-├── src/state/layout.rs              # F-107 新增；布局读取与退出保存
-├── src/state/theme.rs               # F-108 新增；系统外观与配置投影
+├── crates/gupi-settings/src/config.rs              # F-106 新增；配置 owner、提交和重读
+├── crates/gupi-settings/src/layout.rs              # F-107 新增；布局读取与退出保存
+├── crates/gupi-settings/src/theme.rs               # F-108 新增；系统外观与配置投影
 ├── src/pi.rs                        # F-109 新增；本阶段仅版本探测
 ├── src/features.rs                  # F-114 新增；功能模块声明
 ├── src/features/startup.rs          # F-110 新增；启动界面编排、状态呈现和分类页面
 ├── src/features/settings.rs         # F-111 新增；唯一设置表单与操作入口
-├── src/features/home.rs             # F-112 新增；主窗口业务外壳
+├── crates/gupi-conversation-ui/src/home.rs             # F-112 新增；主窗口业务外壳
 ├── src/components.rs                # F-115 新增；跨功能 UI 组件声明
 ├── src/components/recovery.rs       # F-115 新增；共享恢复页面布局
 ├── src/app/menus.rs                 # F-116 新增；应用菜单与 action 接入

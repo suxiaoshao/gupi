@@ -1,16 +1,20 @@
 //! System registration and template preparations belong to the application.
-use crate::state::{config::AppConfig, shortcuts::Shortcuts};
 #[cfg(any(target_os = "macos", target_os = "windows"))]
-use crate::{
-    foundation::{
-        attachments::{self, Attachment, Content},
-        i18n::t,
-    },
-    state::shortcuts::{InputSource, ShortcutTask, system_binding},
-};
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState, hotkey::HotKey};
+use global_hotkey::GlobalHotKeyEvent;
+use global_hotkey::GlobalHotKeyManager;
+use global_hotkey::HotKeyState;
+use global_hotkey::hotkey::HotKey;
 use gpui_kit::*;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use gupi_conversation::attachments;
+use gupi_conversation::attachments::Attachment;
+use gupi_conversation::attachments::Content;
+use gupi_settings::config::AppConfig;
+use gupi_settings::i18n::t;
+use gupi_settings::shortcuts::InputSource;
+use gupi_settings::shortcuts::ShortcutTask;
+use gupi_settings::shortcuts::Shortcuts;
+use gupi_settings::shortcuts::system_binding;
 use std::collections::BTreeMap;
 
 pub(crate) struct ShortcutsRuntime {
@@ -153,7 +157,7 @@ pub(crate) fn validate_registration(value: &AppConfig, cx: &App) -> Result<(), S
             .filter(|task| task.enabled)
             .map(|task| task.binding.as_str()),
     ) {
-        crate::state::keybindings::validate_global(binding, cx)?;
+        gupi_settings::keybindings::validate_global(binding, cx)?;
     }
     Ok(())
 }
@@ -268,7 +272,7 @@ fn trigger(id: &str, cx: &mut App) {
             if let Err(error) = result {
                 super::temporary::show(cx);
                 state.update(cx, |_, cx| {
-                    cx.emit(crate::state::conversation::ConversationEvent::Notify {
+                    cx.emit(gupi_conversation::conversation::ConversationEvent::Notify {
                         message: error.clone(),
                         error: true,
                     });
@@ -286,7 +290,7 @@ fn trigger(id: &str, cx: &mut App) {
 async fn run(
     definition: ShortcutTask,
     clipboard: Option<ClipboardItem>,
-    state: Entity<crate::state::conversation::ConversationState>,
+    state: Entity<gupi_conversation::conversation::ConversationState>,
     cx: &mut AsyncApp,
 ) -> Result<(), String> {
     let mut text = String::new();
@@ -425,7 +429,7 @@ async fn run(
             session.state = Some(snapshot);
             session.preparing = false;
             session.attachments = attachments;
-            session.pending_template = Some(crate::state::shortcuts::PendingTemplate {
+            session.pending_template = Some(gupi_settings::shortcuts::PendingTemplate {
                 name: command.name.clone(),
                 body,
             });
@@ -448,38 +452,43 @@ async fn run(
         if let Some(session) = s.sessions.get_mut(&key) {
             session.preparing = false;
             if let Err(error) = &result {
-                session.error = Some(crate::state::conversation::SessionError::Runtime(
+                session.error = Some(gupi_conversation::conversation::SessionError::Runtime(
                     error.clone(),
                 ));
             }
         }
-        crate::state::conversation::notify_session(&key, cx);
+        gupi_conversation::conversation::notify_session(&key, cx);
     });
     result
 }
 
 #[cfg(test)]
 mod validation_tests {
-    use super::{ShortcutsRuntime, apply, prepare};
-    use crate::state::{config::AppConfig, shortcuts::ShortcutTask};
-    use gpui_kit::{KeyBinding, TestAppContext, component::input::Copy};
+    use super::ShortcutsRuntime;
+    use super::apply;
+    use super::prepare;
+    use gpui_kit::KeyBinding;
+    use gpui_kit::TestAppContext;
+    use gpui_kit::component::input::Copy;
+    use gupi_settings::config::AppConfig;
+    use gupi_settings::shortcuts::ShortcutTask;
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     #[gpui_kit::test]
     fn template_trigger_starts_without_a_version_probe_and_deduplicates(cx: &mut TestAppContext) {
         cx.update(|cx| {
             gpui_kit::init(cx);
-            crate::state::pi::init(cx);
+            gupi_pi_runtime::init(cx);
             crate::app::temporary::init(cx);
             // The configured command is available before any version probe.
             crate::app::temporary::set_command("pi".into(), cx);
-            let mut config = crate::state::shortcuts::Shortcuts::default();
+            let mut config = gupi_settings::shortcuts::Shortcuts::default();
             config.tasks.push(ShortcutTask {
                 id: "translate".into(),
                 name: "Translate".into(),
                 enabled: true,
                 template: "/test.md".into(),
-                source: crate::state::shortcuts::InputSource::Clipboard,
+                source: gupi_settings::shortcuts::InputSource::Clipboard,
                 ..Default::default()
             });
             cx.set_global(ShortcutsRuntime {

@@ -4531,7 +4531,7 @@ dependencies = [
 
 [[package]]
 name = "gupi"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "app-theme",
  "base64 0.23.1",

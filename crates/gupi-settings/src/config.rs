@@ -130,7 +130,6 @@ pub enum PreferenceChange {
     ResetKeybindings,
     Notifications(crate::notifications::Preferences),
     AutoCheckUpdates(bool),
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
     SkipUpdate(String),
     Shortcuts(crate::shortcuts::Shortcuts),
     Language(AppLanguage),
@@ -143,7 +142,6 @@ impl PreferenceChange {
     fn apply(self, config: &mut AppConfig) {
         match self {
             Self::AutoCheckUpdates(value) => config.auto_check_updates = Some(value),
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
             Self::SkipUpdate(value) => config.skipped_update = Some(value),
             Self::Notifications(value) => config.notifications = value,
             Self::ResetKeybindings => {
@@ -450,7 +448,6 @@ impl ConfigController {
         }
         self.save_preference(change, cx);
     }
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
     pub fn skip_update(&mut self, cx: &mut Context<Self>) {
         let Some(version) = crate::host::skipped_version(cx) else {
             return;

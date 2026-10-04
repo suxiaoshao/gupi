@@ -600,32 +600,24 @@ mod tests {
         });
         let state = cx.new(|cx| ConversationState::new("unused-pi".into(), cx));
         state.update(cx, |s, _| {
-            let info = SessionInfo {
-                path: Default::default(),
-                id: "empty".into(),
-                cwd: Default::default(),
-                name: None,
-                first_message: String::new(),
-                activity: String::new(),
-                parent_session: None,
-            };
+            let info = SessionInfo::new(Default::default(), "empty".into(), Default::default());
             s.sessions_for_test().insert(
                 "empty".into(),
                 gupi_conversation::conversation::Session::new(info, String::new()),
             );
             *s.selected_for_test() = Some("empty".into());
-            *s.catalog_for_test() = CatalogState::Ready(Catalog {
-                sessions: vec![SessionInfo {
-                    path: "/tmp/search-fixture.jsonl".into(),
-                    id: "search-fixture".into(),
-                    cwd: "/tmp/long-project-path".into(),
-                    name: Some("Long conversation title ".repeat(30)),
-                    first_message: String::new(),
-                    activity: "1".into(),
-                    parent_session: None,
-                }],
-                ..Default::default()
-            });
+            let mut catalog = Catalog::default();
+            catalog.sessions = vec![{
+                let mut info = SessionInfo::new(
+                    "/tmp/search-fixture.jsonl".into(),
+                    "search-fixture".into(),
+                    "/tmp/long-project-path".into(),
+                );
+                info.name = Some("Long conversation title ".repeat(30));
+                info.activity = "1".into();
+                info
+            }];
+            *s.catalog_for_test() = CatalogState::Ready(catalog);
         });
         let mut home = None;
         let (_, visual) = cx.add_window_view(|window, cx| {

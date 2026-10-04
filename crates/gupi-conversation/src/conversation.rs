@@ -1767,7 +1767,6 @@ impl ConversationState {
             }
         }
     }
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
     pub fn set_draft(&mut self, key: &str, text: String, cx: &mut Context<Self>) {
         self.set_draft_content(key, text.into(), cx);
     }

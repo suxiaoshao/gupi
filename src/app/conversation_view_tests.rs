@@ -24,14 +24,11 @@ fn temporary_page_tab_search_and_recreation_preserve_the_draft(cx: &mut TestAppC
     let state = cx.new(|cx| ConversationState::temporary("unused-pi".into(), cx));
     state.update(cx, |state, _| {
         let mut session = Session::new(
-            SessionInfo {
-                path: Default::default(),
-                id: "first".into(),
-                cwd: "/tmp".into(),
-                name: Some("Alpha".into()),
-                first_message: String::new(),
-                activity: "1".into(),
-                parent_session: None,
+            {
+                let mut info = SessionInfo::new(Default::default(), "first".into(), "/tmp".into());
+                info.name = Some("Alpha".into());
+                info.activity = "1".into();
+                info
             },
             "draft".into(),
         );
@@ -111,14 +108,10 @@ fn init_interactions(cx: &mut TestAppContext) {
 }
 fn fixture_session(name: &str) -> Session {
     let mut session = Session::new(
-        SessionInfo {
-            path: Default::default(),
-            id: name.into(),
-            cwd: "/tmp".into(),
-            name: Some(name.into()),
-            first_message: String::new(),
-            activity: String::new(),
-            parent_session: None,
+        {
+            let mut info = SessionInfo::new(Default::default(), name.into(), "/tmp".into());
+            info.name = Some(name.into());
+            info
         },
         String::new(),
     );

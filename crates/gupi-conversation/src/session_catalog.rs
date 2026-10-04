@@ -17,6 +17,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SessionInfo {
     pub path: PathBuf,
     pub id: String,
@@ -27,6 +28,17 @@ pub struct SessionInfo {
     pub parent_session: Option<String>,
 }
 impl SessionInfo {
+    pub fn new(path: PathBuf, id: String, cwd: PathBuf) -> Self {
+        Self {
+            path,
+            id,
+            cwd,
+            name: None,
+            first_message: String::new(),
+            activity: String::new(),
+            parent_session: None,
+        }
+    }
     pub fn key(&self) -> String {
         self.path.to_string_lossy().into_owned()
     }
@@ -39,6 +51,7 @@ impl SessionInfo {
 }
 pub use gupi_resources::paths::Discovery;
 #[derive(Default)]
+#[non_exhaustive]
 pub struct Catalog {
     pub sessions: Vec<SessionInfo>,
     pub directories: BTreeSet<PathBuf>,

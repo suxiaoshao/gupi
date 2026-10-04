@@ -282,15 +282,11 @@ mod tests {
         });
         let state = cx.new(|cx| ConversationState::new("unused-pi".into(), cx));
         state.update(cx, |state, _| {
-            let info = gupi_conversation::session_catalog::SessionInfo {
-                path: Default::default(),
-                id: "empty".into(),
-                cwd: Default::default(),
-                name: None,
-                first_message: String::new(),
-                activity: String::new(),
-                parent_session: None,
-            };
+            let info = gupi_conversation::session_catalog::SessionInfo::new(
+                Default::default(),
+                "empty".into(),
+                Default::default(),
+            );
             state.sessions_for_test().insert(
                 "empty".into(),
                 gupi_conversation::conversation::Session::new(info, String::new()),

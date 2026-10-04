@@ -1,12 +1,12 @@
 # Gupi 能力架构
 
-Gupi 已按六个内部 crate 拆分。根包负责应用组合、原生窗口和退出；能力 crate 不依赖根包。配置格式、会话数据和 Pi RPC 契约保持不变。
+Gupi 按能力组织内部 crate。根包负责应用组合、原生窗口和退出；能力 crate 不依赖根包。配置格式、会话数据和 Pi RPC 契约保持不变。
 
 拆包后的接口封装与依赖收敛见[接口与依赖收敛](refinement.md)，同时记录官方 skill 核对结果与文档冲突。
 
 ## 约定与依据
 
-通用架构、状态所有权和文件组织遵循 [GPUI Kit Coding Guides](https://gpui-kit.com/docs/coding-guides/)。官方 skill 通过 `npx skills` 安装维护；项目 skill 只补充产品边界和入口，不维护另一套框架规则。依赖 API 以 Cargo.lock 为准，本次没有升级外部依赖。
+通用架构、状态所有权和文件组织遵循 [GPUI Kit Coding Guides](https://gpui-kit.com/docs/coding-guides/)。官方 skill 通过 `npx skills` 安装维护；项目 skill 只补充产品边界和入口，不维护另一套框架规则。依赖 API 以 Cargo.lock 为准。
 
 拆分参考本地拉取的 Zed 官方 main `a84689073d296dfd39987bc7dd478e43ef76d83a`（2026-10-03）：[terminal_view](https://github.com/zed-industries/zed/blob/a84689073d296dfd39987bc7dd478e43ef76d83a/crates/terminal_view/src/terminal_view.rs#L131) 持有终端 Entity，[agent_ui](https://github.com/zed-industries/zed/blob/a84689073d296dfd39987bc7dd478e43ef76d83a/crates/agent_ui/Cargo.toml) 与 [settings_ui](https://github.com/zed-industries/zed/blob/a84689073d296dfd39987bc7dd478e43ef76d83a/crates/settings_ui/Cargo.toml) 依赖各自模型。采用能力模型与复杂 UI 分离的方式；模型允许依赖 GPUI 来持有 Entity、订阅和 Task。
 
@@ -20,6 +20,7 @@ Gupi 已按六个内部 crate 拆分。根包负责应用组合、原生窗口�
 | `gupi-settings` | 配置与提交、快捷键及任务配置、提醒策略、窗口布局、语言/主题/图标偏好、共享动作定义；集中提供应用展示资源 |
 | `gupi-conversation` | 会话 Entity、历史投影、消息/工具语义、草稿、附件、提交、队列和取消；拥有会话专用测试 |
 | `gupi-conversation-ui` | HomeView、输入、消息、工具详情、图片预览、导航、命令面板和共享窗口栏；持有会话 Entity |
+| `gupi-screen-capture` | 冻结整屏图像、GPUI 区域选择、像素裁剪、PNG 输出与取消；不依赖设置、会话或 Pi |
 | 根包 `src/app` | 实例、日志、菜单、Tray、通知投递、全局快捷任务、临时窗口、原生更新退出协调与应用寿命 |
 | 根包 `src/features` | 启动组合、设置界面、临时窗口组合和更新弹窗 |
 | 根包 `src/components` | 应用共用的恢复控件 |
@@ -33,6 +34,7 @@ Gupi 已按六个内部 crate 拆分。根包负责应用组合、原生窗口�
 - `conversation-ui → conversation / settings / resources`；`conversation → pi-runtime / resources / pi-rpc`。
 - `settings → resources / pi-rpc`：配置持久化和探测失败的本地化映射；安装期间的提交互斥由根包注入，updates 只作为 settings 的测试依赖。
 - updates 接收应用提供的 Windows 安装日志路径；`resources → pi-runtime`：资源扫描与包管理使用相同的执行环境。
+- `screen-capture → platform-ext / window-ext / gpui-kit`：应用接收截图结果并接入快捷任务；截图时序见[截图设计](../issue-18/README.md)。
 - 根包组装全部能力，并在创建配置和会话 owner 前调用 `init_capability_hosts`。
 
 三个 `host::Host` 是应用注入的同步函数接口，不持有 View 强引用：

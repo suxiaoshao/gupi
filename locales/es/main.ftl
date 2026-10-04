@@ -680,3 +680,7 @@ updates-native-progress = Completa la actualización en su ventana.
 updates-install-failed = No se pudo completar la actualización. Inténtalo de nuevo o vuelve a abrir Gupi y consulta los registros.
 updates-restart-help = La instalación guardará los borradores, cerrará las conexiones con Pi y reiniciará Gupi.
 updates-show-progress = Ver el progreso de la actualización…
+
+shortcut-screenshot = Captura de pantalla
+screenshot-failed = No se pudo capturar la pantalla. Inténtalo de nuevo.
+screenshot-permission-required = Se necesita permiso para grabar la pantalla. Autoriza a Gupi en Ajustes del Sistema → Privacidad y seguridad → Grabación de pantalla y vuelve a intentarlo. Si macOS pide reiniciar Gupi, hazlo primero.

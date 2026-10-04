@@ -681,3 +681,7 @@ updates-native-progress = 請在更新視窗中完成更新。
 updates-install-failed = 無法完成更新。請重試，或重新開啟 Gupi 並查看日誌。
 updates-restart-help = 安裝時會儲存草稿、關閉 Pi 連線並重新啟動 Gupi。
 updates-show-progress = 查看更新進度…
+
+shortcut-screenshot = 截圖
+screenshot-failed = 無法擷取螢幕，請重試。
+screenshot-permission-required = 截圖需要螢幕錄製權限。請在「系統設定 → 隱私權與安全性 → 螢幕錄製」中允許 Gupi，然後重試。如系統提示重新啟動 Gupi，請先重新啟動。

@@ -804,6 +804,24 @@ impl ConversationState {
         notify_session(key, cx);
         true
     }
+    /// Retain captured input while Pi and its template are being prepared.
+    /// Completion replaces the same attachments; a failure leaves them available to retry.
+    pub fn retain_preparation_attachments(
+        &mut self,
+        key: &str,
+        attachments: Vec<crate::attachments::Attachment>,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.draining {
+            return false;
+        }
+        let Some(session) = self.sessions.get_mut(key).filter(|s| s.preparing) else {
+            return false;
+        };
+        session.attachments = attachments;
+        notify_session(key, cx);
+        true
+    }
     pub fn complete_preparation(
         &mut self,
         key: &str,
@@ -2961,6 +2979,33 @@ mod tests {
             );
             assert!(!state.complete_preparation("a", prepared, cx));
             assert!(state.sessions["a"].draft.text().is_empty());
+        });
+    }
+
+    #[gpui::test]
+    fn failed_preparation_keeps_captured_attachment_for_retry(cx: &mut TestAppContext) {
+        cx.update(gupi_pi_runtime::init);
+        cx.update(crate::host::install_headless);
+        let owner = cx.new(|cx| ConversationState::temporary("unused-pi".into(), cx));
+        owner.update(cx, |state, cx| {
+            let mut session = super::Session::from_rpc_messages(&[]);
+            session.run = super::RunState::default();
+            state.sessions.insert("capture".into(), session);
+            let mut png = std::io::Cursor::new(Vec::new());
+            image::RgbaImage::from_pixel(2, 2, image::Rgba([20, 30, 40, 255]))
+                .write_to(&mut png, image::ImageFormat::Png)
+                .unwrap();
+            let attachment =
+                crate::attachments::Attachment::from_image("Screenshot".into(), png.get_ref())
+                    .unwrap();
+            let id = attachment.id.clone();
+            assert!(state.begin_preparation("capture", cx));
+            assert!(state.retain_preparation_attachments("capture", vec![attachment], cx));
+            state.finish_preparation("capture", Some("Template unavailable".into()), cx);
+            assert_eq!(state.sessions["capture"].attachments.len(), 1);
+            assert_eq!(state.sessions["capture"].attachments[0].id, id);
+            assert!(!state.retain_preparation_attachments("capture", vec![], cx));
+            assert_eq!(state.sessions["capture"].attachments.len(), 1);
         });
     }
 

@@ -1,19 +1,28 @@
 //! System registration and template preparations belong to the application.
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use global_hotkey::GlobalHotKeyEvent;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use global_hotkey::GlobalHotKeyManager;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use global_hotkey::HotKeyState;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use global_hotkey::hotkey::HotKey;
 use gpui_kit::*;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use gupi_conversation::attachments;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use gupi_conversation::attachments::Attachment;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use gupi_conversation::attachments::Content;
 use gupi_settings::config::AppConfig;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use gupi_settings::i18n::t;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use gupi_settings::shortcuts::InputSource;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use gupi_settings::shortcuts::ShortcutTask;
 use gupi_settings::shortcuts::Shortcuts;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use gupi_settings::shortcuts::system_binding;
 use std::collections::BTreeMap;
 

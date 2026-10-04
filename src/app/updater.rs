@@ -2,7 +2,9 @@
 mod native;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub(crate) use native::available;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub(crate) use native::init;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 pub(crate) use native::install;
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]

@@ -58,6 +58,7 @@ fn projection(levels: &[&str], current: &str) -> Projection {
 fn actions_use_current_business_state_before_controls_are_synchronized(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_kit::init(cx);
+        crate::host::install_headless(cx);
         gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::Chinese, cx);
     });
     let (source, new_picker) = source();
@@ -89,6 +90,7 @@ fn opening_queries_the_source_and_ignored_requests_do_not_leave_loading_flags(
 ) {
     cx.update(|cx| {
         gpui_kit::init(cx);
+        crate::host::install_headless(cx);
         gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::Chinese, cx);
     });
     let (source, new_picker) = source();
@@ -140,6 +142,7 @@ fn opening_queries_the_source_and_ignored_requests_do_not_leave_loading_flags(
 fn thinking_drag_commits_only_on_release_and_ignores_stale_capabilities(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_kit::init(cx);
+        crate::host::install_headless(cx);
         gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::Chinese, cx);
     });
     let (source, new_picker) = source();
@@ -220,6 +223,7 @@ fn thinking_drag_commits_only_on_release_and_ignores_stale_capabilities(cx: &mut
 fn model_search_survives_refresh_and_cancel_does_not_change_model(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_kit::init(cx);
+        crate::host::install_headless(cx);
         gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::Chinese, cx);
     });
     let (source, new_picker) = source();
@@ -262,6 +266,7 @@ fn model_search_survives_refresh_and_cancel_does_not_change_model(cx: &mut TestA
 fn rendered_slider_drag_sends_one_final_level(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_kit::init(cx);
+        crate::host::install_headless(cx);
         gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::Chinese, cx);
     });
     let (source, new_picker) = source();
@@ -311,6 +316,7 @@ fn rendered_slider_drag_sends_one_final_level(cx: &mut TestAppContext) {
 fn refresh_preserves_model_and_level_and_never_submits_a_draft(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_kit::init(cx);
+        crate::host::install_headless(cx);
         gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::Chinese, cx);
     });
     let (source, new_picker) = source();
@@ -364,6 +370,7 @@ fn refresh_preserves_model_and_level_and_never_submits_a_draft(cx: &mut TestAppC
 fn default_thinking_can_be_selected_as_an_explicit_override(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_kit::init(cx);
+        crate::host::install_headless(cx);
         gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::Chinese, cx);
     });
     let (source, new_picker) = source();

@@ -411,7 +411,7 @@ impl HomeView {
         }
         let mut panel = v_flex().size_full().child(toolbar).child(options);
         if let Some(session) = self.state.read(cx).current() {
-            use gupi_conversation::conversation::content::BodyState;
+            use gupi_conversation::conversation::BodyState;
             match session.body_state() {
                 BodyState::New => {
                     return panel
@@ -443,7 +443,7 @@ impl HomeView {
             .state
             .read(cx)
             .current()
-            .and_then(|s| s.info.parent_session.clone())
+            .and_then(|s| s.info().parent_session.clone())
         {
             panel = panel.child(
                 Button::new("fork-source")
@@ -455,7 +455,7 @@ impl HomeView {
             );
         }
         if let Some(session) = self.state.read(cx).current() {
-            if let Some(error) = session.fork_messages.error() {
+            if let Some(error) = session.fork_messages().error() {
                 let owner = self.state.clone();
                 let key = self.shown_key.clone().unwrap_or_default();
                 panel = panel.child(
@@ -469,7 +469,7 @@ impl HomeView {
                             owner.update(cx, |state, cx| state.refresh_fork_messages(&key, cx))
                         }),
                 );
-            } else if session.fork_messages.running() {
+            } else if session.fork_messages().running() {
                 panel = panel.child(
                     h_flex()
                         .px_2()

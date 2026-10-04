@@ -456,6 +456,7 @@ mod tests {
     ) {
         cx.update(|cx| {
             gpui_kit::init(cx);
+            cx.set_global(crate::host::Host::headless());
             crate::i18n::apply(Default::default(), cx);
             let overrides = Overrides::from([("temporary_trash".into(), "ctrl-alt-d".into())]);
             assert!(validate("temporary_trash", "ctrl-alt-d", &overrides, cx).is_ok());
@@ -491,6 +492,7 @@ mod tests {
     fn replacing_and_restoring_keeps_other_actions_and_component_bindings(cx: &mut TestAppContext) {
         cx.update(|cx| {
             gpui_kit::init(cx);
+            cx.set_global(crate::host::Host::headless());
             crate::i18n::apply(Default::default(), cx);
             apply(&Overrides::new(), cx);
             let unrelated: Vec<_> = cx

@@ -18,11 +18,11 @@ use gpui_kit::component::notification::Notification;
 use gupi_conversation::conversation::Activity;
 use gupi_conversation::conversation::ConversationEvent;
 use gupi_conversation::conversation::ConversationState;
+use gupi_conversation::notifications::Kind;
+use gupi_conversation::notifications::Notice;
+use gupi_conversation::notifications::Severity;
 use gupi_settings::i18n::t;
-use gupi_settings::notifications::Kind;
-use gupi_settings::notifications::Notice;
 use gupi_settings::notifications::Preferences;
-use gupi_settings::notifications::Severity;
 use std::collections::HashMap;
 
 // macOS GPUI active_window() returns NSApplication.mainWindow even while the
@@ -54,10 +54,10 @@ pub(crate) struct Target {
 impl Target {
     fn valid(&self, cx: &App) -> bool {
         self.state.upgrade().is_some_and(|owner| {
-            owner.read(cx).sessions.get(&self.key).is_some_and(|s| {
-                s.binding == self.binding
+            owner.read(cx).sessions().get(&self.key).is_some_and(|s| {
+                s.binding() == self.binding
                     && self.request.as_ref().is_none_or(|id| {
-                        s.pending_ui.iter().any(|p| {
+                        s.pending_ui().iter().any(|p| {
                             p.request.id == *id
                                 && p.deadline.is_none_or(|d| d > std::time::Instant::now())
                         })
@@ -72,7 +72,7 @@ impl Target {
         let Some(owner) = self.state.upgrade() else {
             return;
         };
-        let temporary = owner.read(cx).temporary;
+        let temporary = owner.read(cx).is_temporary();
         let key = self.key.clone();
         // A notification is navigation, never a new request or automatic reply.
         owner.update(cx, |state, cx| state.select_existing(&key, cx));
@@ -182,7 +182,7 @@ pub fn attach(owner: &Entity<ConversationState>, cx: &mut App) {
                     })
                 });
                 this.toast(
-                    message.clone(),
+                    feedback_text(message, cx),
                     if *error {
                         Severity::Error
                     } else {
@@ -235,7 +235,7 @@ impl Delivery {
                     && p.state.entity_id() == target.state.entity_id()
                     && p.state
                         .upgrade()
-                        .is_some_and(|s| s.read(cx).selected.as_ref() == Some(&target.key))
+                        .is_some_and(|s| s.read(cx).selected().as_ref() == Some(&target.key))
             })
     }
     fn toast(
@@ -310,7 +310,10 @@ impl Delivery {
             notice.binding
         )
         .into();
-        if self.preferences.system(&notice.kind, foreground, visible) {
+        if self
+            .preferences
+            .system(&delivery_kind(&notice.kind), foreground, visible)
+        {
             self.delivered.insert(
                 tag.clone(),
                 Delivered {
@@ -329,9 +332,9 @@ impl Delivery {
         {
             let title = owner
                 .read(cx)
-                .sessions
+                .sessions()
                 .get(&notice.key)
-                .map(|s| gupi_conversation_ui::home::navigation::display_title(&s.info, cx))
+                .map(|s| gupi_conversation_ui::home::navigation::display_title(s.info(), cx))
                 .unwrap_or_default();
             let text = notice
                 .message
@@ -391,7 +394,7 @@ impl Delivery {
         if let Some(p) = active.and_then(|w| self.presentations.get(&w.window_id()))
             && p.visible
             && let Some(owner) = p.state.upgrade()
-            && let Some(key) = owner.read(cx).selected.clone()
+            && let Some(key) = owner.read(cx).selected().clone()
         {
             owner.update(cx, |s, cx| s.mark_read(&key, cx));
         }
@@ -422,19 +425,20 @@ impl Delivery {
         for source in self.sources.values() {
             if let Some(owner) = source.state.upgrade() {
                 let state = owner.read(cx);
-                count += state.sessions.values().filter(|s| s.unread).count();
+                count += state.sessions().values().filter(|s| s.unread()).count();
                 #[cfg(any(target_os = "macos", target_os = "windows"))]
-                for (key, s) in &state.sessions {
-                    if s.unread || matches!(s.activity(), Activity::Waiting | Activity::Running) {
+                for (key, s) in state.sessions() {
+                    if s.unread() || matches!(s.activity(), Activity::Waiting | Activity::Running) {
                         rows.push(TrayRow {
                             owner: owner.entity_id(),
                             key: key.clone(),
                             title: gupi_conversation_ui::home::navigation::display_title(
-                                &s.info, cx,
+                                s.info(),
+                                cx,
                             ),
                             activity: s.activity(),
-                            unread: s.unread,
-                            binding: s.binding,
+                            unread: s.unread(),
+                            binding: s.binding(),
                         });
                     }
                 }
@@ -501,6 +505,37 @@ impl Delivery {
     }
 }
 
+fn delivery_kind(kind: &Kind) -> gupi_settings::notifications::DeliveryKind {
+    use gupi_settings::notifications::DeliveryKind;
+    match kind {
+        Kind::Waiting(_) => DeliveryKind::Waiting,
+        Kind::Completed => DeliveryKind::Completed,
+        Kind::Failed => DeliveryKind::Failed,
+        Kind::Plugin => DeliveryKind::Plugin,
+    }
+}
+
+fn feedback_text(message: &gupi_conversation::feedback::Feedback, cx: &App) -> String {
+    use fluent_bundle::FluentArgs;
+    use gupi_conversation::feedback::Feedback;
+    let mut args = FluentArgs::new();
+    let key = match message {
+        Feedback::Message(message) => return message.clone(),
+        Feedback::DeleteFailed(error) => {
+            args.set("error", error.as_str());
+            "conversation-delete-failed"
+        }
+        Feedback::Exported(path) => {
+            args.set("path", path.as_str());
+            "conversation-exported"
+        }
+        Feedback::TemplateUnreadable => "resource-template-unreadable",
+        Feedback::TemplateUnusedFiles => "resource-template-unused-files",
+        Feedback::TemplateUnclosedQuote => "resource-template-unclosed-quote",
+    };
+    gupi_settings::i18n::t_with_args(cx, key, &args)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -527,23 +562,23 @@ mod tests {
         });
         let state = cx.new(|cx| ConversationState::new("unused".into(), cx));
         state.update(cx, |s, _| {
-            s.sessions
+            s.sessions_for_test()
                 .insert("a".into(), Session::from_rpc_messages(&[]));
-            s.sessions
+            s.sessions_for_test()
                 .insert("b".into(), Session::from_rpc_messages(&[]));
-            s.selected = Some("a".into());
+            *s.selected_for_test() = Some("a".into());
         });
         cx.run_until_parked();
         state
     }
     fn emit(state: &Entity<ConversationState>, kind: Kind, cx: &mut TestAppContext) {
         state.update(cx, |_, cx| {
-            cx.emit(ConversationEvent::Attention(Notice {
-                key: "a".into(),
-                binding: 0,
+            cx.emit(ConversationEvent::Attention(Notice::new(
+                "a".into(),
+                0,
                 kind,
-                message: None,
-            }))
+                None,
+            )))
         });
         cx.run_until_parked();
     }
@@ -558,10 +593,10 @@ mod tests {
     }
     fn waiting(state: &Entity<ConversationState>, id: &str, cx: &mut TestAppContext) {
         state.update(cx, |s, _| {
-            s.sessions
+            s.sessions_for_test()
                 .get_mut("a")
                 .unwrap()
-                .pending_ui
+                .pending_ui_for_test()
                 .push_back(PendingUi {
                     selection: None,
                     request: ExtensionRequest {
@@ -591,7 +626,11 @@ mod tests {
         assert_eq!(badge(cx), 0);
         let old = cx.shown_system_notifications()[0].tag.clone();
         state.update(cx, |s, _| {
-            s.sessions.get_mut("a").unwrap().pending_ui.pop_front()
+            s.sessions_for_test()
+                .get_mut("a")
+                .unwrap()
+                .pending_ui_for_test()
+                .pop_front()
         });
         cx.update(refresh);
         assert_eq!(cx.delivered_system_notifications().len(), 1);
@@ -601,10 +640,15 @@ mod tests {
         });
         cx.run_until_parked();
         assert_eq!(
-            state.read_with(cx, |s, _| s.selected.clone()),
+            state.read_with(cx, |s, _| s.selected().clone()),
             Some("a".into())
         );
-        state.update(cx, |s, _| s.sessions.get_mut("a").unwrap().binding += 1);
+        state.update(cx, |s, _| {
+            *s.sessions_for_test()
+                .get_mut("a")
+                .unwrap()
+                .binding_for_test() += 1
+        });
         cx.update(refresh);
         assert!(cx.delivered_system_notifications().is_empty());
     }
@@ -615,10 +659,10 @@ mod tests {
         let state = setup(cx);
         waiting(&state, "one", cx);
         state.update(cx, |s, _| {
-            for session in s.sessions.values_mut() {
-                session.unread = true;
+            for session in s.sessions_for_test().values_mut() {
+                *session.unread_for_test() = true;
             }
-            s.sessions.get_mut("b").unwrap().error =
+            *s.sessions_for_test().get_mut("b").unwrap().error_for_test() =
                 Some(gupi_conversation::conversation::SessionError::Response);
         });
         cx.update(refresh);
@@ -627,7 +671,7 @@ mod tests {
         cx.update(refresh);
         assert_eq!(badge(cx), 1);
         state.read_with(cx, |s, _| {
-            assert_eq!(s.sessions["a"].activity(), Activity::Waiting)
+            assert_eq!(s.sessions()["a"].activity(), Activity::Waiting)
         });
         // Disabling delivery doesn't discard unread results.
         cx.update(|cx| {
@@ -650,7 +694,12 @@ mod tests {
     #[gpui_kit::test]
     fn notifications_foreground_source_is_read_but_settings_is_not(cx: &mut TestAppContext) {
         let state = setup(cx);
-        state.update(cx, |s, _| s.sessions.get_mut("a").unwrap().unread = true);
+        state.update(cx, |s, _| {
+            *s.sessions_for_test()
+                .get_mut("a")
+                .unwrap()
+                .unread_for_test() = true
+        });
         let (_, visual) = cx.add_window_view(|window, cx| {
             present(&state, window, false, cx);
             window.activate_window();
@@ -670,7 +719,7 @@ mod tests {
     #[gpui_kit::test]
     fn notifications_foreground_other_source_gets_one_retractable_toast(cx: &mut TestAppContext) {
         let state = setup(cx);
-        state.update(cx, |s, _| s.selected = Some("b".into()));
+        state.update(cx, |s, _| *s.selected_for_test() = Some("b".into()));
         let (_, visual) = cx.add_window_view(|window, cx| {
             present(&state, window, true, cx);
             window.activate_window();
@@ -684,7 +733,11 @@ mod tests {
         assert!(visual.shown_system_notifications().is_empty());
         assert_eq!(visual.update(|w, cx| w.notifications(cx).len()), 1);
         state.update(visual, |s, _| {
-            s.sessions.get_mut("a").unwrap().pending_ui.clear()
+            s.sessions_for_test()
+                .get_mut("a")
+                .unwrap()
+                .pending_ui_for_test()
+                .clear()
         });
         visual.update(|_, cx| refresh(cx));
         visual

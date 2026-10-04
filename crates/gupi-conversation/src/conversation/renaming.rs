@@ -144,7 +144,7 @@ impl ConversationState {
                     Err(error) => {
                         s.error = Some(SessionError::Runtime(error.clone()));
                         cx.emit(ConversationEvent::Notify {
-                            message: error,
+                            message: error.into(),
                             error: true,
                         });
                     }

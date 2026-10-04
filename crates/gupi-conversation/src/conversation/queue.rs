@@ -41,7 +41,7 @@ impl ConversationState {
                     Ok(_) => {}
                     Err(error) => {
                         cx.emit(ConversationEvent::Notify {
-                            message: error.to_string(),
+                            message: error.to_string().into(),
                             error: true,
                         });
                     }

@@ -9,7 +9,7 @@ use gupi_conversation::tool_presentation::skill_name;
 use serde_json::Value;
 
 use gupi_conversation::conversation::ToolActivity;
-use gupi_conversation::conversation::execution::ToolExecution;
+use gupi_conversation::conversation::ToolExecution;
 use gupi_conversation::history::DisplayMessage;
 
 pub(super) struct RunContent {

@@ -1,4 +1,5 @@
 use super::*;
+use crate::tool_icon::ToolIcon;
 use gpui_kit::component::Selectable;
 use gpui_kit::prelude::FluentBuilder;
 use gupi_conversation::history::HistoryKind;

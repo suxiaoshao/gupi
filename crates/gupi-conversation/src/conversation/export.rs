@@ -1,6 +1,4 @@
 use super::*;
-use fluent_bundle::FluentArgs;
-use gupi_settings::i18n::t_with_args;
 
 impl ConversationState {
     pub fn can_export(&self, key: &str, cx: &App) -> bool {
@@ -59,16 +57,14 @@ impl ConversationState {
                 session.command.finish();
                 match result {
                     Ok(Some(export)) => {
-                        let mut args = FluentArgs::new();
-                        args.set("path", export.path);
                         cx.emit(ConversationEvent::Notify {
-                            message: t_with_args(cx, "conversation-exported", &args),
+                            message: crate::feedback::Feedback::Exported(export.path),
                             error: false,
                         });
                     }
                     Ok(None) => {}
                     Err(error) => cx.emit(ConversationEvent::Notify {
-                        message: error,
+                        message: error.into(),
                         error: true,
                     }),
                 }

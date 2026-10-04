@@ -139,7 +139,7 @@ impl SettingsView {
                 .mutation()
                 .is_running();
         let onboarding = self.controller.read(cx).is_onboarding(cx);
-        let dirty = self.controller.read(cx).pi_form.read(cx).is_dirty();
+        let dirty = self.controller.read(cx).pi_form().read(cx).is_dirty();
         let mut view = v_flex().gap_4().child(
             v_form().child(
                 field()

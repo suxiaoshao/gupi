@@ -423,7 +423,7 @@ pub fn session_menu(
     owner: WeakEntity<HomeView>,
     cx: &App,
 ) -> PopupMenu {
-    if state.read(cx).temporary {
+    if state.read(cx).is_temporary() {
         let can_delete = state.read(cx).can_delete(&key);
         let reveal_state = state.clone();
         let reveal_key = key.clone();
@@ -458,15 +458,15 @@ pub fn session_menu(
             );
     }
 
-    let current = state.read(cx).sessions.get(&key);
+    let current = state.read(cx).sessions().get(&key);
     let busy = current.is_some_and(|s| s.busy());
-    let connected = current.is_some_and(|s| s.instance.is_some());
+    let connected = current.is_some_and(|s| s.has_instance());
     let path = current
-        .map(|s| s.info.path.clone())
+        .map(|s| s.info().path.clone())
         .or_else(|| {
             state
                 .read(cx)
-                .catalog
+                .catalog()
                 .data()
                 .into_iter()
                 .flat_map(|catalog| &catalog.sessions)
@@ -602,7 +602,7 @@ pub fn activity_mark(activity: Activity, cx: &App) -> AnyElement {
 
 impl HomeView {
     pub(super) fn new_conversation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.state.read(cx).temporary {
+        if self.state.read(cx).is_temporary() {
             self.state
                 .update(cx, |state, cx| state.new_or_reuse(None, cx));
             self.focus_composer(window, cx);
@@ -623,15 +623,15 @@ impl HomeView {
             .cloned()
             .collect::<Vec<_>>();
         let mut items = Vec::new();
-        if state.scanning() && state.catalog.data().is_none() {
+        if state.scanning() && state.catalog().data().is_none() {
             items.push(NavigationItem::Loading {
-                progress: state.catalog.progress(),
+                progress: state.catalog().progress(),
             });
         }
-        if state.catalog.error().is_some() && state.catalog.data().is_none() {
+        if state.catalog().error().is_some() && state.catalog().data().is_none() {
             items.push(NavigationItem::Failed);
         }
-        if state.catalog.data().is_some() || !groups.is_empty() {
+        if state.catalog().data().is_some() || !groups.is_empty() {
             if groups.is_empty() && !state.scanning() {
                 items.push(NavigationItem::Empty);
             }
@@ -679,8 +679,8 @@ impl HomeView {
                 )
                 .children(crate::command_palette::binding(Kind::New, window)),
             );
-        if state.catalog.running() && state.catalog.data().is_some() {
-            header = header.child(catalog_loading(state.catalog.progress(), true, cx));
+        if state.catalog().running() && state.catalog().data().is_some() {
+            header = header.child(catalog_loading(state.catalog().progress(), true, cx));
         }
         let refresh = self.state.clone();
         let mut footer = v_flex()
@@ -711,7 +711,7 @@ impl HomeView {
                     row.opacity(0.5).cursor_default().tab_stop(false)
                 }),
             );
-        if state.catalog.error().is_some() {
+        if state.catalog().error().is_some() {
             let owner = cx.entity().downgrade();
             footer = footer.child(navigation_row(
                 "catalog-error",
@@ -724,7 +724,7 @@ impl HomeView {
                         let text = this
                             .state
                             .read(cx)
-                            .catalog
+                            .catalog()
                             .error()
                             .unwrap_or_default()
                             .to_owned();
@@ -810,28 +810,28 @@ impl Render for ProjectView {
 }
 impl HomeView {
     pub(super) fn sync_navigation(&mut self, source: Option<&str>, cx: &mut Context<Self>) {
-        if self.state.read(cx).temporary {
+        if self.state.read(cx).is_temporary() {
             return;
         }
         let state = self.state.read(cx);
         let mut affected = HashSet::new();
         match source {
             Some(key) => {
-                if let Some(session) = state.sessions.get(key) {
+                if let Some(session) = state.sessions().get(key) {
                     let row = (
                         key.to_owned(),
-                        session.info.clone(),
+                        session.info().clone(),
                         session.activity(),
-                        session.unread,
+                        session.unread(),
                     );
                     if self.navigation.rows.get(key) != Some(&row) {
                         if let Some(old) = self.navigation.rows.insert(key.to_owned(), row) {
                             affected.insert(old.1.cwd);
                         }
-                        affected.insert(session.info.cwd.clone());
+                        affected.insert(session.info().cwd.clone());
                     }
                     // The catalog alias disappears when a local draft gains a file.
-                    let alias = session.info.key();
+                    let alias = session.info().key();
                     if alias != key
                         && !alias.is_empty()
                         && let Some(old) = self.navigation.rows.remove(&alias)
@@ -848,12 +848,12 @@ impl HomeView {
                     .into_iter()
                     .map(|(key, info)| {
                         let activity = state
-                            .sessions
+                            .sessions()
                             .get(&key)
                             .map(|s| s.activity())
                             .unwrap_or(Activity::Idle);
                         {
-                            let unread = state.sessions.get(&key).is_some_and(|s| s.unread);
+                            let unread = state.sessions().get(&key).is_some_and(|s| s.unread());
                             (key.clone(), (key, info, activity, unread))
                         }
                     })
@@ -875,7 +875,7 @@ impl HomeView {
         self.refresh_navigation(HashSet::new(), cx);
     }
     fn refresh_navigation(&mut self, affected: HashSet<PathBuf>, cx: &mut Context<Self>) {
-        let selected_key = self.state.read(cx).selected.clone();
+        let selected_key = self.state.read(cx).selected().clone();
         let mut changed = false;
         for cwd in affected {
             let mut rows = self
@@ -920,7 +920,7 @@ impl HomeView {
             }
             changed = true;
         }
-        let selected = self.state.read(cx).selected.clone();
+        let selected = self.state.read(cx).selected().clone();
         let basename = |path: &PathBuf| {
             path.file_name()
                 .unwrap_or(path.as_os_str())
@@ -1003,16 +1003,16 @@ mod sync_tests {
     use gupi_conversation::conversation::ConversationState;
     use gupi_conversation::conversation::Session;
     use gupi_conversation::conversation::notify;
-    use gupi_conversation::conversation::notify_session;
+    use gupi_conversation::conversation::test_support::notify_session;
     use gupi_settings::config::AppLanguage;
     use std::path::PathBuf;
     use std::rc::Rc;
 
     fn session(name: &str, cwd: &str) -> Session {
         let mut session = Session::from_rpc_messages(&[]);
-        session.info.cwd = cwd.into();
-        session.info.name = Some(name.into());
-        session.state = Some(
+        session.info_for_test().cwd = cwd.into();
+        session.info_for_test().name = Some(name.into());
+        *session.state_for_test() = Some(
             serde_json::from_value(serde_json::json!({
                 "sessionId": name, "isStreaming": false, "isCompacting": false
             }))
@@ -1027,6 +1027,7 @@ mod sync_tests {
     ) {
         cx.update(|cx| {
             gpui_kit::init(cx);
+            crate::host::install_headless(cx);
             app_theme::init(cx);
             gupi_settings::theme::init(cx);
             gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
@@ -1035,11 +1036,11 @@ mod sync_tests {
         });
         let state = cx.new(|cx| ConversationState::new("unused".into(), cx));
         state.update(cx, |s, _| {
-            s.sessions
+            s.sessions_for_test()
                 .insert("a".into(), session("Alpha", "/tmp/project-a"));
-            s.sessions
+            s.sessions_for_test()
                 .insert("b".into(), session("Beta", "/tmp/project-b"));
-            s.selected = Some("a".into());
+            *s.selected_for_test() = Some("a".into());
         });
         let mut home = None;
         let (_, visual) = cx.add_window_view(|window, cx| {
@@ -1065,7 +1066,7 @@ mod sync_tests {
             visual.update(|_, cx| cx.observe(&b, move |_, _| captured.set(captured.get() + 1)));
         visual.update(|_, cx| {
             state.update(cx, |s, cx| {
-                s.sessions
+                s.sessions_for_test()
                     .insert("new".into(), session("New", "/tmp/project-a"));
                 notify(cx);
             })
@@ -1089,7 +1090,10 @@ mod sync_tests {
         );
         visual.update(|_, cx| {
             state.update(cx, |s, cx| {
-                s.sessions.get_mut("b").unwrap().content_revision += 1;
+                *s.sessions_for_test()
+                    .get_mut("b")
+                    .unwrap()
+                    .content_revision_for_test() += 1;
                 notify_session("b", cx);
             })
         });

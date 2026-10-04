@@ -10,12 +10,14 @@
 
 ## 当前实现与参考证据
 
+下列旧依赖版本属于初次设计证据；当前依赖以根 `Cargo.toml` / `Cargo.lock` 为准，不把旧版源码说明当作现行 API 保证。
+
 - 改造前 `features/startup.rs` 在所有页面上方绘制 Gupi 和设置/返回按钮，`features/home.rs` 又在主内容列中绘制会话标题及面板开关。两层自绘顶部现已合并，主页面的顶部归 HomeView，其他页面复用相同的应用顶部基础层。
-- 实际依赖 `gpui-component 0.6.0/src/title_bar.rs` 默认高度为 34px，macOS 默认左留白为 80px，默认背景有渐变。`TitleBar` 实现 `Styled` 和 `ParentElement`，可覆盖高度、背景、边框、左留白并组合应用内容，同时保留拖动、双击和平台窗口控制。
+- 初次设计核对的 `gpui-component 0.6.0/src/title_bar.rs` 默认高度为 34px，macOS 默认左留白为 80px，默认背景有渐变。`TitleBar` 实现 `Styled` 和 `ParentElement`，可覆盖高度、背景、边框、左留白并组合应用内容，同时保留拖动、双击和平台窗口控制。
 - `app.rs` 已使用透明标题栏和 `TitleBar::window_options()`。其中 `app_owns_titlebar_drag = true` 避免 AppKit 与应用重复处理标题栏拖动和双击。
 - `HomeView` 的 `PaneLayout` 已负责实际左右面板宽度、最小正文宽度和窄窗口历史覆盖层。标题栏应读取同一份实际宽度，不另建侧栏宽度状态。
 - 2026-09-11 只读检查本机 ChatGPT/Codex Electron `26.903.71938` 的 `app.asar`，`.vite/build/main-Bkkz0ENj.js` 的 primary 窗口在 macOS 使用 `titleBarStyle: hiddenInset`，原生按钮位置为 `x = 16`、`y = round((46 × zoom - 14) / 2)`。这里的 46px 是该版本原生按钮定位采用的顶部布局基准；不将截图像素直接当作 GPUI 逻辑像素。
-- 实际 `gpui-pre 0.3.3` 提供 `TitlebarOptions::traffic_light_position`、`Window::set_traffic_light_position`、`start_window_move`、`titlebar_double_click` 和 `set_window_title`。macOS 后端保留系统按钮，重布局时更新位置，进入全屏时恢复系统按钮布局；双击读取系统偏好。无需先向 `window-ext` 添加 Objective-C 接口。
+- 初次设计核对的 `gpui-pre 0.3.3` 提供 `TitlebarOptions::traffic_light_position`、`Window::set_traffic_light_position`、`start_window_move`、`titlebar_double_click` 和 `set_window_title`。macOS 后端保留系统按钮，重布局时更新位置，进入全屏时恢复系统按钮布局；双击读取系统偏好。无需先向 `window-ext` 添加 Objective-C 接口。
 
 ## 当前窗口布局
 

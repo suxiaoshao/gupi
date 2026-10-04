@@ -346,17 +346,50 @@ fn write_config(
     })
 }
 
+/// Read-only configuration operation projection. Mutation stays in ConfigController.
+#[derive(Clone)]
+pub struct ConfigReader(ConfigStore);
+impl ConfigReader {
+    pub fn read<R>(&self, cx: &impl AppContext, read: impl FnOnce(&ConfigOperation) -> R) -> R {
+        self.0.read(cx, read)
+    }
+    pub fn observe_in<Owner: 'static>(
+        &self,
+        cx: &mut Context<Owner>,
+        window: &mut Window,
+        observe: impl FnMut(&mut Owner, &ConfigOperation, &mut Window, &mut Context<Owner>) + 'static,
+    ) -> Subscription {
+        self.0.observe_in(cx, window, observe)
+    }
+}
+
 pub struct ConfigController {
-    pub store: ConfigStore,
-    pub form: WeakEntity<Form<AppConfig>>,
-    pub pi_form: Entity<Form<PiSettings>>,
-    pub draining: bool,
-    updates: Entity<gupi_updates::updates::Updates>,
-    _updates_subscription: Subscription,
+    store: ConfigStore,
+    form: WeakEntity<Form<AppConfig>>,
+    pi_form: Entity<Form<PiSettings>>,
+    draining: bool,
+    _admission_subscription: Subscription,
     path: Result<PathBuf, String>,
 }
 
 impl ConfigController {
+    pub fn configuration(&self) -> ConfigReader {
+        ConfigReader(self.store.clone())
+    }
+    pub fn pi_form(&self) -> &Entity<Form<PiSettings>> {
+        &self.pi_form
+    }
+    pub fn begin_shutdown(&mut self) {
+        self.draining = true;
+    }
+    #[cfg(feature = "test-support")]
+    pub fn settle_for_test(&self, data: ConfigData, cx: &mut App) {
+        self.store.update(cx, |op| {
+            op.transition(gpui_operation::Cancel);
+            op.transition(gpui_operation::Settle(Ok(data)));
+        });
+    }
+
     pub fn new(form: &Entity<Form<AppConfig>>, cx: &mut Context<Self>) -> Self {
         Self::at_path(
             form,
@@ -371,20 +404,18 @@ impl ConfigController {
         path: Result<PathBuf, String>,
         cx: &mut Context<Self>,
     ) -> Self {
-        let updates = gupi_updates::updates::get(cx);
-        let updates_subscription = cx.observe(&updates, |_, _, cx| cx.notify());
+        let admission_subscription = crate::host::observe_admission(&cx.entity(), cx);
         Self {
             store: Store::new(cx, ConfigOperation::new()),
             form: form.downgrade(),
             pi_form: cx.new(|_| Form::new(PiSettings::default())),
             draining: false,
-            updates,
-            _updates_subscription: updates_subscription,
+            _admission_subscription: admission_subscription,
             path,
         }
     }
     pub fn busy(&self, cx: &App) -> bool {
-        self.draining || self.is_running(cx) || self.updates.read(cx).is_installing()
+        self.draining || self.is_running(cx) || crate::host::writes_blocked(cx)
     }
     pub fn is_running(&self, cx: &App) -> bool {
         self.store.read(cx, |op| op.is_running())
@@ -421,11 +452,9 @@ impl ConfigController {
     }
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     pub fn skip_update(&mut self, cx: &mut Context<Self>) {
-        let gupi_updates::updates::Status::Installing(release) = self.updates.read(cx).status()
-        else {
+        let Some(version) = crate::host::skipped_version(cx) else {
             return;
         };
-        let version = release.version.to_string();
         // The native update session excludes other configuration operations. Its own
         // skip action can save while the session still keeps settings disabled.
         self.save_preference(PreferenceChange::SkipUpdate(version), cx);
@@ -706,11 +735,13 @@ mod update_preference_tests {
         std::fs::write(&path, "language = 'english'\n").unwrap();
         let (form, config) = cx.update(|cx| {
             gpui_kit::init(cx);
+            cx.set_global(crate::host::Host::headless());
             cx.set_global(Applied::default());
             cx.set_global(crate::host::Host {
                 prepare_shortcuts: |_, _| Err("shortcut registration failed".into()),
                 apply_shortcuts: |value, cx| cx.global_mut::<Applied>().0.push(value.theme),
                 refresh_menus: |_| {},
+                ..crate::host::Host::headless()
             });
             let form = cx.new(|_| Form::new(AppConfig::default()));
             let config = cx.new(|cx| ConfigController::at_path(&form, Ok(path.clone()), cx));
@@ -783,6 +814,22 @@ mod update_preference_tests {
         std::fs::write(&path, "language = 'english'\n").unwrap();
         let (_form, config, updates) = cx.update(|cx| {
             gpui_kit::init(cx);
+            cx.set_global(crate::host::Host::headless());
+            updates::get(cx);
+            let mut host = crate::host::Host::headless();
+            host.writes_blocked = |cx| updates::current(cx).is_installing();
+            host.skipped_version = |cx| match updates::current(cx).status() {
+                Status::Installing(release) => Some(release.version.to_string()),
+                _ => None,
+            };
+            host.observe_admission = |owner, cx| {
+                let owner = owner.downgrade();
+                let updates = updates::get(cx);
+                cx.observe(&updates, move |_, cx| {
+                    let _ = owner.update(cx, |_, cx| cx.notify());
+                })
+            };
+            cx.set_global(host);
             let form = cx.new(|_| Form::new(AppConfig::default()));
             let config = cx.new(|cx| ConfigController::at_path(&form, Ok(path.clone()), cx));
             let store = config.read(cx).store.clone();

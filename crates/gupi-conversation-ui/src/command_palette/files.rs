@@ -19,7 +19,7 @@ impl CommandPalette {
         let Some(root) = self
             .home
             .as_ref()
-            .and_then(|(_, state)| state.read(cx).current().map(|s| s.info.cwd.clone()))
+            .and_then(|(_, state)| state.read(cx).current().map(|s| s.info().cwd.clone()))
         else {
             return;
         };
@@ -50,7 +50,7 @@ impl CommandPalette {
             .filter_map(|entry| {
                 let path = &entry.path;
                 let relative = path
-                    .strip_prefix(&session.info.cwd)
+                    .strip_prefix(&session.info().cwd)
                     .unwrap_or(path)
                     .to_string_lossy();
                 let haystack = relative.to_lowercase();
@@ -75,7 +75,7 @@ impl CommandPalette {
                     },
                     enabled: self.target_valid(cx)
                         && session.can_edit_draft()
-                        && session.attachments_read.is_none(),
+                        && session.can_read_attachments(),
                 })
             })
             .take(200)

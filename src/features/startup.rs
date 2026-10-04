@@ -81,7 +81,7 @@ impl StartupView {
                 cx,
             )
         });
-        let store = config.read(cx).store.clone();
+        let store = config.read(cx).configuration();
         let config_sub = store.observe_in(cx, window, |_, op, window, cx| {
             if let Some(value) = op.data().and_then(|d| d.configured()) {
                 crate::app::temporary::set_command(value.pi_executable(), cx);
@@ -214,7 +214,7 @@ impl StartupView {
         }
         tracing::info!("managed quit started");
         crate::app::shortcuts::shutdown(cx);
-        self.config.update(cx, |owner, _| owner.draining = true);
+        self.config.update(cx, |owner, _| owner.begin_shutdown());
         gupi_updates::updates::get(cx).update(cx, |owner, cx| owner.stop(cx));
         self.applied_pi.update(cx, |pi, _| pi.stop());
         self.draft_pi.update(cx, |pi, _| pi.stop());
@@ -232,7 +232,11 @@ impl StartupView {
             loop {
                 let busy = owner
                     .read_with(cx, |owner, cx| {
-                        owner.config.read(cx).store.read(cx, |op| op.is_running())
+                        owner
+                            .config
+                            .read(cx)
+                            .configuration()
+                            .read(cx, |op| op.is_running())
                             || owner.applied_pi.read(cx).is_running()
                             || owner.draft_pi.read(cx).is_running()
                     })
@@ -299,10 +303,8 @@ impl StartupView {
         if let Some(error) = &self.instance_error {
             return StartupScreen::InstanceFailure(error.clone());
         }
-        self.config
-            .read(cx)
-            .store
-            .read(cx, |op| match op.data().map(|data| &data.contents) {
+        self.config.read(cx).configuration().read(cx, |op| {
+            match op.data().map(|data| &data.contents) {
                 Some(ConfigContents::Missing) => StartupScreen::Onboarding,
                 Some(ConfigContents::Configured(config)) => {
                     if self.show_settings {
@@ -317,7 +319,8 @@ impl StartupView {
                     }
                     _ => StartupScreen::LoadingConfig,
                 },
-            })
+            }
+        })
     }
 }
 impl Render for StartupView {
@@ -344,7 +347,7 @@ impl Render for StartupView {
         if let StartupScreen::Home(command) = &screen {
             if let Some(home) = &self.home {
                 home.read(cx)
-                    .state
+                    .state()
                     .clone()
                     .update(cx, |state, _| state.set_command(command.clone()));
             } else {

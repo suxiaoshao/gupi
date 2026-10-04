@@ -1,6 +1,5 @@
 //! Manual reload hands one session's file from an exited Pi to a new instance.
 use super::*;
-use gupi_settings::i18n::t;
 
 impl ConversationState {
     pub fn can_reconnect(&self, key: &str, cx: &App) -> bool {
@@ -65,10 +64,7 @@ impl ConversationState {
                             .get_mut(&target)
                             .filter(|s| s.binding == binding)
                         {
-                            s.error = Some(SessionError::Runtime(t(
-                                cx,
-                                "conversation-reconnect-unconfirmed",
-                            )));
+                            s.error = Some(SessionError::ReconnectUnconfirmed);
                             s.command = SessionCommand::ReconnectUnconfirmed;
                         }
                         notify_session(&target, cx);

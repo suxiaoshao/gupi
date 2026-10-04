@@ -1,7 +1,7 @@
 use super::*;
 use gpui_kit::component::skeleton::Skeleton;
 use gpui_kit::component::spinner::Spinner;
-use gupi_conversation::conversation::content::LoadStage;
+use gupi_conversation::conversation::LoadStage;
 
 fn loading_label(stage: LoadStage) -> &'static str {
     match stage {
@@ -80,7 +80,7 @@ impl HomeView {
             )
             .child(
                 Button::new(id)
-                    .disabled(self.state.read(cx).temporary)
+                    .disabled(self.state.read(cx).is_temporary())
                     .small()
                     .label(t(cx, "conversation-reconnect"))
                     .on_click(cx.listener(|this, _, _, cx| {

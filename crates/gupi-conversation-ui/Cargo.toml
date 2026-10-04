@@ -38,6 +38,7 @@ gupi-pi-runtime.workspace = true
 gupi-conversation.workspace = true
 
 [dev-dependencies]
+gupi-settings = { workspace = true, features = ["test-support"] }
 gupi-conversation = { workspace = true, features = ["test-support"] }
 gpui-kit = { workspace = true, features = ["test-support"] }
 gupi-pi-runtime = { workspace = true, features = ["test-support"] }

@@ -230,7 +230,7 @@ impl BindingInput {
             }
             let _ = window;
         });
-        let store = controller.read(cx).store.clone();
+        let store = controller.read(cx).configuration();
         let config = store.observe_in(cx, window, |this, op, window, cx| {
             if !op.is_running()
                 && let Some(config) = op.data().and_then(|d| d.configured())

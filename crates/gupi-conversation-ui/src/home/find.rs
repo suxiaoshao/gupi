@@ -473,6 +473,7 @@ mod tests {
     fn rendered_matches_navigation_streaming_and_cleanup(cx: &mut TestAppContext) {
         cx.update(|cx| {
             gpui_kit::init(cx);
+            crate::host::install_headless(cx);
             gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::English, cx);
         });
         let registry = Registry::default();

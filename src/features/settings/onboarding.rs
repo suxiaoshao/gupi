@@ -305,7 +305,7 @@ impl SettingsView {
                         _ => self.render_startup_desktop(window, cx),
                     }),
             );
-        let store = self.controller.read(cx).store.clone();
+        let store = self.controller.read(cx).configuration();
         let problem = store.read(cx, |op| op.problem().map(|problem| problem.key()));
         if let Some(key) = self.error.as_deref().or(problem) {
             view = view.child(

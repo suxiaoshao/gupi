@@ -44,7 +44,7 @@ impl HomeView {
             &text,
             from_composer,
             session
-                .commands
+                .commands()
                 .data()
                 .map(Vec::as_slice)
                 .unwrap_or_default(),
@@ -112,7 +112,7 @@ impl HomeView {
     }
     pub fn command_input_allowed(&self, cx: &App) -> bool {
         let state = self.state.read(cx);
-        let Some(key) = state.selected.as_ref() else {
+        let Some(key) = state.selected().as_ref() else {
             return false;
         };
         let Some(s) = state.current() else {
@@ -123,7 +123,7 @@ impl HomeView {
     }
     pub fn command_label(&self, kind: actions::Kind, cx: &App) -> String {
         if kind == actions::Kind::Stop
-            && self.state.read(cx).temporary
+            && self.state.read(cx).is_temporary()
             && self.state.read(cx).current().is_none_or(|s| !s.busy())
         {
             return t(cx, "temporary-hide");
@@ -186,7 +186,7 @@ impl HomeView {
         let Some(session) = self.state.read(cx).current() else {
             return;
         };
-        if !session.can_edit_draft() || !session.pending_ui.is_empty() {
+        if !session.can_edit_draft() || !session.pending_ui().is_empty() {
             return;
         }
         let text = self.input.read(cx).value();

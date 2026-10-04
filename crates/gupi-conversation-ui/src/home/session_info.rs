@@ -36,21 +36,21 @@ struct CachedSession {
 
 impl CachedSession {
     fn read(state: &ConversationState, key: &str) -> Self {
-        let session = state.sessions.get(key);
-        let info = session.map(|session| session.info.clone()).or_else(|| {
+        let session = state.sessions().get(key);
+        let info = session.map(|session| session.info().clone()).or_else(|| {
             state
-                .catalog
+                .catalog()
                 .data()
                 .and_then(|catalog| catalog.sessions.iter().find(|info| info.key() == key))
                 .cloned()
         });
         Self {
-            temporary: state.temporary,
+            temporary: state.is_temporary(),
             loaded: session.is_some(),
             info,
-            state: session.and_then(|session| session.state.clone()),
-            stats: session.and_then(|session| session.stats.data().cloned()),
-            stats_loading: session.is_some_and(|session| session.stats.running()),
+            state: session.and_then(|session| session.state().clone()),
+            stats: session.and_then(|session| session.stats().data().cloned()),
+            stats_loading: session.is_some_and(|session| session.stats().running()),
         }
     }
 }

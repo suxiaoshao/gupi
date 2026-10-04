@@ -1,5 +1,4 @@
 //! Shared tool semantics for the conversation and history views.
-use gupi_settings::assets::IconName;
 use serde_json::Value;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,18 +23,6 @@ impl ToolKind {
             "grep" | "find" => Self::Search,
             "ls" => Self::List,
             _ => Self::Other,
-        }
-    }
-    pub fn icon(self) -> IconName {
-        match self {
-            Self::Read => IconName::FileText,
-            Self::Skill => IconName::BookOpen,
-            Self::Write => IconName::FilePlus,
-            Self::Edit => IconName::FilePenLine,
-            Self::Shell => IconName::Terminal,
-            Self::Search => IconName::Search,
-            Self::List => IconName::Folder,
-            Self::Other => IconName::Wrench,
         }
     }
     pub fn action_key(self) -> &'static str {

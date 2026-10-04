@@ -3,6 +3,7 @@ use super::home::actions::Kind;
 use super::home::actions::Run;
 use super::home::palette::APP;
 use super::home::palette::SESSION;
+use crate::tool_icon::ToolIcon;
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::component::Disableable;
 use gpui_kit::component::Icon;
@@ -161,10 +162,12 @@ impl CommandPalette {
     ) -> Entity<Self> {
         let target = home.as_ref().and_then(|(_, state)| {
             let state = state.read(cx);
-            state
-                .selected
-                .as_ref()
-                .and_then(|key| state.sessions.get(key).map(|s| (key.clone(), s.binding)))
+            state.selected().as_ref().and_then(|key| {
+                state
+                    .sessions()
+                    .get(key)
+                    .map(|s| (key.clone(), s.binding()))
+            })
         });
         let original_focus = window.focused(cx);
         let input = cx.new(|cx| {
@@ -258,7 +261,7 @@ impl CommandPalette {
             && state
                 .read(cx)
                 .current()
-                .is_some_and(|s| !s.pending_ui.is_empty())
+                .is_some_and(|s| !s.pending_ui().is_empty())
         {
             let _ = home.update(cx, |home, cx| home.focus_composer(window, cx));
         }
@@ -273,11 +276,11 @@ impl CommandPalette {
         };
         let state = state.read(cx);
         self.target.as_ref().is_some_and(|(key, binding)| {
-            state.selected.as_ref() == Some(key)
+            state.selected().as_ref() == Some(key)
                 && state
-                    .sessions
+                    .sessions()
                     .get(key)
-                    .is_some_and(|s| s.binding == *binding)
+                    .is_some_and(|s| s.binding() == *binding)
         })
     }
     fn can_send(&self, cx: &App) -> bool {
@@ -296,12 +299,12 @@ impl CommandPalette {
             cx.notify();
             return;
         };
-        if state.selected.as_ref() != Some(&key) || !state.sessions.contains_key(&key) {
+        if state.selected().as_ref() != Some(&key) || !state.sessions().contains_key(&key) {
             self.close(window, cx);
             return;
         }
-        let s = &state.sessions[&key];
-        if binding != s.binding || !s.pending_ui.is_empty() {
+        let s = &state.sessions()[&key];
+        if binding != s.binding() || !s.pending_ui().is_empty() {
             self.close(window, cx);
             return;
         }
@@ -371,12 +374,12 @@ impl CommandPalette {
         if self.target_valid(cx)
             && let Some((_, state)) = &self.home
             && let Some(s) = state.read(cx).current()
-            && s.instance.is_some()
-            && s.state.is_some()
+            && s.has_instance()
+            && s.state().is_some()
         {
             let mut seen = HashSet::new();
             for c in s
-                .commands
+                .commands()
                 .data()
                 .into_iter()
                 .flatten()
@@ -489,7 +492,7 @@ impl CommandPalette {
                         state
                             .read(cx)
                             .current()?
-                            .commands
+                            .commands()
                             .data()?
                             .iter()
                             .find(|command| &command.name == name)
@@ -556,7 +559,14 @@ impl CommandPalette {
     }
     fn typed_resource(&self, cx: &App) -> Option<pi_rpc::protocol::SlashCommand> {
         let text = self.input.read(cx).value();
-        let commands = self.home.as_ref()?.1.read(cx).current()?.commands.data()?;
+        let commands = self
+            .home
+            .as_ref()?
+            .1
+            .read(cx)
+            .current()?
+            .commands()
+            .data()?;
         gupi_resources::composer_resources::command(&text, commands)
             .filter(|command| matches!(command.source.as_str(), "skill" | "prompt"))
             .cloned()
@@ -687,27 +697,27 @@ impl Render for CommandPalette {
         if let Some((_, state)) = &self.home
             && let Some(s) = state.read(cx).current()
         {
-            if s.instance.is_none() || s.state.is_none() {
-                let message =
-                    if s.core_read.running() || s.command.reconnecting() || s.instance.is_some() {
-                        "command-loading"
-                    } else {
-                        "command-connection-unavailable"
-                    };
+            if !s.has_instance() || s.state().is_none() {
+                let message = if s.core_read().running() || s.is_reconnecting() || s.has_instance()
+                {
+                    "command-loading"
+                } else {
+                    "command-connection-unavailable"
+                };
                 has_status = true;
                 status = status.child(div().text_sm().child(t(cx, message)));
-            } else if s.commands.running() {
+            } else if s.commands().running() {
                 has_status = true;
                 status = status.child(div().text_sm().child(t(cx, "command-loading")));
             } else if s
-                .commands
+                .commands()
                 .data()
                 .is_some_and(|commands| commands.is_empty())
             {
                 has_status = true;
                 status = status.child(div().text_sm().child(t(cx, "command-empty")));
             }
-            if let Some(error) = s.commands.error() {
+            if let Some(error) = s.commands().error() {
                 has_status = true;
                 status = status.child(
                     div()

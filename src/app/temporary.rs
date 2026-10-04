@@ -395,9 +395,9 @@ pub fn clean_released(cx: &mut App) {
                         .map(|state| {
                             state
                                 .read(cx)
-                                .sessions
+                                .sessions()
                                 .values()
-                                .map(|s| s.info.cwd.clone())
+                                .map(|s| s.info().cwd.clone())
                                 .collect::<Vec<_>>()
                         })
                         .unwrap_or_default()
@@ -410,7 +410,7 @@ pub fn clean_released(cx: &mut App) {
                 smol::unblock(move || {
                     let mut count = 0;
                     for path in candidates {
-                        gupi_conversation::conversation::temporary::trash_workspace(&path)?;
+                        gupi_conversation::conversation::trash_workspace(&path)?;
                         count += 1;
                     }
                     Ok(count)
@@ -464,10 +464,13 @@ mod tests {
     fn setup(cx: &mut TestAppContext) -> (WindowHandle<Root>, Entity<ConversationState>) {
         cx.update(|cx| {
             gpui_kit::init(cx);
+            crate::app::init_capability_hosts(cx);
             gupi_pi_runtime::init(cx);
             init(cx);
             let state = cx.new(|cx| ConversationState::temporary("unused-pi".into(), cx));
-            state.update(cx, |s, _| s.selected = Some("retained-selection".into()));
+            state.update(cx, |s, _| {
+                *s.selected_for_test() = Some("retained-selection".into())
+            });
             let window = cx
                 .open_window(WindowOptions::default(), |window, cx| {
                     let view = cx.new(|_| EmptyView);
@@ -485,6 +488,7 @@ mod tests {
     fn popup_opens_while_configuration_is_loading(cx: &mut TestAppContext) {
         cx.update(|cx| {
             gpui_kit::init(cx);
+            crate::app::init_capability_hosts(cx);
             app_theme::init(cx);
             gupi_settings::theme::init(cx);
             gupi_settings::i18n::apply(Default::default(), cx);
@@ -515,7 +519,7 @@ mod tests {
             assert!(cx.global::<Temporary>().window.is_none());
             assert_eq!(cx.global::<Temporary>().state.as_ref(), Some(&state));
             assert_eq!(
-                state.read(cx).selected.as_deref(),
+                state.read(cx).selected().as_deref(),
                 Some("retained-selection")
             );
             assert!(!state.read(cx).draining());

@@ -6,7 +6,7 @@
 
 ## 实现边界与验证
 
-- `state/notifications.rs` 定义 `Kind`、`Notice`、`NoticeContent` 和可持久化 `Preferences`；不新增 RPC schema、数据库或第二套等待/执行状态。
+- `crates/gupi-conversation/src/notifications.rs` 定义 `Kind`、`Notice`、`NoticeContent`；`crates/gupi-settings/src/notifications.rs` 定义可持久化 `Preferences` 和投递分类，由应用层映射会话事件；不新增 RPC schema、数据库或第二套等待/执行状态。
 - `app/notifications.rs` 的来源引用是 `WeakEntity<ConversationState>`；窗口只登记当前展示关系。临时窗口关闭不释放全局 Session，投递与系统点击不依赖旧窗口 entity。系统标签包含 owner/session/binding/request，旧请求、已删除来源或旧实例不会被点击恢复。
 - `agent_settled` 以本轮实际 assistant 文本形成未读，合并历史与 live 数据读取；正常结果才通知完成，错误结果按失败路由，主动取消不报完成或失败。`agent_end`、工具进度和中间重试不发通知。手动压缩只由 RPC 结果提醒，避免与 `compaction_end` 双报；自动压缩只保留未取消且不再重试的失败详情。
 - 页面可见性与窗口实际激活状态共同决定已读/投递。锁定版本 GPUI 的 macOS `active_window()` 读取 `mainWindow`，不足以证明应用在前台，当前逐窗口读取实际 activation 标记；不做消息视口阅读检测。
@@ -237,7 +237,7 @@ Tauri 通知插件的当前桌面实现主要使用 title/body/icon/sound，声�
 
 ## 内部数据结构、计数与侧边栏状态
 
-需要一份应用内部的类型约定，使页面、系统通知、Dock 和托盘使用同一来源。无需新增 JSON Schema 文件、数据库或修改 Pi RPC 协议。具体 Rust 类型已落在 `state/notifications.rs`；计数和已读行为遵循 D1–D5。
+需要一份应用内部的类型约定，使页面、系统通知、Dock 和托盘使用同一来源。无需新增 JSON Schema 文件、数据库或修改 Pi RPC 协议。语义事件类型位于 `gupi-conversation::notifications`，持久化偏好位于 `gupi-settings::notifications`；计数和已读行为遵循 D1–D5。
 
 ### 保留三层职责
 

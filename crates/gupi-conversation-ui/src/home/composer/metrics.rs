@@ -18,7 +18,7 @@ fn details_text(title: String, fields: Vec<(String, String)>) -> String {
 
 pub(super) fn context(session: &Session, cx: &App) -> AnyElement {
     let usage = session
-        .stats
+        .stats()
         .data()
         .and_then(|stats| stats.context_usage.as_ref());
     let percent = usage
@@ -48,7 +48,7 @@ pub(super) fn context(session: &Session, cx: &App) -> AnyElement {
             t(
                 cx,
                 if session
-                    .state
+                    .state()
                     .as_ref()
                     .is_some_and(|s| s.auto_compaction_enabled)
                 {
@@ -87,7 +87,7 @@ pub(super) fn context(session: &Session, cx: &App) -> AnyElement {
 }
 
 pub(super) fn tokens(session: &Session, cx: &App) -> AnyElement {
-    let Some(stats) = session.stats.data() else {
+    let Some(stats) = session.stats().data() else {
         return div().into_any_element();
     };
     let usage = &stats.tokens;
@@ -158,7 +158,7 @@ pub(super) fn status(
     key: String,
     cx: &App,
 ) -> AnyElement {
-    if let Some(error) = session.stats.error() {
+    if let Some(error) = session.stats().error() {
         return Button::new("stats-error")
             .ghost()
             .xsmall()
@@ -168,7 +168,7 @@ pub(super) fn status(
             .on_click(move |_, _, cx| owner.update(cx, |state, cx| state.refresh_stats(&key, cx)))
             .into_any_element();
     }
-    if session.stats.running() {
+    if session.stats().running() {
         let label = t(cx, "composer-stats-loading");
         return div()
             .id("stats-loading")

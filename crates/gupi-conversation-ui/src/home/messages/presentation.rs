@@ -507,6 +507,7 @@ mod tests {
     fn marker_is_left_aligned_and_activates_with_keyboard_and_pointer(cx: &mut TestAppContext) {
         cx.update(|cx| {
             gpui_kit::init(cx);
+            crate::host::install_headless(cx);
             gupi_settings::i18n::apply(Default::default(), cx);
         });
         let activations = Rc::new(Cell::new(0));

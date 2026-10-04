@@ -43,14 +43,12 @@ impl ConversationState {
                     && !session.stopping
                 {
                     session.error = Some(SessionError::Runtime(error.to_string()));
-                    cx.emit(ConversationEvent::Attention(
-                        gupi_settings::notifications::Notice {
-                            key: target.clone(),
-                            binding,
-                            kind: gupi_settings::notifications::Kind::Failed,
-                            message: None,
-                        },
-                    ));
+                    cx.emit(ConversationEvent::Attention(crate::notifications::Notice {
+                        key: target.clone(),
+                        binding,
+                        kind: crate::notifications::Kind::Failed,
+                        message: None,
+                    }));
                 }
                 this.read_session(&target, ReadScope::History, cx);
                 notify_session(&target, cx);

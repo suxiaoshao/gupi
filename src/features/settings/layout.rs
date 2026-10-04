@@ -422,7 +422,7 @@ impl SettingsView {
         let problem = self
             .controller
             .read(cx)
-            .store
+            .configuration()
             .read(cx, |op| op.problem().map(|p| p.key()));
         v_flex()
             .size_full()

@@ -25,20 +25,34 @@ struct MainWindow {
 }
 impl Global for MainWindow {}
 pub(crate) fn init_capability_hosts(cx: &mut App) {
-    cx.set_global(gupi_settings::host::Host {
-        prepare_shortcuts: shortcuts::prepare,
-        apply_shortcuts: shortcuts::apply,
-        refresh_menus: menus::refresh_native,
-    });
-    cx.set_global(gupi_conversation::host::Host {
-        attach: notifications::attach,
-        cancel_preparation: shortcuts::cancel_preparation,
-    });
-    cx.set_global(gupi_conversation_ui::host::Host {
-        paste_answer: temporary::paste_answer,
-        hide: temporary::hide,
-        present: notifications::present,
-    });
+    gupi_updates::updates::get(cx);
+    cx.set_global(gupi_settings::host::Host::new(
+        shortcuts::prepare,
+        shortcuts::apply,
+        menus::refresh_native,
+        |cx| gupi_updates::updates::current(cx).is_installing(),
+        |cx| match gupi_updates::updates::current(cx).status() {
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            gupi_updates::updates::Status::Installing(release) => Some(release.version.to_string()),
+            _ => None,
+        },
+        |owner, cx| {
+            let owner = owner.downgrade();
+            let updates = gupi_updates::updates::get(cx);
+            cx.observe(&updates, move |_, cx| {
+                let _ = owner.update(cx, |_, cx| cx.notify());
+            })
+        },
+    ));
+    cx.set_global(gupi_conversation::host::Host::new(
+        notifications::attach,
+        shortcuts::cancel_preparation,
+    ));
+    cx.set_global(gupi_conversation_ui::host::Host::new(
+        temporary::paste_answer,
+        temporary::hide,
+        notifications::present,
+    ));
 }
 #[cfg(test)]
 mod conversation_view_tests;

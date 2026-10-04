@@ -8,14 +8,13 @@ use gpui_kit::component::attachment::AttachmentGroup;
 use gpui_kit::component::attachment::AttachmentMedia;
 use gpui_kit::component::attachment::AttachmentTitle;
 use gupi_conversation::attachments;
-use gupi_conversation::attachments::Attachment;
 use gupi_conversation::attachments::Content;
 
 impl HomeView {
     fn attachment_target(&self, cx: &App) -> Option<String> {
         let key = self.shown_key.as_ref()?;
-        let session = self.state.read(cx).sessions.get(key)?;
-        (session.can_edit_draft() && session.attachments_read.is_none()).then(|| key.clone())
+        let session = self.state.read(cx).sessions().get(key)?;
+        (session.can_edit_draft() && session.can_read_attachments()).then(|| key.clone())
     }
     pub(super) fn choose_attachments(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(key) = self.attachment_target(cx) else {
@@ -40,10 +39,7 @@ impl HomeView {
                     Ok(Some(paths)) => this.attach_paths(paths, window, cx),
                     Ok(None) => {}
                     Err(error) => this.state.update(cx, |state, cx| {
-                        state.sessions.get_mut(&key).unwrap().error = Some(
-                            gupi_conversation::conversation::SessionError::Runtime(error),
-                        );
-                        gupi_conversation::conversation::notify_session(&key, cx);
+                        state.attachment_error(&key, error, cx);
                     }),
                 }
             });
@@ -71,11 +67,8 @@ impl HomeView {
         if images.is_empty() {
             return;
         }
-        self.load_attachments(
-            key,
-            async move { smol::unblock(move || attachments::from_paths(images)).await },
-            cx,
-        );
+        self.state
+            .update(cx, |state, cx| state.attach_images(key, images, cx));
     }
     pub(super) fn paste_attachments(
         &mut self,
@@ -97,54 +90,16 @@ impl HomeView {
                 return true;
             };
             let name = t(cx, "attachment-clipboard");
-            self.load_attachments(
-                key,
-                async move {
-                    smol::unblock(move || Attachment::from_image(name, &bytes).map(|a| vec![a]))
-                        .await
-                },
-                cx,
-            );
+            self.state
+                .update(cx, |state, cx| state.attach_image(key, name, bytes, cx));
             true
         } else {
             false
         }
     }
-    fn load_attachments(
-        &mut self,
-        key: String,
-        future: impl Future<Output = Result<Vec<Attachment>, String>> + 'static,
-        cx: &mut Context<Self>,
-    ) {
-        let state = self.state.clone();
-        state.update(cx, |state, cx| {
-            let target = key.clone();
-            let task = cx.spawn(async move |state, cx| {
-                let result = future.await;
-                let _ = state.update(cx, |state, cx| {
-                    if let Some(session) = state.sessions.get_mut(&target) {
-                        session.attachments_read = None;
-                        match result {
-                            Ok(items) => session.attachments.extend(items),
-                            Err(error) => {
-                                session.error = Some(
-                                    gupi_conversation::conversation::SessionError::Runtime(error),
-                                )
-                            }
-                        }
-                        gupi_conversation::conversation::notify_session(&target, cx);
-                    }
-                });
-            });
-            if let Some(session) = state.sessions.get_mut(&key) {
-                session.attachments_read = Some(task);
-            }
-            gupi_conversation::conversation::notify_session(&key, cx);
-        });
-    }
     pub(super) fn render_attachments(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let session = self.state.read(cx).current()?;
-        if session.attachments.is_empty() {
+        if session.attachments().is_empty() {
             return None;
         }
         let key = self.shown_key.clone().unwrap_or_default();
@@ -156,7 +111,7 @@ impl HomeView {
                 .is_none_or(|id| session.history().on_current_path(id));
         Some(
             AttachmentGroup::new(SharedString::from(format!("composer-attachments-{key}")))
-                .children(session.attachments.iter().map(|attachment| {
+                .children(session.attachments().iter().map(|attachment| {
                     let target = key.clone();
                     let id = attachment.id.clone();
                     let content = attachment.content.clone();
@@ -222,16 +177,7 @@ impl HomeView {
                                 .accessibility_label(t(cx, "attachment-remove"))
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.state.update(cx, |state, cx| {
-                                        if let Some(session) = state
-                                            .sessions
-                                            .get_mut(&target)
-                                            .filter(|s| s.can_edit_draft())
-                                        {
-                                            session.attachments.retain(|a| a.id != id);
-                                            gupi_conversation::conversation::notify_session(
-                                                &target, cx,
-                                            );
-                                        }
+                                        state.remove_attachment(&target, &id, cx);
                                     });
                                 })),
                         ),

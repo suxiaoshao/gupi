@@ -4572,12 +4572,10 @@ name = "gupi-conversation"
 version = "0.1.2"
 dependencies = [
  "base64 0.23.1",
- "fluent-bundle",
  "gpui-kit",
  "gpui-operation",
  "gupi-pi-runtime",
  "gupi-resources",
- "gupi-settings",
  "image",
  "markdown",
  "pi-rpc",
@@ -4690,7 +4688,6 @@ dependencies = [
  "cc",
  "gpui-kit",
  "gpui-tokio",
- "gupi-resources",
  "http",
  "libloading",
  "reqwest",

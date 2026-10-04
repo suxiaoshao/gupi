@@ -20,10 +20,10 @@ impl HomeView {
         #[cfg(feature = "performance")]
         let _span = tracing::debug_span!(target: "gupi::performance", "titlebar.render").entered();
         let state = self.state.read(cx);
-        let temporary = state.temporary;
+        let temporary = state.is_temporary();
         let current = state.current();
         let title = current
-            .map(|session| session.info.title())
+            .map(|session| session.info().title())
             .filter(|title| !title.is_empty())
             .map(str::to_owned)
             .unwrap_or_else(|| t(cx, "conversation-new"));
@@ -32,14 +32,14 @@ impl HomeView {
         } else {
             format!("{title} — Gupi")
         });
-        let key = state.selected.clone();
+        let key = state.selected().clone();
         let has_actions = current.is_some_and(|session| {
-            !session.info.path.as_os_str().is_empty() || session.instance.is_some()
+            !session.info().path.as_os_str().is_empty() || session.has_instance()
         });
-        let loading = current.is_some_and(|s| s.core_read.running() || s.command.reconnecting());
+        let loading = current.is_some_and(|s| s.core_read().running() || s.is_reconnecting());
         let can_refresh = key.as_ref().is_some_and(|key| state.can_reconnect(key, cx));
         let can_export = key.as_ref().is_some_and(|key| state.can_export(key, cx));
-        let exporting = current.is_some_and(|session| session.command.exporting());
+        let exporting = current.is_some_and(|session| session.is_exporting());
         let leading = chrome::leading_space(window);
         let target_width = if self.show_sidebar {
             px(self.pane_layout.left)

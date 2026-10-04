@@ -55,10 +55,10 @@ impl Render for ActionsPanel {
         };
         let view = owner.read(cx);
         let state = view.state.read(cx);
-        let valid = state.selected == self.target;
+        let valid = state.selected() == &self.target;
         let title = state
             .current()
-            .map(|s| navigation::display_title(&s.info, cx))
+            .map(|s| navigation::display_title(s.info(), cx))
             .unwrap_or_else(|| t(cx, "temporary-title"));
         let home = view.home.read(cx);
         let query = self.input.read(cx).value().trim().to_lowercase();
@@ -212,7 +212,7 @@ impl Render for ActionsPanel {
                             return;
                         };
                         let _ = owner.update(cx, |view, cx| {
-                            if view.state.read(cx).selected != target {
+                            if view.state.read(cx).selected() != &target {
                                 return;
                             }
                             view.close_actions(window, cx);

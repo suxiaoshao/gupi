@@ -117,6 +117,7 @@ tracing-chrome = { version = "0.7.2", optional = true }
 profiling = { version = "1.0.18", optional = true }
 
 [dev-dependencies]
+gupi-settings = { workspace = true, features = ["test-support"] }
 gupi-updates = { workspace = true, features = ["test-support"] }
 gupi-resources = { workspace = true, features = ["test-support"] }
 gupi-conversation = { workspace = true, features = ["test-support"] }

@@ -39,7 +39,7 @@ impl TemporaryStartup {
             }),
         ];
         if let Some(config) = cx.global::<Temporary>().config.clone() {
-            let store = config.read(cx).store.clone();
+            let store = config.read(cx).configuration();
             subscriptions.push(store.observe_in(cx, window, |_, _, _, cx| cx.notify()));
         }
         let mut this = Self {
@@ -82,7 +82,7 @@ impl TemporaryStartup {
         let config = cx.global::<Temporary>().config.as_ref()?;
         config
             .read(cx)
-            .store
+            .configuration()
             .read(cx, |op| match op.data().map(|data| &data.contents) {
                 Some(ConfigContents::Configured(_)) => None,
                 Some(ConfigContents::Missing) => {

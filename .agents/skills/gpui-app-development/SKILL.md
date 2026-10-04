@@ -13,7 +13,10 @@ this skill and project documents.
 
 Gupi is the root application package. [AGENTS.md](../../../AGENTS.md#项目结构)
 holds project conventions. The [capability architecture](../../../docs/dev/capability-architecture/README.md)
-describes the six internal capability crates and their host interfaces. Keep
+describes the six internal capability crates and their current host interfaces.
+The [interface refinement](../../../docs/dev/capability-architecture/refinement.md)
+records the read-only model queries, semantic mutation entry points, required
+host installation, and ambiguities in the installed official guidance. Keep
 native windows, notification delivery, global shortcut registration and ordered
 shutdown in the application composition layer. Change an owning capability and
 its callers together; do not restore the removed `state` / `foundation` facade.

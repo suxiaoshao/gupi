@@ -1,6 +1,6 @@
 # Gupi 开发文档
 
-**[应用架构改造](capability-architecture/README.md)**：现有实现按能力聚合、所有权与接口调整、迁移顺序和验证。
+**[应用架构改造](capability-architecture/README.md)**：六个能力 crate 的当前职责、依赖和验证；[接口与依赖收敛](capability-architecture/refinement.md)记录官方 skill 核对结果。
 
 **[性能采集](performance.md)**：开发专用全程时间线、真实 Pi 会话、发行隔离和前后对比。
 

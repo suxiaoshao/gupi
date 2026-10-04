@@ -2,17 +2,32 @@
 use crate::conversation::ConversationState;
 use gpui_kit::{App, Entity, Global};
 pub struct Host {
-    pub attach: fn(&Entity<ConversationState>, &mut App),
-    pub cancel_preparation: fn(&str, &mut App),
+    attach: fn(&Entity<ConversationState>, &mut App),
+    cancel_preparation: fn(&str, &mut App),
 }
 impl Global for Host {}
-pub fn attach(owner: &Entity<ConversationState>, cx: &mut App) {
-    if let Some(host) = cx.try_global::<Host>() {
-        (host.attach)(owner, cx);
+impl Host {
+    pub fn new(
+        attach: fn(&Entity<ConversationState>, &mut App),
+        cancel_preparation: fn(&str, &mut App),
+    ) -> Self {
+        Self {
+            attach,
+            cancel_preparation,
+        }
     }
 }
-pub fn cancel_preparation(key: &str, cx: &mut App) {
-    if let Some(host) = cx.try_global::<Host>() {
-        (host.cancel_preparation)(key, cx);
-    }
+pub(crate) fn attach(owner: &Entity<ConversationState>, cx: &mut App) {
+    (cx.global::<Host>().attach)(owner, cx);
+}
+pub(crate) fn cancel_preparation(key: &str, cx: &mut App) {
+    (cx.global::<Host>().cancel_preparation)(key, cx);
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub fn install_headless(cx: &mut App) {
+    cx.set_global(Host {
+        attach: |_, _| {},
+        cancel_preparation: |_, _| {},
+    });
 }

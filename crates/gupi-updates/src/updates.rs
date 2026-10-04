@@ -43,6 +43,11 @@ impl EventEmitter<Available> for Updates {}
 struct Service(Entity<Updates>);
 impl Global for Service {}
 
+/// Read the installed update owner without creating or mutating it.
+pub fn current(cx: &App) -> &Updates {
+    cx.global::<Service>().0.read(cx)
+}
+
 pub fn get(cx: &mut App) -> Entity<Updates> {
     if let Some(service) = cx.try_global::<Service>() {
         return service.0.clone();

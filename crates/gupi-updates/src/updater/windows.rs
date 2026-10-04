@@ -203,6 +203,7 @@ impl PreparedInstall {
 pub async fn prepare_install(
     directory: tempfile::TempDir,
     failure_message: String,
+    log: std::path::PathBuf,
 ) -> Result<PreparedInstall, String> {
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
     let helper = directory.path().join("gupi-update-helper.exe");
@@ -213,9 +214,7 @@ pub async fn prepare_install(
         parent: std::process::id(),
         executable,
         installer: directory.path().join("update.msi"),
-        log: gupi_resources::paths::log_dir()
-            .map_err(|e| e.to_string())?
-            .join("update-install.log"),
+        log,
         failure_message,
     };
     let mut child = tokio::process::Command::new(helper)

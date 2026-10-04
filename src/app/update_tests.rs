@@ -12,6 +12,7 @@ use gupi_updates::updates;
 fn update_menu_opens_a_dialog_without_leasing_root_twice(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_kit::init(cx);
+        crate::app::init_capability_hosts(cx);
         app_theme::init(cx);
         gupi_settings::theme::init(cx);
         gupi_settings::i18n::apply(Default::default(), cx);

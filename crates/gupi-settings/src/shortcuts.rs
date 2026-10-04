@@ -138,22 +138,9 @@ pub fn system_binding(binding: &str) -> Result<String, String> {
     Ok(value)
 }
 
-#[derive(Clone, Debug)]
-pub struct PendingTemplate {
-    pub name: String,
-    pub body: String,
-}
-
-pub use gupi_resources::composer_resources::argument;
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn quote_pi_argument_keeps_quotes_newlines_and_backslashes() {
-        assert_eq!(argument("a b\n中\\文'\"$1"), "\"a b\n中\\文'\"'\"'\"$1\"");
-        assert_eq!(argument(""), "\"\"");
-    }
     #[test]
     fn reset_only_removes_bindings_and_duplicate_ids_are_invalid() {
         let task = ShortcutTask {
@@ -229,75 +216,6 @@ mod tests {
         assert!(
             config.validate().is_err(),
             "disabled bindings must still have valid syntax"
-        );
-    }
-}
-
-pub fn template_message(name: &str, body: &str, text: &str) -> String {
-    let normalized = body.replace("\r\n", "\n");
-    let body = normalized.as_str();
-    let body = body
-        .strip_prefix("---\n")
-        .and_then(|s| {
-            s.split_once("\n---")
-                .map(|(_, body)| body.trim_start_matches(['\r', '\n']))
-        })
-        .unwrap_or(body);
-    let parameterized = body.split('$').skip(1).any(|part| {
-        if part.starts_with('@')
-            || part.starts_with("ARGUMENTS")
-            || part.starts_with(|c: char| c.is_ascii_digit())
-        {
-            return true;
-        }
-        let Some(inner) = part
-            .strip_prefix('{')
-            .and_then(|s| s.split_once('}').map(|(s, _)| s))
-        else {
-            return false;
-        };
-        if let Some((target, _)) = inner.split_once(":-") {
-            return target == "@"
-                || target == "ARGUMENTS"
-                || !target.is_empty() && target.chars().all(|c| c.is_ascii_digit());
-        }
-        inner.strip_prefix("@:").is_some_and(|s| {
-            let parts = s.split(':').collect::<Vec<_>>();
-            (1..=2).contains(&parts.len())
-                && parts
-                    .iter()
-                    .all(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()))
-        })
-    });
-    if parameterized {
-        format!("/{name} {}", argument(text))
-    } else {
-        format!("\n{body}\n{text}")
-    }
-}
-
-#[cfg(test)]
-mod template_tests {
-    use super::template_message;
-    #[test]
-    fn templates_preserve_input_and_use_pi_for_parameters() {
-        assert_eq!(
-            template_message(
-                "test",
-                "---\r\ndescription: test\r\n---\r\nTranslate",
-                "a\nb"
-            ),
-            "\nTranslate\na\nb"
-        );
-        for body in ["do $1", "do $@", "do ${ARGUMENTS:-hello}", "do ${@:1:2}"] {
-            assert_eq!(
-                template_message("test", body, "a \"b\""),
-                "/test \"a \"'\"'\"b\"'\"'\"\""
-            );
-        }
-        assert_eq!(
-            template_message("test", "/do $money ${name}", "input"),
-            "\n/do $money ${name}\ninput"
         );
     }
 }

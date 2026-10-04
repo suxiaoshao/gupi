@@ -201,7 +201,7 @@ impl KeysView {
                 },
             ));
         }
-        let store = controller.read(cx).store.clone();
+        let store = controller.read(cx).configuration();
         subscriptions.push(store.observe_in(cx, window, |this, _, window, cx| {
             this.sync(window, cx);
         }));
@@ -515,7 +515,7 @@ mod tests {
     use gpui_kit::ParentElement;
     use gpui_kit::Render;
     use gpui_kit::Styled;
-    use gpui_kit::Task;
+
     use gpui_kit::TestAppContext;
     use gpui_kit::VisualTestContext;
     use gpui_kit::Window;
@@ -528,9 +528,7 @@ mod tests {
     use gpui_kit::div;
     use gpui_kit::point;
     use gpui_kit::px;
-    use gpui_operation::Complete;
-    use gpui_operation::Load;
-    use gpui_operation::Transition;
+
     use gupi_settings::config::ConfigContents;
     use gupi_settings::config::ConfigData;
     use std::cell::Cell;
@@ -587,6 +585,7 @@ mod tests {
     ) -> (Entity<KeysView>, Rc<Cell<bool>>, &mut VisualTestContext) {
         cx.update(|cx| {
             gpui_kit::init(cx);
+            crate::app::init_capability_hosts(cx);
             app_theme::init(cx);
             gupi_settings::theme::init(cx);
             gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
@@ -599,13 +598,15 @@ mod tests {
             let form = cx.new(|_| Form::new(AppConfig::default()));
             let controller = cx.new(|cx| ConfigController::new(&form, cx));
             // Use the onboarding form as an in-memory preference store. No user files are written.
-            controller.read(cx).store.clone().update(cx, |op| {
-                op.transition(Load(Task::ready(())));
-                op.transition(Complete(Ok(ConfigData {
-                    path: "/tmp/keys-fixture/config.toml".into(),
-                    contents: ConfigContents::Missing,
-                    backup: None,
-                })));
+            controller.update(cx, |owner, cx| {
+                owner.settle_for_test(
+                    ConfigData {
+                        path: "/tmp/keys-fixture/config.toml".into(),
+                        contents: ConfigContents::Missing,
+                        backup: None,
+                    },
+                    cx,
+                )
             });
             let global = cx.new(|_| GlobalKeys::new(controller.clone()));
             let owner = cx.new(|cx| KeysView::new(controller, window, cx));

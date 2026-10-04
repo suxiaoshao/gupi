@@ -348,10 +348,10 @@ impl HomeView {
         let mut body = v_flex().flex_1().min_h_0().w_full();
         // Restored selection arrives before the asynchronous catalog scan has
         // materialized its session. A history-list notification can render here.
-        let Some(session) = self.state.read(cx).sessions.get(&key) else {
+        let Some(session) = self.state.read(cx).sessions().get(&key) else {
             return body.into_any_element();
         };
-        use gupi_conversation::conversation::content::BodyState;
+        use gupi_conversation::conversation::BodyState;
         match session.body_state() {
             BodyState::New => {
                 return body
@@ -367,7 +367,7 @@ impl HomeView {
                     .into_any_element();
             }
             BodyState::Ready
-                if session.empty_conversation() && session.info.path.as_os_str().is_empty() =>
+                if session.empty_conversation() && session.info().path.as_os_str().is_empty() =>
             {
                 return body
                     .child(self.render_welcome(Some(session), cx))
@@ -481,10 +481,10 @@ impl HomeView {
                 let state = self.state.clone();
                 let target = key.to_owned();
                 let entry = m.entry.clone();
-                let can_fork = self.state.read(cx).sessions.get(key).is_some_and(|s| {
-                    !self.state.read(cx).temporary
+                let can_fork = self.state.read(cx).sessions().get(key).is_some_and(|s| {
+                    !self.state.read(cx).is_temporary()
                         && !s.settings_busy()
-                        && !s.model_change.unconfirmed()
+                        && !s.model_change().unconfirmed()
                         && entry
                             .as_ref()
                             .is_some_and(|id| s.fork_options().iter().any(|m| &m.entry_id == id))
@@ -635,10 +635,10 @@ impl HomeView {
                 let live = self
                     .state
                     .read(cx)
-                    .sessions
+                    .sessions()
                     .get(key)
                     .filter(|_| *active)
-                    .map(|session| session.tools.as_slice())
+                    .map(|session| session.tools().as_slice())
                     .unwrap_or_default();
                 let content = RunContent::project(messages, live, *active);
                 let current = current_run_id(self.views[key].rows.iter().map(Rc::as_ref))
@@ -795,7 +795,7 @@ mod tests {
             let previous = Session::from_rpc_messages(&events[..index]);
             let mut incremental = project(&previous, None);
             let updated = session
-                .message_update_since(previous.content_revision)
+                .message_update_since(previous.content_revision())
                 .expect("consecutive stream update");
             assert!(
                 incremental
@@ -804,13 +804,13 @@ mod tests {
             );
             assert!(
                 session
-                    .message_update_since(session.content_revision)
+                    .message_update_since(session.content_revision())
                     .is_none()
             );
-            if previous.content_revision > 0 {
+            if previous.content_revision() > 0 {
                 assert!(
                     session
-                        .message_update_since(previous.content_revision - 1)
+                        .message_update_since(previous.content_revision() - 1)
                         .is_none()
                 );
             }
@@ -821,7 +821,7 @@ mod tests {
                 panic!("missing run")
             };
             assert!(messages.last().unwrap().completed_at.is_none());
-            let content = RunContent::project(messages, &session.tools, *active);
+            let content = RunContent::project(messages, session.tools(), *active);
             let delta = &event["assistantMessageEvent"];
             match delta["type"].as_str() {
                 Some("thinking_delta") => {
@@ -859,7 +859,7 @@ mod tests {
                 .count(),
             3
         );
-        assert!(session.interrupted);
+        assert!(session.interrupted());
     }
 
     #[test]
@@ -886,7 +886,7 @@ mod tests {
                 panic!("missing run")
             };
             assert!(*active);
-            RunContent::project(messages, &session.tools, *active)
+            RunContent::project(messages, session.tools(), *active)
         };
         assert!(
             matches!(project_run(&wire).activities.last(), Some(Activity::Text {
@@ -916,7 +916,7 @@ mod tests {
             matches!(&content.activities[0], Activity::Text { text, running: false, .. } if text == "先检查目录。")
         );
         assert_eq!(
-            Session::from_rpc_messages(&wire).live[1].value["usage"]["output"],
+            Session::from_rpc_messages(&wire).live()[1].value["usage"]["output"],
             8
         );
 

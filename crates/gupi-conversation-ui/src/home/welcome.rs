@@ -32,16 +32,16 @@ impl HomeView {
                 )
                 .into_any_element();
         };
-        if self.state.read(cx).temporary
-            || !session.info.path.as_os_str().is_empty()
-            || !session.pending_ui.is_empty()
+        if self.state.read(cx).is_temporary()
+            || !session.info().path.as_os_str().is_empty()
+            || !session.pending_ui().is_empty()
         {
             return welcome
                 .child(div().text_2xl().child(t(cx, "conversation-welcome")))
                 .into_any_element();
         }
 
-        let path = &session.info.cwd;
+        let path = &session.info().cwd;
         let name = path
             .file_name()
             .filter(|name| !name.is_empty())

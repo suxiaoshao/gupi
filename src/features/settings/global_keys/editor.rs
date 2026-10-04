@@ -169,7 +169,7 @@ impl Editor {
             this.sync_picker(window, cx);
             cx.notify();
         });
-        let store = controller.read(cx).store.clone();
+        let store = controller.read(cx).configuration();
         let config_sub = store.observe_in(cx, window, |this, op, window, cx| {
             if this.saving.is_some() && !op.is_running() {
                 if op.problem().is_none()

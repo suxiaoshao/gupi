@@ -5,12 +5,12 @@ use gupi_settings::i18n::t_with_args;
 impl HomeView {
     pub(super) fn render_queue(&self, key: &str, preview: bool, cx: &Context<Self>) -> AnyElement {
         let state = self.state.read(cx);
-        let session = &state.sessions[key];
+        let session = &state.sessions()[key];
         let open = self.views.get(key).is_some_and(|view| view.queue_open);
         let disabled = preview || !state.can_clear_queue(key, cx);
-        let loading = session.command.clearing_queue();
+        let loading = session.is_clearing_queue();
         let mut args = fluent_bundle::FluentArgs::new();
-        args.set("count", session.pending_count);
+        args.set("count", session.pending_count());
         let title = t_with_args(cx, "conversation-queue-title", &args);
         let target = key.to_owned();
         let mut header = h_flex()
@@ -68,7 +68,7 @@ impl HomeView {
             );
         }
         let mut content = v_flex().gap_2().min_w_0().px_2().pb_2();
-        if let Some(queue) = &session.queued {
+        if let Some(queue) = &session.queued() {
             for (label, messages) in [
                 ("conversation-queue-steer", &queue.steering),
                 ("conversation-queue-follow-up", &queue.follow_up),

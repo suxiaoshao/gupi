@@ -128,7 +128,7 @@ impl SettingsView {
         });
         let language = cx
             .new(|cx| ComboboxState::new(language_items(cx), vec![], window, cx).searchable(true));
-        let pi_form = controller.read(cx).pi_form.clone();
+        let pi_form = controller.read(cx).pi_form().clone();
         let pi_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder("pi")
@@ -189,7 +189,7 @@ impl SettingsView {
             this.refresh_language(window, cx)
         });
         let pi_form_sub = cx.observe(&pi_form, |_, _, cx| cx.notify());
-        let store = controller.read(cx).store.clone();
+        let store = controller.read(cx).configuration();
         let store_sub = store.observe_in(cx, window, |this, _, window, cx| {
             this.refresh_language(window, cx)
         });
@@ -246,7 +246,7 @@ impl SettingsView {
         if controller.is_onboarding(cx) {
             AppConfig::PI_COMMAND.get(&self.form, cx)
         } else {
-            PiSettings::COMMAND.get(&controller.pi_form, cx)
+            PiSettings::COMMAND.get(controller.pi_form(), cx)
         }
     }
     fn pi_input(&self, cx: &App) -> &Entity<InputState> {
@@ -280,7 +280,7 @@ impl SettingsView {
                 if controller.is_onboarding(cx) {
                     self.form.read(cx).is_dirty()
                 } else {
-                    controller.pi_form.read(cx).is_dirty()
+                    controller.pi_form().read(cx).is_dirty()
                 }
             })
         {
@@ -300,7 +300,7 @@ impl SettingsView {
 }
 impl Render for SettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let store = self.controller.read(cx).store.clone();
+        let store = self.controller.read(cx).configuration();
         let onboarding = store.read(cx, |op| {
             op.data().is_some_and(|data| data.configured().is_none())
         });
@@ -323,7 +323,7 @@ impl SettingsView {
         options: &gpui_kit::component::setting::RenderOptions,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let store = self.controller.read(cx).store.clone();
+        let store = self.controller.read(cx).configuration();
         let (busy, problem, write_failed, can_write, backup) = store.read(cx, |op| {
             (
                 op.is_running(),

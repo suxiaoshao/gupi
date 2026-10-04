@@ -37,7 +37,6 @@ uuid = { version = "1.26.1", features = ["v4", "v5"] }
 # Localization and diagnostics.
 thiserror = "2.0.21"
 
-gupi-resources.workspace = true
 
 [dev-dependencies]
 gpui-kit = { workspace = true, features = ["test-support"] }

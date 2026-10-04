@@ -273,6 +273,7 @@ mod tests {
         use gupi_conversation::conversation::ConversationState;
         cx.update(|cx| {
             gpui_kit::init(cx);
+            crate::host::install_headless(cx);
             app_theme::init(cx);
             gupi_settings::theme::init(cx);
             gupi_settings::i18n::apply(Default::default(), cx);
@@ -290,11 +291,11 @@ mod tests {
                 activity: String::new(),
                 parent_session: None,
             };
-            state.sessions.insert(
+            state.sessions_for_test().insert(
                 "empty".into(),
                 gupi_conversation::conversation::Session::new(info, String::new()),
             );
-            state.selected = Some("empty".into());
+            *state.selected_for_test() = Some("empty".into());
         });
         let mut home = None;
         let (_, visual) = cx.add_window_view(|window, cx| {

@@ -11,6 +11,7 @@ use super::tool_details;
 use super::tool_details::Detail;
 use super::tool_details::Section;
 use super::*;
+use crate::tool_icon::ToolIcon;
 use gpui_kit::base::TextSelection;
 use gpui_kit::component::StyledExt;
 use gpui_kit::component::scroll::ScrollableElement;
@@ -166,20 +167,23 @@ impl HomeView {
 }
 
 fn find_tool(state: &ConversationState, target: &Target) -> Option<Tool> {
-    let session = state.sessions.get(&target.key)?;
+    let session = state.sessions().get(&target.key)?;
     // The RPC call ID survives live-message IDs being replaced by history entry IDs.
     for row in project(session, target.preview.as_deref()) {
         if let RowKind::Run {
             messages, active, ..
         } = row.kind
-            && let Some(tool) =
-                RunContent::project(&messages, if active { &session.tools } else { &[] }, active)
-                    .activities
-                    .into_iter()
-                    .find_map(|activity| match activity {
-                        Activity::Tool(tool) if tool.id == target.tool => Some(tool),
-                        _ => None,
-                    })
+            && let Some(tool) = RunContent::project(
+                &messages,
+                if active { session.tools() } else { &[] },
+                active,
+            )
+            .activities
+            .into_iter()
+            .find_map(|activity| match activity {
+                Activity::Tool(tool) if tool.id == target.tool => Some(tool),
+                _ => None,
+            })
         {
             return Some(tool);
         }
@@ -399,7 +403,7 @@ mod tests {
     use gupi_conversation::conversation::ConversationState;
     use gupi_conversation::conversation::Session;
     use gupi_conversation::conversation::ToolActivity;
-    use gupi_conversation::conversation::execution::ToolExecution;
+    use gupi_conversation::conversation::ToolExecution;
     use serde_json::json;
 
     #[gpui_kit::test]
@@ -452,7 +456,7 @@ mod tests {
             json!({"type":"message_end", "message":{"role":"user", "timestamp":1, "content":"test"}}),
             json!({"type":"message_end", "message":{"role":"assistant", "timestamp":2, "stopReason":"toolUse", "content":[{"type":"toolCall", "id":"call", "name":"bash", "arguments":{"command":"printf hello"}}]}}),
         ]);
-        session.tools.push(ToolActivity {
+        session.tools_for_test().push(ToolActivity {
             id: "call".into(),
             name: "bash".into(),
             args: json!({"command":"printf hello"}),
@@ -473,12 +477,15 @@ mod tests {
     ) {
         cx.update(|cx| {
             gpui_kit::init(cx);
+            crate::host::install_headless(cx);
             gupi_settings::i18n::apply(Default::default(), cx);
             gupi_pi_runtime::init(cx);
         });
         let state = cx.new(|cx| ConversationState::new("unused-pi".into(), cx));
         state.update(cx, |state, _| {
-            state.sessions.insert("source".into(), session("first"));
+            state
+                .sessions_for_test()
+                .insert("source".into(), session("first"));
         });
         let mut reader = None;
         let (_, visual) = cx.add_window_view(|window, cx| {
@@ -493,10 +500,10 @@ mod tests {
         state.update(visual, |state, cx| {
             let mut next = session("first\nsecond");
             // Reconciliation can replace live message IDs with persisted entry IDs.
-            for message in &mut next.live {
+            for message in next.live_for_test() {
                 message.id = format!("entry-{}", message.id);
             }
-            state.sessions.insert("source".into(), next);
+            state.sessions_for_test().insert("source".into(), next);
             cx.emit(ConversationEvent::Changed(Changes {
                 bodies: ["other".into()].into(),
                 ..Default::default()
@@ -515,7 +522,7 @@ mod tests {
             let reader = reader.read(cx);
             assert_eq!(reader.sections[1].copy_text(), "first\nsecond");
             assert_eq!(reader.text["output-0"].view, text);
-            assert!(state.read(cx).sessions["source"].instance.is_none());
+            assert!(!state.read(cx).sessions()["source"].has_instance());
         });
         visual.update(|window, cx| {
             window.draw(cx).clear(cx);

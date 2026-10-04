@@ -7,12 +7,12 @@ use gpui_form::Form;
 use gpui_kit::AppContext;
 use gpui_kit::TestAppContext;
 use gpui_kit::component::Root;
-use gpui_operation::{Complete, Load, Transition};
 
 #[gpui_kit::test]
 fn shared_settings_layout_renders_without_reentrant_entity_access(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_kit::init(cx);
+        crate::app::init_capability_hosts(cx);
         app_theme::init(cx);
         gupi_settings::theme::init(cx);
         gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
@@ -25,14 +25,18 @@ fn shared_settings_layout_renders_without_reentrant_entity_access(cx: &mut TestA
             })
         });
         let controller = cx.new(|cx| ConfigController::new(&form, cx));
-        controller.read(cx).pi_form.clone().update(cx, |form, cx| {
-            form.rebase(
-                super::PiSettings {
-                    command: Some("/custom/settings-pi".into()),
-                },
-                cx,
-            )
-        });
+        controller
+            .read(cx)
+            .pi_form()
+            .clone()
+            .update(cx, |form, cx| {
+                form.rebase(
+                    super::PiSettings {
+                        command: Some("/custom/settings-pi".into()),
+                    },
+                    cx,
+                )
+            });
         let draft = cx.new(|_| PiProbeController::new());
         let applied = cx.new(|_| PiProbeController::new());
         let view = cx.new(|cx| {
@@ -63,6 +67,7 @@ fn shared_settings_layout_renders_without_reentrant_entity_access(cx: &mut TestA
 fn theme_grid_contributes_height_and_wraps_in_settings(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_kit::init(cx);
+        crate::app::init_capability_hosts(cx);
         app_theme::init(cx);
         gupi_settings::theme::init(cx);
         gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
@@ -156,6 +161,7 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
 
     cx.update(|cx| {
         gpui_kit::init(cx);
+        crate::app::init_capability_hosts(cx);
         app_theme::init(cx);
         gupi_settings::theme::init(cx);
         gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
@@ -260,7 +266,6 @@ struct SettingsPageFixture {
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 #[gpui_kit::test]
 fn native_update_disables_settings_controls_until_closed(cx: &mut TestAppContext) {
-    use gpui_kit::Task;
     use gpui_kit::test::TestWindowExt;
     use gupi_settings::config::ConfigContents;
     use gupi_settings::config::ConfigData;
@@ -269,6 +274,7 @@ fn native_update_disables_settings_controls_until_closed(cx: &mut TestAppContext
 
     cx.update(|cx| {
         gpui_kit::init(cx);
+        crate::app::init_capability_hosts(cx);
         app_theme::init(cx);
         gupi_settings::theme::init(cx);
         gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
@@ -285,14 +291,15 @@ fn native_update_disables_settings_controls_until_closed(cx: &mut TestAppContext
         let controller = cx.new(|cx| {
             ConfigController::at_path(&form, Ok(directory.path().join("config.toml")), cx)
         });
-        let store = controller.read(cx).store.clone();
-        store.update(cx, |op| {
-            op.transition(Load(Task::ready(())));
-            op.transition(Complete(Ok(ConfigData {
-                path: directory.path().join("config.toml"),
-                contents: ConfigContents::Missing,
-                backup: None,
-            })));
+        controller.update(cx, |owner, cx| {
+            owner.settle_for_test(
+                ConfigData {
+                    path: directory.path().join("config.toml"),
+                    contents: ConfigContents::Missing,
+                    backup: None,
+                },
+                cx,
+            )
         });
         let draft = cx.new(|_| PiProbeController::new());
         let applied = cx.new(|_| {

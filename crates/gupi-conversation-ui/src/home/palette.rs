@@ -173,8 +173,8 @@ impl HomeView {
                             if !navigation {
                                 continue;
                             }
-                            if let Some(session) = this.state.read(cx).sessions.get(key) {
-                                let info = session.info.clone();
+                            if let Some(session) = this.state.read(cx).sessions().get(key) {
+                                let info = session.info().clone();
                                 let alias = info.key();
                                 if alias != *key {
                                     this.available.remove(&alias);
@@ -434,7 +434,7 @@ impl Render for Palette {
         if scanning {
             content = content.child(div().text_sm().child(t(cx, "command-scanning")));
         }
-        if let Some(error) = self.state.read(cx).catalog.error() {
+        if let Some(error) = self.state.read(cx).catalog().error() {
             content = content
                 .child(
                     div()
@@ -581,7 +581,7 @@ mod tests {
     use gpui_kit::px;
     use gpui_kit::size;
     use gupi_conversation::conversation::ConversationState;
-    use gupi_conversation::conversation::catalog::CatalogState;
+    use gupi_conversation::conversation::test_support::CatalogState;
     use gupi_conversation::session_catalog::Catalog;
     use gupi_conversation::session_catalog::SessionInfo;
     use gupi_settings::config::AppLanguage;
@@ -589,6 +589,7 @@ mod tests {
     fn setup(cx: &mut TestAppContext) -> (Entity<HomeView>, &mut VisualTestContext) {
         cx.update(|cx| {
             gpui_kit::init(cx);
+            crate::host::install_headless(cx);
             app_theme::init(cx);
             gupi_settings::theme::init(cx);
             gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
@@ -608,12 +609,12 @@ mod tests {
                 activity: String::new(),
                 parent_session: None,
             };
-            s.sessions.insert(
+            s.sessions_for_test().insert(
                 "empty".into(),
                 gupi_conversation::conversation::Session::new(info, String::new()),
             );
-            s.selected = Some("empty".into());
-            s.catalog = CatalogState::Ready(Catalog {
+            *s.selected_for_test() = Some("empty".into());
+            *s.catalog_for_test() = CatalogState::Ready(Catalog {
                 sessions: vec![SessionInfo {
                     path: "/tmp/search-fixture.jsonl".into(),
                     id: "search-fixture".into(),

@@ -10,7 +10,7 @@ use gpui_kit::component::input::InputToken;
 use gpui_kit::component::input::Textarea;
 use gpui_kit::component::menu::DropdownMenu;
 use gpui_kit::component::menu::PopupMenuItem;
-use gupi_conversation::conversation::content::BodyState;
+use gupi_conversation::conversation::BodyState;
 use pi_rpc::protocol::UiMethod;
 use pi_rpc::protocol::UiReply;
 mod metrics;
@@ -28,9 +28,9 @@ impl HomeView {
         let valid = self
             .state
             .read(cx)
-            .sessions
+            .sessions()
             .get(key)
-            .and_then(|s| s.pending_ui.front())
+            .and_then(|s| s.pending_ui().front())
             .is_some_and(|p| {
                 &p.request.id == id
                     && matches!(
@@ -45,7 +45,7 @@ impl HomeView {
                         self.state
                             .read(cx)
                             .current()
-                            .and_then(|s| s.pending_ui.front())
+                            .and_then(|s| s.pending_ui().front())
                             .map(|p| &p.request.method),
                         Some(UiMethod::Input { .. })
                     ) {
@@ -90,13 +90,13 @@ impl HomeView {
             .and_then(|v| v.preview.as_deref())
             .is_some_and(|id| !session.history().on_current_path(id));
         let mut shell = v_flex().w_full().max_w(px(820.)).gap_2();
-        if !session.notices.is_empty() {
+        if !session.notices().is_empty() {
             use gpui_kit::component::collapsible::Collapsible;
-            use gupi_settings::notifications::Severity;
+            use gupi_conversation::notifications::Severity;
             let open = self.views.get(&key).is_some_and(|v| v.notices_open);
             let toggle = key.clone();
             let clear = key.clone();
-            let notices = v_flex().gap_2().children(session.notices.iter().map(|n| {
+            let notices = v_flex().gap_2().children(session.notices().iter().map(|n| {
                 div()
                     .text_sm()
                     .whitespace_normal()
@@ -121,7 +121,7 @@ impl HomeView {
                                     .label(format!(
                                         "{} ({})",
                                         t(cx, "notification-session-notices"),
-                                        session.notices.len()
+                                        session.notices().len()
                                     ))
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         if let Some(view) = this.views.get_mut(&toggle) {
@@ -149,7 +149,12 @@ impl HomeView {
             BodyState::New
             | BodyState::Ready
             | BodyState::Refreshing(_)
-            | BodyState::RefreshFailed(_) => session.runtime_error(),
+            | BodyState::RefreshFailed(_) => match &session.error() {
+                Some(gupi_conversation::conversation::SessionError::ReconnectUnconfirmed) => {
+                    Some(t(cx, "conversation-reconnect-unconfirmed"))
+                }
+                _ => session.runtime_error().map(str::to_owned),
+            },
             BodyState::Loading(_) | BodyState::Failed(_) => None,
         };
         if let Some(error) = runtime_error {
@@ -165,7 +170,7 @@ impl HomeView {
                     )
                     .child(
                         Button::new("retry-session")
-                            .disabled(self.state.read(cx).temporary)
+                            .disabled(self.state.read(cx).is_temporary())
                             .small()
                             .label(t(cx, "conversation-reconnect"))
                             .on_click(cx.listener(|this, _, _, cx| {
@@ -179,7 +184,7 @@ impl HomeView {
                     ),
             );
         }
-        if let Some(error) = &self.state.read(cx).storage_error {
+        if let Some(error) = &self.state.read(cx).storage_error() {
             shell = shell.child(
                 div()
                     .text_sm()
@@ -187,10 +192,10 @@ impl HomeView {
                     .child(format!("{}: {error}", t(cx, "conversation-save-error"))),
             );
         }
-        if session.retry.is_some() || session.summary_retry.is_some() {
+        if session.retry().is_some() || session.summary_retry().is_some() {
             shell = shell.child(self.progress.clone());
         }
-        if session.compacting || session.command.compacting() {
+        if session.compacting() || session.is_compacting() {
             shell = shell.child(
                 h_flex()
                     .gap_2()
@@ -200,7 +205,7 @@ impl HomeView {
                     .child(t(cx, "conversation-compacting")),
             );
         }
-        if session.interrupted {
+        if session.interrupted() {
             shell = shell.child(
                 div()
                     .text_xs()
@@ -208,7 +213,7 @@ impl HomeView {
                     .child(t(cx, "conversation-interrupted")),
             );
         }
-        if let Some(title) = &session.extension_title {
+        if let Some(title) = &session.extension_title() {
             shell = shell.child(
                 div()
                     .text_xs()
@@ -216,11 +221,11 @@ impl HomeView {
                     .child(title.clone()),
             );
         }
-        for widget in session.widgets.values().filter(|w| !w.below) {
+        for widget in session.widgets().values().filter(|w| !w.below) {
             shell = shell.child(div().text_sm().child(widget.lines.join("\n")));
         }
         let mut editor = v_flex().w_full().min_w_0();
-        if let Some(pending) = session.pending_ui.front() {
+        if let Some(pending) = session.pending_ui().front() {
             editor = editor
                 .gap_4()
                 .key_context("GupiExtension")
@@ -239,7 +244,7 @@ impl HomeView {
                             .state
                             .read(cx)
                             .current()
-                            .and_then(|s| s.pending_ui.front())
+                            .and_then(|s| s.pending_ui().front())
                             .and_then(|p| p.selection.clone())
                         {
                             selection.update(cx, |state, cx| {
@@ -251,7 +256,7 @@ impl HomeView {
                             .state
                             .read(cx)
                             .current()
-                            .and_then(|s| s.pending_ui.front())
+                            .and_then(|s| s.pending_ui().front())
                             .and_then(|p| match &p.request.method {
                                 UiMethod::Confirm { .. } => {
                                     Some(UiReply::Confirmed { confirmed: true })
@@ -437,7 +442,7 @@ impl HomeView {
                             .state
                             .read(cx)
                             .current()
-                            .and_then(|s| s.commands.data())
+                            .and_then(|s| s.commands().data())
                             .and_then(|commands| {
                                 gupi_resources::composer_resources::command(
                                     event.token().text(),
@@ -487,7 +492,7 @@ impl HomeView {
                     .icon(IconName::Plus)
                     .tooltip(t(cx, "attachment-add"))
                     .accessibility_label(t(cx, "attachment-add"))
-                    .disabled(!session.can_edit_draft() || session.attachments_read.is_some())
+                    .disabled(!session.can_edit_draft() || session.is_reading_attachments())
                     .dropdown_menu(move |menu, _, cx| {
                         let search = file_owner.clone();
                         let choose = file_owner.clone();
@@ -510,9 +515,9 @@ impl HomeView {
                         )
                     }),
             );
-            if session.stats.data().is_some()
-                || session.stats.running()
-                || session.stats.error().is_some()
+            if session.stats().data().is_some()
+                || session.stats().running()
+                || session.stats().error().is_some()
             {
                 actions = actions.child(metrics::context(session, cx));
             }
@@ -528,7 +533,7 @@ impl HomeView {
                             Some("Gupi"),
                         )
                         .accessibility_label(t(cx, "conversation-stop"))
-                        .disabled(session.stopping)
+                        .disabled(session.stopping())
                         .on_click(cx.listener(|this, _, _, cx| {
                             if let Some(key) = this.shown_key.clone() {
                                 this.state.update(cx, |s, cx| s.abort(&key, cx));
@@ -609,10 +614,10 @@ impl HomeView {
             if let Some(attachments) = self.render_attachments(cx) {
                 composer = composer.attachments(attachments);
             }
-            if session.stats.data().is_some() {
+            if session.stats().data().is_some() {
                 composer = composer.leading(div().flex_none().child(metrics::tokens(session, cx)));
             }
-            if session.stats.running() || session.stats.error().is_some() {
+            if session.stats().running() || session.stats().error().is_some() {
                 composer = composer.leading(metrics::status(
                     session,
                     self.state.clone(),
@@ -644,10 +649,10 @@ impl HomeView {
                         .readonly(preview || !session.can_edit_draft()),
                 );
         }
-        if session.pending_count > 0 {
+        if session.pending_count() > 0 {
             shell = shell.child(self.render_queue(&key, preview, cx));
         }
-        shell = if session.pending_ui.is_empty() {
+        shell = if session.pending_ui().is_empty() {
             shell.child(editor)
         } else {
             shell.child(
@@ -658,10 +663,10 @@ impl HomeView {
                     .child(editor),
             )
         };
-        for widget in session.widgets.values().filter(|w| w.below) {
+        for widget in session.widgets().values().filter(|w| w.below) {
             shell = shell.child(div().text_sm().child(widget.lines.join("\n")));
         }
-        if !session.statuses.is_empty() {
+        if !session.statuses().is_empty() {
             shell = shell.child(
                 h_flex()
                     .w_full()
@@ -671,7 +676,7 @@ impl HomeView {
                     .gap_2()
                     .px_1()
                     .child(h_flex().min_w_0().flex_1().flex_wrap().gap_3().children(
-                        session.statuses.values().map(|status| {
+                        session.statuses().values().map(|status| {
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)

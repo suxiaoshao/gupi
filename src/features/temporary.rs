@@ -82,7 +82,7 @@ impl TemporaryView {
                 cx,
             )
         });
-        let composer = home.read(cx).input.clone();
+        let composer = home.read(cx).input().clone();
         let subscriptions = vec![
             cx.observe(&composer, |_, _, cx| cx.notify()),
             cx.subscribe_in(&state, window, |this, _, event, window, cx| {
@@ -91,7 +91,8 @@ impl TemporaryView {
                         this.refresh_source(None, window, cx);
                     } else {
                         for (source, navigation) in &changes.sessions {
-                            if *navigation || this.state.read(cx).selected.as_ref() == Some(source)
+                            if *navigation
+                                || this.state.read(cx).selected().as_ref() == Some(source)
                             {
                                 this.refresh_source(Some(source), window, cx);
                             }
@@ -155,20 +156,20 @@ impl TemporaryView {
         let query = self.search.read(cx).value().trim().to_lowercase();
         let state = self.state.read(cx);
         if let Some((key, session)) = state
-            .selected
+            .selected()
             .as_ref()
-            .and_then(|key| state.sessions.get(key).map(|s| (key, s)))
+            .and_then(|key| state.sessions().get(key).map(|s| (key, s)))
         {
-            if session.busy() || session.interrupted || !session.pending_ui.is_empty() {
+            if session.busy() || session.interrupted() || !session.pending_ui().is_empty() {
                 self.answer_available = None;
             } else if self
                 .answer_available
                 .as_ref()
-                .is_none_or(|(k, revision, _)| k != key || *revision != session.content_revision)
+                .is_none_or(|(k, revision, _)| k != key || *revision != session.content_revision())
             {
                 self.answer_available = Some((
                     key.clone(),
-                    session.content_revision,
+                    session.content_revision(),
                     session.completed_answer().is_some(),
                 ));
             }
@@ -181,11 +182,11 @@ impl TemporaryView {
                 return None;
             }
             let activity = state
-                .sessions
+                .sessions()
                 .get(&key)
                 .map(|s| s.activity())
                 .unwrap_or(Activity::Idle);
-            let unread = state.sessions.get(&key).is_some_and(|s| s.unread);
+            let unread = state.sessions().get(&key).is_some_and(|s| s.unread());
             Some(Row {
                 unread,
                 key,
@@ -193,12 +194,12 @@ impl TemporaryView {
                 activity,
             })
         };
-        let selected_key = state.selected.clone();
+        let selected_key = state.selected().clone();
         let changed = if let Some(source) = source {
             let row = state
-                .sessions
+                .sessions()
                 .get(source)
-                .and_then(|s| make_row(source.to_owned(), s.info.clone()));
+                .and_then(|s| make_row(source.to_owned(), s.info().clone()));
             let rows = &self.list.read(cx).delegate().rows;
             let index = rows.iter().position(|r| r.key == source);
             if index.and_then(|i| rows.get(i)) == row.as_ref() {
@@ -280,7 +281,7 @@ impl TemporaryView {
                 self.close_actions(window, cx);
             } else {
                 let owner = cx.weak_entity();
-                let target = self.state.read(cx).selected.clone();
+                let target = self.state.read(cx).selected().clone();
                 self.panel =
                     Some(cx.new(|cx| actions_panel::ActionsPanel::new(owner, target, window, cx)));
             }
@@ -341,7 +342,7 @@ impl TemporaryView {
                 if let Some(path) = self
                     .state
                     .read(cx)
-                    .selected
+                    .selected()
                     .as_ref()
                     .and_then(|key| self.state.read(cx).temporary_workspace(key))
                 {
@@ -365,7 +366,7 @@ impl TemporaryView {
     }
     fn render_primary(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         let home = self.home.read(cx);
-        let sending = home.input.focus_handle(cx).is_focused(window)
+        let sending = home.input().focus_handle(cx).is_focused(window)
             && self
                 .state
                 .read(cx)
@@ -427,7 +428,7 @@ impl TemporaryView {
                 let _ = owner.update(cx, |this, cx| {
                     if *open && this.panel.is_none() {
                         let owner = cx.weak_entity();
-                        let target = this.state.read(cx).selected.clone();
+                        let target = this.state.read(cx).selected().clone();
                         this.panel =
                             Some(cx.new(|cx| {
                                 actions_panel::ActionsPanel::new(owner, target, window, cx)
@@ -474,7 +475,13 @@ impl TemporaryView {
         if self.search.focus_handle(cx).is_focused(window) {
             self.home
                 .update(cx, |home, cx| home.focus_composer(window, cx));
-        } else if self.home.read(cx).input.focus_handle(cx).is_focused(window) {
+        } else if self
+            .home
+            .read(cx)
+            .input()
+            .focus_handle(cx)
+            .is_focused(window)
+        {
             self.focus_search(window, cx);
         } else {
             cx.propagate();

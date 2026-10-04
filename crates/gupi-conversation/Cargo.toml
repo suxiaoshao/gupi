@@ -40,11 +40,9 @@ trash = "5.2.9"
 uuid = { version = "1.26.1", features = ["v4", "v5"] }
 
 # Localization and diagnostics.
-fluent-bundle = "0.16.0"
 tracing = "0.1.44"
 
 gupi-resources.workspace = true
-gupi-settings.workspace = true
 gupi-pi-runtime.workspace = true
 
 [dev-dependencies]

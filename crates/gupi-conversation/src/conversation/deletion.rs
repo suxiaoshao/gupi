@@ -1,6 +1,4 @@
 use super::*;
-use fluent_bundle::FluentArgs;
-use gupi_settings::i18n::t_with_args;
 
 impl ConversationState {
     fn deletion_target(&self, key: &str) -> Option<SessionInfo> {
@@ -118,10 +116,8 @@ impl ConversationState {
                         notify_progress(cx);
                     }
                     Err(error) => {
-                        let mut args = FluentArgs::new();
-                        args.set("error", error);
                         cx.emit(ConversationEvent::Notify {
-                            message: t_with_args(cx, "conversation-delete-failed", &args),
+                            message: crate::feedback::Feedback::DeleteFailed(error),
                             error: true,
                         });
                         notify_session(&task_key, cx);

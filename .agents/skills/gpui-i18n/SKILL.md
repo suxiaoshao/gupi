@@ -7,10 +7,10 @@ description: Implement or review user-visible text, Fluent locales, language set
 
 ## Runtime text
 
-- Gupi owns `foundation::i18n`, Fluent bundles and an `I18n` global. UI uses `cx.global::<I18n>().t(...)` or `t_with_args(...)`; language settings rebuild that global where supported.
+- Gupi owns `gupi_settings::i18n`, Fluent bundles and an `I18n` global. UI uses `gupi_settings::i18n::t(cx, key)` or `t_with_args(cx, key, args)`; applying a changed language rebuilds that global.
 - Runtime locale files are `locales/{de,en-US,es,fr,ja,ko,pt-BR,zh-CN,zh-TW}/main.ftl`. Keep changed keys and interpolation variables aligned across all nine languages.
 - Use semantic keys and the app's naming convention. Use `FluentArgs` for interpolation; avoid composing sentences from translated fragments with `format!`.
-- User-facing Rust literals are reserved for intentionally unlocalized text; debug/test strings are separate. The current missing-key fallback returns the key itself and is not acceptable shipped copy.
+- User-facing Rust literals are reserved for intentionally unlocalized text; debug/test strings are separate. Translation falls back from the selected language to English, then to the key itself. A raw key is not acceptable shipped copy.
 
 ## macOS bundle text
 

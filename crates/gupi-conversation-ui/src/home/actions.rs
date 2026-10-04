@@ -18,7 +18,7 @@ impl HomeView {
         }
         let state = self.state.read(cx);
         let s = state.current();
-        if state.temporary
+        if state.is_temporary()
             && matches!(
                 kind,
                 Kind::QuickOpen
@@ -49,42 +49,44 @@ impl HomeView {
             Kind::Scan => !state.draining() && !state.scanning(),
             Kind::FocusInput | Kind::History | Kind::OpenHistory => s.is_some(),
             Kind::Export => state
-                .selected
+                .selected()
                 .as_ref()
                 .is_some_and(|key| state.can_export(key, cx)),
             Kind::Clone => state
-                .selected
+                .selected()
                 .as_ref()
                 .is_some_and(|key| state.can_clone(key, cx)),
             Kind::CopyLastAnswer => s.and_then(|s| s.last_assistant_text()).is_some(),
             Kind::SessionInfo | Kind::Find => s.is_some(),
             Kind::Compact => state
-                .selected
+                .selected()
                 .as_ref()
                 .is_some_and(|key| state.can_compact(key, cx)),
             Kind::Reconnect => state
-                .selected
+                .selected()
                 .as_ref()
                 .is_some_and(|key| state.can_reconnect(key, cx)),
             Kind::Rename => {
                 state
-                    .selected
+                    .selected()
                     .as_ref()
                     .is_some_and(|key| state.can_rename(key, cx))
-                    && s.is_some_and(|s| !s.info.path.as_os_str().is_empty())
+                    && s.is_some_and(|s| !s.info().path.as_os_str().is_empty())
             }
             Kind::Delete => state
-                .selected
+                .selected()
                 .as_ref()
                 .is_some_and(|key| state.can_delete(key)),
-            Kind::Reveal | Kind::CopyPath => s.is_some_and(|s| !s.info.path.as_os_str().is_empty()),
+            Kind::Reveal | Kind::CopyPath => {
+                s.is_some_and(|s| !s.info().path.as_os_str().is_empty())
+            }
             Kind::Stop => {
-                state.temporary && s.is_none_or(|s| !s.busy())
+                state.is_temporary() && s.is_none_or(|s| !s.busy())
                     || s.is_some_and(|s| {
-                        s.busy() && !s.stopping && (!s.command.running() || s.command.compacting())
+                        s.busy() && !s.stopping() && (!s.is_command_running() || s.is_compacting())
                     })
             }
-            Kind::Close => s.is_some_and(|s| s.instance.is_some() && !s.settings_busy()),
+            Kind::Close => s.is_some_and(|s| s.has_instance() && !s.settings_busy()),
             Kind::Model => s.is_some_and(|s| !s.settings_busy()),
         }
     }
@@ -109,7 +111,7 @@ impl HomeView {
             self.open_palette(action.0 == Kind::QuickOpen, window, cx);
             return;
         }
-        if self.state.read(cx).temporary
+        if self.state.read(cx).is_temporary()
             && action.0 == Kind::Stop
             && !window.has_active_dialog(cx)
             && !self.state.read(cx).current().is_some_and(|s| s.busy())
@@ -120,7 +122,7 @@ impl HomeView {
         if window.has_active_dialog(cx) || !self.action_enabled(action.0, cx) {
             return;
         }
-        let key = self.state.read(cx).selected.clone();
+        let key = self.state.read(cx).selected().clone();
         match action.0 {
             Kind::Find => self.open_find(window, cx),
             Kind::New => self.new_conversation(window, cx),
@@ -170,10 +172,10 @@ impl HomeView {
             Kind::Reveal | Kind::CopyPath => {
                 if let Some(s) = self.state.read(cx).current() {
                     if action.0 == Kind::Reveal {
-                        cx.reveal_path(&s.info.path);
+                        cx.reveal_path(&s.info().path);
                     } else {
                         cx.write_to_clipboard(ClipboardItem::new_string(
-                            s.info.path.to_string_lossy().into_owned(),
+                            s.info().path.to_string_lossy().into_owned(),
                         ));
                     }
                 }
@@ -198,11 +200,11 @@ impl HomeView {
     pub fn focus_composer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Selection notifications are deferred. Resolve the selected page before
         // an explicit focus request so it cannot target the previous editor.
-        if self.shown_key != self.state.read(cx).selected {
+        if &self.shown_key != self.state.read(cx).selected() {
             self.sync(false, window, cx);
         }
         if let Some(s) = self.state.read(cx).current() {
-            if let Some(pending) = s.pending_ui.front() {
+            if let Some(pending) = s.pending_ui().front() {
                 match &pending.request.method {
                     pi_rpc::protocol::UiMethod::Input { .. } => self
                         .extension_line

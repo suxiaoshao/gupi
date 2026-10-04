@@ -69,9 +69,9 @@ struct SessionView {
     markdown: messages::markdown::Registry,
 }
 pub struct HomeView {
-    pub state: Entity<ConversationState>,
+    pub(crate) state: Entity<ConversationState>,
     // Handle to the selected session editor; SessionView owns its lifetime and subscriptions.
-    pub input: Entity<TextareaState>,
+    pub(crate) input: Entity<TextareaState>,
     extension_input: Entity<TextareaState>,
     extension_line: Entity<InputState>,
     input_questionnaire: Option<Entity<gpui_kit::component::questionnaire::QuestionnaireState>>,
@@ -98,23 +98,41 @@ pub struct HomeView {
     find_subscription: Option<Subscription>,
     image_preview: Entity<image_preview::PreviewHost>,
     slash: slash::Completion,
-    pub command_panel: Option<Entity<super::command_palette::CommandPalette>>,
+    command_panel: Option<Entity<super::command_palette::CommandPalette>>,
     focus_handle: FocusHandle,
     extension_focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
 impl HomeView {
+    pub fn state(&self) -> &Entity<ConversationState> {
+        &self.state
+    }
+    pub fn input(&self) -> &Entity<TextareaState> {
+        &self.input
+    }
+    fn sync_commands(&self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.notification_visible {
+            return;
+        }
+        let commands = gupi_settings::commands::CONVERSATION_COMMANDS.map(|kind| {
+            !window.has_active_dialog(cx)
+                && !self.has_image_preview(cx)
+                && self.action_enabled(kind, cx)
+        });
+        gupi_settings::commands::conversation_commands(commands, window, cx);
+    }
+
     fn sync_messages(&mut self, key: &str, force: bool, cx: &mut Context<Self>) {
         #[cfg(feature = "performance")]
         let _span = tracing::debug_span!(target: "gupi::performance", "home.sync_messages", force)
             .entered();
-        let Some(session) = self.state.read(cx).sessions.get(key) else {
+        let Some(session) = self.state.read(cx).sessions().get(key) else {
             return;
         };
         let Some(view) = self.views.get_mut(key) else {
             return;
         };
-        if force || view.content_revision != session.content_revision {
+        if force || view.content_revision != session.content_revision() {
             if !force
                 && view.preview.is_none()
                 && let Some(message) = session.message_update_since(view.content_revision)
@@ -122,7 +140,7 @@ impl HomeView {
                 && let Some(row) = Rc::make_mut(&mut view.rows).get_mut(index)
                 && Rc::make_mut(row).update_message(message)
             {
-                view.content_revision = session.content_revision;
+                view.content_revision = session.content_revision();
                 view.scroller.update(cx, |state, cx| {
                     #[cfg(feature = "performance")]
                     let _span = tracing::debug_span!(target: "gupi::performance", "messages.diff_rows", changed_rows = 1).entered();
@@ -159,7 +177,7 @@ impl HomeView {
                 .enumerate()
                 .map(|(i, row)| (row.id.clone(), i))
                 .collect();
-            view.content_revision = session.content_revision;
+            view.content_revision = session.content_revision();
             view.scroller.update(cx, |state, cx| {
                 #[cfg(feature = "performance")]
                 let _span = tracing::debug_span!(target: "gupi::performance", "messages.diff_rows", old_rows = old.len(), new_rows = new.len()).entered();
@@ -200,11 +218,11 @@ impl HomeView {
         if window.has_active_dialog(cx) || self.has_image_preview(cx) {
             return;
         }
-        let Some(key) = self.state.read(cx).selected.clone() else {
+        let Some(key) = self.state.read(cx).selected().clone() else {
             return;
         };
         let state = self.state.read(cx);
-        if state.temporary && state.current().is_some_and(|s| s.composer_empty()) {
+        if state.is_temporary() && state.current().is_some_and(|s| s.composer_empty()) {
             if !secondary
                 && gupi_settings::keybindings::uses_enter(actions::Kind::PasteAnswer, cx)
                 && let Some(text) = state.current().and_then(|s| s.completed_answer())
@@ -281,6 +299,7 @@ impl HomeView {
         let subscriptions = vec![
             cx.observe_window_activation(window, |this, window, cx| {
                 crate::host::present(&this.state, window, this.notification_visible, cx);
+                this.sync_commands(window, cx);
             }),
             cx.observe(&history_list, |_, _, cx| cx.notify()),
             cx.subscribe_in(
@@ -300,16 +319,17 @@ impl HomeView {
                         if changes.selection {
                             this.sync_navigation_selection(cx);
                         }
-                        if changes.catalog || changes.affects(this.state.read(cx).selected.as_ref())
+                        if changes.catalog
+                            || changes.affects(this.state.read(cx).selected().as_ref())
                         {
                             this.sync(false, window, cx);
-                        } else if let Some(key) = this.state.read(cx).selected.clone()
+                        } else if let Some(key) = this.state.read(cx).selected().clone()
                             && changes.bodies.contains(&key)
                         {
                             this.sync_messages(&key, false, cx);
                         }
                         for key in changes.sessions.keys() {
-                            if !this.state.read(cx).sessions.contains_key(key) {
+                            if !this.state.read(cx).sessions().contains_key(key) {
                                 this.views.remove(key);
                             }
                         }
@@ -327,14 +347,7 @@ impl HomeView {
                 if matches!(event, InputEvent::Change) {
                     let text = input.read(cx).value().to_string();
                     this.state.update(cx, |state, _| {
-                        if let Some(p) = state
-                            .sessions
-                            .get_mut(&key)
-                            .and_then(|s| s.pending_ui.front_mut())
-                            .filter(|p| p.request.id == id)
-                        {
-                            p.text = text;
-                        }
+                        state.edit_extension_text(&key, &id, text);
                     });
                 }
                 if matches!(event, InputEvent::PressEnter { shift: false, .. }) {
@@ -348,14 +361,7 @@ impl HomeView {
                 if matches!(event, InputEvent::Change) {
                     let text = input.read(cx).value().to_string();
                     this.state.update(cx, |state, _| {
-                        if let Some(p) = state
-                            .sessions
-                            .get_mut(&key)
-                            .and_then(|s| s.pending_ui.front_mut())
-                            .filter(|p| p.request.id == id)
-                        {
-                            p.text = text;
-                        }
+                        state.edit_extension_text(&key, &id, text);
                     });
                 }
                 if matches!(event, InputEvent::PressEnter { shift: false, .. }) {
@@ -370,7 +376,7 @@ impl HomeView {
                 }
             }),
         ];
-        if state.read(cx).selected.is_none() {
+        if state.read(cx).selected().is_none() {
             state.update(cx, |state, cx| state.load(cx));
         }
         let mut view = Self {
@@ -410,6 +416,44 @@ impl HomeView {
         view.sync_navigation(None, cx);
         view.sync(false, window, cx);
         view.focus_composer(window, cx);
+        view._subscriptions
+            .push(cx.observe_in(&cx.entity(), window, |this, _, window, cx| {
+                this.sync_commands(window, cx);
+            }));
+        view._subscriptions.push(cx.observe_in(
+            &view.image_preview,
+            window,
+            |this, _, window, cx| {
+                this.sync_commands(window, cx);
+            },
+        ));
+        view._subscriptions.push(
+            cx.on_focus_in(&view.focus_handle, window, |this, window, cx| {
+                this.sync_commands(window, cx);
+            }),
+        );
+        view._subscriptions.push(cx.on_focus_out(
+            &view.focus_handle,
+            window,
+            |_, _, window, cx| {
+                // Dialog focus restoration is applied at the end of the effect cycle.
+                cx.defer_in(window, |this, window, cx| this.sync_commands(window, cx));
+            },
+        ));
+        view._subscriptions
+            .push(cx.on_focus_lost(window, |_, window, cx| {
+                cx.defer_in(window, |this, window, cx| this.sync_commands(window, cx));
+            }));
+        cx.defer_in(window, |this, window, cx| {
+            if let Some(root) = window.root::<gpui_kit::component::Root>().flatten() {
+                // Root forwards its presentation plugins' notifications, including dialogs.
+                this._subscriptions
+                    .push(cx.observe_in(&root, window, |this, _, window, cx| {
+                        this.sync_commands(window, cx);
+                    }));
+            }
+            this.sync_commands(window, cx);
+        });
         view
     }
     pub fn set_notification_visible(
@@ -421,10 +465,11 @@ impl HomeView {
         if self.notification_visible != visible {
             self.notification_visible = visible;
             crate::host::present(&self.state, window, visible, cx);
+            cx.notify();
         }
     }
     fn sync(&mut self, force: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let key = self.state.read(cx).selected.clone();
+        let key = self.state.read(cx).selected().clone();
         let changed = self.shown_key != key;
         if changed {
             self.close_find(false, window, cx);
@@ -490,7 +535,7 @@ impl HomeView {
                     move |cx| {
                         picker_state
                             .read(cx)
-                            .sessions
+                            .sessions()
                             .get(&source_key)
                             .map(pickers::Projection::from_session)
                             .unwrap_or_default()
@@ -511,13 +556,13 @@ impl HomeView {
                     let event = event.clone();
                     window.defer(cx, move |_, cx| {
                         owner.update(cx, |state, cx| {
-                            if state.selected.as_ref() != Some(&key) {
+                            if state.selected().as_ref() != Some(&key) {
                                 return;
                             }
                             match event {
                                 pickers::PickerEvent::Model(selected) => {
                                     let model = state
-                                        .sessions
+                                        .sessions()
                                         .get(&key)
                                         .and_then(|s| {
                                             s.model_options().iter().find(|m| {
@@ -544,7 +589,7 @@ impl HomeView {
                     });
                 },
             ));
-            let draft = self.state.read(cx).sessions[&key].draft.clone();
+            let draft = self.state.read(cx).sessions()[&key].draft().clone();
             let input = cx.new(|cx| {
                 let mut input = TextareaState::new(window, cx)
                     .auto_grow(2, 8)
@@ -560,11 +605,12 @@ impl HomeView {
                     window,
                     move |this, input, event, window, cx| match event {
                         InputEvent::Change => {
-                            let Some(session) = this.state.read(cx).sessions.get(&input_key) else {
+                            let Some(session) = this.state.read(cx).sessions().get(&input_key)
+                            else {
                                 return;
                             };
                             if session.submitting() {
-                                let draft = session.draft.clone();
+                                let draft = session.draft().clone();
                                 input.update(cx, |input, cx| input.set_value(draft, window, cx));
                                 return;
                             }
@@ -575,7 +621,7 @@ impl HomeView {
                             });
                             if let Some(view) = this.views.get_mut(&input_key) {
                                 view.input_draft =
-                                    this.state.read(cx).sessions[&input_key].draft.clone();
+                                    this.state.read(cx).sessions()[&input_key].draft().clone();
                             }
                             if this.shown_key.as_ref() == Some(&input_key) {
                                 this.open_slash_if_needed(&value, window, cx);
@@ -627,22 +673,22 @@ impl HomeView {
         let view = self.views.get_mut(&key).unwrap();
         view.model_picker
             .update(cx, |picker, cx| picker.sync_controls(window, cx));
-        let Some(session) = self.state.read(cx).sessions.get(&key) else {
+        let Some(session) = self.state.read(cx).sessions().get(&key) else {
             return;
         };
-        let retry = session.retry.clone();
-        let summary_retry = session.summary_retry.clone();
+        let retry = session.retry().clone();
+        let summary_retry = session.summary_retry().clone();
         let started_at = session.run_started_at();
         self.progress
             .update(cx, |progress, cx| progress.sync(retry, summary_retry, cx));
         self.views[&key]
             .clock
             .update(cx, |clock, cx| clock.sync(started_at, cx));
-        let Some(session) = self.state.read(cx).sessions.get(&key) else {
+        let Some(session) = self.state.read(cx).sessions().get(&key) else {
             return;
         };
-        let draft = session.draft.clone();
-        let request = session.pending_ui.front().map(|p| {
+        let draft = session.draft().clone();
+        let request = session.pending_ui().front().map(|p| {
             (
                 p.request.id.clone(),
                 p.text.clone(),
@@ -652,7 +698,7 @@ impl HomeView {
         });
         self.sync_messages(&key, changed || force, cx);
         let view = self.views.get_mut(&key).unwrap();
-        let Some(session) = self.state.read(cx).sessions.get(&key) else {
+        let Some(session) = self.state.read(cx).sessions().get(&key) else {
             return;
         };
         let history_key = (
@@ -666,7 +712,7 @@ impl HomeView {
             .iter()
             .map(|m| m.entry_id.clone())
             .collect();
-        let can_fork = !session.settings_busy() && !session.model_change.unconfirmed();
+        let can_fork = !session.settings_busy() && !session.model_change().unconfirmed();
         let history_changed =
             changed || force || view.list_projection.as_ref() != Some(&history_key);
         let controls_changed = self.history_list.read(cx).delegate().forkable != forkable
@@ -939,7 +985,7 @@ impl HomeView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.state.read(cx).temporary {
+        if self.state.read(cx).is_temporary() {
             return;
         }
         let mut layout = layout::capture(window, cx.global::<layout::LayoutState>());
@@ -981,16 +1027,10 @@ impl Render for HomeView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         #[cfg(feature = "performance")]
         let _span = tracing::debug_span!(target: "gupi::performance", "home.render", view = ?cx.entity_id()).entered();
-        let commands = gupi_settings::commands::CONVERSATION_COMMANDS.map(|kind| {
-            !window.has_active_dialog(cx)
-                && !self.has_image_preview(cx)
-                && self.action_enabled(kind, cx)
-        });
-        gupi_settings::commands::conversation_commands(commands, window, cx);
-        if self.state.read(cx).temporary {
+        if self.state.read(cx).is_temporary() {
             let empty =
                 self.state.read(cx).current().is_some_and(|s| {
-                    s.empty_conversation() && !s.busy() && s.pending_ui.is_empty()
+                    s.empty_conversation() && !s.busy() && s.pending_ui().is_empty()
                 });
             let content = if empty {
                 v_flex()

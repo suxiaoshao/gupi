@@ -30,19 +30,19 @@
 
 ## 实现分工
 
-| 位置（相对 `src`） | 职责 |
+| 位置（相对仓库根目录） | 职责 |
 | --- | --- |
-| `app/temporary.rs` | 应用 Global 持有唯一临时窗口、ConversationState、焦点恢复目标、600 秒窗口回收与清理任务 |
-| `state/conversation.rs`、`conversation/temporary.rs` | 普通/临时模式、每会话实例和独立 cwd；临时模式跳过扫描与草稿持久化，以 `--no-session` 启动 |
-| `features/temporary.rs` | 顶部搜索、可拖动双栏、临时会话列表及上下文菜单；搜索/输入焦点切换 |
-| `features/temporary/startup.rs` | 临时窗口的配置加载/恢复页面；配置可用后进入会话视图，不依赖版本检测 |
-| `features/home.rs`、`home/*` | 复用消息、输入、模型选择与扩展交互，临时空会话居中输入；不展示主标题栏、侧栏和第三列历史 |
-| `state/shortcuts.rs` | 配置、系统键规范化、重复校验、模板参数保真 |
-| `app/shortcuts.rs` | 主线程系统注册、事件桥接、按任务 ID 去重、异步取词与目标会话准备 |
-| `features/settings/global_keys.rs`、`global_keys/editor.rs` | 全局键位逐项行内编辑，模板任务属性弹窗，独立模型查询实例 |
-| `state/config.rs` | 新 `[shortcuts]` 与 `[[shortcuts.tasks]]` 接入原配置事务、字段合并、注册预检和失败回滚 |
-| `foundation/attachments.rs`、`features/home/attachments.rs` | 附件读取/编码、选择/粘贴/拖拽与预览；提交复用原 prompt 流程 |
-| `app/tray.rs`、`app/menus.rs` | 系统入口和语言更新；退出统一走 StartupView.quit |
+| `src/app/temporary.rs` | 应用 Global 持有唯一临时窗口、ConversationState、焦点恢复目标、600 秒窗口回收与清理任务 |
+| `crates/gupi-conversation/src/conversation.rs`、`crates/gupi-conversation/src/conversation/temporary.rs` | 普通/临时模式、每会话实例和独立 cwd；临时模式跳过扫描与草稿持久化，以 `--no-session` 启动 |
+| `src/features/temporary.rs` | 顶部搜索、可拖动双栏、临时会话列表及上下文菜单；搜索/输入焦点切换 |
+| `src/features/temporary/startup.rs` | 临时窗口的配置加载/恢复页面；配置可用后进入会话视图，不依赖版本检测 |
+| `crates/gupi-conversation-ui/src/home.rs`、`crates/gupi-conversation-ui/src/home/*` | 复用消息、输入、模型选择与扩展交互，临时空会话居中输入；不展示主标题栏、侧栏和第三列历史 |
+| `crates/gupi-settings/src/shortcuts.rs` | 配置、系统键规范化、重复校验；模板调用与参数保真归 `crates/gupi-resources/src/composer_resources.rs` |
+| `src/app/shortcuts.rs` | 主线程系统注册、事件桥接、按任务 ID 去重、异步取词与目标会话准备 |
+| `src/features/settings/global_keys.rs`、`src/features/settings/global_keys/editor.rs` | 全局键位逐项行内编辑，模板任务属性弹窗，独立模型查询实例 |
+| `crates/gupi-settings/src/config.rs` | 新 `[shortcuts]` 与 `[[shortcuts.tasks]]` 接入原配置事务、字段合并、注册预检和失败回滚 |
+| `crates/gupi-conversation/src/attachments.rs`、`crates/gupi-conversation-ui/src/home/attachments.rs` | 附件读取/编码、选择/粘贴/拖拽与预览；提交复用原 prompt 流程 |
+| `src/app/tray.rs`、`src/app/menus.rs` | 系统入口和语言更新；退出统一走 StartupView.quit |
 | [共享 platform-ext](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/crates/platform-ext/src/app.rs) | macOS/Windows 前台目标捕获与恢复 |
 
 临时窗口列表沿用 List 的导航与虚拟列表，条目使用与命令面板一致的圆角选中背景和会话图标，不使用默认蓝色选中描边。搜索框、会话序号与底部操作显示实际绑定的键帽。底部收为随输入状态变化的发送/回填主操作，以及 Cmd/Ctrl+K 上下文操作面板；面板右下角锚定，分组操作、底部搜索，关闭恢复原焦点。快捷键沿用统一设置，新增临时对话分组。

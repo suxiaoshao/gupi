@@ -2,6 +2,8 @@
 
 Gupi 已按六个内部 crate 拆分。根包负责应用组合、原生窗口和退出；能力 crate 不依赖根包。配置格式、会话数据和 Pi RPC 契约保持不变。
 
+拆包后的接口封装与依赖收敛见[接口与依赖收敛](refinement.md)，同时记录官方 skill 核对结果与文档冲突。
+
 ## 约定与依据
 
 通用架构、状态所有权和文件组织遵循 [GPUI Kit Coding Guides](https://gpui-kit.com/docs/coding-guides/)。官方 skill 通过 `npx skills` 安装维护；项目 skill 只补充产品边界和入口，不维护另一套框架规则。依赖 API 以 Cargo.lock 为准，本次没有升级外部依赖。
@@ -28,9 +30,9 @@ Gupi 已按六个内部 crate 拆分。根包负责应用组合、原生窗口�
 
 核心方向如下；所有边均由 Cargo 检查，不存在能力 crate 对根包的反向依赖：
 
-- `conversation-ui → conversation → pi-runtime / resources / settings`。
-- `settings → resources / updates / pi-rpc`：配置持久化、安装期间的提交互斥以及探测失败的本地化映射。
-- `updates → resources`：Windows 安装日志目录；`resources → pi-runtime`：资源扫描与包管理使用相同的执行环境。
+- `conversation-ui → conversation / settings / resources`；`conversation → pi-runtime / resources / pi-rpc`。
+- `settings → resources / pi-rpc`：配置持久化和探测失败的本地化映射；安装期间的提交互斥由根包注入，updates 只作为 settings 的测试依赖。
+- updates 接收应用提供的 Windows 安装日志路径；`resources → pi-runtime`：资源扫描与包管理使用相同的执行环境。
 - 根包组装全部能力，并在创建配置和会话 owner 前调用 `init_capability_hosts`。
 
 三个 `host::Host` 是应用注入的同步函数接口，不持有 View 强引用：
@@ -43,9 +45,9 @@ Gupi 已按六个内部 crate 拆分。根包负责应用组合、原生窗口�
 | conversation cancel preparation | 取消快捷任务准备 | 关闭会话时同步取消，防止准备完成后继续发送 |
 | conversation-ui present/hide/paste | 通知可见性、隐藏临时窗口、回填 | UI 仅发起对应动作，平台对象和寿命留在根包 |
 
-独立模型/UI 测试可不安装原生 host；应用集成测试使用与正式启动相同的组装入口。原生 updater 通过事件交给根包适配器；适配器检查配置状态，完成有序退出后才继续安装，驱动不调用根包私有函数。
+host 必须显式安装。独立模型/UI 测试使用 headless 实现；应用集成测试使用与正式启动相同的组装入口。原生 updater 通过事件交给根包适配器；适配器检查配置状态，完成有序退出后才继续安装，驱动不调用根包私有函数。
 
-Pi 实例 ID 不透明，探测与资源操作只提供只读查询和操作方法。会话的传输、流合并、运行态、版本计数和任务协调仍由模型内部维护；界面使用会话记录、查询及动作方法，并在 Entity 更新中编辑草稿和交互状态。跨边界回归所需的消息回放和夹具构造放在 `test-support` feature 下，不为测试公开 transcript 内部类型。
+Pi 实例 ID 不透明，探测与资源操作只提供只读查询和操作方法。Session 和 ConversationState 的字段私有，UI 通过只读投影与语义动作访问；附件任务与快捷任务准备结果由模型安装。配置通过 ConfigReader 提供只读操作投影，更新准入查询由应用注入。跨边界回归所需的消息回放和夹具构造放在 `test-support` feature 下，不为测试公开 transcript 内部类型。
 
 ## 版本、资源与验证入口
 

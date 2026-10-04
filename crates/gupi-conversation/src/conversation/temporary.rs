@@ -64,7 +64,7 @@ impl ConversationState {
                         notify_session(&key, cx);
                     }
                     Err(error) => cx.emit(ConversationEvent::Notify {
-                        message: error,
+                        message: error.into(),
                         error: true,
                     }),
                 }

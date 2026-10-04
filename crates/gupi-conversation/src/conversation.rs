@@ -1,19 +1,19 @@
 //! Conversation ownership and source-bound RPC routing; views never own a Pi process.
-pub mod catalog;
+mod catalog;
 mod command;
 mod compaction;
-pub mod content;
+mod content;
 mod deletion;
-pub mod execution;
+mod execution;
 mod export;
-pub mod loading;
+mod loading;
 mod messages;
 mod model_change;
 mod queue;
 mod reads;
 mod reconnect;
 mod renaming;
-pub mod temporary;
+mod temporary;
 use crate::history::DisplayMessage;
 use crate::session_catalog;
 use crate::session_catalog::Discovery;
@@ -24,8 +24,9 @@ use catalog::ScanWork;
 use catalog::Update as CatalogUpdate;
 use command::SessionCommand;
 use content::Transcript;
+pub use content::{BodyState, LoadStage};
 use execution::RunState;
-use execution::ToolExecution;
+pub use execution::{RetryProgress, ToolExecution};
 use gpui_kit::component::input::InputContent;
 use gpui_kit::*;
 use gpui_operation::Transition;
@@ -62,6 +63,7 @@ use std::time::Duration;
 use std::time::Instant;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
+pub use temporary::trash_workspace;
 
 pub struct PendingUi {
     pub request: protocol::ExtensionRequest,
@@ -126,67 +128,242 @@ enum Submission {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SessionError {
+    ReconnectUnconfirmed,
     Runtime(String),
     /// The message owns the error text; retain only its execution status here.
     Response,
 }
+/// Borrowed query results expose data and status, never the owner's Task handles.
+pub struct ReadView<'a, T>(&'a ReadState<T>);
+impl<'a, T> ReadView<'a, T> {
+    pub fn data(&self) -> Option<&'a T> {
+        self.0.data()
+    }
+    pub fn error(&self) -> Option<&'a str> {
+        self.0.error()
+    }
+    pub fn running(&self) -> bool {
+        self.0.running()
+    }
+    pub fn is_idle(&self) -> bool {
+        matches!(self.0, ReadState::Idle)
+    }
+}
+pub struct ReadStatus<'a> {
+    running: bool,
+    error: Option<&'a str>,
+    unconfirmed: bool,
+}
+impl<'a> ReadStatus<'a> {
+    pub fn running(&self) -> bool {
+        self.running
+    }
+    pub fn error(&self) -> Option<&'a str> {
+        self.error
+    }
+    pub fn unconfirmed(&self) -> bool {
+        self.unconfirmed
+    }
+}
+pub struct CatalogView<'a>(&'a CatalogState<Task<()>>);
+impl<'a> CatalogView<'a> {
+    pub fn data(&self) -> Option<&'a session_catalog::Catalog> {
+        self.0.data()
+    }
+    pub fn error(&self) -> Option<&'a str> {
+        self.0.error()
+    }
+    pub fn running(&self) -> bool {
+        self.0.running()
+    }
+    pub fn progress(&self) -> Option<session_catalog::ScanProgress> {
+        self.0.progress()
+    }
+}
+pub use session_catalog::ScanProgress;
+
 pub struct Session {
-    pub info: SessionInfo,
-    pub draft: InputContent,
-    pub preparing: bool,
-    pub attachments: Vec<crate::attachments::Attachment>,
-    pub attachments_read: Option<Task<()>>,
-    pub pending_template: Option<gupi_settings::shortcuts::PendingTemplate>,
-    pub instance: Option<InstanceId>,
+    info: SessionInfo,
+    draft: InputContent,
+    preparing: bool,
+    attachments: Vec<crate::attachments::Attachment>,
+    attachments_read: Option<Task<()>>,
+    pending_template: Option<gupi_resources::composer_resources::PendingTemplate>,
+    instance: Option<InstanceId>,
     connection_purpose: ConnectionPurpose,
-    pub binding: u64,
+    binding: u64,
     /// Last observed Pi snapshot, also retained after disconnect for display.
     /// Connection availability comes from the instance/client, not this cache.
-    pub state: Option<protocol::SessionState>,
+    state: Option<protocol::SessionState>,
     transcript: Transcript,
-    pub live: Vec<DisplayMessage>,
+    live: Vec<DisplayMessage>,
     message_stream: Option<messages::MessageStream>,
     last_message_update: Option<(u64, usize)>,
     run: RunState,
-    pub tools: Vec<ToolActivity>,
-    pub models: ReadState<Vec<Model>>,
-    pub commands: ReadState<Vec<protocol::SlashCommand>>,
-    pub thinking_levels: ReadState<ThinkingLevels>,
-    pub stats: ReadState<protocol::SessionStats>,
-    pub fork_messages: ReadState<Vec<protocol::ForkMessage>>,
-    pub model_change: ModelChange,
-    pub pending_ui: VecDeque<PendingUi>,
-    pub unread: bool,
-    pub notices: Vec<gupi_settings::notifications::NoticeContent>,
-    pub statuses: BTreeMap<String, String>,
-    pub widgets: BTreeMap<String, Widget>,
-    pub extension_title: Option<String>,
-    pub error: Option<SessionError>,
-    pub compacting: bool,
-    pub retrying: bool,
-    pub retry: Option<execution::RetryProgress>,
-    pub summary_retry: Option<execution::RetryProgress>,
-    pub history_dirty: bool,
+    tools: Vec<ToolActivity>,
+    models: ReadState<Vec<Model>>,
+    commands: ReadState<Vec<protocol::SlashCommand>>,
+    thinking_levels: ReadState<ThinkingLevels>,
+    stats: ReadState<protocol::SessionStats>,
+    fork_messages: ReadState<Vec<protocol::ForkMessage>>,
+    model_change: ModelChange,
+    pending_ui: VecDeque<PendingUi>,
+    unread: bool,
+    notices: Vec<crate::notifications::NoticeContent>,
+    statuses: BTreeMap<String, String>,
+    widgets: BTreeMap<String, Widget>,
+    extension_title: Option<String>,
+    error: Option<SessionError>,
+    compacting: bool,
+    retrying: bool,
+    retry: Option<execution::RetryProgress>,
+    summary_retry: Option<execution::RetryProgress>,
+    history_dirty: bool,
     settings_event_revision: u64,
     usage_revision: u64,
-    pub stopping: bool,
-    pub interrupted: bool,
-    pub draft_revision: u64,
-    pub content_revision: u64,
-    pub pending_count: usize,
-    pub queued: Option<protocol::ClearedQueue>,
-    pub command: SessionCommand,
-    pub core_read: CoreRead,
+    stopping: bool,
+    interrupted: bool,
+    draft_revision: u64,
+    content_revision: u64,
+    pending_count: usize,
+    queued: Option<protocol::ClearedQueue>,
+    command: SessionCommand,
+    core_read: CoreRead,
     event_revision: u64,
     model_revision: u64,
     read_serial: u64,
     submission: Submission,
 }
 impl Session {
+    pub fn info(&self) -> &SessionInfo {
+        &self.info
+    }
+    pub fn draft(&self) -> &InputContent {
+        &self.draft
+    }
+    pub fn attachments(&self) -> &Vec<crate::attachments::Attachment> {
+        &self.attachments
+    }
+    pub fn pending_template(&self) -> &Option<gupi_resources::composer_resources::PendingTemplate> {
+        &self.pending_template
+    }
+    pub fn has_instance(&self) -> bool {
+        self.instance.is_some()
+    }
+    pub fn binding(&self) -> u64 {
+        self.binding
+    }
+    pub fn state(&self) -> &Option<protocol::SessionState> {
+        &self.state
+    }
+    pub fn live(&self) -> &Vec<DisplayMessage> {
+        &self.live
+    }
+    pub fn tools(&self) -> &Vec<ToolActivity> {
+        &self.tools
+    }
+    pub fn models(&self) -> ReadView<'_, Vec<Model>> {
+        ReadView(&self.models)
+    }
+    pub fn commands(&self) -> ReadView<'_, Vec<protocol::SlashCommand>> {
+        ReadView(&self.commands)
+    }
+    pub fn thinking_levels(&self) -> ReadView<'_, ThinkingLevels> {
+        ReadView(&self.thinking_levels)
+    }
+    pub fn stats(&self) -> ReadView<'_, protocol::SessionStats> {
+        ReadView(&self.stats)
+    }
+    pub fn fork_messages(&self) -> ReadView<'_, Vec<protocol::ForkMessage>> {
+        ReadView(&self.fork_messages)
+    }
+    pub fn model_change(&self) -> ReadStatus<'_> {
+        ReadStatus {
+            running: self.model_change.running(),
+            error: self.model_change.error(),
+            unconfirmed: self.model_change.unconfirmed(),
+        }
+    }
+    pub fn pending_ui(&self) -> &VecDeque<PendingUi> {
+        &self.pending_ui
+    }
+    pub fn unread(&self) -> bool {
+        self.unread
+    }
+    pub fn notices(&self) -> &Vec<crate::notifications::NoticeContent> {
+        &self.notices
+    }
+    pub fn statuses(&self) -> &BTreeMap<String, String> {
+        &self.statuses
+    }
+    pub fn widgets(&self) -> &BTreeMap<String, Widget> {
+        &self.widgets
+    }
+    pub fn extension_title(&self) -> &Option<String> {
+        &self.extension_title
+    }
+    pub fn error(&self) -> &Option<SessionError> {
+        &self.error
+    }
+    pub fn compacting(&self) -> bool {
+        self.compacting
+    }
+    pub fn retry(&self) -> &Option<execution::RetryProgress> {
+        &self.retry
+    }
+    pub fn summary_retry(&self) -> &Option<execution::RetryProgress> {
+        &self.summary_retry
+    }
+    pub fn stopping(&self) -> bool {
+        self.stopping
+    }
+    pub fn interrupted(&self) -> bool {
+        self.interrupted
+    }
+    pub fn content_revision(&self) -> u64 {
+        self.content_revision
+    }
+    pub fn pending_count(&self) -> usize {
+        self.pending_count
+    }
+    pub fn queued(&self) -> &Option<protocol::ClearedQueue> {
+        &self.queued
+    }
+    pub fn is_reconnecting(&self) -> bool {
+        self.command.reconnecting()
+    }
+    pub fn is_exporting(&self) -> bool {
+        self.command.exporting()
+    }
+    pub fn is_compacting(&self) -> bool {
+        self.compacting || self.command.compacting()
+    }
+    pub fn is_clearing_queue(&self) -> bool {
+        self.command.clearing_queue()
+    }
+    pub fn is_command_running(&self) -> bool {
+        self.command.running()
+    }
+    pub fn core_read(&self) -> ReadStatus<'_> {
+        ReadStatus {
+            running: self.core_read.running(),
+            error: self.core_read.error(),
+            unconfirmed: false,
+        }
+    }
+
+    pub fn can_read_attachments(&self) -> bool {
+        !self.is_reading_attachments()
+    }
+
+    pub fn is_reading_attachments(&self) -> bool {
+        self.attachments_read.is_some()
+    }
+
     pub fn runtime_error(&self) -> Option<&str> {
         match &self.error {
             Some(SessionError::Runtime(message)) => Some(message),
-            Some(SessionError::Response) | None => None,
+            Some(SessionError::Response | SessionError::ReconnectUnconfirmed) | None => None,
         }
     }
 
@@ -259,7 +436,7 @@ impl Session {
         if self.submitting() {
             self.finish_submission(false);
             cx.emit(ConversationEvent::Notify {
-                message: error,
+                message: error.into(),
                 error: true,
             });
         }
@@ -462,7 +639,7 @@ fn publish(change: impl FnOnce(&mut Changes) + 'static, cx: &mut Context<Convers
 pub fn notify(cx: &mut Context<ConversationState>) {
     publish(|changes| changes.catalog = true, cx);
 }
-pub fn notify_session(key: &str, cx: &mut Context<ConversationState>) {
+fn notify_session(key: &str, cx: &mut Context<ConversationState>) {
     let key = key.to_owned();
     publish(
         move |changes| {
@@ -471,7 +648,7 @@ pub fn notify_session(key: &str, cx: &mut Context<ConversationState>) {
         cx,
     );
 }
-pub fn notify_controls(key: &str, cx: &mut Context<ConversationState>) {
+fn notify_controls(key: &str, cx: &mut Context<ConversationState>) {
     let key = key.to_owned();
     publish(
         move |changes| {
@@ -497,15 +674,18 @@ fn notify_progress(cx: &mut Context<ConversationState>) {
 }
 pub enum ConversationEvent {
     Changed(Changes),
-    Attention(gupi_settings::notifications::Notice),
-    Notify { message: String, error: bool },
+    Attention(crate::notifications::Notice),
+    Notify {
+        message: crate::feedback::Feedback,
+        error: bool,
+    },
 }
 pub struct ConversationState {
-    pub sessions: BTreeMap<String, Session>,
-    pub selected: Option<String>,
-    pub catalog: CatalogState<Task<()>>,
-    pub storage_error: Option<String>,
-    pub temporary: bool,
+    sessions: BTreeMap<String, Session>,
+    selected: Option<String>,
+    catalog: CatalogState<Task<()>>,
+    storage_error: Option<String>,
+    temporary: bool,
     command: PathBuf,
     discovery: Discovery,
     restore_task: Option<Task<()>>,
@@ -521,8 +701,182 @@ pub struct ConversationState {
     _subscriptions: Vec<Subscription>,
 }
 impl EventEmitter<ConversationEvent> for ConversationState {}
+/// Result of an application shortcut's Pi preparation, applied atomically by the model.
+#[non_exhaustive]
+pub struct PreparedTemplate {
+    pub snapshot: protocol::SessionState,
+    pub attachments: Vec<crate::attachments::Attachment>,
+    pub template: gupi_resources::composer_resources::PendingTemplate,
+    pub name: String,
+    pub text: String,
+}
+impl PreparedTemplate {
+    pub fn new(
+        snapshot: protocol::SessionState,
+        attachments: Vec<crate::attachments::Attachment>,
+        template: gupi_resources::composer_resources::PendingTemplate,
+        name: String,
+        text: String,
+    ) -> Self {
+        Self {
+            snapshot,
+            attachments,
+            template,
+            name,
+            text,
+        }
+    }
+}
 impl ConversationState {
+    pub fn sessions(&self) -> &BTreeMap<String, Session> {
+        &self.sessions
+    }
+    pub fn selected(&self) -> &Option<String> {
+        &self.selected
+    }
+    pub fn catalog(&self) -> CatalogView<'_> {
+        CatalogView(&self.catalog)
+    }
+    pub fn storage_error(&self) -> &Option<String> {
+        &self.storage_error
+    }
+    pub fn is_temporary(&self) -> bool {
+        self.temporary
+    }
+
+    pub fn edit_extension_text(&mut self, key: &str, id: &str, text: String) {
+        if let Some(p) = self
+            .sessions
+            .get_mut(key)
+            .and_then(|s| s.pending_ui.front_mut())
+            .filter(|p| p.request.id == id)
+        {
+            p.text = text;
+        }
+    }
+    pub fn begin_preparation(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
+        if self.draining {
+            return false;
+        }
+        let Some(session) = self
+            .sessions
+            .get_mut(key)
+            .filter(|s| !s.busy() && !s.command.running())
+        else {
+            return false;
+        };
+        session.preparing = true;
+        notify_session(key, cx);
+        true
+    }
+    pub fn complete_preparation(
+        &mut self,
+        key: &str,
+        prepared: PreparedTemplate,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.draining {
+            return false;
+        }
+        let Some(session) = self.sessions.get_mut(key).filter(|s| s.preparing) else {
+            return false;
+        };
+        session.state = Some(prepared.snapshot);
+        session.preparing = false;
+        session.attachments = prepared.attachments;
+        session.pending_template = Some(prepared.template);
+        session.info.name = Some(prepared.name);
+        self.set_draft(key, prepared.text, cx);
+        true
+    }
+    pub fn finish_preparation(&mut self, key: &str, error: Option<String>, cx: &mut Context<Self>) {
+        if let Some(session) = self.sessions.get_mut(key) {
+            session.preparing = false;
+            if let Some(error) = error {
+                session.error = Some(SessionError::Runtime(error));
+            }
+            notify_session(key, cx);
+        }
+    }
+
+    pub fn attach_images(&mut self, key: String, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        self.load_attachments(
+            key,
+            async move { smol::unblock(move || crate::attachments::from_paths(paths)).await },
+            cx,
+        );
+    }
+
+    pub fn attach_image(
+        &mut self,
+        key: String,
+        name: String,
+        bytes: Vec<u8>,
+        cx: &mut Context<Self>,
+    ) {
+        self.load_attachments(
+            key,
+            async move {
+                smol::unblock(move || {
+                    crate::attachments::Attachment::from_image(name, &bytes).map(|item| vec![item])
+                })
+                .await
+            },
+            cx,
+        );
+    }
+
+    /// Dropping the session cancels its read; a picker completing during shutdown cannot restart it.
+    fn load_attachments(
+        &mut self,
+        key: String,
+        future: impl Future<Output = Result<Vec<crate::attachments::Attachment>, String>> + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        if self.draining {
+            return;
+        }
+        let Some(session) = self
+            .sessions
+            .get_mut(&key)
+            .filter(|s| s.can_edit_draft() && !s.is_reading_attachments())
+        else {
+            return;
+        };
+        let target = key.clone();
+        session.attachments_read = Some(cx.spawn(async move |owner, cx| {
+            let result = future.await;
+            let _ = owner.update(cx, |state, cx| {
+                let Some(session) = state.sessions.get_mut(&target) else {
+                    return;
+                };
+                session.attachments_read = None;
+                match result {
+                    Ok(items) => session.attachments.extend(items),
+                    Err(error) => session.error = Some(SessionError::Runtime(error)),
+                }
+                notify_session(&target, cx);
+            });
+        }));
+        notify_session(&key, cx);
+    }
+
+    pub fn attachment_error(&mut self, key: &str, error: String, cx: &mut Context<Self>) {
+        if let Some(session) = self.sessions.get_mut(key).filter(|s| s.can_edit_draft()) {
+            session.error = Some(SessionError::Runtime(error));
+            notify_session(key, cx);
+        }
+    }
+
+    pub fn remove_attachment(&mut self, key: &str, id: &str, cx: &mut Context<Self>) {
+        if let Some(session) = self.sessions.get_mut(key).filter(|s| s.can_edit_draft()) {
+            session.attachments.retain(|a| a.id != id);
+            notify_session(key, cx);
+        }
+    }
+
     pub fn new(command: PathBuf, cx: &mut Context<Self>) -> Self {
+        cx.global::<crate::host::Host>();
         let owner = cx.entity().downgrade();
         cx.defer(move |cx| {
             if let Some(owner) = owner.upgrade() {
@@ -1134,14 +1488,12 @@ impl ConversationState {
                         s.queued = None;
                         s.finish_submission(false);
                         s.binding += 1;
-                        cx.emit(ConversationEvent::Attention(
-                            gupi_settings::notifications::Notice {
-                                key: key.clone(),
-                                binding: s.binding,
-                                kind: gupi_settings::notifications::Kind::Failed,
-                                message: None,
-                            },
-                        ));
+                        cx.emit(ConversationEvent::Attention(crate::notifications::Notice {
+                            key: key.clone(),
+                            binding: s.binding,
+                            kind: crate::notifications::Kind::Failed,
+                            message: None,
+                        }));
                         gupi_pi_runtime::global(cx)
                             .update(cx, |pi, cx| pi.close(id, cx))
                             .detach();
@@ -1179,14 +1531,12 @@ impl ConversationState {
                     s.queued = None;
                     s.pending_count = 0;
                     s.binding += 1;
-                    cx.emit(ConversationEvent::Attention(
-                        gupi_settings::notifications::Notice {
-                            key: key.clone(),
-                            binding: s.binding,
-                            kind: gupi_settings::notifications::Kind::Failed,
-                            message: None,
-                        },
-                    ));
+                    cx.emit(ConversationEvent::Attention(crate::notifications::Notice {
+                        key: key.clone(),
+                        binding: s.binding,
+                        kind: crate::notifications::Kind::Failed,
+                        message: None,
+                    }));
                 }
                 Ok(None) => continue,
             }
@@ -1533,7 +1883,7 @@ impl ConversationState {
         let mut prompt = Prompt::new(text);
         if used_template {
             let template = s.pending_template.as_ref().unwrap();
-            prompt.message = gupi_settings::shortcuts::template_message(
+            prompt.message = gupi_resources::composer_resources::template_message(
                 &template.name,
                 &template.body,
                 &prompt.message,
@@ -1542,9 +1892,9 @@ impl ConversationState {
         notify_session(&key, cx);
         let attachment_ids: Vec<_> = attachments.iter().map(|a| a.id.clone()).collect();
         prompt.streaming_behavior = Some(mode);
-        let template_unreadable = gupi_settings::i18n::t(cx, "resource-template-unreadable");
-        let template_unused = gupi_settings::i18n::t(cx, "resource-template-unused-files");
-        let template_quotes = gupi_settings::i18n::t(cx, "resource-template-unclosed-quote");
+        let template_unreadable = crate::feedback::Feedback::TemplateUnreadable;
+        let template_unused = crate::feedback::Feedback::TemplateUnusedFiles;
+        let template_quotes = crate::feedback::Feedback::TemplateUnclosedQuote;
         let task = cx.spawn(async move |owner, cx| {
             if let Some((path, positions)) = template_files {
                 let validation = smol::unblock(move || {
@@ -1927,28 +2277,26 @@ impl ConversationState {
                         refresh = Some(ReadScope::History);
                         if was_running && !s.interrupted {
                             if has_output && s.final_answer_text().is_some() {
-                                notice = Some(gupi_settings::notifications::Kind::Completed);
+                                notice = Some(crate::notifications::Kind::Completed);
                             } else if s.error.is_some() {
-                                notice = Some(gupi_settings::notifications::Kind::Failed);
+                                notice = Some(crate::notifications::Kind::Failed);
                             }
                         }
                     }
                     "extension_error" => {
                         let message = raw["error"].as_str().unwrap_or_default().to_owned();
-                        let message = gupi_settings::notifications::NoticeContent {
+                        let message = crate::notifications::NoticeContent {
                             id: None,
                             message,
-                            severity: gupi_settings::notifications::Severity::Error,
+                            severity: crate::notifications::Severity::Error,
                         };
                         s.notices.push(message.clone());
-                        cx.emit(ConversationEvent::Attention(
-                            gupi_settings::notifications::Notice {
-                                key: key.clone(),
-                                binding: s.binding,
-                                kind: gupi_settings::notifications::Kind::Plugin,
-                                message: Some(message),
-                            },
-                        ));
+                        cx.emit(ConversationEvent::Attention(crate::notifications::Notice {
+                            key: key.clone(),
+                            binding: s.binding,
+                            kind: crate::notifications::Kind::Plugin,
+                            message: Some(message),
+                        }));
                     }
                     "compaction_start" => s.compacting = true,
                     "compaction_end" => {
@@ -1964,17 +2312,17 @@ impl ConversationState {
                                 && let Some(error) =
                                     raw["errorMessage"].as_str().filter(|s| !s.is_empty())
                             {
-                                let message = gupi_settings::notifications::NoticeContent {
+                                let message = crate::notifications::NoticeContent {
                                     id: None,
                                     message: error.into(),
-                                    severity: gupi_settings::notifications::Severity::Error,
+                                    severity: crate::notifications::Severity::Error,
                                 };
                                 s.notices.push(message.clone());
                                 cx.emit(ConversationEvent::Attention(
-                                    gupi_settings::notifications::Notice {
+                                    crate::notifications::Notice {
                                         key: key.clone(),
                                         binding: s.binding,
-                                        kind: gupi_settings::notifications::Kind::Failed,
+                                        kind: crate::notifications::Kind::Failed,
                                         message: Some(message),
                                     },
                                 ));
@@ -2113,9 +2461,7 @@ impl ConversationState {
                     if s.pending_ui.iter().any(|p| p.request.id == request.id) {
                         return;
                     }
-                    notice = Some(gupi_settings::notifications::Kind::Waiting(
-                        request.id.clone(),
-                    ));
+                    notice = Some(crate::notifications::Kind::Waiting(request.id.clone()));
                     let timeout = *timeout;
                     s.pending_ui.push_back(PendingUi {
                         request: request.clone(),
@@ -2152,9 +2498,7 @@ impl ConversationState {
                     if s.pending_ui.iter().any(|p| p.request.id == request.id) {
                         return;
                     }
-                    notice = Some(gupi_settings::notifications::Kind::Waiting(
-                        request.id.clone(),
-                    ));
+                    notice = Some(crate::notifications::Kind::Waiting(request.id.clone()));
                     s.pending_ui.push_back(PendingUi {
                         request: request.clone(),
                         selection: pending_selection(&request.method, cx),
@@ -2206,22 +2550,18 @@ impl ConversationState {
                     message,
                     notify_type,
                 } => {
-                    let message = gupi_settings::notifications::NoticeContent {
+                    let message = crate::notifications::NoticeContent {
                         id: Some(request.id.clone()),
                         message: message.clone(),
-                        severity: gupi_settings::notifications::Severity::from_pi(
-                            notify_type.as_deref(),
-                        ),
+                        severity: crate::notifications::Severity::from_pi(notify_type.as_deref()),
                     };
                     s.notices.push(message.clone());
-                    cx.emit(ConversationEvent::Attention(
-                        gupi_settings::notifications::Notice {
-                            key: key.clone(),
-                            binding: s.binding,
-                            kind: gupi_settings::notifications::Kind::Plugin,
-                            message: Some(message),
-                        },
-                    ));
+                    cx.emit(ConversationEvent::Attention(crate::notifications::Notice {
+                        key: key.clone(),
+                        binding: s.binding,
+                        kind: crate::notifications::Kind::Plugin,
+                        message: Some(message),
+                    }));
                 }
                 UiMethod::Unknown => return,
             },
@@ -2237,14 +2577,12 @@ impl ConversationState {
             }
         );
         if let Some(kind) = notice {
-            cx.emit(ConversationEvent::Attention(
-                gupi_settings::notifications::Notice {
-                    key: key.clone(),
-                    binding: s.binding,
-                    kind,
-                    message: None,
-                },
-            ));
+            cx.emit(ConversationEvent::Attention(crate::notifications::Notice {
+                key: key.clone(),
+                binding: s.binding,
+                kind,
+                message: None,
+            }));
         }
         let navigation_changed =
             name_changed || s.activity() != previous_activity || s.unread != previous_unread;
@@ -2394,7 +2732,15 @@ fn save_file(file: &WorkspaceFile) -> Result<(), String> {
 
 #[cfg(feature = "test-support")]
 pub mod test_support {
+    pub use super::catalog::CatalogState;
+    pub use super::loading::{CoreRead, ModelChange, ReadState};
     use super::*;
+    pub fn notify_session(key: &str, cx: &mut Context<ConversationState>) {
+        super::notify_session(key, cx);
+    }
+    pub fn notify_controls(key: &str, cx: &mut Context<ConversationState>) {
+        super::notify_controls(key, cx);
+    }
     pub fn notify_selection(cx: &mut Context<ConversationState>) {
         super::notify_selection(cx);
     }
@@ -2402,6 +2748,9 @@ pub mod test_support {
 
 #[cfg(feature = "test-support")]
 impl Session {
+    pub fn mark_attachment_read_for_test(&mut self) {
+        self.attachments_read = Some(Task::ready(()));
+    }
     pub fn receive_message_for_test(&mut self, kind: &str, raw: &Value) {
         self.receive_message(kind, raw);
     }
@@ -2416,6 +2765,61 @@ impl Session {
     }
 }
 
+#[cfg(feature = "test-support")]
+impl Session {
+    pub fn info_for_test(&mut self) -> &mut SessionInfo {
+        &mut self.info
+    }
+    pub fn draft_for_test(&mut self) -> &mut InputContent {
+        &mut self.draft
+    }
+    pub fn attachments_for_test(&mut self) -> &mut Vec<crate::attachments::Attachment> {
+        &mut self.attachments
+    }
+    pub fn binding_for_test(&mut self) -> &mut u64 {
+        &mut self.binding
+    }
+    pub fn state_for_test(&mut self) -> &mut Option<protocol::SessionState> {
+        &mut self.state
+    }
+    pub fn live_for_test(&mut self) -> &mut Vec<DisplayMessage> {
+        &mut self.live
+    }
+    pub fn tools_for_test(&mut self) -> &mut Vec<ToolActivity> {
+        &mut self.tools
+    }
+    pub fn pending_ui_for_test(&mut self) -> &mut VecDeque<PendingUi> {
+        &mut self.pending_ui
+    }
+    pub fn unread_for_test(&mut self) -> &mut bool {
+        &mut self.unread
+    }
+    pub fn error_for_test(&mut self) -> &mut Option<SessionError> {
+        &mut self.error
+    }
+    pub fn content_revision_for_test(&mut self) -> &mut u64 {
+        &mut self.content_revision
+    }
+    pub fn pending_count_for_test(&mut self) -> &mut usize {
+        &mut self.pending_count
+    }
+    pub fn core_read_for_test(&mut self) -> &mut CoreRead {
+        &mut self.core_read
+    }
+}
+#[cfg(feature = "test-support")]
+impl ConversationState {
+    pub fn sessions_for_test(&mut self) -> &mut BTreeMap<String, Session> {
+        &mut self.sessions
+    }
+    pub fn selected_for_test(&mut self) -> &mut Option<String> {
+        &mut self.selected
+    }
+    pub fn catalog_for_test(&mut self) -> &mut CatalogState<Task<()>> {
+        &mut self.catalog
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -2427,6 +2831,112 @@ mod tests {
     use gpui_kit::AppContext;
     use gpui_kit::TestAppContext;
     use std::path::PathBuf;
+
+    #[gpui::test]
+    fn attachment_reads_follow_the_session_and_cancel_on_removal(cx: &mut TestAppContext) {
+        cx.update(gupi_pi_runtime::init);
+        cx.update(crate::host::install_headless);
+        let owner = cx.new(|cx| ConversationState::temporary("unused-pi".into(), cx));
+        let (sender, receiver) = smol::channel::bounded(1);
+        owner.update(cx, |state, cx| {
+            for key in ["a", "b"] {
+                let mut session = super::Session::from_rpc_messages(&[]);
+                session.state = Some(
+                    serde_json::from_value(serde_json::json!({
+                        "sessionId": key, "isStreaming": false, "isCompacting": false
+                    }))
+                    .unwrap(),
+                );
+                state.sessions.insert(key.into(), session);
+            }
+            state.selected = Some("a".into());
+            state.load_attachments(
+                "a".into(),
+                async move { receiver.recv().await.unwrap() },
+                cx,
+            );
+            assert!(state.sessions["a"].is_reading_attachments());
+            state.load_attachments(
+                "a".into(),
+                async { panic!("duplicate read must not run") },
+                cx,
+            );
+            state.selected = Some("b".into());
+        });
+        sender
+            .try_send(Ok(vec![crate::attachments::Attachment::file(
+                "first.png".into(),
+                4,
+            )]))
+            .unwrap();
+        cx.run_until_parked();
+        owner.update(cx, |state, cx| {
+            assert_eq!(state.sessions["a"].attachments.len(), 1);
+            assert!(state.sessions["b"].attachments.is_empty());
+            assert!(!state.sessions["a"].is_reading_attachments());
+            state.remove_attachment("a", "missing", cx);
+            let id = state.sessions["a"].attachments[0].id.clone();
+            state.remove_attachment("a", &id, cx);
+            assert!(state.sessions["a"].attachments.is_empty());
+        });
+        let (sender, receiver) =
+            smol::channel::bounded::<Result<Vec<crate::attachments::Attachment>, String>>(1);
+        owner.update(cx, |state, cx| {
+            state.load_attachments(
+                "a".into(),
+                async move { receiver.recv().await.unwrap() },
+                cx,
+            );
+            state.sessions.remove("a");
+            state
+                .sessions
+                .insert("a".into(), super::Session::from_rpc_messages(&[]));
+        });
+        cx.run_until_parked();
+        assert!(sender.try_send(Err("late read".into())).is_err());
+        owner.read_with(cx, |state, _| assert!(state.sessions["a"].error.is_none()));
+        owner.update(cx, |state, cx| {
+            state.draining = true;
+            state.load_attachments(
+                "b".into(),
+                async { panic!("shutdown must reject new reads") },
+                cx,
+            );
+            assert!(!state.sessions["b"].is_reading_attachments());
+        });
+    }
+
+    #[gpui::test]
+    fn shortcut_preparation_can_start_before_pi_snapshot_and_cannot_finish_after_cancel(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gupi_pi_runtime::init);
+        cx.update(crate::host::install_headless);
+        let owner = cx.new(|cx| ConversationState::temporary("unused-pi".into(), cx));
+        owner.update(cx, |state, cx| {
+            let mut session = super::Session::from_rpc_messages(&[]);
+            session.run = super::RunState::default();
+            state.sessions.insert("a".into(), session);
+            assert!(state.begin_preparation("a", cx));
+            assert!(!state.begin_preparation("a", cx));
+            state.finish_preparation("a", None, cx);
+            let prepared = super::PreparedTemplate::new(
+                serde_json::from_value(
+                    serde_json::json!({"sessionId":"a","isStreaming":false,"isCompacting":false}),
+                )
+                .unwrap(),
+                vec![],
+                gupi_resources::composer_resources::PendingTemplate::new(
+                    "name".into(),
+                    "body".into(),
+                ),
+                "title".into(),
+                "late text".into(),
+            );
+            assert!(!state.complete_preparation("a", prepared, cx));
+            assert!(state.sessions["a"].draft.text().is_empty());
+        });
+    }
 
     #[test]
     fn copy_last_answer_uses_execution_branch_and_skips_empty_aborted_output() {
@@ -2471,6 +2981,7 @@ mod tests {
     #[gpui::test]
     fn restoring_workspace_ignores_legacy_selection_and_empty_drafts(cx: &mut TestAppContext) {
         cx.update(gupi_pi_runtime::init);
+        cx.update(crate::host::install_headless);
         let state = cx.new(|cx| ConversationState::new(PathBuf::from("unused-pi"), cx));
         state.update(cx, |state, _| {
             let old: WorkspaceFile = toml::from_str(
@@ -2512,6 +3023,7 @@ draft = ""
     #[gpui::test]
     fn refreshing_catalog_never_opens_a_session_or_changes_selection(cx: &mut TestAppContext) {
         cx.update(gupi_pi_runtime::init);
+        cx.update(crate::host::install_headless);
         let state = cx.new(|cx| ConversationState::new(PathBuf::from("unused-pi"), cx));
         state.update(cx, |state, cx| {
             state.insert_draft(None);

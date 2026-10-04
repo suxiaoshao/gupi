@@ -50,7 +50,7 @@ pub struct Projection {
 }
 impl Projection {
     pub fn from_session(session: &Session) -> Self {
-        let model = session.state.as_ref().and_then(|s| s.model.as_ref());
+        let model = session.state().as_ref().and_then(|s| s.model.as_ref());
         Self {
             models: session
                 .model_options()
@@ -62,27 +62,24 @@ impl Projection {
             reasoning: model.is_some_and(|m| m.reasoning),
             levels: session.levels().to_vec(),
             level: session
-                .state
+                .state()
                 .as_ref()
                 .map(|s| s.thinking_level.clone())
                 .unwrap_or_default(),
             // Keep old model capabilities inert until the post-command snapshot arrives.
             disabled: session.settings_busy()
-                || session.state.is_none()
-                    && (session.core_read.running()
-                        || session.instance.is_some() && session.core_read.error().is_none()),
-            unloaded: session.state.is_none(),
-            model_error: session.models.error().map(str::to_owned),
-            thinking_error: session.thinking_levels.error().map(str::to_owned),
-            change_error: session.model_change.error().map(str::to_owned),
+                || session.state().is_none()
+                    && (session.core_read().running()
+                        || session.has_instance() && session.core_read().error().is_none()),
+            unloaded: session.state().is_none(),
+            model_error: session.models().error().map(str::to_owned),
+            thinking_error: session.thinking_levels().error().map(str::to_owned),
+            change_error: session.model_change().error().map(str::to_owned),
             models_loading: session.models_loading(),
-            models_unloaded: matches!(
-                session.models,
-                gupi_conversation::conversation::loading::ReadState::Idle
-            ),
-            thinking_loading: session.thinking_levels.running(),
-            changing: session.model_change.running(),
-            unconfirmed: session.model_change.unconfirmed(),
+            models_unloaded: session.models().is_idle(),
+            thinking_loading: session.thinking_levels().running(),
+            changing: session.model_change().running(),
+            unconfirmed: session.model_change().unconfirmed(),
             overrides: None,
         }
     }

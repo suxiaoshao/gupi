@@ -35,12 +35,12 @@ fn temporary_page_tab_search_and_recreation_preserve_the_draft(cx: &mut TestAppC
             },
             "draft".into(),
         );
-        session.state = Some(
+        *session.state_for_test() = Some(
             serde_json::from_value(serde_json::json!({"sessionId":"fixture", "isStreaming":false,"isCompacting":false}))
                 .unwrap(),
         );
-        state.sessions.insert("first".into(), session);
-        state.selected = Some("first".into());
+        state.sessions_for_test().insert("first".into(), session);
+        *state.selected_for_test() = Some("first".into());
     });
     for suffix in [" one", " two"] {
         let (_, visual) = cx.add_window_view(|window, cx| {
@@ -52,7 +52,7 @@ fn temporary_page_tab_search_and_recreation_preserve_the_draft(cx: &mut TestAppC
         visual.update(|window, _| window.activate_window());
         visual.run_until_parked();
         visual.simulate_input("no-match");
-        visual.update(|_, cx| assert_eq!(state.read(cx).selected.as_deref(), Some("first")));
+        visual.update(|_, cx| assert_eq!(state.read(cx).selected().as_deref(), Some("first")));
         visual.simulate_keystrokes("tab");
         visual.dispatch_action(gpui_kit::component::input::MoveToEnd);
         visual.simulate_input(suffix);
@@ -63,11 +63,11 @@ fn temporary_page_tab_search_and_recreation_preserve_the_draft(cx: &mut TestAppC
                     .read(cx)
                     .current()
                     .unwrap()
-                    .draft
+                    .draft()
                     .text()
                     .ends_with(suffix),
                 "actual draft: {:?}",
-                state.read(cx).current().unwrap().draft
+                state.read(cx).current().unwrap().draft()
             )
         });
         visual.simulate_keystrokes("tab");
@@ -78,7 +78,7 @@ fn temporary_page_tab_search_and_recreation_preserve_the_draft(cx: &mut TestAppC
                     .read(cx)
                     .current()
                     .unwrap()
-                    .draft
+                    .draft()
                     .text()
                     .contains("searching")
             );
@@ -88,10 +88,10 @@ fn temporary_page_tab_search_and_recreation_preserve_the_draft(cx: &mut TestAppC
     }
     state.read_with(cx, |state, _| {
         assert_eq!(
-            state.current().unwrap().draft.text().as_ref(),
+            state.current().unwrap().draft().text().as_ref(),
             "draft one two"
         );
-        assert!(state.current().unwrap().instance.is_none());
+        assert!(!state.current().unwrap().has_instance());
     });
 }
 
@@ -123,8 +123,8 @@ fn fixture_session(name: &str) -> Session {
         String::new(),
     );
     // A detached in-memory fixture must never launch a real Pi process.
-    session.binding = 1;
-    session.state = Some(
+    *session.binding_for_test() = 1;
+    *session.state_for_test() = Some(
         serde_json::from_value(
             serde_json::json!({"sessionId":name,"isStreaming":false,"isCompacting":false}),
         )
@@ -133,11 +133,11 @@ fn fixture_session(name: &str) -> Session {
     session
 }
 fn answer(session: &mut Session, text: &str) {
-    session.live.push(gupi_conversation::history::DisplayMessage {
+    session.live_for_test().push(gupi_conversation::history::DisplayMessage {
         id: "answer".into(), entry: None, completed_at: None, final_answer_part: None,
         value: serde_json::json!({"role":"assistant","stopReason":"stop","content":[{"type":"thinking","thinking":"private reasoning"},{"type":"text","text":text}]}),
     });
-    session.content_revision += 1;
+    *session.content_revision_for_test() += 1;
 }
 
 #[gpui_kit::test]
@@ -154,8 +154,10 @@ fn response_failure_keeps_transcript_without_reconnect_action(cx: &mut TestAppCo
                     "stopReason":"error", "errorMessage":"Insufficient account funds"}
             }),
         );
-        state.sessions.insert("failed-response".into(), session);
-        state.selected = Some("failed-response".into());
+        state
+            .sessions_for_test()
+            .insert("failed-response".into(), session);
+        *state.selected_for_test() = Some("failed-response".into());
     });
     let (_, visual) = cx.add_window_view(|window, cx| {
         let view = cx.new(|cx| TemporaryView::new(state.clone(), window, cx));
@@ -178,11 +180,14 @@ fn response_failure_keeps_transcript_without_reconnect_action(cx: &mut TestAppCo
     });
     visual.update(|_, cx| {
         state.update(cx, |state, cx| {
-            state.sessions.get_mut("failed-response").unwrap().error =
-                Some(gupi_conversation::conversation::SessionError::Runtime(
-                    "Pi connection closed".into(),
-                ));
-            gupi_conversation::conversation::notify_session("failed-response", cx);
+            *state
+                .sessions_for_test()
+                .get_mut("failed-response")
+                .unwrap()
+                .error_for_test() = Some(gupi_conversation::conversation::SessionError::Runtime(
+                "Pi connection closed".into(),
+            ));
+            gupi_conversation::conversation::test_support::notify_session("failed-response", cx);
         });
     });
     visual.run_until_parked();
@@ -203,20 +208,20 @@ fn temporary_new_reuses_unsent_draft_and_navigation_handles_more_than_nine(
             let key = format!("session-{i:02}");
             let mut session = fixture_session(&key);
             if i == 0 {
-                session.draft = "preserve this draft".into();
+                *session.draft_for_test() = "preserve this draft".into();
                 // A healthy draft still preparing its first connection can be
                 // reused. Keep preparation pending without launching Pi.
-                session.binding = 0;
-                session.core_read =
-                    gupi_conversation::conversation::loading::CoreRead::CheckingFile {
+                *session.binding_for_test() = 0;
+                *session.core_read_for_test() =
+                    gupi_conversation::conversation::test_support::CoreRead::CheckingFile {
                         _task: cx.spawn(async |_, _| std::future::pending().await),
                     };
             } else {
                 answer(&mut session, "complete");
             }
-            state.sessions.insert(key, session);
+            state.sessions_for_test().insert(key, session);
         }
-        state.selected = Some("session-01".into());
+        *state.selected_for_test() = Some("session-01".into());
     });
     let (_, visual) = cx.add_window_view(|window, cx| {
         let view = cx.new(|cx| TemporaryView::new(state.clone(), window, cx));
@@ -226,22 +231,22 @@ fn temporary_new_reuses_unsent_draft_and_navigation_handles_more_than_nine(
     visual.simulate_resize(size(px(960.), px(620.)));
     visual.run_until_parked();
     visual.simulate_keystrokes("secondary-9");
-    visual.update(|_, cx| assert_eq!(state.read(cx).selected.as_deref(), Some("session-11")));
+    visual.update(|_, cx| assert_eq!(state.read(cx).selected().as_deref(), Some("session-11")));
     visual.simulate_keystrokes("secondary-2");
-    visual.update(|_, cx| assert_eq!(state.read(cx).selected.as_deref(), Some("session-01")));
+    visual.update(|_, cx| assert_eq!(state.read(cx).selected().as_deref(), Some("session-01")));
     visual.simulate_keystrokes("secondary-n");
     visual.run_until_parked();
     visual.update(|_, cx| {
         let state = state.read(cx);
-        assert_eq!(state.selected.as_deref(), Some("session-00"));
+        assert_eq!(state.selected().as_deref(), Some("session-00"));
         assert_eq!(
-            state.current().unwrap().draft.text().as_ref(),
+            state.current().unwrap().draft().text().as_ref(),
             "preserve this draft"
         );
-        assert_eq!(state.sessions.len(), 12);
+        assert_eq!(state.sessions().len(), 12);
     });
     visual.simulate_keystrokes("secondary-n");
-    visual.update(|_, cx| assert_eq!(state.read(cx).sessions.len(), 12));
+    visual.update(|_, cx| assert_eq!(state.read(cx).sessions().len(), 12));
 }
 
 #[gpui_kit::test]
@@ -250,55 +255,59 @@ fn temporary_new_skips_failed_and_exited_drafts(cx: &mut TestAppContext) {
     let state = cx.new(|cx| ConversationState::temporary("unused-pi".into(), cx));
     state.update(cx, |state, cx| {
         let mut failed = fixture_session("failed");
-        failed.binding = 0;
-        failed.error = Some(gupi_conversation::conversation::SessionError::Runtime(
+        *failed.binding_for_test() = 0;
+        *failed.error_for_test() = Some(gupi_conversation::conversation::SessionError::Runtime(
             "Pi failed to start".into(),
         ));
-        failed.draft = "keep failed draft".into();
-        state.sessions.insert("failed".into(), failed);
+        *failed.draft_for_test() = "keep failed draft".into();
+        state.sessions_for_test().insert("failed".into(), failed);
         state
-            .sessions
+            .sessions_for_test()
             .insert("exited".into(), fixture_session("exited"));
         let mut read_failed = fixture_session("read-failed");
-        read_failed.binding = 0;
-        read_failed.core_read = gupi_conversation::conversation::loading::CoreRead::Failed(
-            "Cannot prepare workspace".into(),
-        );
-        state.sessions.insert("read-failed".into(), read_failed);
+        *read_failed.binding_for_test() = 0;
+        *read_failed.core_read_for_test() =
+            gupi_conversation::conversation::test_support::CoreRead::Failed(
+                "Cannot prepare workspace".into(),
+            );
+        state
+            .sessions_for_test()
+            .insert("read-failed".into(), read_failed);
 
         let mut healthy = fixture_session("healthy");
-        healthy.binding = 0;
-        healthy.draft = "keep healthy draft".into();
-        healthy.core_read = gupi_conversation::conversation::loading::CoreRead::CheckingFile {
-            _task: cx.spawn(async |_, _| std::future::pending().await),
-        };
-        state.sessions.insert("healthy".into(), healthy);
+        *healthy.binding_for_test() = 0;
+        *healthy.draft_for_test() = "keep healthy draft".into();
+        *healthy.core_read_for_test() =
+            gupi_conversation::conversation::test_support::CoreRead::CheckingFile {
+                _task: cx.spawn(async |_, _| std::future::pending().await),
+            };
+        state.sessions_for_test().insert("healthy".into(), healthy);
 
         for selected in ["failed", "exited", "read-failed"] {
-            state.selected = Some(selected.into());
+            *state.selected_for_test() = Some(selected.into());
             state.new_or_reuse(None, cx);
-            assert_eq!(state.selected.as_deref(), Some("healthy"));
-            assert_eq!(state.sessions.len(), 4);
+            assert_eq!(state.selected().as_deref(), Some("healthy"));
+            assert_eq!(state.sessions().len(), 4);
             assert_eq!(
-                state.current().unwrap().draft.text().as_ref(),
+                state.current().unwrap().draft().text().as_ref(),
                 "keep healthy draft"
             );
         }
 
-        state.sessions.remove("healthy");
-        state.selected = Some("exited".into());
+        state.sessions_for_test().remove("healthy");
+        *state.selected_for_test() = Some("exited".into());
         state.new_or_reuse(None, cx);
-        let replacement = state.selected.clone().unwrap();
+        let replacement = state.selected().clone().unwrap();
         assert!(replacement.starts_with("draft-"));
-        assert_eq!(state.sessions.len(), 4);
+        assert_eq!(state.sessions().len(), 4);
         assert_eq!(
-            state.sessions["failed"].draft.text().as_ref(),
+            state.sessions()["failed"].draft().text().as_ref(),
             "keep failed draft"
         );
-        assert!(state.sessions[&replacement].core_read.running());
+        assert!(state.sessions()[&replacement].core_read().running());
         // Cancel preparation before it touches disk or starts a process.
         state
-            .sessions
+            .sessions_for_test()
             .get_mut(&replacement)
             .unwrap()
             .reset_reads_for_test();
@@ -313,8 +322,8 @@ fn temporary_actions_filter_copy_and_restore_focus_without_sending(cx: &mut Test
     state.update(cx, |state, _| {
         let mut session = fixture_session("first");
         answer(&mut session, "final answer");
-        state.sessions.insert("first".into(), session);
-        state.selected = Some("first".into());
+        state.sessions_for_test().insert("first".into(), session);
+        *state.selected_for_test() = Some("first".into());
     });
     let (_, visual) = cx.add_window_view(|window, cx| {
         let view = cx.new(|cx| TemporaryView::new(state.clone(), window, cx));
@@ -371,7 +380,7 @@ fn temporary_actions_filter_copy_and_restore_focus_without_sending(cx: &mut Test
             cx.read_from_clipboard().and_then(|i| i.text()).as_deref(),
             Some("final answer")
         );
-        assert!(state.read(cx).current().unwrap().instance.is_none());
+        assert!(!state.read(cx).current().unwrap().has_instance());
     });
     visual.simulate_input("follow up");
     visual.update(|_, cx| cx.write_to_clipboard(ClipboardItem::new_string("sentinel".into())));
@@ -389,20 +398,20 @@ fn temporary_return_requires_successful_final_text_and_no_pending_input() {
     let mut session = fixture_session("first");
     answer(&mut session, "answer");
     assert_eq!(session.completed_answer().as_deref(), Some("answer"));
-    session.live[0].value["stopReason"] = "toolUse".into();
+    session.live_for_test()[0].value["stopReason"] = "toolUse".into();
     assert!(session.completed_answer().is_none());
-    session.live[0].value["stopReason"] = "aborted".into();
+    session.live_for_test()[0].value["stopReason"] = "aborted".into();
     assert!(session.completed_answer().is_none());
-    session.live[0].value["stopReason"] = "stop".into();
-    session.live[0].value["content"] = serde_json::json!([{"type":"text","text":"progress"},{"type":"thinking","thinking":"private"},{"type":"text","text":"final"}]);
-    session.live[0].final_answer_part = Some(2);
+    session.live_for_test()[0].value["stopReason"] = "stop".into();
+    session.live_for_test()[0].value["content"] = serde_json::json!([{"type":"text","text":"progress"},{"type":"thinking","thinking":"private"},{"type":"text","text":"final"}]);
+    session.live_for_test()[0].final_answer_part = Some(2);
     assert_eq!(session.completed_answer().as_deref(), Some("final"));
-    session.pending_count = 1;
+    *session.pending_count_for_test() = 1;
     assert!(session.completed_answer().is_none());
-    session.pending_count = 0;
-    session.draft = "  \n".into();
+    *session.pending_count_for_test() = 0;
+    *session.draft_for_test() = "  \n".into();
     assert!(session.composer_empty());
-    session.attachments_read = Some(gpui_kit::Task::ready(()));
+    session.mark_attachment_read_for_test();
     assert!(!session.composer_empty());
 }
 
@@ -416,8 +425,8 @@ fn temporary_composing_text_and_attachments_never_trigger_return(cx: &mut TestAp
     state.update(cx, |state, _| {
         let mut session = fixture_session("first");
         answer(&mut session, "final answer");
-        state.sessions.insert("first".into(), session);
-        state.selected = Some("first".into());
+        state.sessions_for_test().insert("first".into(), session);
+        *state.selected_for_test() = Some("first".into());
     });
     let mut home = None;
     let (_, visual) = cx.add_window_view(|window, cx| {
@@ -429,7 +438,7 @@ fn temporary_composing_text_and_attachments_never_trigger_return(cx: &mut TestAp
     let home = home.unwrap();
     visual.update(|window, cx| {
         cx.write_to_clipboard(ClipboardItem::new_string("sentinel".into()));
-        let input = home.read(cx).input.clone();
+        let input = home.read(cx).input().clone();
         input.update(cx, |input, cx| {
             input.replace_and_mark_text_in_range(None, " ", Some(0..1), window, cx)
         });
@@ -443,9 +452,15 @@ fn temporary_composing_text_and_attachments_never_trigger_return(cx: &mut TestAp
             input.set_value("", window, cx);
         });
         state.update(cx, |state, _| {
-            state.sessions.get_mut("first").unwrap().attachments.push(
-                gupi_conversation::attachments::Attachment::file("/tmp/fixture.txt".into(), 0),
-            )
+            state
+                .sessions_for_test()
+                .get_mut("first")
+                .unwrap()
+                .attachments_for_test()
+                .push(gupi_conversation::attachments::Attachment::file(
+                    "/tmp/fixture.txt".into(),
+                    0,
+                ))
         });
         home.update(cx, |home, cx| home.submit_or_paste(false, window, cx));
         assert_eq!(
@@ -465,8 +480,8 @@ fn temporary_panel_switches_stop_hide_and_honors_rebound_shortcuts(cx: &mut Test
     state.update(cx, |state, _| {
         let mut session = fixture_session("first");
         answer(&mut session, "final answer");
-        state.sessions.insert("first".into(), session);
-        state.selected = Some("first".into());
+        state.sessions_for_test().insert("first".into(), session);
+        *state.selected_for_test() = Some("first".into());
     });
     let (_, visual) = cx.add_window_view(|window, cx| {
         let view = cx.new(|cx| TemporaryView::new(state.clone(), window, cx));
@@ -480,7 +495,11 @@ fn temporary_panel_switches_stop_hide_and_honors_rebound_shortcuts(cx: &mut Test
     assert!(visual.debug_bounds("temporary-action-stop").is_none());
     visual.update(|_, cx| {
         state.update(cx, |state, cx| {
-            state.sessions.get_mut("first").unwrap().pending_count = 1;
+            *state
+                .sessions_for_test()
+                .get_mut("first")
+                .unwrap()
+                .pending_count_for_test() = 1;
             cx.notify();
         })
     });
@@ -490,7 +509,11 @@ fn temporary_panel_switches_stop_hide_and_honors_rebound_shortcuts(cx: &mut Test
     visual.simulate_keystrokes("escape");
     visual.update(|_, cx| {
         state.update(cx, |state, cx| {
-            state.sessions.get_mut("first").unwrap().pending_count = 0;
+            *state
+                .sessions_for_test()
+                .get_mut("first")
+                .unwrap()
+                .pending_count_for_test() = 0;
             cx.notify();
         });
         let overrides = keybindings::Overrides::from([
@@ -588,7 +611,7 @@ fn user_message_images_are_compact_separate_and_open_preview(cx: &mut TestAppCon
                 serde_json::json!([{"type":"text", "text":"会不会更好"}, image.clone(), image]),
             ),
         ] {
-            session.live.push(DisplayMessage {
+            session.live_for_test().push(DisplayMessage {
                 id: id.into(),
                 entry: None,
                 completed_at: None,
@@ -597,9 +620,9 @@ fn user_message_images_are_compact_separate_and_open_preview(cx: &mut TestAppCon
             });
         }
         session.mark_transcript_message_for_test();
-        session.content_revision += 1;
-        state.sessions.insert("images".into(), session);
-        state.selected = Some("images".into());
+        *session.content_revision_for_test() += 1;
+        state.sessions_for_test().insert("images".into(), session);
+        *state.selected_for_test() = Some("images".into());
     });
     let (_, visual) = cx.add_window_view(|window, cx| {
         let view = cx.new(|cx| TemporaryView::new(state.clone(), window, cx));
@@ -633,7 +656,7 @@ fn user_message_images_are_compact_separate_and_open_preview(cx: &mut TestAppCon
         assert!(window.find("image-preview-bitmap").bounds().size.width > original.size.width);
         window.press("escape", cx);
         assert!(!window.try_find("image-preview").is_some());
-        assert_eq!(state.read(cx).current().unwrap().live.len(), 2);
+        assert_eq!(state.read(cx).current().unwrap().live().len(), 2);
     });
 }
 
@@ -646,13 +669,13 @@ fn temporary_summary_dialog_escape_preserves_window_and_conversation(cx: &mut Te
     state.update(cx, |state, _| {
         let mut session = fixture_session("summary");
         session.mark_transcript_message_for_test();
-        session.live.push(gupi_conversation::history::DisplayMessage {
+        session.live_for_test().push(gupi_conversation::history::DisplayMessage {
             id: "summary-entry".into(), entry: None, completed_at: None, final_answer_part: None,
             value: serde_json::json!({"role":"compaction", "content":"# Summary\n\nOriginal **Markdown**."}),
         });
-        session.content_revision += 1;
-        state.sessions.insert("summary".into(), session);
-        state.selected = Some("summary".into());
+        *session.content_revision_for_test() += 1;
+        state.sessions_for_test().insert("summary".into(), session);
+        *state.selected_for_test() = Some("summary".into());
     });
     let (_, visual) = cx.add_window_view(|window, cx| {
         let view = cx.new(|cx| TemporaryView::new(state.clone(), window, cx));
@@ -667,14 +690,25 @@ fn temporary_summary_dialog_escape_preserves_window_and_conversation(cx: &mut Te
         .expect("summary trigger");
     visual.simulate_click(button.center(), Modifiers::default());
     visual.run_until_parked();
-    visual.update(|window, cx| assert!(window.has_active_dialog(cx)));
+    visual.update(|window, cx| {
+        assert!(window.has_active_dialog(cx));
+        assert_eq!(
+            cx.global::<gupi_settings::commands::ConversationCommands>()
+                .0,
+            [false; 6]
+        );
+    });
     visual.simulate_keystrokes("escape");
     visual.run_until_parked();
     visual.update(|window, cx| {
         assert!(!window.has_active_dialog(cx));
+        assert!(
+            cx.global::<gupi_settings::commands::ConversationCommands>()
+                .0[0]
+        );
         assert!(window.is_window_active());
-        assert_eq!(state.read(cx).selected.as_deref(), Some("summary"));
-        assert!(!state.read(cx).sessions["summary"].stopping);
+        assert_eq!(state.read(cx).selected().as_deref(), Some("summary"));
+        assert!(!state.read(cx).sessions()["summary"].stopping());
     });
 }
 
@@ -703,9 +737,9 @@ fn custom_message_preserves_block_order_copy_and_image_preview(cx: &mut TestAppC
             }], "leafId":"notice"
         })).unwrap());
         session.mark_transcript_message_for_test();
-        session.content_revision += 1;
-        state.sessions.insert("plugin".into(), session);
-        state.selected = Some("plugin".into());
+        *session.content_revision_for_test() += 1;
+        state.sessions_for_test().insert("plugin".into(), session);
+        *state.selected_for_test() = Some("plugin".into());
     });
     let (_, visual) = cx.add_window_view(|window, cx| {
         let view = cx.new(|cx| TemporaryView::new(state.clone(), window, cx));
@@ -730,7 +764,7 @@ fn custom_message_preserves_block_order_copy_and_image_preview(cx: &mut TestAppC
         window.press("escape", cx);
         assert!(window.try_find("image-preview").is_none());
         assert_eq!(state.read(cx).current().unwrap().history().entries.len(), 1);
-        assert!(state.read(cx).current().unwrap().instance.is_none());
+        assert!(!state.read(cx).current().unwrap().has_instance());
     });
 }
 
@@ -744,9 +778,11 @@ fn session_info_dialog_from_temporary_actions_copies_updates_and_closes(cx: &mut
     let state = cx.new(|cx| ConversationState::temporary("unused-pi".into(), cx));
     state.update(cx, |state, _| {
         let mut session = fixture_session("information");
-        session.draft = "keep this draft".into();
-        state.sessions.insert("information".into(), session);
-        state.selected = Some("information".into());
+        *session.draft_for_test() = "keep this draft".into();
+        state
+            .sessions_for_test()
+            .insert("information".into(), session);
+        *state.selected_for_test() = Some("information".into());
     });
     let (_, visual) = cx.add_window_view(|window, cx| {
         let view = cx.new(|cx| TemporaryView::new(state.clone(), window, cx));
@@ -771,9 +807,13 @@ fn session_info_dialog_from_temporary_actions_copies_updates_and_closes(cx: &mut
         );
         assert!(window.try_find("session-info-reveal-file").is_none());
         state.update(cx, |state, cx| {
-            state.sessions.get_mut("information").unwrap().info.cwd =
-                "/tmp/updated-directory".into();
-            gupi_conversation::conversation::notify_controls("information", cx);
+            state
+                .sessions_for_test()
+                .get_mut("information")
+                .unwrap()
+                .info_for_test()
+                .cwd = "/tmp/updated-directory".into();
+            gupi_conversation::conversation::test_support::notify_controls("information", cx);
         });
     });
     visual.run_until_parked();
@@ -788,10 +828,10 @@ fn session_info_dialog_from_temporary_actions_copies_updates_and_closes(cx: &mut
         assert!(!window.has_active_dialog(cx));
         assert!(window.is_window_active());
         assert_eq!(
-            state.read(cx).current().unwrap().draft.text().as_ref(),
+            state.read(cx).current().unwrap().draft().text().as_ref(),
             "keep this draft"
         );
-        assert!(state.read(cx).current().unwrap().instance.is_none());
+        assert!(!state.read(cx).current().unwrap().has_instance());
     });
 }
 
@@ -802,9 +842,9 @@ fn temporary_find_shortcut_does_not_filter_sessions_or_edit_the_draft(cx: &mut T
     state.update(cx, |state, _| {
         let mut session = fixture_session("Alpha");
         answer(&mut session, "# Searchable **needle**");
-        session.draft = "draft".into();
-        state.sessions.insert("alpha".into(), session);
-        state.selected = Some("alpha".into());
+        *session.draft_for_test() = "draft".into();
+        state.sessions_for_test().insert("alpha".into(), session);
+        *state.selected_for_test() = Some("alpha".into());
     });
     let (_, visual) = cx.add_window_view(|window, cx| {
         let view = cx.new(|cx| TemporaryView::new(state.clone(), window, cx));
@@ -818,7 +858,7 @@ fn temporary_find_shortcut_does_not_filter_sessions_or_edit_the_draft(cx: &mut T
     visual.run_until_parked();
     assert!(visual.debug_bounds("conversation-find-scope").is_some());
     state.read_with(visual, |state, _| {
-        assert_eq!(state.current().unwrap().draft.text().as_ref(), "draft")
+        assert_eq!(state.current().unwrap().draft().text().as_ref(), "draft")
     });
     visual.simulate_keystrokes("escape");
     visual.run_until_parked();
@@ -829,7 +869,7 @@ fn temporary_find_shortcut_does_not_filter_sessions_or_edit_the_draft(cx: &mut T
     visual.simulate_input(" preserved");
     state.read_with(visual, |state, _| {
         assert_eq!(
-            state.current().unwrap().draft.text().as_ref(),
+            state.current().unwrap().draft().text().as_ref(),
             "draft preserved"
         )
     });
@@ -845,7 +885,7 @@ fn find_expands_recorded_skill_instructions_and_copy_keeps_original(cx: &mut Tes
     state.update(cx, |state, _| {
         let mut session = fixture_session("skill");
         session
-            .live
+            .live_for_test()
             .push(gupi_conversation::history::DisplayMessage {
                 id: "user".into(),
                 entry: None,
@@ -853,10 +893,10 @@ fn find_expands_recorded_skill_instructions_and_copy_keeps_original(cx: &mut Tes
                 final_answer_part: None,
                 value: serde_json::json!({"role":"user","content":original}),
             });
-        session.content_revision += 1;
+        *session.content_revision_for_test() += 1;
         session.mark_transcript_message_for_test();
-        state.sessions.insert("skill".into(), session);
-        state.selected = Some("skill".into());
+        state.sessions_for_test().insert("skill".into(), session);
+        *state.selected_for_test() = Some("skill".into());
     });
     let (_, visual) = cx.add_window_view(|window, cx| {
         let view = cx.new(|cx| TemporaryView::new(state.clone(), window, cx));
@@ -894,9 +934,11 @@ fn session_editors_preserve_composition_selection_and_undo_across_switches(
     let state = cx.new(|cx| ConversationState::temporary("unused-pi".into(), cx));
     state.update(cx, |state, _| {
         for key in ["first", "second"] {
-            state.sessions.insert(key.into(), fixture_session(key));
+            state
+                .sessions_for_test()
+                .insert(key.into(), fixture_session(key));
         }
-        state.selected = Some("first".into());
+        *state.selected_for_test() = Some("first".into());
     });
     let mut home = None;
     let (_, visual) = cx.add_window_view(|window, cx| {
@@ -908,7 +950,7 @@ fn session_editors_preserve_composition_selection_and_undo_across_switches(
     visual.run_until_parked();
     let other_focus = visual.update(|_, cx| cx.focus_handle());
     let first = visual.update(|window, cx| {
-        let input = home.read(cx).input.clone();
+        let input = home.read(cx).input().clone();
         input.update(cx, |input, cx| {
             input.replace_text_in_range(None, "abcd", window, cx);
         });
@@ -921,7 +963,7 @@ fn session_editors_preserve_composition_selection_and_undo_across_switches(
             input.replace_and_mark_text_in_range(None, "ni", Some(2..2), window, cx);
         });
         state.update(cx, |_, cx| {
-            gupi_conversation::conversation::notify_controls("first", cx)
+            gupi_conversation::conversation::test_support::notify_controls("first", cx)
         });
     });
     visual.run_until_parked();
@@ -932,13 +974,13 @@ fn session_editors_preserve_composition_selection_and_undo_across_switches(
             assert!(input.marked_text_range(window, cx).is_some());
         });
         state.update(cx, |state, cx| {
-            state.selected = Some("second".into());
+            *state.selected_for_test() = Some("second".into());
             gupi_conversation::conversation::test_support::notify_selection(cx);
         });
     });
     visual.run_until_parked();
     visual.update(|window, cx| {
-        let second = home.read(cx).input.clone();
+        let second = home.read(cx).input().clone();
         assert_ne!(first.entity_id(), second.entity_id());
         assert!(second.read(cx).focus_handle(cx).is_focused(window));
         second.update(cx, |input, cx| {
@@ -946,13 +988,13 @@ fn session_editors_preserve_composition_selection_and_undo_across_switches(
         });
         other_focus.focus(window, cx);
         state.update(cx, |state, cx| {
-            state.selected = Some("first".into());
+            *state.selected_for_test() = Some("first".into());
             gupi_conversation::conversation::test_support::notify_selection(cx);
         });
     });
     visual.run_until_parked();
     visual.update(|window, cx| {
-        assert_eq!(home.read(cx).input.entity_id(), first.entity_id());
+        assert_eq!(home.read(cx).input().entity_id(), first.entity_id());
         assert!(other_focus.is_focused(window));
         assert_eq!(first.read(cx).value().as_ref(), "abnicd");
         first.update(cx, |input, cx| {
@@ -965,7 +1007,7 @@ fn session_editors_preserve_composition_selection_and_undo_across_switches(
     visual.update(|_, cx| {
         assert_eq!(first.read(cx).value().as_ref(), "ab你cd");
         assert_eq!(
-            state.read(cx).sessions["second"].draft.text().as_ref(),
+            state.read(cx).sessions()["second"].draft().text().as_ref(),
             "second"
         );
     });
@@ -986,20 +1028,62 @@ fn session_editors_preserve_composition_selection_and_undo_across_switches(
     visual.update(|window, cx| {
         other_focus.focus(window, cx);
         state.update(cx, |state, cx| {
-            state.selected = Some("second".into());
+            *state.selected_for_test() = Some("second".into());
             gupi_conversation::conversation::test_support::notify_selection(cx);
         });
         home.update(cx, |home, cx| home.focus_composer(window, cx));
-        let input = home.read(cx).input.read(cx);
+        let input = home.read(cx).input().read(cx);
         assert!(input.focus_handle(cx).is_focused(window));
         assert_eq!(input.value().as_ref(), "second");
     });
     visual.simulate_input(" typed");
     visual.update(|_, cx| {
         assert_eq!(
-            state.read(cx).sessions["second"].draft.text().as_ref(),
+            state.read(cx).sessions()["second"].draft().text().as_ref(),
             "second typed"
         );
         assert_eq!(first.read(cx).value().as_ref(), "external");
     });
+}
+
+#[gpui_kit::test]
+fn hidden_home_does_not_restore_commands_from_background_changes(cx: &mut TestAppContext) {
+    use gupi_conversation_ui::home::HomeView;
+    use gupi_settings::commands::{ConversationCommands, conversation_commands};
+    init_interactions(cx);
+    let state = cx.new(|cx| ConversationState::temporary("unused-pi".into(), cx));
+    state.update(cx, |state, _| {
+        state
+            .sessions_for_test()
+            .insert("first".into(), fixture_session("first"));
+        *state.selected_for_test() = Some("first".into());
+    });
+    let mut home = None;
+    let (_, visual) = cx.add_window_view(|window, cx| {
+        let view = cx.new(|cx| HomeView::with_state(state.clone(), window, cx));
+        home = Some(view.clone());
+        Root::new(view, window, cx)
+    });
+    let home = home.unwrap();
+    visual.update(|window, _| window.activate_window());
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        assert!(cx.global::<ConversationCommands>().0[0]);
+        home.update(cx, |view, cx| {
+            view.set_notification_visible(false, window, cx)
+        });
+        conversation_commands([false; 6], window, cx);
+        state.update(cx, |_, cx| {
+            gupi_conversation::conversation::test_support::notify_controls("first", cx)
+        });
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        assert_eq!(cx.global::<ConversationCommands>().0, [false; 6]);
+        home.update(cx, |view, cx| {
+            view.set_notification_visible(true, window, cx)
+        });
+    });
+    visual.run_until_parked();
+    visual.update(|_, cx| assert!(cx.global::<ConversationCommands>().0[0]));
 }

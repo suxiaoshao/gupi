@@ -99,7 +99,10 @@ fn handle(event: Event, cx: &mut App) {
                 return;
             }
             let message = gupi_settings::i18n::t(cx, "updates-install-failed");
-            let worker = gpui_tokio::Tokio::spawn(cx, updater::prepare_install(directory, message));
+            let log = gupi_resources::paths::log_dir().map(|p| p.join("update-install.log"));
+            let worker = gpui_tokio::Tokio::spawn(cx, async move {
+                updater::prepare_install(directory, message, log.map_err(|e| e.to_string())?).await
+            });
             let task = cx.spawn(async move |cx| {
                 let result = worker
                     .await

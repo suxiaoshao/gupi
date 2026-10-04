@@ -2,7 +2,7 @@
 use super::*;
 use fluent_bundle::FluentArgs;
 use gpui_kit::prelude::FluentBuilder as _;
-use gupi_conversation::conversation::execution::RetryProgress;
+use gupi_conversation::conversation::RetryProgress;
 use gupi_settings::i18n::t_with_args;
 use std::time::Duration;
 

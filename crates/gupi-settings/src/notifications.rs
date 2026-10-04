@@ -31,64 +31,26 @@ impl Default for Preferences {
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Severity {
-    Info,
-    Warning,
-    Error,
-}
-impl Severity {
-    pub fn from_pi(value: Option<&str>) -> Self {
-        match value {
-            Some("warning") => Self::Warning,
-            Some("error") => Self::Error,
-            _ => Self::Info,
-        }
-    }
-}
-#[derive(Clone, Debug)]
-pub struct NoticeContent {
-    pub id: Option<String>,
-    pub message: String,
-    pub severity: Severity,
-}
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Kind {
-    Waiting(String),
+pub enum DeliveryKind {
+    Waiting,
     Completed,
     Failed,
     Plugin,
 }
-impl Kind {
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Waiting(_) => "notification-waiting",
-            Self::Completed => "notification-completed",
-            Self::Failed => "notification-failed",
-            Self::Plugin => "notification-plugin",
-        }
-    }
-}
-#[derive(Clone, Debug)]
-pub struct Notice {
-    pub key: String,
-    pub binding: u64,
-    pub kind: Kind,
-    pub message: Option<NoticeContent>,
-}
 impl Preferences {
-    pub fn system(&self, kind: &Kind, foreground: bool, source_visible: bool) -> bool {
+    pub fn system(&self, kind: &DeliveryKind, foreground: bool, source_visible: bool) -> bool {
         if source_visible {
             return false;
         }
         match kind {
-            Kind::Waiting(_) => self.waiting && !foreground,
-            Kind::Failed => self.failures && !foreground,
-            Kind::Completed => match self.completion {
+            DeliveryKind::Waiting => self.waiting && !foreground,
+            DeliveryKind::Failed => self.failures && !foreground,
+            DeliveryKind::Completed => match self.completion {
                 CompletionMode::Off => false,
                 CompletionMode::Background => !foreground,
                 CompletionMode::Always => true,
             },
-            Kind::Plugin => self.plugins && !foreground,
+            DeliveryKind::Plugin => self.plugins && !foreground,
         }
     }
 }
@@ -99,26 +61,28 @@ mod tests {
     #[test]
     fn defaults_route_by_app_and_source_visibility() {
         let p = Preferences::default();
-        for kind in [Kind::Waiting("a".into()), Kind::Failed, Kind::Completed] {
+        for kind in [
+            DeliveryKind::Waiting,
+            DeliveryKind::Failed,
+            DeliveryKind::Completed,
+        ] {
             assert!(p.system(&kind, false, false));
             assert!(!p.system(&kind, true, false));
             assert!(!p.system(&kind, true, true));
         }
-        assert!(!p.system(&Kind::Plugin, false, false));
+        assert!(!p.system(&DeliveryKind::Plugin, false, false));
         let p = Preferences {
             completion: CompletionMode::Always,
             plugins: true,
             ..p
         };
-        assert!(p.system(&Kind::Completed, true, false));
-        assert!(!p.system(&Kind::Completed, true, true));
-        assert!(p.system(&Kind::Plugin, false, false));
+        assert!(p.system(&DeliveryKind::Completed, true, false));
+        assert!(!p.system(&DeliveryKind::Completed, true, true));
+        assert!(p.system(&DeliveryKind::Plugin, false, false));
     }
     #[test]
-    fn old_config_gets_defaults_and_unknown_severity_is_info() {
+    fn old_config_gets_defaults() {
         let p: Preferences = serde_json::from_str("{}").unwrap();
         assert_eq!(p, Preferences::default());
-        assert_eq!(Severity::from_pi(Some("warning")), Severity::Warning);
-        assert_eq!(Severity::from_pi(Some("custom")), Severity::Info);
     }
 }

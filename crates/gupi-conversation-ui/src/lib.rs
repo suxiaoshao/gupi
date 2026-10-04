@@ -6,3 +6,5 @@ pub mod home;
 pub mod host;
 #[cfg(feature = "performance")]
 pub mod performance;
+
+mod tool_icon;

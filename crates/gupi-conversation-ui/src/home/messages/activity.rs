@@ -710,14 +710,14 @@ mod tests {
 
     #[test]
     fn call_updates_in_place_and_persisted_result_replaces_live_output() {
-        let live = ToolActivity {
-            id: "read-1".into(),
-            name: "read".into(),
-            args: json!({"path":"a.rs"}),
-            execution: ToolExecution::Running(
+        let live = ToolActivity::new(
+            "read-1".into(),
+            "read".into(),
+            json!({"path":"a.rs"}),
+            ToolExecution::Running(
                 json!({"content":[{"type":"text", "text":"partial"}], "details":{"truncation":{"truncated":true}}}),
             ),
-        };
+        );
         let running = RunContent::project(&[call()], std::slice::from_ref(&live), true);
         let running_tool = tools(&running)[0];
         assert_eq!(text_content(&running_tool.result), "partial");

@@ -65,11 +65,28 @@ use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 pub use temporary::trash_workspace;
 
+#[non_exhaustive]
 pub struct PendingUi {
     pub request: protocol::ExtensionRequest,
     pub selection: Option<Entity<gpui_kit::component::questionnaire::QuestionnaireState>>,
     pub text: String,
     pub deadline: Option<Instant>,
+}
+
+impl PendingUi {
+    pub fn new(
+        request: protocol::ExtensionRequest,
+        selection: Option<Entity<gpui_kit::component::questionnaire::QuestionnaireState>>,
+        text: String,
+        deadline: Option<Instant>,
+    ) -> Self {
+        Self {
+            request,
+            selection,
+            text,
+            deadline,
+        }
+    }
 }
 
 fn pending_selection(
@@ -93,9 +110,15 @@ fn pending_selection(
 }
 
 #[derive(Clone, PartialEq)]
+#[non_exhaustive]
 pub struct Widget {
     pub lines: Vec<String>,
     pub below: bool,
+}
+impl Widget {
+    pub fn new(lines: Vec<String>, below: bool) -> Self {
+        Self { lines, below }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Activity {
@@ -106,11 +129,22 @@ pub enum Activity {
     Waiting,
 }
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct ToolActivity {
     pub id: String,
     pub name: String,
     pub args: Value,
     pub execution: ToolExecution,
+}
+impl ToolActivity {
+    pub fn new(id: String, name: String, args: Value, execution: ToolExecution) -> Self {
+        Self {
+            id,
+            name,
+            args,
+            execution,
+        }
+    }
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ConnectionPurpose {
@@ -2536,10 +2570,7 @@ impl ConversationState {
                     if let Some(lines) = lines {
                         s.widgets.insert(
                             key.clone(),
-                            Widget {
-                                lines: lines.clone(),
-                                below: placement.as_deref() == Some("belowEditor"),
-                            },
+                            Widget::new(lines.clone(), placement.as_deref() == Some("belowEditor")),
                         );
                     } else {
                         s.widgets.remove(key);

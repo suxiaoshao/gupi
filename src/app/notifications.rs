@@ -597,18 +597,18 @@ mod tests {
                 .get_mut("a")
                 .unwrap()
                 .pending_ui_for_test()
-                .push_back(PendingUi {
-                    selection: None,
-                    request: ExtensionRequest {
+                .push_back(PendingUi::new(
+                    ExtensionRequest {
                         id: id.into(),
                         method: UiMethod::Editor {
                             title: "Private question".into(),
                             prefill: None,
                         },
                     },
-                    text: String::new(),
-                    deadline: None,
-                })
+                    None,
+                    String::new(),
+                    None,
+                ))
         });
         emit(state, Kind::Waiting(id.into()), cx);
     }

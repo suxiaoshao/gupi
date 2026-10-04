@@ -456,12 +456,12 @@ mod tests {
             json!({"type":"message_end", "message":{"role":"user", "timestamp":1, "content":"test"}}),
             json!({"type":"message_end", "message":{"role":"assistant", "timestamp":2, "stopReason":"toolUse", "content":[{"type":"toolCall", "id":"call", "name":"bash", "arguments":{"command":"printf hello"}}]}}),
         ]);
-        session.tools_for_test().push(ToolActivity {
-            id: "call".into(),
-            name: "bash".into(),
-            args: json!({"command":"printf hello"}),
-            execution: ToolExecution::Running(json!({"content":[{"type":"text", "text":output}]})),
-        });
+        session.tools_for_test().push(ToolActivity::new(
+            "call".into(),
+            "bash".into(),
+            json!({"command":"printf hello"}),
+            ToolExecution::Running(json!({"content":[{"type":"text", "text":output}]})),
+        ));
         session
     }
     fn target() -> Target {

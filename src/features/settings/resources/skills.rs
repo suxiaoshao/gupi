@@ -1,19 +1,18 @@
 use super::*;
-use gpui_kit::component::{
-    collapsible::Collapsible,
-    group_box::{GroupBox, GroupBoxVariants},
-    setting::SettingItem,
-    tag::Tag,
-    text::TextView,
-    tooltip::Tooltip,
-};
+use gpui_kit::component::collapsible::Collapsible;
+use gpui_kit::component::group_box::GroupBox;
+use gpui_kit::component::group_box::GroupBoxVariants;
+use gpui_kit::component::setting::SettingItem;
+use gpui_kit::component::tag::Tag;
+use gpui_kit::component::text::TextView;
+use gpui_kit::component::tooltip::Tooltip;
 
 impl ResourcesView {
     pub(super) fn filtered_skills(&self, cx: &App) -> Vec<Resource> {
         let query = self.search.read(cx).value().trim().to_lowercase();
         self.controller
             .read(cx)
-            .catalog
+            .catalog()
             .data()
             .into_iter()
             .flat_map(|catalog| &catalog.resources)

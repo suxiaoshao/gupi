@@ -1,19 +1,19 @@
 //! Configuration recovery before the popup can create a conversation.
 use super::TemporaryView;
-use crate::{
-    app::{
-        menus,
-        temporary::{self, Temporary},
-    },
-    components::recovery::recovery,
-    features::home::actions::{Kind, Run},
-    foundation::i18n::t,
-    state::config::ConfigContents,
-};
-use gpui_kit::{
-    component::{ActiveTheme, button::Button, h_flex, spinner::Spinner, v_flex},
-    *,
-};
+use crate::app::menus;
+use crate::app::temporary;
+use crate::app::temporary::Temporary;
+use crate::components::recovery::recovery;
+use gpui_kit::component::ActiveTheme;
+use gpui_kit::component::button::Button;
+use gpui_kit::component::h_flex;
+use gpui_kit::component::spinner::Spinner;
+use gpui_kit::component::v_flex;
+use gpui_kit::*;
+use gupi_settings::commands::Kind;
+use gupi_settings::commands::Run;
+use gupi_settings::config::ConfigContents;
+use gupi_settings::i18n::t;
 
 pub(crate) struct TemporaryStartup {
     content: Option<Entity<TemporaryView>>,
@@ -39,7 +39,7 @@ impl TemporaryStartup {
             }),
         ];
         if let Some(config) = cx.global::<Temporary>().config.clone() {
-            let store = config.read(cx).store.clone();
+            let store = config.read(cx).configuration();
             subscriptions.push(store.observe_in(cx, window, |_, _, _, cx| cx.notify()));
         }
         let mut this = Self {
@@ -82,7 +82,7 @@ impl TemporaryStartup {
         let config = cx.global::<Temporary>().config.as_ref()?;
         config
             .read(cx)
-            .store
+            .configuration()
             .read(cx, |op| match op.data().map(|data| &data.contents) {
                 Some(ConfigContents::Configured(_)) => None,
                 Some(ConfigContents::Missing) => {

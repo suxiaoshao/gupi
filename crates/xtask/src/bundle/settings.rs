@@ -198,7 +198,29 @@ pub fn read_bundle_settings(
             manifest_path.display()
         ))
     })?;
-    let manifest: Manifest = toml::from_str(&content).map_err(|err| {
+    let mut value: toml::Value = toml::from_str(&content).map_err(|err| {
+        XtaskError::msg(format!(
+            "failed to parse {}: {err}",
+            manifest_path.display()
+        ))
+    })?;
+    if value
+        .get("package")
+        .and_then(|v| v.get("version"))
+        .and_then(|v| v.get("workspace"))
+        .and_then(toml::Value::as_bool)
+        == Some(true)
+    {
+        let version = value
+            .get("workspace")
+            .and_then(|value| value.get("package"))
+            .and_then(|value| value.get("version"))
+            .and_then(toml::Value::as_str)
+            .ok_or_else(|| XtaskError::msg("root workspace package version is missing"))?
+            .to_owned();
+        value["package"]["version"] = toml::Value::String(version);
+    }
+    let manifest: Manifest = value.try_into().map_err(|err| {
         XtaskError::msg(format!(
             "failed to parse {}: {err}",
             manifest_path.display()
@@ -411,6 +433,18 @@ fn parse_app_category(category: &str) -> Result<AppCategory> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn workspace_product_version_is_used_for_bundles() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let (package, _, _) = read_bundle_settings(&root.join("Cargo.toml")).unwrap();
+        let value: toml::Value =
+            toml::from_str(&fs::read_to_string(root.join("Cargo.toml")).unwrap()).unwrap();
+        assert_eq!(
+            Some(package.version.as_str()),
+            value["workspace"]["package"]["version"].as_str()
+        );
+    }
 
     #[test]
     fn unsupported_or_duplicate_bundle_localizations_fail() {

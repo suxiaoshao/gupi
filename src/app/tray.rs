@@ -1,6 +1,6 @@
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-use crate::foundation::i18n::t;
 use gpui_kit::*;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use gupi_settings::i18n::t;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 struct Tray {
     icon: tray_icon::TrayIcon,
@@ -19,10 +19,12 @@ pub fn init(_cx: &mut App) {
 }
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn build(cx: &mut App) -> Result<(), Box<dyn std::error::Error>> {
-    use tray_icon::{
-        Icon, TrayIconBuilder,
-        menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem},
-    };
+    use tray_icon::Icon;
+    use tray_icon::TrayIconBuilder;
+    use tray_icon::menu::Menu;
+    use tray_icon::menu::MenuEvent;
+    use tray_icon::menu::MenuItem;
+    use tray_icon::menu::PredefinedMenuItem;
     let menu = Menu::new();
     let temporary = MenuItem::new(t(cx, "temporary-title"), true, None);
     let main = MenuItem::new(t(cx, "menu-show-main"), true, None);
@@ -132,14 +134,15 @@ pub fn refresh(_cx: &App) {
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub(crate) struct Entry {
     pub title: String,
-    pub activity: crate::state::conversation::Activity,
+    pub activity: gupi_conversation::conversation::Activity,
     pub unread: bool,
     pub target: super::notifications::Target,
 }
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub fn update(count: usize, entries: Vec<Entry>, cx: &mut App) {
-    use crate::state::conversation::Activity;
-    use tray_icon::menu::{MenuItem, PredefinedMenuItem};
+    use gupi_conversation::conversation::Activity;
+    use tray_icon::menu::MenuItem;
+    use tray_icon::menu::PredefinedMenuItem;
     let unread = t(cx, "notification-unread");
     let waiting = t(cx, "notification-waiting");
     let running = t(cx, "notification-running");

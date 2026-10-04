@@ -1,14 +1,21 @@
 //! One process owns a configuration directory. The lock lives for the process;
 //! a private loopback endpoint only asks its owner to show the main window.
 use gpui_kit::*;
-use serde::{Deserialize, Serialize};
-use std::{
-    fs::{File, OpenOptions, TryLockError},
-    io::{self, Read, Write},
-    net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream},
-    path::Path,
-    time::{Duration, Instant},
-};
+use serde::Deserialize;
+use serde::Serialize;
+use std::fs::File;
+use std::fs::OpenOptions;
+use std::fs::TryLockError;
+use std::io;
+use std::io::Read;
+use std::io::Write;
+use std::net::Ipv4Addr;
+use std::net::SocketAddrV4;
+use std::net::TcpListener;
+use std::net::TcpStream;
+use std::path::Path;
+use std::time::Duration;
+use std::time::Instant;
 
 pub(crate) struct Instance {
     _lock: File,
@@ -76,7 +83,8 @@ impl Instance {
         }
     }
     pub fn listen(self, cx: &mut App) -> io::Result<()> {
-        use smol::io::{AsyncReadExt, AsyncWriteExt};
+        use smol::io::AsyncReadExt;
+        use smol::io::AsyncWriteExt;
         let listener = smol::Async::new(self.listener)?;
         let token = self.token;
         let lock = self._lock;

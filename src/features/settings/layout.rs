@@ -1,11 +1,16 @@
 use super::*;
-use crate::foundation::pi_resources::Kind;
-use gpui_kit::component::{
-    Sizable, ThemeMode as Mode, ThemeRegistry, WindowExt,
-    group_box::GroupBoxVariant,
-    setting::{SettingField, SettingGroup, SettingItem, SettingPage, Settings},
-};
+use gpui_kit::component::Sizable;
+use gpui_kit::component::ThemeMode as Mode;
+use gpui_kit::component::ThemeRegistry;
+use gpui_kit::component::WindowExt;
+use gpui_kit::component::group_box::GroupBoxVariant;
+use gpui_kit::component::setting::SettingField;
+use gpui_kit::component::setting::SettingGroup;
+use gpui_kit::component::setting::SettingItem;
+use gpui_kit::component::setting::SettingPage;
+use gpui_kit::component::setting::Settings;
 use gpui_kit::prelude::FluentBuilder;
+use gupi_resources::pi_resources::Kind;
 
 impl SettingsView {
     pub(super) fn settings_panel(&self, cx: &mut Context<Self>) -> Settings {
@@ -202,7 +207,7 @@ impl SettingsView {
                 .into_iter()
                 .map(|group| {
                     SettingGroup::new().title(t(cx, group.label())).items(
-                        crate::state::keybindings::COMMANDS
+                        gupi_settings::keybindings::COMMANDS
                             .iter()
                             .enumerate()
                             .filter(|(_, command)| keys::Group::of(command.kind) == group)
@@ -282,7 +287,6 @@ impl SettingsView {
             (
                 "settings-about-pi",
                 probe
-                    .operation
                     .data()
                     .map(|p| p.version.clone())
                     .unwrap_or_else(|| unavailable.clone()),
@@ -291,7 +295,6 @@ impl SettingsView {
             (
                 "settings-about-path",
                 probe
-                    .operation
                     .data()
                     .map(|p| p.command.to_string_lossy().into_owned())
                     .unwrap_or_else(|| unavailable.clone()),
@@ -299,11 +302,11 @@ impl SettingsView {
             ),
             (
                 "settings-about-status",
-                if probe.operation.is_running() {
+                if probe.is_running() {
                     t(cx, "startup-checking")
-                } else if let Some(error) = probe.operation.problem() {
-                    t(cx, crate::pi::ProbeFailureKey::key(error))
-                } else if probe.operation.data().is_some() {
+                } else if let Some(error) = probe.problem() {
+                    t(cx, gupi_settings::i18n::ProbeFailureKey::key(error))
+                } else if probe.data().is_some() {
                     t(cx, "home-ready")
                 } else {
                     unavailable
@@ -419,7 +422,7 @@ impl SettingsView {
         let problem = self
             .controller
             .read(cx)
-            .store
+            .configuration()
             .read(cx, |op| op.problem().map(|p| p.key()));
         v_flex()
             .size_full()
@@ -434,7 +437,7 @@ impl SettingsView {
             .into_any_element()
     }
     pub(super) fn render_icon_themes(&self, cx: &Context<Self>) -> AnyElement {
-        use crate::state::icons::IconTheme;
+        use gupi_settings::icons::IconTheme;
         let config = self.controller.read(cx).preferences(cx);
         let busy = self.controller.read(cx).busy(cx);
         let mut group = gpui_kit::base::RadioGroup::new("icon-themes")
@@ -539,7 +542,8 @@ impl SettingsView {
 
 impl SettingsView {
     fn notification_settings(&self, cx: &Context<Self>) -> SettingPage {
-        use crate::state::notifications::{CompletionMode, Preferences};
+        use gupi_settings::notifications::CompletionMode;
+        use gupi_settings::notifications::Preferences;
         let controller = self.controller.clone();
         let mut group = SettingGroup::new();
         type Toggle = (&'static str, fn(&mut Preferences) -> &mut bool);

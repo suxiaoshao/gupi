@@ -1,5 +1,7 @@
 # Gupi 开发文档
 
+**[应用架构改造](capability-architecture/README.md)**：六个能力 crate 的当前职责、依赖和验证；[接口与依赖收敛](capability-architecture/refinement.md)记录官方 skill 核对结果。
+
 **[性能采集](performance.md)**：开发专用全程时间线、真实 Pi 会话、发行隔离和前后对比。
 
 面向用户的入口：[English](../../README.md) · [简体中文](../../README.zh-CN.md)。每份 README 完整介绍产品、安装与日常使用。

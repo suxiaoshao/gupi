@@ -1,10 +1,12 @@
 use super::*;
-use crate::state::shortcuts::{ShortcutTask, Shortcuts};
-use gpui_kit::component::{
-    Sizable, WindowExt,
-    setting::{SettingField, SettingGroup, SettingItem},
-};
+use gpui_kit::component::Sizable;
+use gpui_kit::component::WindowExt;
+use gpui_kit::component::setting::SettingField;
+use gpui_kit::component::setting::SettingGroup;
+use gpui_kit::component::setting::SettingItem;
 use gpui_kit::prelude::FluentBuilder;
+use gupi_settings::shortcuts::ShortcutTask;
+use gupi_settings::shortcuts::Shortcuts;
 mod editor;
 
 pub(super) struct GlobalKeys {
@@ -173,10 +175,11 @@ impl GlobalKeys {
                     .into_iter()
                     .find(|t| t.id == id)
             })
-            .unwrap_or_else(|| ShortcutTask {
-                id: uuid::Uuid::new_v4().to_string(),
-                enabled: true,
-                ..Default::default()
+            .unwrap_or_else(|| {
+                let mut record = ShortcutTask::default();
+                record.id = uuid::Uuid::new_v4().to_string();
+                record.enabled = true;
+                record
             });
         editor::open(definition, self.controller.clone(), window, cx);
     }
@@ -228,7 +231,7 @@ impl BindingInput {
             }
             let _ = window;
         });
-        let store = controller.read(cx).store.clone();
+        let store = controller.read(cx).configuration();
         let config = store.observe_in(cx, window, |this, op, window, cx| {
             if !op.is_running()
                 && let Some(config) = op.data().and_then(|d| d.configured())

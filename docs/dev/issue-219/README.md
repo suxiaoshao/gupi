@@ -7,9 +7,9 @@ Gupi 使用用户本机的 Pi CLI，通过 `pi --mode rpc` 的 stdin/stdout JSON
 | 位置 | 职责 |
 | --- | --- |
 | [pi-rpc](../../../crates/pi-rpc/README.md) | 纯命令探测；一个 client 的 Child、管道、请求关联、事件流、就绪与关闭结果 |
-| [Pi 探测](../../../src/pi.rs) | 探测 Operation、GPUI 任务接入和本地化错误映射 |
-| [PiState](../../../src/state/pi.rs) | 应用内多个运行实例、client 与各自的事件消费任务，统一创建与退出 |
-| [会话状态](../../../src/state/conversation.rs) | 实例与会话绑定、事件投影、命令及扩展请求回复 |
+| [Pi 探测](../../../crates/gupi-pi-runtime/src/probe.rs) | 探测 Operation 与 GPUI 任务接入；本地化错误映射由应用 i18n 持有 |
+| [PiState](../../../crates/gupi-pi-runtime/src/runtime.rs) | 应用内多个运行实例、client 与各自的事件消费任务，统一创建与退出 |
+| [会话状态](../../../crates/gupi-conversation/src/conversation.rs) | 实例与会话绑定、事件投影、命令及扩展请求回复 |
 | [启动与退出](../../../src/features/startup.rs) | 已有配置写入、草稿和布局保存、Pi 连接关闭完成后退出应用 |
 | [gpui-tokio](../../../crates/gpui-tokio/src/lib.rs) | GPUI / Tokio 桥接；丢弃 GPUI Task 取消所持有的 future |
 

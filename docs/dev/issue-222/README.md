@@ -70,8 +70,8 @@ Pi RPC 的 `custom()` 直接返回 undefined；`setHeader`、`setFooter`、`setE
 
 ## 2. 现有基础与缺口
 
-- [Gupi 输入区](../../../src/features/home/composer.rs) 已渲染四类交互：select/input 组合 Questionnaire 的对应部件，confirm 使用确认/否按钮，editor 使用 Textarea；共同提供取消入口，取消在左、提交或确认在右。
-- [会话状态](../../../src/state/conversation.rs) 已接收九类消息、排队待答请求、按来源会话回传，以及清理断线后的扩展状态。
+- [Gupi 输入区](../../../crates/gupi-conversation-ui/src/home/composer.rs) 已渲染四类交互：select/input 组合 Questionnaire 的对应部件，confirm 使用确认/否按钮，editor 使用 Textarea；共同提供取消入口，取消在左、提交或确认在右。
+- [会话状态](../../../crates/gupi-conversation/src/conversation.rs) 已接收九类消息、排队待答请求、按来源会话回传，以及清理断线后的扩展状态。
 
 新增 gallery 提供随时启动、单独选场景、重复体验的原生环境。自动回执无法代替焦点、中文输入法、滚动和鼠标操作体验。
 

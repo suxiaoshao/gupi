@@ -1,32 +1,45 @@
-use super::{AppConfig, AppLanguage, ConfigController, PiProbeController, SettingsView};
+use super::AppConfig;
+use super::AppLanguage;
+use super::ConfigController;
+use super::PiProbeController;
+use super::SettingsView;
 use gpui_form::Form;
+use gpui_kit::AppContext;
+use gpui_kit::TestAppContext;
 use gpui_kit::component::Root;
-use gpui_kit::{AppContext, TestAppContext};
 
 #[gpui_kit::test]
 fn shared_settings_layout_renders_without_reentrant_entity_access(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_kit::init(cx);
+        crate::app::init_capability_hosts(cx);
         app_theme::init(cx);
-        crate::state::theme::init(cx);
-        crate::foundation::i18n::apply(AppLanguage::Chinese, cx);
+        gupi_settings::theme::init(cx);
+        gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
     });
     let (_, cx) = cx.add_window_view(|window, cx| {
         let form = cx.new(|_| {
-            Form::new(AppConfig {
-                pi_command: Some("/custom/onboarding-pi".into()),
-                ..Default::default()
+            Form::new({
+                let mut record = AppConfig::default();
+                record.pi_command = Some("/custom/onboarding-pi".into());
+                record
             })
         });
         let controller = cx.new(|cx| ConfigController::new(&form, cx));
-        controller.read(cx).pi_form.clone().update(cx, |form, cx| {
-            form.rebase(
-                super::PiSettings {
-                    command: Some("/custom/settings-pi".into()),
-                },
-                cx,
-            )
-        });
+        controller
+            .read(cx)
+            .pi_form()
+            .clone()
+            .update(cx, |form, cx| {
+                form.rebase(
+                    {
+                        let mut record = super::PiSettings::default();
+                        record.command = Some("/custom/settings-pi".into());
+                        record
+                    },
+                    cx,
+                )
+            });
         let draft = cx.new(|_| PiProbeController::new());
         let applied = cx.new(|_| PiProbeController::new());
         let view = cx.new(|cx| {
@@ -57,9 +70,10 @@ fn shared_settings_layout_renders_without_reentrant_entity_access(cx: &mut TestA
 fn theme_grid_contributes_height_and_wraps_in_settings(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_kit::init(cx);
+        crate::app::init_capability_hosts(cx);
         app_theme::init(cx);
-        crate::state::theme::init(cx);
-        crate::foundation::i18n::apply(AppLanguage::Chinese, cx);
+        gupi_settings::theme::init(cx);
+        gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
     });
     let mut fixture = None;
     let (_, cx) = cx.add_window_view(|window, cx| {
@@ -116,7 +130,9 @@ impl gpui_kit::Render for ThemeGridFixture {
         _: &mut gpui_kit::Window,
         cx: &mut gpui_kit::Context<Self>,
     ) -> impl gpui_kit::IntoElement {
-        use gpui_kit::{InteractiveElement, ParentElement, Styled};
+        use gpui_kit::InteractiveElement;
+        use gpui_kit::ParentElement;
+        use gpui_kit::Styled;
         let mut choices = app_theme::theme_choices(
             gpui_kit::component::ThemeRegistry::global(cx),
             gpui_kit::component::ThemeMode::Light,
@@ -141,13 +157,17 @@ impl gpui_kit::Render for ThemeGridFixture {
 
 #[gpui_kit::test]
 fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppContext) {
-    use crate::foundation::pi_resources::{Catalog, Kind, Package, Resource};
-    use gpui_operation::{Complete, Load, Transition};
+    use gupi_resources::pi_resources::Catalog;
+    use gupi_resources::pi_resources::Kind;
+    use gupi_resources::pi_resources::Package;
+    use gupi_resources::pi_resources::Resource;
+
     cx.update(|cx| {
         gpui_kit::init(cx);
+        crate::app::init_capability_hosts(cx);
         app_theme::init(cx);
-        crate::state::theme::init(cx);
-        crate::foundation::i18n::apply(AppLanguage::Chinese, cx);
+        gupi_settings::theme::init(cx);
+        gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
     });
     for page in 0..9 {
         let (_, window_cx) = cx.add_window_view(|window, cx| {
@@ -156,7 +176,7 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
             let draft = cx.new(|_| PiProbeController::new());
             let applied = cx.new(|_| {
                 let mut probe = PiProbeController::new();
-                probe.draining = true; // Layout fixture: no external executable probing.
+                probe.stop(); // Layout fixture: no external executable probing.
                 probe
             });
             let settings = cx.new(|cx| {
@@ -173,29 +193,33 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
             let resources = settings.read(cx).resources.read(cx).controller.clone();
             resources.update(cx, |owner, _| {
                 let root = std::path::PathBuf::from("/tmp/settings-layout-fixture");
-                owner.catalog.transition(Load(gpui_kit::Task::ready(())));
-                owner.catalog.transition(Complete(Ok(Catalog {
-                    root: root.clone(),
-                    packages: vec![Package {
-                        source: "local-review-package".into(),
-                        path: root.clone(),
-                        version: Some("1.0.0".into()),
-                    }],
-                    resources: [Kind::Extension, Kind::Skill, Kind::Prompt]
+                owner.set_catalog_for_test({
+                    let mut record = Catalog::default();
+                    record.root = root.clone();
+                    record.packages = vec![{
+                        let mut package = Package::new("local-review-package".into(), root.clone());
+                        package.version = Some("1.0.0".into());
+                        package
+                    }];
+                    record.resources = [Kind::Extension, Kind::Skill, Kind::Prompt]
                         .into_iter()
-                        .map(|kind| Resource {
-                            kind,
-                            path: root.join("example.md"),
-                            base: root.clone(),
-                            package: None,
-                            name: "测试资源".into(),
-                            description: "用于布局检查的说明".into(),
-                            enabled: true,
-                            editable: kind != Kind::Extension,
+                        .map(|kind| {
+                            let mut record = Resource::new(
+                                kind,
+                                root.join("example.md"),
+                                root.clone(),
+                                "测试资源".into(),
+                            );
+                            record.package = None;
+                            record.description = "用于布局检查的说明".into();
+                            record.enabled = true;
+                            record.editable = kind != Kind::Extension;
+                            record
                         })
-                        .collect(),
-                    warnings: vec![],
-                })));
+                        .collect();
+                    record.warnings = vec![];
+                    record
+                });
             });
             let view = cx.new(|_| SettingsPageFixture { settings, page });
             Root::new(view, window, cx)
@@ -250,43 +274,49 @@ struct SettingsPageFixture {
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 #[gpui_kit::test]
 fn native_update_disables_settings_controls_until_closed(cx: &mut TestAppContext) {
-    use crate::state::{
-        config::{ConfigContents, ConfigData},
-        updates::{self, Status},
-    };
-    use gpui_kit::{Task, test::TestWindowExt};
-    use gpui_operation::{Complete, Load, Transition};
+    use gpui_kit::test::TestWindowExt;
+    use gupi_settings::config::ConfigContents;
+    use gupi_settings::config::ConfigData;
+    use gupi_updates::updates;
+    use gupi_updates::updates::Status;
+
     cx.update(|cx| {
         gpui_kit::init(cx);
+        crate::app::init_capability_hosts(cx);
         app_theme::init(cx);
-        crate::state::theme::init(cx);
-        crate::foundation::i18n::apply(AppLanguage::Chinese, cx);
+        gupi_settings::theme::init(cx);
+        gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
     });
     let directory = tempfile::tempdir().unwrap();
     let mut fixture = None;
     let (_, visual) = cx.add_window_view(|window, cx| {
         let form = cx.new(|_| {
-            Form::new(AppConfig {
-                auto_check_updates: Some(false),
-                ..Default::default()
+            Form::new({
+                let mut record = AppConfig::default();
+                record.auto_check_updates = Some(false);
+                record
             })
         });
         let controller = cx.new(|cx| {
             ConfigController::at_path(&form, Ok(directory.path().join("config.toml")), cx)
         });
-        let store = controller.read(cx).store.clone();
-        store.update(cx, |op| {
-            op.transition(Load(Task::ready(())));
-            op.transition(Complete(Ok(ConfigData {
-                path: directory.path().join("config.toml"),
-                contents: ConfigContents::Missing,
-                backup: None,
-            })));
+        controller.update(cx, |owner, cx| {
+            owner.settle_for_test(
+                {
+                    let mut record = ConfigData::new(
+                        directory.path().join("config.toml"),
+                        ConfigContents::Missing,
+                    );
+                    record.backup = None;
+                    record
+                },
+                cx,
+            )
         });
         let draft = cx.new(|_| PiProbeController::new());
         let applied = cx.new(|_| {
             let mut probe = PiProbeController::new();
-            probe.draining = true;
+            probe.stop();
             probe
         });
         let settings = cx.new(|cx| {
@@ -312,10 +342,10 @@ fn native_update_disables_settings_controls_until_closed(cx: &mut TestAppContext
         assert_eq!(AppConfig::AUTO_CHECK_UPDATES.get(&form, cx), Some(true));
     });
     updates.update(visual, |owner, cx| {
-        owner.status = Status::Available(crate::foundation::releases::Release {
-            version: semver::Version::new(2, 0, 0),
-            url: "https://github.com/suxiaoshao/gupi/releases/tag/v2.0.0".into(),
-        });
+        owner.set_status_for_test(Status::Available(gupi_updates::releases::Release::new(
+            semver::Version::new(2, 0, 0),
+            "https://github.com/suxiaoshao/gupi/releases/tag/v2.0.0".into(),
+        )));
         owner.start_install(cx).unwrap();
     });
     visual.update(|window, cx| {

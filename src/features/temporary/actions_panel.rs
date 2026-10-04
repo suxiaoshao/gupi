@@ -1,9 +1,13 @@
 use super::*;
-use gpui_kit::base::actions::{Cancel, Confirm, SelectDown, SelectUp};
-use gpui_kit::component::{
-    command::{Command, CommandGroup, CommandItem, CommandState},
-    input::Escape,
-};
+use gpui_kit::base::actions::Cancel;
+use gpui_kit::base::actions::Confirm;
+use gpui_kit::base::actions::SelectDown;
+use gpui_kit::base::actions::SelectUp;
+use gpui_kit::component::command::Command;
+use gpui_kit::component::command::CommandGroup;
+use gpui_kit::component::command::CommandItem;
+use gpui_kit::component::command::CommandState;
+use gpui_kit::component::input::Escape;
 
 pub(super) struct ActionsPanel {
     owner: WeakEntity<TemporaryView>,
@@ -51,10 +55,10 @@ impl Render for ActionsPanel {
         };
         let view = owner.read(cx);
         let state = view.state.read(cx);
-        let valid = state.selected == self.target;
+        let valid = state.selected() == &self.target;
         let title = state
             .current()
-            .map(|s| navigation::display_title(&s.info, cx))
+            .map(|s| navigation::display_title(s.info(), cx))
             .unwrap_or_else(|| t(cx, "temporary-title"));
         let home = view.home.read(cx);
         let query = self.input.read(cx).value().trim().to_lowercase();
@@ -133,7 +137,7 @@ impl Render for ActionsPanel {
                                     })
                                     .child(label.clone()),
                             )
-                            .children(crate::features::command_palette::binding(kind, window))
+                            .children(gupi_conversation_ui::command_palette::binding(kind, window))
                     });
                 group = group.item(item);
                 rows.push(kind);
@@ -208,11 +212,11 @@ impl Render for ActionsPanel {
                             return;
                         };
                         let _ = owner.update(cx, |view, cx| {
-                            if view.state.read(cx).selected != target {
+                            if view.state.read(cx).selected() != &target {
                                 return;
                             }
                             view.close_actions(window, cx);
-                            view.run(&Run(kind), window, cx);
+                            view.run(&Run::new(kind), window, cx);
                         });
                     })
                     .on_cancel(move |window, cx| {

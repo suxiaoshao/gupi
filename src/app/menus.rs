@@ -1,64 +1,17 @@
-use crate::{
-    features::home::actions::{Kind, Run},
-    foundation::{i18n::t, paths},
-};
-use gpui_kit::component::{GlobalState, WindowExt, button::Button, input, v_flex};
+use gpui_kit::component::GlobalState;
+use gpui_kit::component::WindowExt;
+use gpui_kit::component::button::Button;
+use gpui_kit::component::input;
+use gpui_kit::component::v_flex;
 use gpui_kit::*;
+use gupi_resources::paths;
+use gupi_settings::commands::Kind;
+use gupi_settings::commands::Run;
+use gupi_settings::i18n::t;
 
-actions!(
-    gupi,
-    [
-        Quit,
-        ShowSettings,
-        ShowMainWindow,
-        ShowCommandPalette,
-        ShowTemporaryWindow,
-        About,
-        CheckForUpdates,
-        Minimize,
-        Zoom,
-        Fullscreen,
-        Hide,
-        HideOthers,
-        ShowAll,
-        UserGuide,
-        PiDocs,
-        ReportIssue,
-        ShowLogs,
-        CopyDiagnostics
-    ]
-);
+pub(crate) use gupi_settings::commands::*;
 struct AppliedLocale(&'static str);
 impl Global for AppliedLocale {}
-/// Signals only menu definition changes, not unrelated component global state.
-pub(crate) struct MenusChanged;
-impl Global for MenusChanged {}
-
-pub(crate) const CONVERSATION_COMMANDS: [Kind; 6] = [
-    Kind::New,
-    Kind::QuickOpen,
-    Kind::Rename,
-    Kind::Export,
-    Kind::Sidebar,
-    Kind::History,
-];
-#[derive(Default, PartialEq)]
-struct ConversationCommands([bool; 6]);
-impl Global for ConversationCommands {}
-/// Native menus capture enabled state. Only rebuild when the active window's
-/// capabilities change, not for each streamed message or render.
-pub(crate) fn conversation_commands(enabled: [bool; 6], window: &Window, cx: &mut App) {
-    if !window.is_window_active() {
-        return;
-    }
-    let value = ConversationCommands(enabled);
-    if cx.try_global::<ConversationCommands>() == Some(&value) {
-        return;
-    }
-    cx.set_global(value);
-    refresh_native(cx);
-}
-
 pub(crate) fn init(cx: &mut App) {
     #[cfg(target_os = "macos")]
     {
@@ -153,7 +106,7 @@ pub(crate) fn copy_diagnostics(cx: &mut App) {
     cx.write_to_clipboard(ClipboardItem::new_string(text));
 }
 pub(crate) fn refresh(cx: &mut App) {
-    let locale = crate::foundation::i18n::locale(cx);
+    let locale = gupi_settings::i18n::locale(cx);
     if cx
         .try_global::<AppliedLocale>()
         .is_some_and(|old| old.0 == locale)
@@ -175,7 +128,7 @@ fn app_menus(cx: &App) -> Vec<Menu> {
                     .map(|state| state.0[index])
             })
             .unwrap_or(false);
-        MenuItem::action(t(cx, label), Run(kind)).disabled(!enabled)
+        MenuItem::action(t(cx, label), Run::new(kind)).disabled(!enabled)
     };
     let mut app_items = vec![
         MenuItem::action(t(cx, "menu-about"), About),
@@ -258,8 +211,14 @@ pub(crate) fn refresh_native(cx: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::with_window;
-    use gpui_kit::{Context, IntoElement, Render, TestAppContext, Window, div};
-    use std::{cell::Cell, rc::Rc};
+    use gpui_kit::Context;
+    use gpui_kit::IntoElement;
+    use gpui_kit::Render;
+    use gpui_kit::TestAppContext;
+    use gpui_kit::Window;
+    use gpui_kit::div;
+    use std::cell::Cell;
+    use std::rc::Rc;
 
     struct Page;
     impl Render for Page {

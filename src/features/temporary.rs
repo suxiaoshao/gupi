@@ -1,31 +1,43 @@
 //! A disposable window view over the application-owned temporary sessions.
 mod actions_panel;
 pub(crate) mod startup;
-use super::home::{
-    HomeView,
-    actions::{Kind, Run},
-    navigation,
-};
-use crate::{
-    app::{menus, temporary},
-    foundation::{assets::IconName, i18n::t},
-    state::conversation::{Activity, ConversationEvent, ConversationState},
-};
-use gpui_kit::{
-    component::{
-        ActiveTheme, Disableable, Icon, IndexPath, Selectable, Sizable, WindowExt as _,
-        button::{Button, ButtonVariants},
-        h_flex,
-        input::{self, Input, InputEvent, InputState, MoveDown, MoveUp},
-        kbd::Kbd,
-        list::{List, ListDelegate, ListState},
-        menu::ContextMenuExt,
-        popover::Popover,
-        resizable::{h_resizable, resizable_panel},
-        v_flex,
-    },
-    *,
-};
+use crate::app::menus;
+use crate::app::temporary;
+use gpui_kit::component::ActiveTheme;
+use gpui_kit::component::Disableable;
+use gpui_kit::component::Icon;
+use gpui_kit::component::IndexPath;
+use gpui_kit::component::Selectable;
+use gpui_kit::component::Sizable;
+use gpui_kit::component::WindowExt as _;
+use gpui_kit::component::button::Button;
+use gpui_kit::component::button::ButtonVariants;
+use gpui_kit::component::h_flex;
+use gpui_kit::component::input;
+use gpui_kit::component::input::Input;
+use gpui_kit::component::input::InputEvent;
+use gpui_kit::component::input::InputState;
+use gpui_kit::component::input::MoveDown;
+use gpui_kit::component::input::MoveUp;
+use gpui_kit::component::kbd::Kbd;
+use gpui_kit::component::list::List;
+use gpui_kit::component::list::ListDelegate;
+use gpui_kit::component::list::ListState;
+use gpui_kit::component::menu::ContextMenuExt;
+use gpui_kit::component::popover::Popover;
+use gpui_kit::component::resizable::h_resizable;
+use gpui_kit::component::resizable::resizable_panel;
+use gpui_kit::component::v_flex;
+use gpui_kit::*;
+use gupi_conversation::conversation::Activity;
+use gupi_conversation::conversation::ConversationEvent;
+use gupi_conversation::conversation::ConversationState;
+use gupi_conversation_ui::home::HomeView;
+use gupi_conversation_ui::home::actions::Kind;
+use gupi_conversation_ui::home::actions::Run;
+use gupi_conversation_ui::home::navigation;
+use gupi_settings::assets::IconName;
+use gupi_settings::i18n::t;
 
 use gpui_kit::prelude::FluentBuilder as _;
 
@@ -70,7 +82,7 @@ impl TemporaryView {
                 cx,
             )
         });
-        let composer = home.read(cx).input.clone();
+        let composer = home.read(cx).input().clone();
         let subscriptions = vec![
             cx.observe(&composer, |_, _, cx| cx.notify()),
             cx.subscribe_in(&state, window, |this, _, event, window, cx| {
@@ -79,7 +91,8 @@ impl TemporaryView {
                         this.refresh_source(None, window, cx);
                     } else {
                         for (source, navigation) in &changes.sessions {
-                            if *navigation || this.state.read(cx).selected.as_ref() == Some(source)
+                            if *navigation
+                                || this.state.read(cx).selected().as_ref() == Some(source)
                             {
                                 this.refresh_source(Some(source), window, cx);
                             }
@@ -100,8 +113,8 @@ impl TemporaryView {
                     }) {
                         return;
                     }
-                    if !secondary && crate::state::keybindings::uses_enter(Kind::PasteAnswer, cx) {
-                        this.run(&Run(Kind::PasteAnswer), window, cx);
+                    if !secondary && gupi_settings::keybindings::uses_enter(Kind::PasteAnswer, cx) {
+                        this.run(&Run::new(Kind::PasteAnswer), window, cx);
                     }
                 }
             }),
@@ -143,37 +156,37 @@ impl TemporaryView {
         let query = self.search.read(cx).value().trim().to_lowercase();
         let state = self.state.read(cx);
         if let Some((key, session)) = state
-            .selected
+            .selected()
             .as_ref()
-            .and_then(|key| state.sessions.get(key).map(|s| (key, s)))
+            .and_then(|key| state.sessions().get(key).map(|s| (key, s)))
         {
-            if session.busy() || session.interrupted || !session.pending_ui.is_empty() {
+            if session.busy() || session.interrupted() || !session.pending_ui().is_empty() {
                 self.answer_available = None;
             } else if self
                 .answer_available
                 .as_ref()
-                .is_none_or(|(k, revision, _)| k != key || *revision != session.content_revision)
+                .is_none_or(|(k, revision, _)| k != key || *revision != session.content_revision())
             {
                 self.answer_available = Some((
                     key.clone(),
-                    session.content_revision,
+                    session.content_revision(),
                     session.completed_answer().is_some(),
                 ));
             }
         } else {
             self.answer_available = None;
         }
-        let make_row = |key: String, info: crate::foundation::session_catalog::SessionInfo| {
+        let make_row = |key: String, info: gupi_conversation::session_catalog::SessionInfo| {
             let title = navigation::display_title(&info, cx);
             if !matches_query(&title, &query) {
                 return None;
             }
             let activity = state
-                .sessions
+                .sessions()
                 .get(&key)
                 .map(|s| s.activity())
                 .unwrap_or(Activity::Idle);
-            let unread = state.sessions.get(&key).is_some_and(|s| s.unread);
+            let unread = state.sessions().get(&key).is_some_and(|s| s.unread());
             Some(Row {
                 unread,
                 key,
@@ -181,12 +194,12 @@ impl TemporaryView {
                 activity,
             })
         };
-        let selected_key = state.selected.clone();
+        let selected_key = state.selected().clone();
         let changed = if let Some(source) = source {
             let row = state
-                .sessions
+                .sessions()
                 .get(source)
-                .and_then(|s| make_row(source.to_owned(), s.info.clone()));
+                .and_then(|s| make_row(source.to_owned(), s.info().clone()));
             let rows = &self.list.read(cx).delegate().rows;
             let index = rows.iter().position(|r| r.key == source);
             if index.and_then(|i| rows.get(i)) == row.as_ref() {
@@ -268,7 +281,7 @@ impl TemporaryView {
                 self.close_actions(window, cx);
             } else {
                 let owner = cx.weak_entity();
-                let target = self.state.read(cx).selected.clone();
+                let target = self.state.read(cx).selected().clone();
                 self.panel =
                     Some(cx.new(|cx| actions_panel::ActionsPanel::new(owner, target, window, cx)));
             }
@@ -329,7 +342,7 @@ impl TemporaryView {
                 if let Some(path) = self
                     .state
                     .read(cx)
-                    .selected
+                    .selected()
                     .as_ref()
                     .and_then(|key| self.state.read(cx).temporary_workspace(key))
                 {
@@ -338,7 +351,7 @@ impl TemporaryView {
             }
             Kind::HideTemporary => temporary::hide(window, cx),
             Kind::TrashTemporary => self.home.update(cx, |home, cx| {
-                home.run_action(&Run(Kind::Delete), window, cx)
+                home.run_action(&Run::new(Kind::Delete), window, cx)
             }),
             Kind::New => {
                 self.search
@@ -353,7 +366,7 @@ impl TemporaryView {
     }
     fn render_primary(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         let home = self.home.read(cx);
-        let sending = home.input.focus_handle(cx).is_focused(window)
+        let sending = home.input().focus_handle(cx).is_focused(window)
             && self
                 .state
                 .read(cx)
@@ -380,7 +393,7 @@ impl TemporaryView {
             .children(if sending {
                 Some(Kbd::new(Keystroke::parse("enter").unwrap()))
             } else {
-                crate::features::command_palette::binding(Kind::PasteAnswer, window)
+                gupi_conversation_ui::command_palette::binding(Kind::PasteAnswer, window)
             })
             .disabled(!enabled)
             .on_click(cx.listener(move |this, _, window, cx| {
@@ -388,7 +401,7 @@ impl TemporaryView {
                     this.home
                         .update(cx, |home, cx| home.submit_or_paste(false, window, cx));
                 } else {
-                    this.run(&Run(Kind::PasteAnswer), window, cx);
+                    this.run(&Run::new(Kind::PasteAnswer), window, cx);
                 }
             }))
     }
@@ -406,7 +419,7 @@ impl TemporaryView {
                     .small()
                     .ghost()
                     .label(t(cx, "temporary-actions"))
-                    .children(crate::features::command_palette::binding(
+                    .children(gupi_conversation_ui::command_palette::binding(
                         Kind::TemporaryActions,
                         window,
                     )),
@@ -415,7 +428,7 @@ impl TemporaryView {
                 let _ = owner.update(cx, |this, cx| {
                     if *open && this.panel.is_none() {
                         let owner = cx.weak_entity();
-                        let target = this.state.read(cx).selected.clone();
+                        let target = this.state.read(cx).selected().clone();
                         this.panel =
                             Some(cx.new(|cx| {
                                 actions_panel::ActionsPanel::new(owner, target, window, cx)
@@ -462,7 +475,13 @@ impl TemporaryView {
         if self.search.focus_handle(cx).is_focused(window) {
             self.home
                 .update(cx, |home, cx| home.focus_composer(window, cx));
-        } else if self.home.read(cx).input.focus_handle(cx).is_focused(window) {
+        } else if self
+            .home
+            .read(cx)
+            .input()
+            .focus_handle(cx)
+            .is_focused(window)
+        {
             self.focus_search(window, cx);
         } else {
             cx.propagate();
@@ -493,7 +512,7 @@ impl Render for TemporaryView {
             .on_action(
                 cx.listener(|this, _: &menus::ShowCommandPalette, window, cx| {
                     this.home.update(cx, |home, cx| {
-                        home.run_action(&Run(Kind::Palette), window, cx)
+                        home.run_action(&Run::new(Kind::Palette), window, cx)
                     });
                 }),
             )
@@ -627,7 +646,7 @@ impl RenderOnce for SessionItem {
             .children(self.row.unread.then(|| navigation::unread_mark(cx)))
             .child(navigation::activity_mark(self.row.activity, cx))
             .children(self.shortcut.and_then(|n| {
-                crate::features::command_palette::binding(Kind::TemporarySession(n), window)
+                gupi_conversation_ui::command_palette::binding(Kind::TemporarySession(n), window)
             }))
             .context_menu(move |menu, _, cx| {
                 navigation::session_menu(
@@ -720,7 +739,8 @@ fn session_index(number: u8, count: usize) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::{matches_query, next_index};
+    use super::matches_query;
+    use super::next_index;
     #[test]
     fn search_and_navigation_handle_filtered_out_selection() {
         assert!(matches_query("Rust 临时会话", "rust"));

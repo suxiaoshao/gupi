@@ -59,7 +59,7 @@
 
 ## 源码入口与验证边界
 
-- [Gupi 临时窗口所有者](../../../src/app/temporary.rs)、[HomeView 布局](../../../src/features/home.rs)、[标题栏](../../../src/features/home/titlebar.rs)、[临时页面](../../../src/features/temporary.rs)、[分栏](../../../src/features/home/panes.rs)、[输入区](../../../src/features/home/composer.rs)。
+- [Gupi 临时窗口所有者](../../../src/app/temporary.rs)、[HomeView 布局](../../../crates/gupi-conversation-ui/src/home.rs)、[标题栏](../../../crates/gupi-conversation-ui/src/home/titlebar.rs)、[临时页面](../../../src/features/temporary.rs)、[分栏](../../../crates/gupi-conversation-ui/src/home/panes.rs)、[输入区](../../../crates/gupi-conversation-ui/src/home/composer.rs)。
 - [窗口平台扩展](../../../crates/window-ext/src/lib.rs)：set_window_level 的平台差异。
 - GPUI Kit 0.6.0 的 TitleBar::window_options、GPUI pre 0.3.3 的 WindowOptions::default 与 macOS window.rs：核对默认选项和 PopUp 对应原生类型，避免把未显式设置等同于未知或关闭。
 

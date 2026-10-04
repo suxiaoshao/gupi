@@ -1,0 +1,45 @@
+[package]
+name = "gupi-resources"
+version.workspace = true
+edition = "2024"
+license = "MIT"
+publish = false
+
+[features]
+test-support = []
+
+[dependencies]
+regex = "1.13.1"
+# UI and workspace services.
+gpui-kit.workspace = true
+gpui-operation.workspace = true
+gpui-tokio.workspace = true
+pi-rpc.workspace = true
+
+# Background tasks and Pi subprocess I/O.
+smol = "2.0.2"
+tokio = { version = "1.53.1", features = [
+  "process",
+  "io-util",
+  "time",
+  "macros",
+  "sync",
+  "fs",
+] }
+dirs-next = "2.0.0"
+globset = "0.4.20"
+ignore = "0.4.33"
+serde_json = "1.0.151"
+serde_yaml_ng = "0.10.0"
+tempfile = "3.27.0"
+trash = "5.2.9"
+url = "2.5.8"
+
+# Localization and diagnostics.
+thiserror = "2.0.21"
+
+gupi-pi-runtime.workspace = true
+
+[dev-dependencies]
+gpui-kit = { workspace = true, features = ["test-support"] }
+gupi-pi-runtime = { workspace = true, features = ["test-support"] }

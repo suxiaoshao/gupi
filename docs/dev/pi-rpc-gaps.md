@@ -182,7 +182,7 @@ Pi 的 `packages/protocol`、`packages/server`、`packages/durable` 和实验 Ha
 
 ## 固定源码依据与后续复核方法
 
-应用入口：[typed RPC](../../crates/pi-rpc/src/protocol.rs)、[Client](../../crates/pi-rpc/src/client.rs)、[会话事件与提交](../../src/state/conversation.rs)、[定向回读](../../src/state/conversation/reads.rs)、[输入区](../../src/features/home/composer.rs)、[会话信息](../../src/features/home/session_info.rs)、[全局模板任务](../../src/app/shortcuts.rs)。
+应用入口：[typed RPC](../../crates/pi-rpc/src/protocol.rs)、[Client](../../crates/pi-rpc/src/client.rs)、[会话事件与提交](../../crates/gupi-conversation/src/conversation.rs)、[定向回读](../../crates/gupi-conversation/src/conversation/reads.rs)、[输入区](../../crates/gupi-conversation-ui/src/home/composer.rs)、[会话信息](../../crates/gupi-conversation-ui/src/home/session_info.rs)、[全局模板任务](../../src/app/shortcuts.rs)。
 
 - 正式 [v0.99.1 release](https://github.com/earendil-works/pi/releases/tag/v0.99.1)、[v0.99.0 release](https://github.com/earendil-works/pi/releases/tag/v0.99.0) 与 [CHANGELOG](https://github.com/earendil-works/pi/blob/d86654abb8862e201933517d6f1fce9f88dd117f/packages/coding-agent/CHANGELOG.md)。旧协议比较基线为 [v0.87.1](https://github.com/earendil-works/pi/tree/f07218c4d4bbc12bef056a7058c3dd49dfe41abe)。
 - [RPC 类型](https://github.com/earendil-works/pi/blob/d86654abb8862e201933517d6f1fce9f88dd117f/packages/coding-agent/src/modes/rpc/rpc-types.ts)、[分发/扩展降级](https://github.com/earendil-works/pi/blob/d86654abb8862e201933517d6f1fce9f88dd117f/packages/coding-agent/src/modes/rpc/rpc-mode.ts)、[SDK](https://github.com/earendil-works/pi/blob/d86654abb8862e201933517d6f1fce9f88dd117f/packages/coding-agent/src/core/sdk.ts)。

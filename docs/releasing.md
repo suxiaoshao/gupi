@@ -99,7 +99,7 @@ References: [GitHub runner labels](https://docs.github.com/en/actions/reference/
 
 ## Create a versioned release
 
-1. Update the root `gupi` package version and its `Cargo.lock` entry, run CI, and merge the release changes. This version determines the application's About version, installer version and update comparison. Internal crate versions and the Rust compiler in `rust-toolchain.toml` do not need to change with each application release. The workflow file and scripts must be present at the tagged commit.
+1. Update `[workspace.package].version` in the root `Cargo.toml` and refresh `Cargo.lock`, run CI, and merge the release changes. This version determines the application's About version, installer version and update comparison. The root app and the conversation, conversation-ui, resources, settings and updates crates inherit this version; independently versioned support crates and the Rust compiler in `rust-toolchain.toml` do not need to change with each application release. The workflow file and scripts must be present at the tagged commit.
 2. Create and push the matching tag from that commit; for example, when `Cargo.toml` declares `0.1.0`:
 
    ```sh

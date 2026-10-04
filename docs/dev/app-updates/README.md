@@ -17,10 +17,10 @@ Gupi 统一负责检查新版和提醒；macOS 使用 Sparkle 2.9.6，Windows �
 
 | 位置 | 职责 |
 | --- | --- |
-| [foundation/releases](../../../src/foundation/releases.rs) | GitHub Latest HTTPS 请求、SemVer 比较与响应校验 |
-| [state/updates](../../../src/state/updates.rs) | 检查调度、在途任务、安装状态、提示去重与跳过版本 |
+| [foundation/releases](../../../crates/gupi-updates/src/releases.rs) | GitHub Latest HTTPS 请求、SemVer 比较与响应校验 |
+| [state/updates](../../../crates/gupi-updates/src/updates.rs) | 检查调度、在途任务、安装状态、提示去重与跳过版本 |
 | [features/updates](../../../src/features/updates.rs) | 菜单和设置共用的状态展示与操作 |
-| [foundation/updater](../../../src/foundation/updater.rs) | 原生引擎、平台回调、安装文件与 Windows helper 准备 |
+| [foundation/updater](../../../crates/gupi-updates/src/updater.rs) | 原生引擎、平台回调、安装文件与 Windows helper 准备 |
 | [app/updater](../../../src/app/updater.rs) | 原生事件回到 GPUI 主线程，协调保存、退出、安装和重启 |
 | [StartupView::quit_then](../../../src/features/startup.rs) | 普通退出与更新共用的持久化和 Pi 关闭流程 |
 | [xtask/updater](../../../crates/xtask/src/updater.rs) | 固定 SDK 下载与校验、密钥生成、标准 appcast 签名 |

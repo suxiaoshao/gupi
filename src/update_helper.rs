@@ -1,7 +1,6 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 #[cfg(target_os = "windows")]
-#[path = "foundation/updater/plan.rs"]
-mod plan;
+use gupi_updates::updater::plan;
 
 fn main() {
     #[cfg(target_os = "windows")]
@@ -12,19 +11,19 @@ fn main() {
 
 #[cfg(target_os = "windows")]
 fn run() -> std::io::Result<()> {
-    use std::{
-        io::{BufRead, Write},
-        os::windows::ffi::OsStrExt,
-        process::Command,
-    };
-    use windows_sys::Win32::{
-        Foundation::{CloseHandle, WAIT_OBJECT_0},
-        System::{
-            SystemInformation::GetSystemDirectoryW,
-            Threading::{OpenProcess, PROCESS_SYNCHRONIZE, WaitForSingleObject},
-        },
-        UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW},
-    };
+    use std::io::BufRead;
+    use std::io::Write;
+    use std::os::windows::ffi::OsStrExt;
+    use std::process::Command;
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
+    use windows_sys::Win32::System::SystemInformation::GetSystemDirectoryW;
+    use windows_sys::Win32::System::Threading::OpenProcess;
+    use windows_sys::Win32::System::Threading::PROCESS_SYNCHRONIZE;
+    use windows_sys::Win32::System::Threading::WaitForSingleObject;
+    use windows_sys::Win32::UI::WindowsAndMessaging::MB_ICONERROR;
+    use windows_sys::Win32::UI::WindowsAndMessaging::MB_OK;
+    use windows_sys::Win32::UI::WindowsAndMessaging::MessageBoxW;
     let mut input = std::io::stdin().lock();
     let mut line = String::new();
     input.read_line(&mut line)?;

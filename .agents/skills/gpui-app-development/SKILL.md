@@ -5,9 +5,27 @@ description: Choose app structure, shared ownership, and relevant skills for Gup
 
 # GPUI App Development
 
-Gupi is the root package. Follow its existing `app`, `foundation`, `features`, and `state` boundaries. Product policy belongs in `src/`. Pi RPC transport, window helpers, Tokio integration and Lucide icons live in the matching internal `crates/`. Theme, Form, Operation, Store and platform helpers are Git dependencies pinned in the root manifest; inspect their locked source before changing integration.
+Use the `gpui-kit` skill and the official [Coding Guides](https://gpui-kit.com/docs/coding-guides/)
+for architecture, state ownership, file organization, naming, and public APIs.
+Do not maintain a competing set of framework rules here. The official skill is
+installed and maintained through `npx skills`; keep Gupi-specific guidance in
+this skill and project documents.
 
-Keep one authority per business fact. Derive cheap values rather than caching them; a necessary cache needs clear invalidation. Let a retained task or runtime variant express activity without parallel loading flags.
+Gupi is the root application package. [AGENTS.md](../../../AGENTS.md#项目结构)
+holds project conventions. The [capability architecture](../../../docs/dev/capability-architecture/README.md)
+describes the six internal capability crates and their current host interfaces.
+The [interface refinement](../../../docs/dev/capability-architecture/refinement.md)
+records the read-only model queries, semantic mutation entry points, required
+host installation, and ambiguities in the installed official guidance. Keep
+native windows, notification delivery, global shortcut registration and ordered
+shutdown in the application composition layer. Change an owning capability and
+its callers together; do not restore the removed `state` / `foundation` facade.
+
+Pi owns model execution, extensions, configuration loading, and session content
+writes. Gupi owns desktop interaction and connection lifecycles; preserve the
+[product boundary](../../../docs/gui-boundary.md). Internal crate membership and
+dependency sources are defined in the root manifest. Shared services use a pinned
+Git revision; inspect the locked source before changing integration.
 
 Applications enter through `gpui_kit::application()` and `gpui_kit::init(cx)`. Dependency paths and versions follow the root manifest.
 

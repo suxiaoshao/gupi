@@ -1,16 +1,29 @@
 //! System registration and template preparations belong to the application.
-use crate::state::{config::AppConfig, shortcuts::Shortcuts};
 #[cfg(any(target_os = "macos", target_os = "windows"))]
-use crate::{
-    foundation::{
-        attachments::{self, Attachment, Content},
-        i18n::t,
-    },
-    state::shortcuts::{InputSource, ShortcutTask, system_binding},
-};
+use global_hotkey::GlobalHotKeyEvent;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
-use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState, hotkey::HotKey};
+use global_hotkey::GlobalHotKeyManager;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use global_hotkey::HotKeyState;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use global_hotkey::hotkey::HotKey;
 use gpui_kit::*;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use gupi_conversation::attachments;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use gupi_conversation::attachments::Attachment;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use gupi_conversation::attachments::Content;
+use gupi_settings::config::AppConfig;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use gupi_settings::i18n::t;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use gupi_settings::shortcuts::InputSource;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use gupi_settings::shortcuts::ShortcutTask;
+use gupi_settings::shortcuts::Shortcuts;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use gupi_settings::shortcuts::system_binding;
 use std::collections::BTreeMap;
 
 pub(crate) struct ShortcutsRuntime {
@@ -153,7 +166,7 @@ pub(crate) fn validate_registration(value: &AppConfig, cx: &App) -> Result<(), S
             .filter(|task| task.enabled)
             .map(|task| task.binding.as_str()),
     ) {
-        crate::state::keybindings::validate_global(binding, cx)?;
+        gupi_settings::keybindings::validate_global(binding, cx)?;
     }
     Ok(())
 }
@@ -235,13 +248,11 @@ fn trigger(id: &str, cx: &mut App) {
         }
         return;
     }
-    if let Some(key) =
-        rt.active.get(id).filter(|key| {
-            state.read(cx).sessions.get(*key).is_some_and(|s| {
-                s.busy() || !s.pending_ui.is_empty() || s.pending_template.is_some()
-            })
+    if let Some(key) = rt.active.get(id).filter(|key| {
+        state.read(cx).sessions().get(*key).is_some_and(|s| {
+            s.busy() || !s.pending_ui().is_empty() || s.pending_template().is_some()
         })
-    {
+    }) {
         let key = key.clone();
         state.update(cx, |s, cx| s.open(&key, cx));
         super::temporary::show(cx);
@@ -268,8 +279,8 @@ fn trigger(id: &str, cx: &mut App) {
             if let Err(error) = result {
                 super::temporary::show(cx);
                 state.update(cx, |_, cx| {
-                    cx.emit(crate::state::conversation::ConversationEvent::Notify {
-                        message: error.clone(),
+                    cx.emit(gupi_conversation::conversation::ConversationEvent::Notify {
+                        message: error.clone().into(),
                         error: true,
                     });
                     cx.notify();
@@ -286,7 +297,7 @@ fn trigger(id: &str, cx: &mut App) {
 async fn run(
     definition: ShortcutTask,
     clipboard: Option<ClipboardItem>,
-    state: Entity<crate::state::conversation::ConversationState>,
+    state: Entity<gupi_conversation::conversation::ConversationState>,
     cx: &mut AsyncApp,
 ) -> Result<(), String> {
     let mut text = String::new();
@@ -335,19 +346,21 @@ async fn run(
     let body =
         smol::unblock(move || std::fs::read_to_string(template).map_err(|e| e.to_string())).await?;
     let key = state.update(cx, |s, cx| {
-        let previous = s.selected.clone();
+        let previous = s.selected().clone();
         s.new_draft(None, cx);
-        if s.selected == previous {
+        if s.selected() == &previous {
             return Err(s
-                .storage_error
+                .storage_error()
                 .clone()
                 .unwrap_or_else(|| "Could not create temporary conversation".into()));
         }
         let key = s
-            .selected
+            .selected()
             .clone()
             .ok_or("Could not create temporary conversation")?;
-        s.sessions.get_mut(&key).unwrap().preparing = true;
+        if !s.begin_preparation(&key, cx) {
+            return Err("Temporary preparation was cancelled".into());
+        }
         Ok::<_, String>(key)
     })?;
     cx.update(|cx| {
@@ -361,13 +374,13 @@ async fn run(
         let client = loop {
             let ready = state.read_with(cx, |s, cx| {
                 let session = s
-                    .sessions
+                    .sessions()
                     .get(&key)
                     .ok_or("Temporary conversation was removed".to_owned())?;
                 if let Some(error) = session.runtime_error() {
                     return Err(error.to_owned());
                 }
-                Ok(session.state.as_ref().and_then(|_| s.client(&key, cx)))
+                Ok(session.state().as_ref().and_then(|_| s.client(&key, cx)))
             })?;
             if let Some(client) = ready {
                 break client;
@@ -420,18 +433,26 @@ async fn run(
                 .map_err(|e| e.to_string())?;
         }
         let snapshot = client.get_state().await.map_err(|e| e.to_string())?;
-        state.update(cx, |s, cx| {
-            let session = s.sessions.get_mut(&key).unwrap();
-            session.state = Some(snapshot);
-            session.preparing = false;
-            session.attachments = attachments;
-            session.pending_template = Some(crate::state::shortcuts::PendingTemplate {
-                name: command.name.clone(),
-                body,
-            });
-            session.info.name = Some(definition.name.clone());
-            s.set_draft(&key, text, cx);
+        let applied = state.update(cx, |s, cx| {
+            s.complete_preparation(
+                &key,
+                gupi_conversation::conversation::PreparedTemplate::new(
+                    snapshot,
+                    attachments,
+                    gupi_resources::composer_resources::PendingTemplate::new(
+                        command.name.clone(),
+                        body,
+                    ),
+                    definition.name.clone(),
+                    text,
+                ),
+                cx,
+            )
         });
+        if !applied {
+            return Err("Temporary preparation was cancelled".into());
+        }
+
         if !has_input {
             return Ok(());
         }
@@ -445,42 +466,41 @@ async fn run(
     }
     .await;
     state.update(cx, |s, cx| {
-        if let Some(session) = s.sessions.get_mut(&key) {
-            session.preparing = false;
-            if let Err(error) = &result {
-                session.error = Some(crate::state::conversation::SessionError::Runtime(
-                    error.clone(),
-                ));
-            }
-        }
-        crate::state::conversation::notify_session(&key, cx);
+        s.finish_preparation(&key, result.as_ref().err().cloned(), cx)
     });
     result
 }
 
 #[cfg(test)]
 mod validation_tests {
-    use super::{ShortcutsRuntime, apply, prepare};
-    use crate::state::{config::AppConfig, shortcuts::ShortcutTask};
-    use gpui_kit::{KeyBinding, TestAppContext, component::input::Copy};
+    use super::ShortcutsRuntime;
+    use super::apply;
+    use super::prepare;
+    use gpui_kit::KeyBinding;
+    use gpui_kit::TestAppContext;
+    use gpui_kit::component::input::Copy;
+    use gupi_settings::config::AppConfig;
+    use gupi_settings::shortcuts::ShortcutTask;
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     #[gpui_kit::test]
     fn template_trigger_starts_without_a_version_probe_and_deduplicates(cx: &mut TestAppContext) {
         cx.update(|cx| {
             gpui_kit::init(cx);
-            crate::state::pi::init(cx);
+            crate::app::init_capability_hosts(cx);
+            gupi_pi_runtime::init(cx);
             crate::app::temporary::init(cx);
             // The configured command is available before any version probe.
             crate::app::temporary::set_command("pi".into(), cx);
-            let mut config = crate::state::shortcuts::Shortcuts::default();
-            config.tasks.push(ShortcutTask {
-                id: "translate".into(),
-                name: "Translate".into(),
-                enabled: true,
-                template: "/test.md".into(),
-                source: crate::state::shortcuts::InputSource::Clipboard,
-                ..Default::default()
+            let mut config = gupi_settings::shortcuts::Shortcuts::default();
+            config.tasks.push({
+                let mut record = ShortcutTask::default();
+                record.id = "translate".into();
+                record.name = "Translate".into();
+                record.enabled = true;
+                record.template = "/test.md".into();
+                record.source = gupi_settings::shortcuts::InputSource::Clipboard;
+                record
             });
             cx.set_global(ShortcutsRuntime {
                 manager: Err("no OS registration in test".into()),
@@ -545,18 +565,20 @@ mod validation_tests {
     fn saving_global_bindings_rejects_component_shortcuts(cx: &mut TestAppContext) {
         cx.update(|cx| {
             gpui_kit::init(cx);
+            crate::app::init_capability_hosts(cx);
             for key in ["secondary-c", "secondary-x", "secondary-v"] {
                 let mut config = AppConfig::default();
                 config.shortcuts.launcher = key.into();
                 assert_eq!(prepare(&config, cx).unwrap_err(), "settings-key-conflict");
                 config.shortcuts.launcher.clear();
-                config.shortcuts.tasks.push(ShortcutTask {
-                    id: "test".into(),
-                    name: "Test".into(),
-                    binding: key.into(),
-                    enabled: true,
-                    template: "/test.md".into(),
-                    ..Default::default()
+                config.shortcuts.tasks.push({
+                    let mut record = ShortcutTask::default();
+                    record.id = "test".into();
+                    record.name = "Test".into();
+                    record.binding = key.into();
+                    record.enabled = true;
+                    record.template = "/test.md".into();
+                    record
                 });
                 assert_eq!(prepare(&config, cx).unwrap_err(), "settings-key-conflict");
                 config.shortcuts.tasks[0].enabled = false;
@@ -580,6 +602,7 @@ mod validation_tests {
     fn loading_conflicting_shortcut_keeps_the_runtime_configuration(cx: &mut TestAppContext) {
         cx.update(|cx| {
             gpui_kit::init(cx);
+            crate::app::init_capability_hosts(cx);
             cx.set_global(ShortcutsRuntime {
                 #[cfg(any(target_os = "macos", target_os = "windows"))]
                 manager: Err("must not attempt OS registration".into()),

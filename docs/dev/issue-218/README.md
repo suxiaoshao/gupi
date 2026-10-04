@@ -10,38 +10,14 @@
 
 ## 文件与依赖方向
 
-```text
-./
-├── Cargo.toml                       # F-100 新增；应用依赖与 bundle 元数据
-├── src/main.rs                      # F-101 新增；只调用 app::run
-├── src/app.rs                       # F-102 新增；初始化、窗口和退出编排
-├── src/foundation.rs                # F-103 新增；基础模块声明
-├── src/foundation/paths.rs          # F-103 新增；应用目录与环境覆盖
-├── src/foundation/persistence.rs    # F-103 新增；读取、备份与原子写入
-├── src/foundation/i18n.rs           # F-104 新增；Fluent、语言检测与菜单更新
-├── src/foundation/assets.rs         # F-105 新增；app-local runtime 资源入口
-├── src/state.rs                     # F-106 新增；状态模块声明
-├── src/state/config.rs              # F-106 新增；配置 owner、提交和重读
-├── src/state/layout.rs              # F-107 新增；布局读取与退出保存
-├── src/state/theme.rs               # F-108 新增；系统外观与配置投影
-├── src/pi.rs                        # F-109 新增；本阶段仅版本探测
-├── src/features.rs                  # F-114 新增；功能模块声明
-├── src/features/startup.rs          # F-110 新增；启动界面编排、状态呈现和分类页面
-├── src/features/settings.rs         # F-111 新增；唯一设置表单与操作入口
-├── src/features/home.rs             # F-112 新增；主窗口业务外壳
-├── src/components.rs                # F-115 新增；跨功能 UI 组件声明
-├── src/components/recovery.rs       # F-115 新增；共享恢复页面布局
-├── src/app/menus.rs                 # F-116 新增；应用菜单与 action 接入
-├── assets/                          # F-105 新增；仅实际使用的运行时资源
-├── locales/*/main.ftl               # F-104 运行时文案；现有九种语言见 #223
-├── locales/macos/*/InfoPlist.strings # F-104 新增；按应用声明提供 bundle 本地化
-├── build-assets/icon/app-icon.png   # F-105 新增；开发期 bundle 图标
-└── README.md                        # F-113 实施时新增；运行、目录与验收边界
-```
+当前目录与依赖方向统一见[能力架构](../capability-architecture/README.md)。本文的 F/L/ST/R/T 编号保留行为契约的引用，不再规定拆分前的文件布局。
 
-features/ 按功能组织页面与交互：settings 拥有设置表单，startup 拥有启动界面的编排与分类恢复页面，home 拥有配置加载后的主窗口业务界面。配置持久化 owner 仍在 state/config.rs，Pi 探测 owner 仍在 pi.rs；不因页面归入 features/ 而移动底层状态职责。components/recovery.rs 仅保存跨功能共用的 RecoveryLayout；菜单与 action 接入归 app/menus.rs，不建立笼统的 src/ui.rs。
+- 根包 `src/app` 组合应用寿命、窗口、菜单和原生能力；`src/features` 保留设置、启动、临时窗口组合及更新弹窗。
+- `gupi-settings` 拥有配置、布局、语言与主题；`gupi-pi-runtime` 拥有 Pi 探测与运行连接。
+- `gupi-resources` 提供资源与持久化能力；`gupi-conversation` 拥有会话模型，`gupi-conversation-ui` 拥有主窗口交互；`gupi-updates` 拥有更新状态和驱动。
+- `src/components/recovery.rs` 保留跨功能恢复控件。能力 crate 不依赖根包，通过明确的应用接口接入原生能力。
 
-features 调用状态 owner，并消费 components；components 不反向依赖 features。状态 owner 调用 foundation/Pi 边界；foundation 不依赖 UI。所有新模块使用 `.rs`。不增加 Gupi 专用共享 crate。应用经 gpui_kit 及其 component/assets 接入；版本与 feature 以根 manifest 和锁文件为准。
+应用经 `gpui_kit` 及其 component/assets 接入；版本与 feature 以根 manifest 和锁文件为准。
 
 ## L-100：配置与布局数据
 

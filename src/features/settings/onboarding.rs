@@ -1,15 +1,20 @@
 use super::*;
-use gpui_kit::component::{
-    ElementExt, Sizable, ThemeMode as Mode, ThemeRegistry,
-    animation::ease_in_out_cubic,
-    collapsible::Collapsible,
-    form::{field, v_form},
-    link::Link,
-    radio::RadioGroup,
-    stepper::{Stepper, StepperItem},
-};
+use gpui_kit::component::ElementExt;
+use gpui_kit::component::Sizable;
+use gpui_kit::component::ThemeMode as Mode;
+use gpui_kit::component::ThemeRegistry;
+use gpui_kit::component::animation::ease_in_out_cubic;
+use gpui_kit::component::collapsible::Collapsible;
+use gpui_kit::component::form::field;
+use gpui_kit::component::form::v_form;
+use gpui_kit::component::link::Link;
+use gpui_kit::component::radio::RadioGroup;
+use gpui_kit::component::stepper::Stepper;
+use gpui_kit::component::stepper::StepperItem;
 use gpui_kit::prelude::FluentBuilder;
-use std::{cell::Cell, rc::Rc, time::Duration};
+use std::cell::Cell;
+use std::rc::Rc;
+use std::time::Duration;
 
 #[derive(Clone, Copy)]
 pub(super) struct PageTransition {
@@ -152,8 +157,7 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let busy = self.controller.read(cx).busy(cx);
-        let logo =
-            || img(SharedString::from(crate::foundation::assets::app_logo(cx))).size(px(80.));
+        let logo = || img(SharedString::from(gupi_settings::assets::app_logo(cx))).size(px(80.));
         if step == 0 {
             return v_flex()
                 .w_full()
@@ -222,8 +226,7 @@ impl SettingsView {
                     .items_center()
                     .gap_2()
                     .child(
-                        img(SharedString::from(crate::foundation::assets::app_logo(cx)))
-                            .size(px(28.)),
+                        img(SharedString::from(gupi_settings::assets::app_logo(cx))).size(px(28.)),
                     )
                     .child(div().font_weight(FontWeight::SEMIBOLD).child("Gupi")),
             )
@@ -302,7 +305,7 @@ impl SettingsView {
                         _ => self.render_startup_desktop(window, cx),
                     }),
             );
-        let store = self.controller.read(cx).store.clone();
+        let store = self.controller.read(cx).configuration();
         let problem = store.read(cx, |op| op.problem().map(|problem| problem.key()));
         if let Some(key) = self.error.as_deref().or(problem) {
             view = view.child(
@@ -474,9 +477,9 @@ impl SettingsView {
         let busy = self.controller.read(cx).busy(cx);
         let notifications = self.controller.read(cx).preferences(cx).notifications;
         let completion_modes = [
-            crate::state::notifications::CompletionMode::Off,
-            crate::state::notifications::CompletionMode::Background,
-            crate::state::notifications::CompletionMode::Always,
+            gupi_settings::notifications::CompletionMode::Off,
+            gupi_settings::notifications::CompletionMode::Background,
+            gupi_settings::notifications::CompletionMode::Always,
         ];
         let completion = RadioGroup::horizontal("setup-notification-completion")
             .children([

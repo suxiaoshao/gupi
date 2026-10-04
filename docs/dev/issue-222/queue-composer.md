@@ -61,9 +61,9 @@ Gupi 已接入 `clear_queue` 的整队操作和 `queue_update` 文字展示；`C
 
 源码入口：
 
-- [输入区](../../../src/features/home/composer.rs)、[新会话欢迎区](../../../src/features/home/welcome.rs)、[项目选择面板](../../../src/features/home/palette.rs)
-- [共用 Composer](../../../src/features/composer.rs)
-- [会话状态](../../../src/state/conversation.rs)
+- [输入区](../../../crates/gupi-conversation-ui/src/home/composer.rs)、[新会话欢迎区](../../../crates/gupi-conversation-ui/src/home/welcome.rs)、[项目选择面板](../../../crates/gupi-conversation-ui/src/home/palette.rs)
+- [共用 Composer](../../../crates/gupi-conversation-ui/src/composer.rs)
+- [会话状态](../../../crates/gupi-conversation/src/conversation.rs)
 - [RPC 客户端](../../../crates/pi-rpc/src/client.rs)
 
 ## 本轮确认的其他布局

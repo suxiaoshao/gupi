@@ -1,10 +1,16 @@
-use super::{StartupScreen, StartupView};
-use crate::{
-    app::temporary,
-    state::config::{AppConfig, ConfigContents, ConfigData},
-};
-use gpui_kit::{AppContext, Task, TestAppContext, component::Root};
-use gpui_operation::{Cancel, Retry, Settle, Transition};
+use super::StartupScreen;
+use super::StartupView;
+use crate::app::temporary;
+use gpui_kit::AppContext;
+use gpui_kit::Task;
+use gpui_kit::TestAppContext;
+use gpui_kit::component::Root;
+use gpui_operation::Retry;
+use gpui_operation::Settle;
+use gpui_operation::Transition;
+use gupi_settings::config::AppConfig;
+use gupi_settings::config::ConfigContents;
+use gupi_settings::config::ConfigData;
 
 #[gpui_kit::test]
 fn configured_windows_and_sessions_do_not_wait_for_a_probe(cx: &mut TestAppContext) {
@@ -14,17 +20,22 @@ fn configured_windows_and_sessions_do_not_wait_for_a_probe(cx: &mut TestAppConte
         let view = cx.new(|cx| StartupView::new(Ok(()), false, window, cx));
         // Replace the pending filesystem read before it runs; this test never
         // reads or writes the user's configuration.
-        let store = view.read(cx).config.read(cx).store.clone();
-        store.update(cx, |op| {
-            op.transition(Cancel);
-            op.transition(Settle(Ok(ConfigData {
-                path: "unused-config.toml".into(),
-                contents: ConfigContents::Configured(AppConfig {
-                    pi_command: Some("missing-pi".into()),
-                    ..Default::default()
-                }),
-                backup: None,
-            })));
+        view.read(cx).config.clone().update(cx, |owner, cx| {
+            owner.settle_for_test(
+                {
+                    let mut record = ConfigData::new(
+                        "unused-config.toml".into(),
+                        ConfigContents::Configured({
+                            let mut record = AppConfig::default();
+                            record.pi_command = Some("missing-pi".into());
+                            record
+                        }),
+                    );
+                    record.backup = None;
+                    record
+                },
+                cx,
+            )
         });
         startup = Some(view.clone());
         // This tests screen selection and probe ownership, not Home rendering.
@@ -36,15 +47,15 @@ fn configured_windows_and_sessions_do_not_wait_for_a_probe(cx: &mut TestAppConte
     let startup = startup.unwrap();
     startup.update(visual, |view, cx| {
         assert!(matches!(view.screen(cx), StartupScreen::Home(command) if command == std::path::Path::new("missing-pi")));
-        assert!(!view.applied_pi.read(cx).operation.is_running());
-        assert!(view.applied_pi.read(cx).operation.data().is_none());
+        assert!(!view.applied_pi.read(cx).is_running());
+        assert!(view.applied_pi.read(cx).data().is_none());
         assert!(temporary::state(cx).is_some(), "template actions can create their session immediately");
         view.applied_pi.update(cx, |pi, _| {
-            pi.operation.transition(Settle(Err(pi_rpc::probe::ProbeFailure::InvalidVersion)));
+            pi.operation_mut_for_test().transition(Settle(Err(pi_rpc::probe::ProbeFailure::InvalidVersion)));
         });
         assert!(matches!(view.screen(cx), StartupScreen::Home(_)));
         view.applied_pi.update(cx, |pi, _| {
-            pi.operation.transition(Retry(Task::ready(())));
+            pi.operation_mut_for_test().transition(Retry(Task::ready(())));
         });
         assert!(matches!(view.screen(cx), StartupScreen::Home(_)));
         view.applied_pi.update(cx, |pi, _| pi.stop());
@@ -65,7 +76,7 @@ fn instance_failure_stays_in_recovery_without_loading_configuration(cx: &mut Tes
         });
         view.update(cx, |view, cx| {
             assert!(matches!(view.screen(cx), StartupScreen::InstanceFailure(_)));
-            view.config.read(cx).store.read(cx, |op| {
+            view.config.read(cx).configuration().read(cx, |op| {
                 assert!(!op.is_running());
                 assert!(op.data().is_none());
             });
@@ -83,13 +94,14 @@ fn instance_failure_stays_in_recovery_without_loading_configuration(cx: &mut Tes
 fn init(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_kit::init(cx);
+        crate::app::init_capability_hosts(cx);
         gpui_tokio::init(cx);
         app_theme::init(cx);
-        crate::state::theme::init(cx);
-        crate::foundation::i18n::apply(Default::default(), cx);
-        crate::state::pi::init(cx);
+        gupi_settings::theme::init(cx);
+        gupi_settings::i18n::apply(Default::default(), cx);
+        gupi_pi_runtime::init(cx);
         temporary::init(cx);
-        cx.set_global(crate::state::layout::LayoutState::default());
+        cx.set_global(gupi_settings::layout::LayoutState::default());
     });
 }
 

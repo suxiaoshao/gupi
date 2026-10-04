@@ -2,7 +2,7 @@
 
 初稿：2026-09-15；子页面与实现方案调研补充：2026-09-16。归属：[#231](https://github.com/suxiaoshao/gpui/issues/231)，父 issue #217。
 
-状态：应用侧八页、字段搜索接线、独立保存、快捷键及个人资源管理已实现。Gupi 当前已使用包含共享 Settings 搜索修复的 GPUI Kit 0.6.4；资源按需加载和配置失效范围见 [#236 实现说明](../issue-236/README.md)。依赖接入与具体原生交互验证分别记录，不以版本升级代替验收。
+状态：应用侧九页、字段搜索接线、独立保存、快捷键及个人资源管理已实现。Gupi 当前使用 GPUI Kit 0.7.0，包含此前接入的共享 Settings 搜索修复；资源按需加载和配置失效范围见 [#236 实现说明](../issue-236/README.md)。依赖接入与具体原生交互验证分别记录，不以版本升级代替验收。
 
 设置搜索直接复用正式组件，不复制 Settings 或增加临时绕过实现。其他依赖阻塞和后续工作统一见[主 Issue 未完成项索引](../follow-ups.md)。
 
@@ -10,7 +10,7 @@
 
 - 优先做设置的设计基础，再推进临时窗口，使后续功能能接入同一套设置。
 - 设置作为一个整体，包含现有通用设置、快捷键、插件、Skill、提示词管理，不按每个栏目拆成独立 issue。
-- 左侧侧边栏提供不同类型，右侧显示相应页面；采用通用、外观、Pi、快捷键、插件、Skill、提示词、关于八页。
+- 左侧侧边栏提供不同类型，右侧显示相应页面；采用通用、外观、通知、Pi、快捷键、插件、Skill、提示词、关于九页。
 - 搜索入口放在侧边栏，覆盖各页面的设置字段，采用分类筛选；不搜索具体插件名、Skill 名、提示词名称或这些管理内容的正文。
 - 保存方式按具体内容判断：主题、语言等即时保存；列表添加、插件下载等明确操作完成后及时保存对应结果；需要显式保存的内容保留明确提交入口。
 - 本次设置仅管理个人级 Pi 资源，不显示项目选择器，不依赖是否打开项目或会话，也不读取或修改项目级配置。后续 Pi 配置与项目级设置已确定归独立 [Gupi #2](https://github.com/suxiaoshao/gupi/issues/2)，从 session 进入对应项目配置，本阶段不实现。
@@ -25,27 +25,28 @@
 
 | 对象 | 本轮核对的实现 | 适用结论 |
 | --- | --- | --- |
-| Gupi | `features/settings.rs`、`features/settings/preferences.rs` | 常规设置采用八页分类；即时偏好与 Pi 路径分开提交，启动引导仍由 SettingsView 承接 |
+| Gupi | `features/settings.rs`、`features/settings/preferences.rs` | 常规设置采用九页分类；即时偏好与 Pi 路径分开提交，启动引导仍由 SettingsView 承接 |
 | Zed | 本地提交 `ba7da93e5c`，`crates/settings_ui/src/settings_ui.rs` | 根据页面、分组、字段标题及说明建立搜索信息；合并词前缀与模糊匹配，过滤具体设置项，选择匹配页面并滚动到匹配位置；搜索任务在后台执行 |
-| gpui-kit / gpui-component | 当前依赖 0.6.4，`setting/settings.rs`、`setting/item.rs`、`setting/page.rs` | Settings 已包含可调整宽度的侧边栏、搜索、分类页面和分组导航；SettingItem 按标题、说明和 keywords 做不区分大小写的子串匹配，支持自定义内容渲染 |
+| gpui-kit / gpui-component | 初次搜索修复核对版本 0.6.4，当前依赖 0.7.0；`setting/settings.rs`、`setting/item.rs`、`setting/page.rs` | Settings 已包含可调整宽度的侧边栏、搜索、分类页面和分组导航；SettingItem 按标题、说明和 keywords 做不区分大小写的子串匹配，支持自定义内容渲染 |
 
-这些是源码核对结果，没有运行三端设置界面。本轮没有拉取更新 Zed，不能把本地提交称为最新上游。
+表中 Zed 提交和组件搜索调研属于初次设计证据，没有运行三端设置界面；后续原生验证见本文验证记录。当前依赖版本与页面数量已按源码更新，不代表重新验证所有交互。
 
 组件的分类页和分组标题不会自动成为每个字段的匹配词；若需要按分类名称找到相关字段，应将其纳入字段关键词。自定义 SettingItem 的搜索依赖 keywords，不能假定组件会扫描自定义控件中的可见文字。
 
 ## 已确认的页面划分
 
-八个页面及管理操作范围已确认：
+当前九个页面及管理操作范围如下：
 
 | 栏目 | 分组与具体内容 | 保存方式与边界 |
 | --- | --- | --- |
 | 通用 | 界面语言；现有配置文件位置与重新读取入口 | 语言即时保存；读取配置是显式操作，未保存草稿的处理沿用现有规则 |
 | 外观 | 颜色模式（跟随系统 / 浅色 / 深色）、浅色主题、深色主题 | 即时保存；复用现有主题预览与选择能力，不顺带新增字号、密度等设置 |
+| 通知 | 会话完成、错误与等待交互的提醒偏好 | 沿用配置提交与通知策略，投递由应用层负责；见[通知设计](../issue-241/README.md) |
 | Pi | Pi 命令/可执行路径、检查环境、解析后的路径与检查结果 | 路径显式保存；环境检查为独立按钮。版本完整信息可在关于页展示，Pi 页保留诊断所需状态 |
-| 快捷键 | 应用操作名称、当前绑定、修改、恢复默认和冲突反馈 | 确认一次修改后及时保存；继续复用已注册 action/context。全局热键待 #221 接入，当前不做无效占位控件 |
+| 快捷键 | 应用操作名称、当前绑定、修改、恢复默认和冲突反馈 | 确认一次修改后及时保存；继续复用已注册 action/context。全局热键和模板任务已接入应用层注册预检与失败回滚，见[临时窗口与快捷键](../issue-221/README.md) |
 | 插件 | 个人 Pi 包和本地扩展；来源、版本、路径、包内资源；按 npm / Git / 本地路径安装、单包更新、移除、扩展启停 | 明确操作成功后保存结果；包安装、更新、移除与单项扩展启停分开 |
 | Skill | 个人配置可发现的 Skill，包含包内资源；名称/说明搜索、来源、路径、正文、启停；添加本地文件/目录；创建、编辑、删除自有 Skill | 启停与添加操作完成后保存；正文显式保存；包内文件只读，更新或移除转到所属包 |
-| 提示词 | Pi 命令模板的查看、创建、编辑、删除；个人 SYSTEM.md 与 APPEND_SYSTEM.md 编辑 | 正文显式保存；包内模板只读。模板与系统提示词分组展示；临时窗口后续直接使用命令模板 |
+| 提示词 | Pi 命令模板的查看、创建、编辑、删除；个人 SYSTEM.md 与 APPEND_SYSTEM.md 编辑 | 正文显式保存；包内模板只读。模板与系统提示词分组展示；临时窗口直接使用命令模板 |
 | 关于 | Gupi 版本、已配置 Pi 的探测版本、实际命令路径与探测状态 | 只读；放侧边栏末尾。无需启动对话、模型请求或新的 RPC 会话 |
 
 ```text
@@ -54,6 +55,7 @@
 │                   │                                    │
 │ 通用              │ 主题                               │
 │ 外观              │ 颜色模式             [跟随系统 ▾]  │
+│ 通知              │                                    │
 │ Pi                │ 主题                 [选择主题 ▾]  │
 │ 快捷键            │                                    │
 │ 插件              │ ……                                 │
@@ -148,7 +150,7 @@ Settings
 
 关于页也是普通 SettingPage：版本等只读行使用现有组件，自定义展示通过 SettingField/SettingItem 的渲染入口接入；关闭不适用的页面重置入口。
 
-Settings 0.6.0 曾在过滤时丢失页面/分组的原始索引，导致分类错位或空白；当前采用包含修复的 0.6.4。过滤、侧栏选择、右侧页面和滚动目标由组件保持同一身份：当前页仍匹配时保留，否则选择首个匹配页；当前无结果时正文为空，空提示仍待上游能力确认。清空搜索恢复完整内容并保留当前有效分类，不增加第二份选择状态。应用不修改 Cargo registry 文件或访问组件私有状态。
+Settings 0.6.0 曾在过滤时丢失页面/分组的原始索引，导致分类错位或空白；修复于 0.6.4 接入，当前使用 0.7.0。过滤、侧栏选择、右侧页面和滚动目标由组件保持同一身份：当前页仍匹配时保留，否则选择首个匹配页；当前无结果时正文为空，空提示仍待上游能力确认。清空搜索恢复完整内容并保留当前有效分类，不增加第二份选择状态。应用不修改 Cargo registry 文件或访问组件私有状态。
 
 外观的浅色/深色选择应分别成为可搜索项，不把整个主题页作为一个不可拆分的搜索单元。先沿用组件留白和原有主题控件，不另造一套通用设置行框架。
 
@@ -171,7 +173,7 @@ gpui-form 的 rebase 作用于整份编辑模型，当前没有公开的单字�
 
 ### 3. 快捷键接入
 
-当前默认绑定位于 app.rs 和 features/home/actions.rs，业务仍由同一组 action/context 处理。设置页可以围绕这些动作展示与修改绑定，菜单和 tooltip 继续查询实际 keymap。
+可配置命令的默认绑定集中在 `crates/gupi-settings/src/keybindings.rs`；会话输入绑定在 `crates/gupi-conversation-ui/src/home/actions.rs`。业务仍由同一组 action/context 处理。设置页可以围绕这些动作展示与修改绑定，菜单和 tooltip 继续查询实际 keymap。
 
 
 键位存储放入现有 Gupi config.toml 的可选 keybindings 字段，仅存用户覆盖；缺省仍使用默认绑定，恢复默认删除对应覆盖。用稳定的应用命令 ID 映射现有 action 及其上下文，同一命令在多个上下文的绑定一起更新。不要序列化任意 GPUI action：当前 Run(Kind) 使用 no_json，而且多个 Kind 共用 action 类型。文本编辑器和列表的基础按键仍归组件，不加入应用命令配置范围。
@@ -217,7 +219,7 @@ GPUI 的 bind_keys 只追加，Unbind 按 action 名称匹配，不能单独区�
 | Pi 命令模板 | 个人 prompts 目录中的 Markdown、个人安装包资源及个人配置路径；以 /name 调用 | 提示词页的“命令模板”分组，列表与明确的编辑/保存入口 |
 | Pi 系统提示词 | 个人目录中的 SYSTEM.md 替换系统提示词，APPEND_SYSTEM.md 提供附加内容 | 独立“系统提示词”分组，替换与追加明确区分，不伪装成普通 slash 模板 |
 
-后续临时窗口直接选择和使用 Pi 命令模板，不再设计第三套 Gupi 自定义 prompt 模型、编辑器或存储。临时动作如何传入选中文字等参数，留在 #221 接入时确定。
+后续临时窗口直接选择和使用 Pi 命令模板，不再设计第三套 Gupi 自定义 prompt 模型、编辑器或存储。临时动作的选中文字等参数按[快捷任务设计](../issue-221/README.md)接入。
 
 Pi 本身还支持项目覆盖；这是 Pi 的加载行为，不是本次设置界面的管理范围。本次只展示和编辑个人文件，不推断当前 session 最终采用的系统提示词。
 
@@ -241,10 +243,10 @@ StartupView 已分别持有 applied_pi 与 draft_pi。关于页展示已配置�
 | 负责人 | 职责 |
 | --- | --- |
 | features/settings 及其页面模块 | 页面选择、字段关键词、控件与当前编辑表单；复用组件样式 |
-| state/config 的现有控制器 | AppConfig 存取、即时变更与显式提交的串行化；启动引导仍复用同一配置存储 |
+| `crates/gupi-settings/src/config.rs` 的控制器 | AppConfig 存取、即时变更与显式提交的串行化；启动引导仍复用同一配置存储 |
 | 应用命令/键位模块 | 默认绑定与用户覆盖的唯一映射、运行时应用、冲突说明；设置页不复制动作处理逻辑 |
 | 个人 Pi 资源控制器 | 设置页共享的目录快照、读取与资源变更 Operation；插件、Skill、提示词三页复用同一来源关系 |
-| foundation 的 Pi 资源文件/CLI 适配 | 路径与规则解析、原子写入、进程调用；不耦合页面，不扩展 pi-rpc 的协议类型 |
+| `gupi-resources` 的 Pi 资源文件/CLI 适配 | 路径与规则解析、原子写入、进程调用；不耦合页面，不扩展 pi-rpc 的协议类型 |
 | StartupView / PiProbeController | 保持 applied_pi 与 draft_pi 的既有区别；关于页只投影 applied_pi |
 
 资源控制器由设置功能持有，切换子页面不重建任务；不创建每页独立扫描器和独立配置写入者。读取使用 gpui-operation 的 refresh，显式变更沿用 repair 模式；使用框架状态表示运行中/结果/失败，不另外堆叠 loading、saving、pending 等同义标志。概念流程为：
@@ -275,13 +277,13 @@ StartupView 已分别持有 applied_pi 与 draft_pi。关于页展示已配置�
 
 原有四项技术核对已落实为上文设计：共享组件修复、独立提交边界、键位存储/替换、个人资源读取与 CLI 操作。剩余是实现与验证工作，不需要用户选择私有 API。
 
-依赖更新已接入正式版 0.6.4 的 Settings 修复和 InputGroup；2026-09-20 macOS 实测跨页字段搜索、无结果与清空恢复，原索引错位不再复现。无结果时仍缺少提示，保留在统一待处理文档。Token / Questionnaire 后续已通过正式 0.7.0 接入，见 [#243](../issue-243/README.md)，不作为设置等待项。Pi CLI 已使用隔离的个人目录和临时本地包完成安装、定向更新、移除验证，没有修改用户资源。
+历史验证：依赖更新已接入正式版 0.6.4 的 Settings 修复和 InputGroup；2026-09-20 macOS 实测跨页字段搜索、无结果与清空恢复，原索引错位不再复现。无结果时仍缺少提示，保留在统一待处理文档。Token / Questionnaire 后续已通过正式 0.7.0 接入，见 [#243](../issue-243/README.md)，不作为设置等待项。Pi CLI 已使用隔离的个人目录和临时本地包完成安装、定向更新、移除验证，没有修改用户资源。
 
 Pi 路径生效已核对：ConversationState::set_command 只更新后续连接使用的命令，不主动重启已有进程；沿用手动刷新行为。
 
 ## 实施顺序与交付验证
 
-1. [x] Settings 索引修复已通过正式 0.6.4 依赖接入及 macOS 重点复测；八页导航、字段关键词、分组、关于页已接入。无结果提示仍属后续体验完善。
+1. [x] Settings 索引修复已通过正式 0.6.4 依赖接入及 macOS 重点复测；当时八页导航、字段关键词、分组、关于页已接入。无结果提示仍属后续体验完善。
 2. [x] 常规 Pi 独立表单、即时偏好提交与启动引导保存边界。
 3. [x] 快捷键覆盖存储、录制、冲突提示、运行时替换及恢复默认；复用现有菜单与 tooltip 的键位查询。
 4. [x] 个人 Pi 资源读取、过滤、后台控制器，包安装/定向更新/移除及扩展启停。
@@ -291,7 +293,7 @@ Pi 路径生效已核对：ConversationState::set_command 只更新后续连接�
 
 - 普通字段与管理页复用 `gpui_kit::component::setting`；通用设置、主题模式、两种主题及关于字段分别可搜索。管理页只登记固定能力关键词，具体 Skill 名称/说明使用本页搜索。
 - 快捷键保存到 `[keybindings]`，按稳定命令 ID 保存单项覆盖；从当前运行时键位表替换 Gupi 自有动作，其他组件绑定保留。单项修改和恢复都会检查同范围的单次按键冲突，以及与组件快捷键首键的冲突，失败通过设置页显示。页面右上角提供“全部恢复默认”：确认后一次保存清除所有快捷键覆盖，恢复内置默认值，保留其他设置；没有自定义配置或保存期间禁用按钮。取消确认不改变当前配置和编辑内容。
-- 资源由 `state/resources.rs` 统一串行操作，目录扫描和正文读取在 GPUI 后台任务中，文件写入在 Tokio blocking pool，包进程由 gpui-tokio 承接。退出取消所持有任务；CLI 设置 kill-on-drop，不宣称取消能回滚已经发生的包文件变更。
+- 资源由 `crates/gupi-resources/src/resources.rs` 统一串行操作，目录扫描和正文读取在 GPUI 后台任务中，文件写入在 Tokio blocking pool，包进程由 gpui-tokio 承接。退出取消所持有任务；CLI 设置 kill-on-drop，不宣称取消能回滚已经发生的包文件变更。
 - 目录解析读取个人 `settings.json`、包清单和自有目录，包含停用项；包字段空数组与 autoload:false 分别处理。YAML front matter 使用解析库读取名称/多行说明。自动发现遵守 `.gitignore`、`.ignore`、`.fdignore`；自动模板只取目录直接子文件，显式目录和包按 Pi 规则展开。
 - 包命令固定传入个人 `PI_CODING_AGENT_DIR`，使用单独 argv 和 `--no-approve`；定向更新使用 `update --extension SOURCE`。不通过 shell 拼接来源，不解析 `pi list` 人类文本，不加载扩展代码。
 - 正文编辑使用当前分类上的共用弹窗，关闭时确认未保存修改；不持久化草稿。Skill/模板创建名称输入互相独立。新建文件原子提交且拒绝覆盖已有文件，删除只将选中的自有文件移到废纸篓。
@@ -313,7 +315,7 @@ Pi 路径生效已核对：ConversationState::set_command 只更新后续连接�
 - 删除/移除与放弃正文修改使用通用 Dialog；删除确认包含具体对象。操作完成通过带对象名称的通知反馈，不在其他资源分类保留无归属的成功文字。
 - 关于页按 Gupi、Pi 分组，字段不重复产品名，说明探测结果来源；长值截断并提供完整 tooltip。
 - 分类搜索按包、资源列表和系统提示词登记固定关键词，不检索管理内容正文；选择索引问题已通过正式依赖修复；无结果反馈边界见上文。
-- 设置回归覆盖四类资源编辑弹窗的首次原文回填、取消不写文件、放弃确认与返回继续编辑、Pi 路径首次回填，以及模板按名称/说明/来源筛选、预览原地展开/收起、只读操作限制与个人模板编辑，以及主题首帧布局/末行等宽、带资源的八页窄窗渲染、配置文件控件的同行布局，以及快捷键原位编辑的清除、确认、取消、恢复默认、冲突、录制拦截和单项搜索。
+- 设置回归覆盖四类资源编辑弹窗的首次原文回填、取消不写文件、放弃确认与返回继续编辑、Pi 路径首次回填，以及模板按名称/说明/来源筛选、预览原地展开/收起、只读操作限制与个人模板编辑，以及主题首帧布局/末行等宽、当时带资源的八页窄窗渲染、配置文件控件的同行布局，以及快捷键原位编辑的清除、确认、取消、恢复默认、冲突、录制拦截和单项搜索。
 
 当前使用正式 0.7.0；Settings 索引修复自此前 0.6.4 接入后保持有效；旧 0.6.0 调试补丁与临时应用方法已删除，不再提供过时绕过路线。无结果正文提示的剩余边界见统一待处理文档。
 
@@ -348,8 +350,8 @@ Pi 路径生效已核对：ConversationState::set_command 只更新后续连接�
 
 本轮补充源码：
 
-- [Gupi 配置模型与提交](../../../src/state/config.rs)、[预览与已配置 Pi 探测所有权](../../../src/features/startup.rs)、[Pi 探测](../../../crates/pi-rpc/src/probe.rs)。
-- [Gupi 默认动作绑定](../../../src/features/home/actions.rs)、[应用入口](../../../src/app.rs)。
+- [Gupi 配置模型与提交](../../../crates/gupi-settings/src/config.rs)、[预览与已配置 Pi 探测所有权](../../../src/features/startup.rs)、[Pi 探测](../../../crates/pi-rpc/src/probe.rs)。
+- [Gupi 默认动作绑定](../../../crates/gupi-conversation-ui/src/home/actions.rs)、[应用入口](../../../src/app.rs)。
 - [Pi 包管理说明](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/docs/packages.md)、[Skill](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/docs/skills.md)、[提示词模板](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/docs/prompt-templates.md)。
 - [Pi 系统提示词发现](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/src/core/resource-loader.ts)、[get_commands](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/src/modes/rpc/rpc-mode.ts)。
 - [Pi CLI 参数与个人作用域隔离](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/src/package-manager-cli.ts)、[未受信任项目不加载配置](https://github.com/earendil-works/pi/blob/71dca871bc80b6bc97be37f0ca3189399d651fff/packages/coding-agent/src/core/settings-manager.ts)。

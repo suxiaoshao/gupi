@@ -1,17 +1,24 @@
 use super::*;
-use crate::{
-    foundation::pi_resources::{self as io, Kind, Resource},
-    state::resources::{Change, ResourceController, ResourceEvent},
-};
 use gpui_form::FormSchema;
-use gpui_kit::component::{
-    Sizable, WindowExt,
-    input::{Editor as CodeEditor, EditorState},
-    notification::Notification,
-    switch::Switch,
-};
+use gpui_kit::component::Sizable;
+use gpui_kit::component::WindowExt;
+use gpui_kit::component::input::Editor as CodeEditor;
+use gpui_kit::component::input::EditorState;
+use gpui_kit::component::notification::Notification;
+use gpui_kit::component::switch::Switch;
 use gpui_kit::prelude::FluentBuilder;
-use gpui_operation::{Complete, Load, Refresh, Retry, Transition, refresh};
+use gpui_operation::Complete;
+use gpui_operation::Load;
+use gpui_operation::Refresh;
+use gpui_operation::Retry;
+use gpui_operation::Transition;
+use gpui_operation::refresh;
+use gupi_resources::pi_resources as io;
+use gupi_resources::pi_resources::Kind;
+use gupi_resources::pi_resources::Resource;
+use gupi_resources::resources::Change;
+use gupi_resources::resources::ResourceController;
+use gupi_resources::resources::ResourceEvent;
 use std::path::PathBuf;
 
 mod editor;
@@ -69,7 +76,7 @@ impl ResourcesView {
                 || self
                     .controller
                     .read(cx)
-                    .catalog
+                    .catalog()
                     .data()
                     .is_some_and(|catalog| resource.path.starts_with(&catalog.root));
             t(
@@ -124,7 +131,7 @@ impl ResourcesView {
                 if !matches!(event, ResourceEvent::CatalogChanged) {
                     return;
                 }
-                if let Some(catalog) = controller.read(cx).catalog.data() {
+                if let Some(catalog) = controller.read(cx).catalog().data() {
                     this.expanded_packages.retain(|source| {
                         catalog
                             .packages
@@ -145,7 +152,7 @@ impl ResourcesView {
                 if let ResourceEvent::Finished { target, result } = event {
                     let mut args = fluent_bundle::FluentArgs::new();
                     args.set("target", target.clone());
-                    let message = crate::foundation::i18n::t_with_args(
+                    let message = gupi_settings::i18n::t_with_args(
                         cx,
                         if result.is_ok() {
                             "settings-resource-success"
@@ -234,7 +241,7 @@ impl ResourcesView {
         let Some(root) = self
             .controller
             .read(cx)
-            .catalog
+            .catalog()
             .data()
             .map(|c| c.root.clone())
         else {
@@ -336,7 +343,7 @@ impl ResourcesView {
                     .small()
                     .icon(IconName::RotateCw)
                     .tooltip(t(cx, "settings-resource-refresh"))
-                    .loading(controller.catalog.is_running())
+                    .loading(controller.catalog().is_running())
                     .disabled(controller.busy() || self.config.read(cx).busy(cx))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.controller.update(cx, |c, cx| c.refresh(cx));
@@ -349,8 +356,8 @@ impl ResourcesView {
     }
     pub fn has_status(&self, kind: Kind, cx: &App) -> bool {
         let controller = self.controller.read(cx);
-        controller.mutation.is_running()
-            || controller.catalog.problem().is_some()
+        controller.mutation().is_running()
+            || controller.catalog().problem().is_some()
             || self.open.problem().is_some()
             || self.open.is_running()
             || self
@@ -358,19 +365,19 @@ impl ResourcesView {
                 .as_ref()
                 .is_some_and(|(error_kind, _)| *error_kind == kind)
             || controller
-                .catalog
+                .catalog()
                 .data()
                 .is_some_and(|catalog| !catalog.warnings.is_empty())
     }
     pub fn render_page(&self, kind: Kind, section: Section, cx: &mut Context<Self>) -> AnyElement {
         if matches!(
-            self.controller.read(cx).catalog,
+            self.controller.read(cx).catalog(),
             refresh::Operation::Idle(_)
         ) {
             let controller = self.controller.clone();
             cx.defer(move |cx| {
                 controller.update(cx, |owner, cx| {
-                    if matches!(owner.catalog, refresh::Operation::Idle(_)) {
+                    if matches!(owner.catalog(), refresh::Operation::Idle(_)) {
                         owner.refresh(cx);
                     }
                 })
@@ -385,14 +392,14 @@ impl ResourcesView {
         }
         let controller = self.controller.read(cx);
         let busy = controller.busy() || self.config.read(cx).busy(cx);
-        let catalog = controller.catalog.data();
+        let catalog = controller.catalog().data();
         let mut view = v_flex().gap_3();
         if section == Section::Overview {
-            if controller.mutation.is_running() {
+            if controller.mutation().is_running() {
                 view = view.child(t(cx, "settings-resource-working"));
             }
             for error in controller
-                .catalog
+                .catalog()
                 .problem()
                 .into_iter()
                 .chain(self.open.problem())
@@ -560,7 +567,7 @@ fn io_counts(catalog: &io::Catalog, source: &str, cx: &App) -> Option<Vec<String
         if count > 0 {
             let mut args = fluent_bundle::FluentArgs::new();
             args.set("count", count as i64);
-            counts.push(crate::foundation::i18n::t_with_args(cx, label, &args));
+            counts.push(gupi_settings::i18n::t_with_args(cx, label, &args));
         }
     }
     (!counts.is_empty()).then_some(counts)

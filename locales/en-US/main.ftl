@@ -100,6 +100,7 @@ conversation-stop = Stop generation
 conversation-close-run = Close runtime
 conversation-show-less = Show less
 conversation-show-more = Show more…
+conversation-continue = Continue from here
 conversation-fork = Fork conversation from here
 conversation-preview = Previewing another branch
 conversation-return-current = Return to current branch

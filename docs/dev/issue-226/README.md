@@ -17,7 +17,7 @@
 | 2 | [会话快速打开](quick-open.md) | Cmd/Ctrl+P 搜索现有会话目录并打开 |
 | 3 | [统一命令面板](command-palette.md) | Cmd/Ctrl+Shift+P 与 / 共用面板；按可见页面提供候选、单行分类、Enter 执行、Tab 补全与独立命令输入 |
 
-参考资料：[Pi 完整快捷键](pi-keybindings.md)、[23 个 Pi 内置命令与 Gupi 对照](builtin-commands.md)。研究完成不代表上述功能已实现；测试入口也不等于原生体验验收。问题修复仅覆盖实际发现的行为，用户自行体验阶段不自动接管窗口。
+参考资料：[Pi 完整快捷键](pi-keybindings.md)、[24 个 Pi 内置命令与 Gupi 对照](builtin-commands.md)。研究完成不代表上述功能已实现；测试入口也不等于原生体验验收。问题修复仅覆盖实际发现的行为，用户自行体验阶段不自动接管窗口。
 
 ### 完成记录与依赖
 
@@ -168,7 +168,7 @@ Zed 的有用结构：
 | 中止 | abort；另有 abort_bash、abort_retry | 当前复用已支持的执行状态和中止入口，不臆测重写取消生命周期 |
 | fork | get_fork_messages + fork | Gupi 已有；需要先选择源消息，不把当前整段文本当 fork 参数 |
 | 新建/恢复 | 原生 new_session / switch_session；Gupi 自己持有多实例 | 复用 Gupi 当前会话管理，不能随意切当前 Pi 文件破坏实例归属 |
-| 同文件树续聊 | 原生 RPC 无 navigate_tree 命令 | 不接键位；历史预览保持原有行为 |
+| 同文件树续聊 | 通过内置扩展调用公开 navigateTree，标准 prompt/set_editor_text | 历史节点菜单提供“从此处继续”；普通预览保持原有行为，不另增键位 |
 | 队列恢复/编辑 | clear_queue 与队列状态等 | 完整队列 UI 另行处理；不能只复制 TUI 的 Alt+Up |
 | 导出、复制会话 | export_html、clone | 已接入标题栏导出按钮与会话上下文菜单；其他内置能力见 [对照表](builtin-commands.md) |
 | 手动压缩 | compact；abort 可中止 | 已接入当前会话组，支持 compact、/compact 搜索，完成后刷新历史与统计 |

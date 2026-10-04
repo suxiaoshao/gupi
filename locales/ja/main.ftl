@@ -100,6 +100,7 @@ conversation-stop = 生成を停止
 conversation-close-run = ランタイムを閉じる
 conversation-show-less = 折りたたむ
 conversation-show-more = さらに表示…
+conversation-continue = ここから続ける
 conversation-fork = ここから会話を分岐
 conversation-preview = 別のブランチをプレビュー中
 conversation-return-current = 現在のブランチに戻る

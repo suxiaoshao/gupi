@@ -83,7 +83,7 @@
 
 例如插件命令输入 /rev、当前选中 /review：Enter 提交 /review；Tab 补成 /review 并在末尾需要时补空格，用户可继续输入参数。手动逐字输入到 /review 后继续写参数，与 Tab 补全后的编辑行为相同。已有参数、空格和换行不能被补全覆盖；光标进入参数后不继续把参数当作命令名称筛选。
 
-Pi RPC 没有参数 schema，客户端不猜测必填参数或生成表单。插件参数仍可在面板输入；Skill/模板参数回 Composer 编辑，面板显示相应提示，不维护第二份消息正文。
+Pi 1.0.2 标准 RPC 没有参数 schema 或插件参数补全查询，客户端不猜测必填参数或生成表单。命令名称补全已有；子命令/参数候选受 [RPC 缺口](../pi-rpc-gaps.md#原生-rpc-的主要缺口)限制，归 [Gupi #19](https://github.com/suxiaoshao/gupi/issues/19)。插件参数仍可在面板输入；Skill/模板参数回 Composer 编辑，面板显示相应提示，不维护第二份消息正文。
 
 本地候选使用 action 身份，Pi 候选使用所属 session、binding 和真实 invocation。两者同名仍保留类型区别，不互相去重；Pi 内部同 invocation 沿用 RPC 顺序保留首个展示项，实际分发由 Pi 决定。直接输入 /文字仍交给 Pi；本轮不新增将任意 /文字解释为 Gupi action 的别名层。
 

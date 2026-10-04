@@ -518,6 +518,9 @@ impl HomeView {
                         {
                             this.preview_node(id.clone(), window, cx)
                         }
+                        history::canvas::CanvasEvent::Navigate(id) => {
+                            this.continue_from(&canvas_key, id.clone(), window, cx);
+                        }
                         history::canvas::CanvasEvent::Fork(id) => this
                             .state
                             .update(cx, |state, cx| state.fork(&canvas_key, id.clone(), cx)),
@@ -713,10 +716,12 @@ impl HomeView {
             .map(|m| m.entry_id.clone())
             .collect();
         let can_fork = !session.settings_busy() && !session.model_change().unconfirmed();
+        let can_navigate = session.can_navigate();
         let history_changed =
             changed || force || view.list_projection.as_ref() != Some(&history_key);
         let controls_changed = self.history_list.read(cx).delegate().forkable != forkable
-            || self.history_list.read(cx).delegate().can_fork != can_fork;
+            || self.history_list.read(cx).delegate().can_fork != can_fork
+            || self.history_list.read(cx).delegate().can_navigate != can_navigate;
         if history_changed || controls_changed {
             view.list_projection = Some(history_key);
             let history_rows = if history_changed {
@@ -780,7 +785,14 @@ impl HomeView {
                 .as_deref()
                 .and_then(|id| session.history().visible_ancestor(id, self.history_detail));
             view.history_canvas.update(cx, |canvas, cx| {
-                canvas.sync(canvas_rows, canvas_preview, forkable.clone(), can_fork, cx)
+                canvas.sync(
+                    canvas_rows,
+                    canvas_preview,
+                    forkable.clone(),
+                    can_fork,
+                    can_navigate,
+                    cx,
+                )
             });
             self.history_list.update(cx, |list, cx| {
                 let old_selected = list.delegate().selected_id.clone();
@@ -798,6 +810,7 @@ impl HomeView {
                 delegate.session = key.clone();
                 delegate.forkable = forkable;
                 delegate.can_fork = can_fork;
+                delegate.can_navigate = can_navigate;
                 let ix = selected
                     .as_ref()
                     .and_then(|id| delegate.rows.iter().position(|r| &r.id == id))
@@ -948,6 +961,28 @@ impl HomeView {
             });
         }
     }
+    fn continue_from(
+        &mut self,
+        key: &str,
+        entry: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self
+            .state
+            .read(cx)
+            .sessions()
+            .get(key)
+            .is_some_and(|session| session.can_navigate())
+        {
+            return;
+        }
+        self.state
+            .update(cx, |state, cx| state.navigate(key, entry, cx));
+        self.return_current(window, cx);
+        self.input.update(cx, |input, cx| input.focus(window, cx));
+    }
+
     fn return_current(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.close_find(false, window, cx);
         if let Some(key) = &self.shown_key

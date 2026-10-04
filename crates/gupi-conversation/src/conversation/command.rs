@@ -17,6 +17,9 @@ pub enum SessionCommand {
         _task: Task<()>,
     },
     ReconnectUnconfirmed,
+    Navigating {
+        _task: Task<()>,
+    },
     Forking {
         _task: Task<()>,
     },

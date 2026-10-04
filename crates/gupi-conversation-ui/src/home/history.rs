@@ -27,6 +27,7 @@ pub(super) struct HistoryDelegate {
     pub selected_id: Option<String>,
     pub forkable: HashSet<String>,
     pub can_fork: bool,
+    pub can_navigate: bool,
     pub owner: WeakEntity<HomeView>,
 }
 impl HistoryDelegate {
@@ -41,6 +42,7 @@ impl HistoryDelegate {
             selected_id: None,
             forkable: HashSet::new(),
             can_fork: false,
+            can_navigate: false,
             owner,
         }
     }
@@ -95,6 +97,7 @@ impl ListDelegate for HistoryDelegate {
         let owner = self.owner.clone();
         let session = self.session.clone();
         let forkable = self.can_fork && self.forkable.contains(&id);
+        let can_navigate = self.can_navigate;
         let mut content = h_flex().w_full().min_w_0().h(px(graph::ROW_HEIGHT));
         let history_graph = self.graph.clone();
         let start = self.lane_offset;
@@ -195,7 +198,24 @@ impl ListDelegate for HistoryDelegate {
                     let owner = owner.clone();
                     let key = session.clone();
                     let id = id.clone();
+                    let navigate_owner = owner.clone();
+                    let navigate_key = key.clone();
+                    let navigate_id = id.clone();
                     menu.item(
+                        PopupMenuItem::new(t(cx, "conversation-continue"))
+                            .disabled(!can_navigate)
+                            .on_click(move |_, window, cx| {
+                                let _ = navigate_owner.update(cx, |this, cx| {
+                                    this.continue_from(
+                                        &navigate_key,
+                                        navigate_id.clone(),
+                                        window,
+                                        cx,
+                                    );
+                                });
+                            }),
+                    )
+                    .item(
                         PopupMenuItem::new(t(cx, "conversation-fork"))
                             .disabled(!forkable)
                             .on_click(move |_, _, cx| {

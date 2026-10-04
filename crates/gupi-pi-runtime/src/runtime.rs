@@ -11,6 +11,7 @@ pub struct InstanceId(u64);
 struct Connection {
     client: Client,
     _consumer: Task<()>,
+    _extension: tempfile::TempDir,
 }
 enum Instance {
     Launching { _task: Task<()> },
@@ -78,10 +79,14 @@ impl PiState {
                 variables.append(&mut options.env);
                 options.env = variables;
             }
-            Client::spawn(options).await.map_err(|error| match error {
-                Error::Io(error) => Error::Io(snapshot.explain(error)),
-                error => error,
-            })
+            let extension = super::extension::install(&mut options)?;
+            Client::spawn(options)
+                .await
+                .map(|(client, events)| (client, events, extension))
+                .map_err(|error| match error {
+                    Error::Io(error) => Error::Io(snapshot.explain(error)),
+                    error => error,
+                })
         });
         let task = cx.spawn(async move |owner, cx| {
             let result = launch
@@ -93,7 +98,8 @@ impl PiState {
                     return;
                 }
                 let instance = match result {
-                    Ok((client, events)) => Instance::Connected(Connection {
+                    Ok((client, events, extension)) => Instance::Connected(Connection {
+                        _extension: extension,
                         _consumer: Self::consume(id, client.clone(), events, cx),
                         client,
                     }),

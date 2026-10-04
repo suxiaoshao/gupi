@@ -1,4 +1,4 @@
-use crate::{Error, overlay::Overlay};
+use crate::{CaptureResult, Error, overlay::Overlay};
 use gpui_kit::component::Root;
 use gpui_kit::*;
 use image::RgbaImage;
@@ -7,7 +7,6 @@ use std::sync::Arc;
 use window_ext::WindowExt;
 use window_ext::WindowLevel;
 
-type CaptureResult = Result<Option<Vec<u8>>, Error>;
 #[derive(Default)]
 struct Capture {
     generation: u64,

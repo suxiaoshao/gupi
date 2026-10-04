@@ -9,6 +9,8 @@ mod selection;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub use capture::{cancel, is_active, start};
 
+type CaptureResult = Result<Option<Vec<u8>>, Error>;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Screen capture is unavailable on this platform")]
@@ -30,8 +32,6 @@ pub fn is_active(_: &gpui_kit::App) -> bool {
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn cancel(_: &mut gpui_kit::App) {}
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-pub fn start(
-    _: &mut gpui_kit::App,
-) -> Result<gpui_kit::Task<Result<Option<Vec<u8>>, Error>>, Error> {
+pub fn start(_: &mut gpui_kit::App) -> Result<gpui_kit::Task<CaptureResult>, Error> {
     Err(Error::Unsupported)
 }

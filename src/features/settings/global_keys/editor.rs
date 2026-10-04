@@ -126,8 +126,11 @@ impl Editor {
                 ("selection".into(), t(cx, "shortcut-selection")),
                 ("clipboard".into(), t(cx, "shortcut-clipboard")),
                 ("fallback".into(), t(cx, "shortcut-fallback")),
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                ("screenshot".into(), t(cx, "shortcut-screenshot")),
             ],
             match definition.source {
+                InputSource::Screenshot => "screenshot",
                 InputSource::Selection => "selection",
                 InputSource::Clipboard => "clipboard",
                 InputSource::SelectionOrClipboard => "fallback",
@@ -427,6 +430,7 @@ impl Editor {
         };
         definition.template = template.into();
         definition.source = match self.source.read(cx).selected_value().as_deref() {
+            Some("screenshot") => InputSource::Screenshot,
             Some("selection") => InputSource::Selection,
             Some("clipboard") => InputSource::Clipboard,
             _ => InputSource::SelectionOrClipboard,

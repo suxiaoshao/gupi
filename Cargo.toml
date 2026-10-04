@@ -18,6 +18,7 @@ members = [
   "crates/gupi-conversation-ui",
   "crates/gupi-conversation",
   "crates/gupi-settings",
+  "crates/gupi-screen-capture",
   "crates/gupi-updates",
   "crates/gupi-resources",
   "crates/gupi-pi-runtime",
@@ -50,6 +51,7 @@ platform-ext = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", 
 # Internal crates are released with Gupi.
 gupi-conversation-ui = { version = "0.1.2", path = "crates/gupi-conversation-ui" }
 gupi-conversation = { version = "0.1.2", path = "crates/gupi-conversation" }
+gupi-screen-capture = { version = "0.1.2", path = "crates/gupi-screen-capture" }
 gupi-settings = { version = "0.1.2", path = "crates/gupi-settings" }
 gupi-updates = { version = "0.1.2", path = "crates/gupi-updates" }
 gupi-resources = { version = "0.1.2", path = "crates/gupi-resources" }
@@ -85,6 +87,7 @@ semver = "1.0.28"
 gupi-conversation-ui.workspace = true
 gupi-conversation.workspace = true
 gupi-settings.workspace = true
+gupi-screen-capture.workspace = true
 gupi-updates.workspace = true
 gupi-resources.workspace = true
 gupi-pi-runtime.workspace = true

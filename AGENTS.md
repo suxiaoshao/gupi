@@ -13,7 +13,7 @@
 
 应用架构、状态所有权、文件组织、命名和公共接口遵循 [GPUI Kit Coding Guides](https://gpui-kit.com/docs/coding-guides/)。本项目不另行维护与其竞争的通用架构规则。
 
-能力已拆到 `gupi-pi-runtime`、`gupi-resources`、`gupi-updates`、`gupi-settings`、`gupi-conversation` 和 `gupi-conversation-ui`。根包保留应用壳、设置/启动/临时窗口组合与原生生命周期；`src/state`、`src/foundation` 已移除。职责、依赖方向及 host 接口见 [能力架构](docs/dev/capability-architecture/README.md)。
+能力已拆到 `gupi-pi-runtime`、`gupi-resources`、`gupi-updates`、`gupi-settings`、`gupi-conversation`、`gupi-conversation-ui` 和 `gupi-screen-capture`。根包保留应用壳、设置/启动/临时窗口组合与原生生命周期；`src/state`、`src/foundation` 已移除。职责、依赖方向及 host 接口见 [能力架构](docs/dev/capability-architecture/README.md)。
 
 Pi 负责模型执行、扩展、配置加载及会话内容写入；Gupi 负责桌面交互和连接生命周期，具体见 [职责边界](docs/gui-boundary.md)。
 

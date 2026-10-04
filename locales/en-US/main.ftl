@@ -681,3 +681,7 @@ updates-native-progress = Complete the update in the update window.
 updates-install-failed = Couldn’t complete the update. Try again, or reopen Gupi and check its logs.
 updates-restart-help = Installing will save drafts, close Pi connections, and restart Gupi.
 updates-show-progress = Show update progress…
+
+shortcut-screenshot = Screenshot
+screenshot-failed = Couldn’t capture the screen. Try again.
+screenshot-permission-required = Screen recording access is required. Enable Gupi in System Settings → Privacy & Security → Screen Recording, then try again. If macOS asks you to restart Gupi, restart it first.

@@ -69,7 +69,7 @@ pub fn init(cx: &mut App) {
             while let Ok(id) = rx.recv().await {
                 cx.update(|cx| {
                     let rt = cx.global::<ShortcutsRuntime>();
-                    if rt.paused || rt.draining {
+                    if rt.paused || rt.draining || gupi_screen_capture::is_active(cx) {
                         return;
                     }
                     let Some(action) = rt.actions.get(&id).cloned() else {
@@ -205,6 +205,7 @@ pub(crate) fn launcher_binding(cx: &App) -> Option<&str> {
         .then_some(runtime.config.launcher.as_str())
 }
 pub fn shutdown(cx: &mut App) {
+    gupi_screen_capture::cancel(cx);
     if !cx.has_global::<ShortcutsRuntime>() {
         return;
     }
@@ -235,6 +236,9 @@ pub fn cancel_preparation(_key: &str, _cx: &mut App) {
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn trigger(id: &str, cx: &mut App) {
+    if gupi_screen_capture::is_active(cx) {
+        return;
+    }
     let Some(state) = super::temporary::state(cx) else {
         super::temporary::remember_frontmost(cx);
         super::temporary::show(cx);
@@ -268,7 +272,10 @@ fn trigger(id: &str, cx: &mut App) {
         return;
     };
     cx.global_mut::<ShortcutsRuntime>().active.remove(id);
-    let clipboard = cx.read_from_clipboard();
+    let clipboard = match definition.source {
+        InputSource::Clipboard | InputSource::SelectionOrClipboard => cx.read_from_clipboard(),
+        InputSource::Selection | InputSource::Screenshot => None,
+    };
     // Selection capture must finish before activating our window.
     super::temporary::remember_frontmost(cx);
     let id = id.to_owned();
@@ -302,12 +309,61 @@ async fn run(
 ) -> Result<(), String> {
     let mut text = String::new();
     let mut attachments = Vec::new();
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
-    if definition.source != InputSource::Clipboard {
+    if definition.source == InputSource::Screenshot {
+        let native = cx.update(super::temporary::suspend_for_capture)?;
+        let result = async {
+            if let Some(native) = native {
+                native
+                    .hide()
+                    .map_err(|e| gupi_screen_capture::Error::Capture(e.to_string()))?;
+            }
+            let task = cx.update(gupi_screen_capture::start)?;
+            task.await
+        }
+        .await;
+        if matches!(result, Err(gupi_screen_capture::Error::PermissionDenied)) {
+            // The system permission prompt may still be visible after the request
+            // returns. Neither restore focus nor enter the show-on-error path.
+            cx.update(|cx| {
+                super::temporary::take_capture_front(cx);
+                cx.show_system_notification(SystemNotification {
+                    tag: "gupi-screenshot-permission".into(),
+                    title: "Gupi".into(),
+                    body: t(cx, "screenshot-permission-required").into(),
+                    actions: Vec::new(),
+                });
+            });
+            return Ok(());
+        }
+        if !matches!(result, Ok(Some(_))) {
+            if native.is_some() {
+                cx.update(super::temporary::show);
+            } else if let Some(front) = cx.update(super::temporary::take_capture_front) {
+                front.restore();
+            }
+        }
+        let bytes = match result {
+            Ok(Some(bytes)) => bytes,
+            Ok(None) => return Ok(()),
+            Err(error) => {
+                tracing::warn!(%error, "screen capture failed");
+                return Err(cx.update(|cx| t(cx, "screenshot-failed")));
+            }
+        };
+        let name = cx.update(|cx| t(cx, "shortcut-screenshot"));
+        attachments.push(smol::unblock(move || Attachment::from_image(name, &bytes)).await?);
+    }
+    let (read_selection, read_clipboard) = match definition.source {
+        InputSource::Selection => (true, false),
+        InputSource::Clipboard => (false, true),
+        InputSource::SelectionOrClipboard => (true, true),
+        InputSource::Screenshot => (false, false),
+    };
+    if read_selection {
         text = smol::unblock(|| get_selected_text::get_selected_text().unwrap_or_default()).await;
     }
     if text.trim().is_empty()
-        && definition.source != InputSource::Selection
+        && read_clipboard
         && let Some(item) = clipboard
     {
         if let Some(paths) = item.entries().iter().find_map(|e| {

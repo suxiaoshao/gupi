@@ -63,6 +63,30 @@ pub fn state(cx: &mut App) -> Option<Entity<ConversationState>> {
     cx.global_mut::<Temporary>().state = Some(state.clone());
     Some(state)
 }
+/// Hide the temporary surface before capture; the caller performs native work outside App borrows.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub(crate) fn suspend_for_capture(
+    cx: &mut App,
+) -> Result<Option<window_ext::NativeWindowHandle>, String> {
+    let owner = cx.global::<Temporary>();
+    if !owner.visible {
+        return Ok(None);
+    }
+    let window = owner.window.ok_or("Temporary window unavailable")?;
+    let native = window
+        .update(cx, |_, window, _| window.native_window_handle())
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    let owner = cx.global_mut::<Temporary>();
+    owner.visible = false;
+    owner.visibility_epoch += 1;
+    owner.recycle = None;
+    Ok(Some(native))
+}
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub(crate) fn take_capture_front(cx: &mut App) -> Option<platform_ext::app::FrontmostApp> {
+    cx.global_mut::<Temporary>().front.take()
+}
 pub fn toggle(cx: &mut App) {
     if cx.global::<Temporary>().visible
         && let Some(handle) = cx.global::<Temporary>().window

@@ -326,13 +326,11 @@ async fn run(
             // returns. Neither restore focus nor enter the show-on-error path.
             cx.update(|cx| {
                 super::temporary::take_capture_front(cx);
-                let message = t(cx, "screenshot-permission-required");
-                state.update(cx, |_, cx| {
-                    cx.emit(gupi_conversation::conversation::ConversationEvent::Notify {
-                        message: message.into(),
-                        error: true,
-                    });
-                    cx.notify();
+                cx.show_system_notification(SystemNotification {
+                    tag: "gupi-screenshot-permission".into(),
+                    title: "Gupi".into(),
+                    body: t(cx, "screenshot-permission-required").into(),
+                    actions: Vec::new(),
                 });
             });
             return Ok(());
@@ -401,6 +399,8 @@ async fn run(
     attachments.retain(|a| matches!(a.content, Content::Image { .. }));
     let has_input = !text.trim().is_empty() || !attachments.is_empty();
     let template = definition.template.clone();
+    let body =
+        smol::unblock(move || std::fs::read_to_string(template).map_err(|e| e.to_string())).await?;
     let key = state.update(cx, |s, cx| {
         let previous = s.selected().clone();
         s.new_draft(None, cx);
@@ -425,15 +425,7 @@ async fn run(
             .insert(definition.id.clone(), key.clone());
         super::temporary::show(cx);
     });
-    if definition.source == InputSource::Screenshot {
-        state.update(cx, |s, cx| {
-            s.retain_preparation_attachments(&key, attachments.clone(), cx)
-        });
-    }
     let result = async {
-        let body =
-            smol::unblock(move || std::fs::read_to_string(template).map_err(|e| e.to_string()))
-                .await?;
         let started = std::time::Instant::now();
         let client = loop {
             let ready = state.read_with(cx, |s, cx| {

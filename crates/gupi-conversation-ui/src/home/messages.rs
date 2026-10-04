@@ -384,6 +384,12 @@ impl HomeView {
             .as_deref()
             .is_some_and(|id| !session.history().on_current_path(id))
         {
+            let target = view
+                .preview
+                .as_deref()
+                .and_then(|id| session.history().preview_leaf(id));
+            let can_continue = session.can_navigate() && target.is_some();
+            let continue_key = key.clone();
             body = body.child(
                 h_flex()
                     .px_4()
@@ -391,6 +397,17 @@ impl HomeView {
                     .gap_2()
                     .bg(cx.theme().muted)
                     .child(div().flex_1().child(t(cx, "conversation-preview")))
+                    .child(
+                        Button::new("continue-preview")
+                            .small()
+                            .label(t(cx, "conversation-continue"))
+                            .disabled(!can_continue)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                if let Some(target) = &target {
+                                    this.continue_from(&continue_key, target.clone(), window, cx);
+                                }
+                            })),
+                    )
                     .child(
                         Button::new("return-current")
                             .small()

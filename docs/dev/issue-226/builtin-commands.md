@@ -1,12 +1,12 @@
 # Pi TUI 内置命令能力对照
 
-命令表于 2026-09-30 按正式 Pi v0.99.1（`d86654ab`）和 main `1b347794` 复核，仍为全部 **24 项**公开 TUI 内置命令；应用接入按 `5baab1c5` 核对。本表用于比较能力与选择接入范围，不预设某个命令的实施顺序，不展开单项功能开发方案。
+命令表于 2026-10-04 按正式 Pi v1.0.2（`cd32f772`）和 main `200387122` 复核，仍为全部 **24 项**公开 TUI 内置命令；应用接入按 Gupi `69728ad` 核对。本表用于比较能力与选择接入范围，不预设某个命令的实施顺序，不展开单项功能开发方案。
 
 ## 统计与判断口径
 
 - 统计来源为 `packages/coding-agent/src/core/slash-commands.ts` 的 BUILTIN_SLASH_COMMANDS。扩展注册的命令、内部调试与彩蛋不计入这 24 项。
 - Pi RPC 的 get_commands 仅枚举 extension、prompt、skill；TUI 内置命令由交互层另行分发。RPC 有对应接口时，Gupi 可以接入该接口；仅发送 /xxx 文本不能假定执行 TUI 内置操作。
-- 0.99 新增的 `/mcp` 注册为内置扩展命令，不计入这 24 项静态 TUI 命令；加载后可经 get_commands 和 prompt 调用。RPC 下无参数调用返回文本通知，完整管理面板仍仅 TUI；参数补全依旧没有 RPC。输入处理结果、MCP/codemode 和嵌套工具的变化见 [RPC 盘点](../pi-rpc-gaps.md#pi-099-新增内容与-gupi-接入机会)。
+- 0.99 新增的 `/mcp` 注册为内置扩展命令，不计入这 24 项静态 TUI 命令；加载后可经 get_commands 和 prompt 调用。RPC 下无参数调用返回文本通知，完整管理面板仍仅 TUI；v1.0.2 参数补全依旧没有 RPC，详见 [Gupi #19](https://github.com/suxiaoshao/gupi/issues/19)。输入处理结果、MCP/codemode 和嵌套工具的变化见 [RPC 盘点](../pi-rpc-gaps.md#已有协议能力与-gupi-接入机会)。
 - 下表分别记录 **Pi RPC 支持、Gupi 当前实现、接入建议及理由**。Gupi 缺少 typed API/界面不代表 Pi RPC 缺少接口。
 - 建议是待选择的能力范围，不等于已批准实现。已有 Gupi 替代入口保留多会话归属，产品行为不必为复刻命令名字而改变。
 
@@ -16,7 +16,7 @@
 | --- | --- | --- | --- |
 | `/settings` | 无通用 Pi 设置界面接口 | 有 Gupi 自身设置 | Pi 配置图形化及项目覆盖归 [Gupi #2](https://github.com/suxiaoshao/gupi/issues/2)；不能把 Gupi 设置当作等价实现 |
 | `/model` | get_available_models、set_model | 已有模型选择器与动作 | 复用已有能力；可作为命令模式入口 |
-| `/tree` | get_tree/get_entries 可读；无 navigate_tree | 有历史树预览，无同文件切分支续聊 | tree、fork 作为会话历史候选的搜索别名，打开现有面板；不冒充节点导航 |
+| `/tree` | get_tree/get_entries 可读；无 navigate_tree | 历史预览、同文件节点续聊；navigateTree 通过内置扩展调用 | tree、fork 作为会话历史候选的搜索别名，打开现有面板；节点菜单提供“从此处继续” |
 | `/thinking` | get_available_thinking_levels、set_thinking_level | 已有思考等级选择 | 复用已有能力；修改会话等级与保存默认值区分 |
 | `/scoped-models` | 无范围配置编辑接口 | 已读取、过滤范围，无管理界面 | 归模型配置管理；本次命令入口不附带实现 |
 | `/export` | export_html；没有完整复制 TUI HTML/JSONL 导出交互的单一接口 | 标题栏右上角导出按钮，系统保存窗口选择路径后调用 export_html | 已接入 HTML 导出；JSONL 导出未接入 |
@@ -59,10 +59,10 @@
 
 ## 源码依据
 
-命令清单按正式 v0.99.1 固定标签复核；内置扩展的新命令不改变已确认的应用范围。HTML 导出与复制接入时，已通过应用层取消/失败/成功及连接归属回归，并使用隔离临时会话验证真实 Pi RPC 的 HTML 输出、复制后历史保留和原文件不变；这些是既有验证记录，未因本次协议复核重跑原生界面点击验收。
+命令清单按正式 v1.0.2 固定标签复核；内置扩展的新命令不改变已确认的应用范围。HTML 导出与复制接入时，已通过应用层取消/失败/成功及连接归属回归，并使用隔离临时会话验证真实 Pi RPC 的 HTML 输出、复制后历史保留和原文件不变；这些是既有验证记录，未因本次协议复核重跑原生界面点击验收。
 
 - Pi `packages/coding-agent/src/core/slash-commands.ts`：24 项公开内置注册表。
 - Pi `packages/coding-agent/src/modes/interactive/interactive-mode.ts`：内置命令的参数解析与 TUI 分发。
 - Pi `packages/coding-agent/src/modes/rpc/rpc-mode.ts`：compact、export_html、clone、get_last_assistant_text、get_commands 等支持情况。
 - Pi `packages/coding-agent/src/core/agent-session.ts`：各会话操作语义。
-- Gupi `crates/pi-rpc/src/protocol.rs`、`client.rs`：当前 typed API；`crates/gupi-conversation/src/conversation.rs` 和 `features/home/`：已接入动作与界面。
+- Gupi `crates/pi-rpc/src/protocol.rs`、`client.rs`：当前 typed API；`crates/gupi-conversation/src/conversation.rs` 和 `crates/gupi-conversation-ui/src/home/`：已接入动作与界面。

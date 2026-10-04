@@ -100,6 +100,7 @@ conversation-stop = Arrêter la génération
 conversation-close-run = Fermer le processus
 conversation-show-less = Afficher moins
 conversation-show-more = Afficher plus…
+conversation-continue = Continuer à partir d’ici
 conversation-fork = Créer une branche à partir d’ici
 conversation-preview = Aperçu d’une autre branche
 conversation-return-current = Revenir à la branche actuelle

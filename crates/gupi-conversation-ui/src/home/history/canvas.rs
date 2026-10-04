@@ -15,6 +15,7 @@ use gupi_settings::i18n::t_with_args;
 pub enum CanvasEvent {
     Preview(String),
     Fork(String),
+    Navigate(String),
 }
 pub struct HistoryCanvas {
     tree: Tree,
@@ -31,6 +32,7 @@ pub struct HistoryCanvas {
     collapse_controls: Vec<(Bounds<f32>, usize)>,
     forkable: HashSet<String>,
     can_fork: bool,
+    can_navigate: bool,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Hit {
@@ -78,6 +80,7 @@ impl HistoryCanvas {
             collapse_controls: vec![],
             forkable: HashSet::new(),
             can_fork: false,
+            can_navigate: false,
         }
     }
     pub fn sync(
@@ -86,6 +89,7 @@ impl HistoryCanvas {
         preview: Option<String>,
         forkable: HashSet<String>,
         can_fork: bool,
+        can_navigate: bool,
         cx: &mut Context<Self>,
     ) {
         if let Some((rows, entries)) = rows {
@@ -105,6 +109,7 @@ impl HistoryCanvas {
         }
         self.forkable = forkable;
         self.can_fork = can_fork;
+        self.can_navigate = can_navigate;
         cx.notify();
     }
     pub fn clear_pointer(&mut self, cx: &mut Context<Self>) {
@@ -948,6 +953,7 @@ impl HistoryCanvas {
             let action_owner = menu_owner.clone();
             let fork_id = id.clone();
             let forkable = self.can_fork && self.forkable.contains(&id);
+            let can_navigate = self.can_navigate;
             let mut item = v_flex()
                 .id(format!("canvas-node-{id}"))
                 .w(px(hit_size))
@@ -977,7 +983,20 @@ impl HistoryCanvas {
                     }
                     let owner = menu_owner.clone();
                     let id = fork_id.clone();
+                    let navigate_owner = owner.clone();
+                    let navigate_id = id.clone();
                     menu.item(
+                        PopupMenuItem::new(t(cx, "conversation-continue"))
+                            .disabled(!can_navigate)
+                            .on_click(move |_, _, cx| {
+                                let _ = navigate_owner.update(cx, |this, cx| {
+                                    if this.can_navigate {
+                                        cx.emit(CanvasEvent::Navigate(navigate_id.clone()));
+                                    }
+                                });
+                            }),
+                    )
+                    .item(
                         PopupMenuItem::new(t(cx, "conversation-fork"))
                             .disabled(!forkable)
                             .on_click(move |_, _, cx| {

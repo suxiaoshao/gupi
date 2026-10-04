@@ -46,7 +46,7 @@
 
 ## Pi 接口边界与当前实现
 
-2026-09-30 核对正式 Pi v0.99.1 `d86654ab`、main `1b347794` 及本机安装产物的 `rpc-types.ts`、`rpc-mode.ts` 和 AgentSession；隔离运行结果见 [RPC 盘点](../pi-rpc-gaps.md#pi-099-新增内容与-gupi-接入机会)：
+2026-09-30 核对正式 Pi v0.99.1 `d86654ab`、main `1b347794` 及本机安装产物的 `rpc-types.ts`、`rpc-mode.ts` 和 AgentSession；隔离运行结果见 [RPC 盘点](../pi-rpc-gaps.md#已有协议能力与-gupi-接入机会)：
 
 - 提供 `prompt`（含 streamingBehavior）、`steer`、`follow_up`，可提交文字与图片。
 - 成功响应新增 `data.disposition`：prompt 为 handled/queued/started，steer/follow_up 为 handled/queued。表示该份输入的处理结果，不携带消息 ID、完整内容或队列位置；queued 返回时消息也可能已被消费。

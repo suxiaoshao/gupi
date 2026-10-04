@@ -100,6 +100,7 @@ conversation-stop = Detener la generación
 conversation-close-run = Cerrar ejecución
 conversation-show-less = Mostrar menos
 conversation-show-more = Mostrar más…
+conversation-continue = Continuar desde aquí
 conversation-fork = Crear una bifurcación desde aquí
 conversation-preview = Vista previa de otra rama
 conversation-return-current = Volver a la rama actual

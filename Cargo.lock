@@ -4737,6 +4737,8 @@ dependencies = [
  "gpui-tokio",
  "libc",
  "pi-rpc",
+ "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
 ]

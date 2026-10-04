@@ -100,6 +100,7 @@ conversation-stop = 停止生成
 conversation-close-run = 結束執行
 conversation-show-less = 收起
 conversation-show-more = 查看更多…
+conversation-continue = 從此處繼續
 conversation-fork = 從這裡另開對話
 conversation-preview = 正在預覽其他分支
 conversation-return-current = 返回當前分支

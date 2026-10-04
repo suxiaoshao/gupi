@@ -2,7 +2,7 @@
 
 本页集中维护 **33 个 RPC 命令、24 种事件名、9 类扩展 UI** 与 Gupi 的接入状态，以及 TUI 有而标准 RPC 未提供的能力。剩余工作的优先级、归属和验证边界统一见 [总待处理文档](follow-ups.md)，这里不再维护第二份排期清单。
 
-2026-09-30 复核应用基线 `5baab1c5`、官方最新正式 **v0.99.1** `d86654abb8862e201933517d6f1fce9f88dd117f` 和 main 快照 `1b347794e2a630e4359f2584f4eea388145d0ddf`。本机 Pi 已安装 0.99.1；源码仓库 `/Users/sushao/Documents/code/pi` 从 `898ab804` 快进到上述 main，更新前后工作区干净。安装产物中 rpc-types/rpc-mode 的 source map 源码与 v0.99.1 完全一致。本次未修改全局 Pi 配置或安装版本，也未实现下述应用适配。
+2026-10-04 按 Gupi `69728ad`、最新正式 **Pi v1.0.2** `cd32f7725fdbddbaecdff5b1e68491563394e0ca` 和 main `200387122ca450d6387f033949423114a270b96c` 复核。本机 `pi --version` 为 1.0.2，本地 Pi 源码与上述 main 一致。本轮比较固定标签的 RPC 类型/分发、SDK、事件、会话格式与 TUI 内置命令，并核对 Gupi 当前消费者；未修改 Pi 配置、安装版本或应用代码，也未重新执行原生/模型运行验收。
 
 统计口径：传输层 `request_raw` 能发命令不等于产品有入口，fixture 调用不算应用接入；没有直接调用同名 RPC 也不等于缺功能。标准 RPC、TUI、实验 Harness 和社区方案分别判断。
 
@@ -10,13 +10,23 @@
 
 | 检查 | 结论 |
 | --- | --- |
-| v0.87.1 → v0.99.1 | 命令名、事件名和扩展 UI 集合不变，仍为 33 / 24 / 9；`prompt`、`steer`、`follow_up` 成功响应新增 `data.disposition`。工具事件和历史消息新增字段，不能用命令数量不变推断协议没有变化 |
-| v0.99.1 → 已核对 main | RPC 目录、SDK、AgentSession 和 TUI 内置命令表无差异；coding-agent 的未发行修改位于 ModelRuntime 默认模型/凭据处理，不增加下述 RPC 能力 |
-| SDK 与 Harness | `sdk.ts` 仍构造 `new Agent(...)`，未切到实验 Harness。Harness 的队列 ID、完整消息与 cancelQueued 不能作为标准 RPC 可用接口 |
-| durable / protocol / server | 这些底层和实验设施继续独立于 coding-agent stdio RPC；目录变化不解除 Gupi 的完整队列或树导航限制，也不要求迁移存储 |
-| v0.99.1 发行变化 | 新模型目录及 OpenAI 登录打包修复；RPC 更新来自 v0.99.0。模型与思考选择继续读取 Pi 动态返回值 |
+| v0.99.1 → v1.0.2 | RPC 目录、静态 TUI 内置命令表、SessionManager、嵌套调用记录及 agent-loop 无差异；仍为 33 个命令、24 种事件名、9 类扩展 UI 和 24 项 TUI 内置命令。SDK/AgentSession 的工具装载与扩展工具渲染接口有变化，不能将数量不变理解为全部行为不变 |
+| v1.0.2 → 已核对 main | 上述 RPC、SDK、AgentSession、扩展类型与内置命令表无差异；最新 main 的未发行日志不构成额外 RPC 能力 |
+| SDK 与实验协议 | `sdk.ts` 仍构造 `new Agent(...)`；实验 Harness 的队列 ID、完整消息与 cancelQueued 不能作为标准 RPC 可用接口。底层 durable/protocol/server 不改变当前接入契约 |
+| 本轮 Gupi 接入核对 | `disposition`、`parentToolCallId`、`nestedCalls`、`structuredContent` 尚无正式消费者；插件命令名已由 get_commands 补全，参数查询仍无 RPC |
 
-## Pi 0.99 新增内容与 Gupi 接入机会
+## Pi 1.0 系列变化与边界
+
+| 变化 | 对 Gupi 的意义 |
+| --- | --- |
+| MCP 项目覆盖 | `.pi/mcp.json` 可对个人服务器覆盖 enabled/exposure/toolExposure；仍是 Pi 配置能力，没有新增管理 RPC。若实施配置界面，归 Gupi #2 的字段与继承选择 |
+| 工具装载与 MCP 延迟连接 | Pi 修复恢复会话时尚未注册的工具装载，并在进程内 reload 时接入新增 defaultTools；非 direct MCP 连接可延后。Gupi 继续由 Pi 管理执行，不将自己的重启连接写成等价的进程内 reload |
+| `registerToolRenderer()` | 扩展可为尚未注册的工具提供 TUI 渲染，包括恢复后的 MCP 工具。渲染函数仍不经 RPC 传输，未解除桌面宿主的自定义 renderer 缺口 |
+| `samplingParamsByThinkingLevel` | v1.0.2 在 models.json 中支持按思考等级设置 OpenAI 兼容 API 的采样参数；由 Pi 解释配置，不增加客户端命令或要求 Gupi 复制 provider 规则 |
+| OAuth、分类模型与安装方式 | MCP CIMD、登录修复、新分类模型与 Nix/安装渠道不提供新的标准 RPC UI；认证、安装和模型执行仍遵循已有职责边界 |
+
+
+## 已有协议能力与 Gupi 接入机会
 
 | 更新 | 正式源码与实际传输 | 对遗留工作的影响 |
 | --- | --- | --- |
@@ -30,7 +40,7 @@
 
 `disposition` 描述这一份输入的结果：`handled` 不要求这份输入产生 agent_start/agent_settled，但插件可以独立启动其他工作；`queued` 不保证条目仍留在队列，也不携带 ID；`started` 表示启动已获接受，不代表模型回答完成。运行状态继续由实际事件和 `agent_settled` 决定，不能从 handled 响应强制将已有运行设为空闲。
 
-2026-09-30 使用本机安装的 0.99.1、隔离 agent/cwd/session 目录、`--offline`、显式临时扩展和本地模拟 provider 完成协议检查，无真实模型或 MCP 网络请求：验证扩展命令/input handler 的 handled、输入变换后的 steer/follow-up queued、普通 prompt started、运行中 prompt queued，以及 clear_queue 返回变换后的文字；验证首条 user 在 assistant 回复前已落盘；验证子调用事件的 parentToolCallId/structuredContent 和 get_entries 中父结果的 nestedCalls。此为 Pi 协议验证，不是 Gupi 原生界面或应用适配验收。
+历史运行证据：2026-09-30 使用当时安装的 0.99.1、隔离 agent/cwd/session 目录、`--offline`、显式临时扩展和本地模拟 provider 完成协议检查，无真实模型或 MCP 网络请求：验证扩展命令/input handler 的 handled、输入变换后的 steer/follow-up queued、普通 prompt started、运行中 prompt queued，以及 clear_queue 返回变换后的文字；验证首条 user 在 assistant 回复前已落盘；验证子调用事件的 parentToolCallId/structuredContent 和 get_entries 中父结果的 nestedCalls。此为 Pi 协议验证，不是 Gupi 原生界面或应用适配验收。
 
 ## RPC 命令接入
 
@@ -40,7 +50,7 @@
 
 | RPC 命令 | Gupi 当前接入 | 未覆盖内容／处理判断 |
 | --- | --- | --- |
-| `prompt` | 直接调用；文字、图片及 `streamingBehavior` | Skill/模板展开由 Pi 负责；新增 `data.disposition` 已保留在 Response.data，但应用尚未消费，见上方 0.99 接入机会 |
+| `prompt` | 直接调用；文字、图片及 `streamingBehavior` | Skill/模板展开由 Pi 负责；新增 `data.disposition` 已保留在 Response.data，但应用尚未消费，见上方接入机会 |
 | `abort` | 直接调用；停止当前会话 | Pi 的 `abort()` 同时取消重试、压缩和分支摘要；不能把缺专用停止按钮算作完全不能停止 |
 | `get_state` | 直接调用；握手、模型与会话状态、排队数量 | `steeringMode`、`followUpMode`、`messageCount` 留在 extra 中，未提供配置/统计展示；自动压缩状态已有上下文 tooltip |
 | `get_commands` | 直接调用；插件命令、模板、Skill 候选，含加载的内置扩展命令 | 参数补全和插件键位不在返回值内；`builtin:*` 来源不代表本地资源文件；不返回 TUI 内置命令表 |
@@ -56,7 +66,7 @@
 | `steer`、`follow_up` | 未直接调用；通过 `prompt.streamingBehavior` 接入运行中 steer/follow-up | 已有主要提交能力；独立命令返回 handled/queued，不返回 started；始终入队语义不与 prompt 的空闲直接执行混同 |
 | `new_session`、`switch_session` | 未直接调用；Gupi 新会话/恢复使用独立或复用实例，以及 `--session` | 已有多会话新建/恢复；不为用满 API 而强切一个 runtime。`parentSession` 也未作为普通新建参数提供 |
 | `cycle_model`、`cycle_thinking_level` | 未直接调用；已有显式模型/思考选择器 | 无循环切换动作；是否需要快捷操作待选，不影响现有选择能力 |
-| `get_tree` | 未直接调用；由 `get_entries` 在本地构建历史树 | 已有历史预览，不重复新增读取；树导航语义缺口仍存在 |
+| `get_tree` | 未直接调用；由 `get_entries` 在本地构建历史树 | 已有历史预览，不重复新增读取；节点续聊通过内置扩展命令实现 |
 | `get_messages` | 未直接调用；消息界面由 entries 和实时事件构建 | 已有消息展示；若要查看 Pi 精确模型上下文再评估此接口，历史视图不等同于模型当前上下文 |
 | `get_last_assistant_text` | 未直接调用；从实际执行分支的原始历史提取最后回答 | 0.87 的此 RPC 从 Pi 的上下文投影取值，受 context_edit 省略/替换影响，不再假定与界面最后可见回答始终一致。现有复制/回填继续以用户看到的回答为准 |
 | `abort_retry` | 未直接调用；通用 `abort` 已会取消重试 | 仅缺“只取消重试”的专用动作，不能列为无法停止重试 |
@@ -89,7 +99,7 @@
 
 上述接入盘点继续作为能力索引；事件契约、局部刷新实现和验证边界统一见 [#236 实现说明](issue-236/README.md)。名称/思考等级/entry 同步、压缩状态、两类重试进度及过宽刷新修正已完成受影响验证，不再列为待处理项。外部会话由用户手动刷新；首次新项目定向发现、后台删除保留选择、设置资源首次按需加载均已落实。
 
-错误、插件提示、待答和回答完成已接入应用级投递，阅读计数与业务状态分离；原生验证边界见 [通知设计](issue-241/README.md)。提交阶段失败保留应用内错误反馈，不额外发系统通知；点击已有通知仅回来源，不隐式重连。`queue_update` 已接入，逐条操作仍受协议限制；turn 事件不另建 UI，直接 Bash 仍另定范围。状态通知 `cx.notify` 与应用内/系统用户提醒是不同层次，不据通知次数推断所有 Pi 实例重新加载。
+错误、插件提示、待答和回答完成已接入应用级投递，阅读计数与业务状态分离；原生验证边界见 [通知设计](issue-241/README.md)。会话提交阶段失败保留应用内错误反馈；截图权限不足是独立的采集失败，使用系统通知且不激活临时窗口，见[截图能力](issue-18/README.md)。点击已有通知仅回来源，不隐式重连。`queue_update` 已接入，逐条操作仍受协议限制；turn 事件不另建 UI，直接 Bash 仍另定范围。状态通知 `cx.notify` 与应用内/系统用户提醒是不同层次，不据通知次数推断所有 Pi 实例重新加载。
 
 ## 扩展 UI 接入
 
@@ -124,17 +134,17 @@
 
 | 能力 | 源码事实 | Gupi 的影响 |
 | --- | --- | --- |
-| 插件子命令／参数补全 | `get_commands` 仅返回名称、描述、来源；没有 `getArgumentCompletions` 查询命令，`addAutocompleteProvider` 为空实现 | 已能补全命令名，参数仍需手动输入 |
+| 插件子命令／参数补全 | v1.0.2 的 `get_commands` 仅返回名称、描述、来源；TUI 直接调用插件 `getArgumentCompletions(argumentPrefix)`，标准 RPC 没有对应查询，`addAutocompleteProvider` 仍为空实现 | Gupi 已能补全命令名，参数仍需手动输入；[Gupi #19](https://github.com/suxiaoshao/gupi/issues/19) 的参数补全等待正式 RPC 契约，不硬编码插件参数或自建私有桥接 |
 | 插件自定义快捷键 | RPC 不枚举、不触发 `registerShortcut` 的回调；`onTerminalInput` 为空实现 | 无法自动继承插件快捷键；Gupi 自己的 action/keybinding 不受影响 |
 | 插件自定义 UI | `custom` 返回 undefined；header/footer/editor 和 widget 组件工厂不传输 | 无法直接复用任意 TUI 弹层、阅读器和组件；插件需提供标准 RPC 降级路径 |
-| 插件自定义消息／工具渲染 | `renderCall`、`renderResult`、message renderer 返回本地 TUI Component，RPC 传输事件数据 | 可显示文本、工具数据，无法自动继承插件渲染函数 |
+| 插件自定义消息／工具渲染 | `renderCall`、`renderResult`、message renderer 及 1.0.1 新增的 `registerToolRenderer` 都提供本地 TUI 渲染，RPC 只传输事件数据 | 可显示文本、工具数据，无法自动继承插件渲染函数 |
 | 组合问卷 | `select` 是字符串选项和单字符串返回，没有原生多选、附加说明、多字段 schema | 不能通用推断问卷结构；只能由插件顺序调用标准交互或解析输入文本 |
 | 插件读取输入、粘贴语义 | `getEditorText` 返回空字符串，`pasteToEditor` 降级到 `setEditorText`；AbortSignal 取消问答不发送专用撤销事件 | 插件读不到宿主正文；粘贴退化为替换文字；当前处理已传 timeout 和来源关闭，不能即时感知未传输的插件主动撤销 |
 | 插件控制显示细节 | 工作提示／动画、隐藏思考标签、主题查询／切换、工具展开 API 在 RPC 下为空或不支持 | 插件设置无法驱动宿主；Gupi 自己实现对应显示能力仍可行 |
-| 同文件树节点续聊 | 有 get_entries/get_tree/fork，没有直接 navigate_tree RPC | 历史预览和用户消息 fork 已有；任意节点原地续聊及导航总结／标签未接入 |
+| 同文件树节点续聊 | 有 get_entries/get_tree/fork，没有直接 navigate_tree RPC | 历史预览、用户消息 fork 与同文件节点续聊已有；后者通过随 Gupi 加载的公开扩展命令调用 navigateTree；导航总结／标签未接入 |
 | 进程内资源重载 | 没有直接 reload RPC | Gupi 采用重启连接，不能完整保留原进程插件内存及生命周期 |
 
-树导航和 reload 已在 RPC 模式的扩展命令上下文中绑定到 Pi 核心。因此“缺直接 RPC”不等于核心不支持；额外桥接扩展可以调用，但目前未采用私有桥接。
+树导航和 reload 已在 RPC 模式的扩展命令上下文中绑定到 Pi 核心。因此“缺直接 RPC”不等于核心不支持；Gupi 的内置 `gupi-continue` 扩展命令现已调用公开 `ctx.navigateTree`，通过标准 `prompt` 与 `set_editor_text` 接入历史节点续聊；进程内 reload 尚未接入。扩展不修改用户 Pi 配置、不增加私有 RPC 消息，也不直接写会话文件。
 
 源码依据（相对于 Pi 仓库根）：
 
@@ -171,23 +181,23 @@
 
 | 缺口 | 历史方案／讨论 | 使用边界 |
 | --- | --- | --- |
-| 参数补全 | [#7621](https://github.com/earendil-works/pi/pull/7621) | get_argument_completions 的实现参考，正式 0.99.1 和已核对 main 仍无该命令 |
+| 参数补全 | [#7621](https://github.com/earendil-works/pi/pull/7621) | get_argument_completions 的历史实现参考；正式 v1.0.2 和已核对 main 仍无该命令 |
 | 同文件树导航 | [#1762](https://github.com/earendil-works/pi/pull/1762) | 区分导航与另建文件 fork；当前没有公开 navigate_tree RPC |
 | 更广的 Web GUI/RPC 接口 | [#8840](https://github.com/earendil-works/pi/pull/8840) | 社区私有协议参考，不作为官方能力或替换依赖依据 |
 | 输入处理结果 | [#9098](https://github.com/earendil-works/pi/issues/9098)、[#9803](https://github.com/earendil-works/pi/issues/9803) | 正式 0.99 已提供 disposition，以发布源码为准；该字段不携带逐项身份或完整队列，不作为单条编辑/删除接口 |
 
 ## 实验协议的边界
 
-Pi 的 `packages/protocol`、`packages/server`、`packages/durable` 和实验 Harness 是另一层架构。标准 coding-agent stdio 仍走 RPC mode；研究这些设施时应检查实际 SDK 接线、发行入口与协议契约，不以目录存在、包版本号或底层 JSONL 存储支持推断 Gupi 已可使用。当前继续按用户确认使用标准 RPC，不采用社区 fork 或自建桥接。
+Pi 的 `packages/protocol`、`packages/server`、`packages/durable` 和实验 Harness 是另一层架构。标准 coding-agent stdio 仍走 RPC mode；研究这些设施时应检查实际 SDK 接线、发行入口与协议契约，不以目录存在、包版本号或底层 JSONL 存储支持推断 Gupi 已可使用。当前使用标准 RPC 与 Pi 的公开扩展接口，不采用社区 fork 或自建 RPC 协议。内置扩展的唯一新增能力为[同文件历史节点续聊](issue-220/history.md#从历史节点继续)。
 
 ## 固定源码依据与后续复核方法
 
 应用入口：[typed RPC](../../crates/pi-rpc/src/protocol.rs)、[Client](../../crates/pi-rpc/src/client.rs)、[会话事件与提交](../../crates/gupi-conversation/src/conversation.rs)、[定向回读](../../crates/gupi-conversation/src/conversation/reads.rs)、[输入区](../../crates/gupi-conversation-ui/src/home/composer.rs)、[会话信息](../../crates/gupi-conversation-ui/src/home/session_info.rs)、[全局模板任务](../../src/app/shortcuts.rs)。
 
-- 正式 [v0.99.1 release](https://github.com/earendil-works/pi/releases/tag/v0.99.1)、[v0.99.0 release](https://github.com/earendil-works/pi/releases/tag/v0.99.0) 与 [CHANGELOG](https://github.com/earendil-works/pi/blob/d86654abb8862e201933517d6f1fce9f88dd117f/packages/coding-agent/CHANGELOG.md)。旧协议比较基线为 [v0.87.1](https://github.com/earendil-works/pi/tree/f07218c4d4bbc12bef056a7058c3dd49dfe41abe)。
-- [RPC 类型](https://github.com/earendil-works/pi/blob/d86654abb8862e201933517d6f1fce9f88dd117f/packages/coding-agent/src/modes/rpc/rpc-types.ts)、[分发/扩展降级](https://github.com/earendil-works/pi/blob/d86654abb8862e201933517d6f1fce9f88dd117f/packages/coding-agent/src/modes/rpc/rpc-mode.ts)、[SDK](https://github.com/earendil-works/pi/blob/d86654abb8862e201933517d6f1fce9f88dd117f/packages/coding-agent/src/core/sdk.ts)。
-- [AgentSession](https://github.com/earendil-works/pi/blob/d86654abb8862e201933517d6f1fce9f88dd117f/packages/coding-agent/src/core/agent-session.ts)、[SessionManager](https://github.com/earendil-works/pi/blob/d86654abb8862e201933517d6f1fce9f88dd117f/packages/coding-agent/src/core/session-manager.ts)、[扩展 API](https://github.com/earendil-works/pi/blob/d86654abb8862e201933517d6f1fce9f88dd117f/packages/coding-agent/src/core/extensions/types.ts)。
-- [嵌套调用与记录上限](https://github.com/earendil-works/pi/blob/d86654abb8862e201933517d6f1fce9f88dd117f/packages/coding-agent/src/core/nested-tool-calls.ts)、[工具结果消息构造](https://github.com/earendil-works/pi/blob/d86654abb8862e201933517d6f1fce9f88dd117f/packages/agent/src/agent-loop.ts)、[MCP 扩展与 RPC 降级](https://github.com/earendil-works/pi/blob/d86654abb8862e201933517d6f1fce9f88dd117f/packages/coding-agent/src/extensions/mcp/index.ts)。
-- [已核对 main](https://github.com/earendil-works/pi/tree/1b347794e2a630e4359f2584f4eea388145d0ddf)。官方协议文档为 [RPC commands](https://github.com/earendil-works/pi/blob/d86654abb8862e201933517d6f1fce9f88dd117f/packages/coding-agent/docs/rpc-commands.md) 和 [Extension UI](https://github.com/earendil-works/pi/blob/d86654abb8862e201933517d6f1fce9f88dd117f/packages/coding-agent/docs/rpc-extension-ui.md)；字段可用性另以类型、实现和运行结果核对。
+- 正式 [v1.0.2 release](https://github.com/earendil-works/pi/releases/tag/v1.0.2) 与 [CHANGELOG](https://github.com/earendil-works/pi/blob/cd32f7725fdbddbaecdff5b1e68491563394e0ca/packages/coding-agent/CHANGELOG.md)。旧协议比较基线为 [v0.87.1](https://github.com/earendil-works/pi/tree/f07218c4d4bbc12bef056a7058c3dd49dfe41abe)。
+- [RPC 类型](https://github.com/earendil-works/pi/blob/cd32f7725fdbddbaecdff5b1e68491563394e0ca/packages/coding-agent/src/modes/rpc/rpc-types.ts)、[分发/扩展降级](https://github.com/earendil-works/pi/blob/cd32f7725fdbddbaecdff5b1e68491563394e0ca/packages/coding-agent/src/modes/rpc/rpc-mode.ts)、[SDK](https://github.com/earendil-works/pi/blob/cd32f7725fdbddbaecdff5b1e68491563394e0ca/packages/coding-agent/src/core/sdk.ts)。
+- [AgentSession](https://github.com/earendil-works/pi/blob/cd32f7725fdbddbaecdff5b1e68491563394e0ca/packages/coding-agent/src/core/agent-session.ts)、[SessionManager](https://github.com/earendil-works/pi/blob/cd32f7725fdbddbaecdff5b1e68491563394e0ca/packages/coding-agent/src/core/session-manager.ts)、[扩展 API](https://github.com/earendil-works/pi/blob/cd32f7725fdbddbaecdff5b1e68491563394e0ca/packages/coding-agent/src/core/extensions/types.ts)。
+- [嵌套调用与记录上限](https://github.com/earendil-works/pi/blob/cd32f7725fdbddbaecdff5b1e68491563394e0ca/packages/coding-agent/src/core/nested-tool-calls.ts)、[工具结果消息构造](https://github.com/earendil-works/pi/blob/cd32f7725fdbddbaecdff5b1e68491563394e0ca/packages/agent/src/agent-loop.ts)、[MCP 扩展与 RPC 降级](https://github.com/earendil-works/pi/blob/cd32f7725fdbddbaecdff5b1e68491563394e0ca/packages/coding-agent/src/extensions/mcp/index.ts)。
+- [已核对 main](https://github.com/earendil-works/pi/tree/200387122ca450d6387f033949423114a270b96c)。官方协议文档为 [RPC commands](https://github.com/earendil-works/pi/blob/cd32f7725fdbddbaecdff5b1e68491563394e0ca/packages/coding-agent/docs/rpc-commands.md) 和 [Extension UI](https://github.com/earendil-works/pi/blob/cd32f7725fdbddbaecdff5b1e68491563394e0ca/packages/coding-agent/docs/rpc-extension-ui.md)；字段可用性另以类型、实现和运行结果核对。
 
 升级复核时先比较正式标签与 main 的 rpc-types/rpc-mode、SDK、事件及历史格式，再核对 Gupi 实际调用与消息投影。版本号、PR 合并日期和社区自述不能替代发布源码和针对性运行证据。

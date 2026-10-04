@@ -100,6 +100,7 @@ conversation-stop = 생성 중지
 conversation-close-run = 런타임 닫기
 conversation-show-less = 간략히 보기
 conversation-show-more = 더 보기…
+conversation-continue = 여기서 계속하기
 conversation-fork = 여기서 대화 분기
 conversation-preview = 다른 분기 미리 보기
 conversation-return-current = 현재 분기로 돌아가기

@@ -201,6 +201,7 @@ Open **Conversation history** in the title bar, or press **Cmd/Ctrl+Alt+B**.
 
 - Switch between **tree** and **list**, then choose the amount of detail: Brief, Detailed, or All records.
 - Select a node to preview that branch. Previewing keeps your draft and the real execution position; ordinary sending is paused while you view another branch.
+- Right-click a history node and choose **Continue from here** to change the execution position within the same session. User messages return to the composer for editing; other nodes become the point to continue from. The session must be idle.
 - Use **Fork** on a user message to open a new session from before that question. Pi puts the question back in the new composer so you can revise it.
 - Return to the actual execution position to continue the original session.
 

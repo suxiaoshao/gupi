@@ -100,6 +100,7 @@ conversation-stop = Generierung stoppen
 conversation-close-run = Laufzeit schließen
 conversation-show-less = Weniger anzeigen
 conversation-show-more = Mehr anzeigen …
+conversation-continue = Ab hier fortsetzen
 conversation-fork = Gespräch ab hier abzweigen
 conversation-preview = Anderer Zweig wird in der Vorschau angezeigt
 conversation-return-current = Zum aktuellen Zweig zurückkehren

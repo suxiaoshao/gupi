@@ -9,6 +9,7 @@ mod export;
 mod loading;
 mod messages;
 mod model_change;
+mod navigation;
 mod queue;
 mod reads;
 mod reconnect;
@@ -1598,7 +1599,10 @@ impl ConversationState {
         } else {
             scope
         };
-        if matches!(s.command, SessionCommand::Forking { .. }) {
+        if matches!(
+            s.command,
+            SessionCommand::Forking { .. } | SessionCommand::Navigating { .. }
+        ) {
             return;
         }
         if s.model_change.running() {

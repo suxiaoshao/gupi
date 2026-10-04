@@ -100,6 +100,7 @@ conversation-stop = Interromper geração
 conversation-close-run = Encerrar execução
 conversation-show-less = Mostrar menos
 conversation-show-more = Mostrar mais…
+conversation-continue = Continuar daqui
 conversation-fork = Criar uma ramificação a partir daqui
 conversation-preview = Visualizando outra ramificação
 conversation-return-current = Voltar à ramificação atual

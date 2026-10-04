@@ -8,7 +8,7 @@ impl StartupView {
         }
         if window.has_active_dialog(cx) {
             if let Some(panel) = &self.palette
-                && panel.read(cx).is_open
+                && panel.read(cx).is_open()
             {
                 panel.update(cx, |panel, cx| panel.focus_input(window, cx));
             }

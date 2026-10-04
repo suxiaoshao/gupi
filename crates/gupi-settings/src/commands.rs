@@ -86,7 +86,13 @@ impl Kind {
 }
 #[derive(Clone, PartialEq, Deserialize, Action)]
 #[action(namespace = gupi, no_json)]
+#[non_exhaustive]
 pub struct Run(pub Kind);
+impl Run {
+    pub fn new(value: Kind) -> Self {
+        Self(value)
+    }
+}
 
 actions!(
     gupi,
@@ -124,7 +130,14 @@ pub const CONVERSATION_COMMANDS: [Kind; 6] = [
     Kind::History,
 ];
 #[derive(Default, PartialEq)]
+#[non_exhaustive]
 pub struct ConversationCommands(pub [bool; 6]);
+impl ConversationCommands {
+    pub fn new(value: [bool; 6]) -> Self {
+        Self(value)
+    }
+}
+
 impl Global for ConversationCommands {}
 /// Native menus capture enabled state. Only rebuild when the active window's
 /// capabilities change, not for each streamed message or render.

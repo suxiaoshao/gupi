@@ -612,12 +612,12 @@ mod tests {
     }
 
     fn message(id: &str, value: Value) -> DisplayMessage {
-        DisplayMessage {
-            id: id.into(),
-            entry: Some(id.into()),
-            value,
-            final_answer_part: None,
-            completed_at: None,
+        {
+            let mut record = DisplayMessage::new(id.into(), value);
+            record.entry = Some(id.into());
+            record.final_answer_part = None;
+            record.completed_at = None;
+            record
         }
     }
     fn call() -> DisplayMessage {

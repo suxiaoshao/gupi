@@ -655,7 +655,7 @@ impl HomeView {
                             .icon(IconName::Search)
                             .tooltip_with_action(
                                 t(cx, "conversation-search"),
-                                &Run(Kind::QuickOpen),
+                                &Run::new(Kind::QuickOpen),
                                 Some("Gupi"),
                             )
                             .accessibility_label(t(cx, "conversation-search"))
@@ -673,8 +673,9 @@ impl HomeView {
                     false,
                     cx,
                     move |window, cx| {
-                        let _ = owner
-                            .update(cx, |this, cx| this.run_action(&Run(Kind::New), window, cx));
+                        let _ = owner.update(cx, |this, cx| {
+                            this.run_action(&Run::new(Kind::New), window, cx)
+                        });
                     },
                 )
                 .children(crate::command_palette::binding(Kind::New, window)),

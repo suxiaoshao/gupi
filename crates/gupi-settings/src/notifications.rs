@@ -12,6 +12,7 @@ pub enum CompletionMode {
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
 pub struct Preferences {
     pub waiting: bool,
     pub failures: bool,

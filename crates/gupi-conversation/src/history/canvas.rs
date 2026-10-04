@@ -11,6 +11,7 @@ pub const X_GAP: f32 = 80.;
 pub const Y_GAP: f32 = 64.;
 
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Node {
     pub row: usize,
     pub x: f32,
@@ -18,19 +19,54 @@ pub struct Node {
     pub parent: Option<usize>,
     pub children: Vec<usize>,
 }
+impl Node {
+    pub fn new(row: usize, x: f32, y: f32) -> Self {
+        Self {
+            row,
+            x,
+            y,
+            parent: None,
+            children: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Edge {
     pub from: usize,
     pub to: usize,
     pub hidden: Vec<usize>,
 }
+impl Edge {
+    pub fn new(from: usize, to: usize) -> Self {
+        Self {
+            from,
+            to,
+            hidden: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Segment {
     pub from: usize,
     pub to: usize,
     pub inner: Vec<usize>,
 }
+impl Segment {
+    pub fn new(from: usize, to: usize) -> Self {
+        Self {
+            from,
+            to,
+            inner: Vec::new(),
+        }
+    }
+}
+
 #[derive(Default)]
+#[non_exhaustive]
 pub struct Tree {
     pub rows: Vec<HistoryRow>,
     pub nodes: Vec<Node>,

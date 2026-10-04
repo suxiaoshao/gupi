@@ -345,10 +345,11 @@ mod tests {
 
     #[test]
     fn hidden_sidebar_keeps_animation_width_without_reserving_layout_space() {
-        let preferences = layout::LayoutState {
-            sidebar_width: 480.,
-            history_width: 520.,
-            ..Default::default()
+        let preferences = {
+            let mut record = layout::LayoutState::default();
+            record.sidebar_width = 480.;
+            record.history_width = 520.;
+            record
         };
         let mut panes = PaneLayout::default();
         panes.fit(1200., true, true, &preferences);
@@ -362,10 +363,11 @@ mod tests {
     }
     #[test]
     fn resizing_one_sidebar_never_borrows_from_the_other() {
-        let preferences = layout::LayoutState {
-            sidebar_width: 300.,
-            history_width: 300.,
-            ..Default::default()
+        let preferences = {
+            let mut record = layout::LayoutState::default();
+            record.sidebar_width = 300.;
+            record.history_width = 300.;
+            record
         };
         let mut panes = PaneLayout::default();
         panes.fit(1200., true, true, &preferences);
@@ -378,10 +380,11 @@ mod tests {
     }
     #[test]
     fn temporary_constraints_and_sibling_drag_do_not_restore_or_overwrite_preferences() {
-        let preferences = layout::LayoutState {
-            sidebar_width: 480.,
-            history_width: 520.,
-            ..Default::default()
+        let preferences = {
+            let mut record = layout::LayoutState::default();
+            record.sidebar_width = 480.;
+            record.history_width = 520.;
+            record
         };
         let mut panes = PaneLayout::default();
         panes.fit(1100., true, true, &preferences);
@@ -399,10 +402,11 @@ mod tests {
     }
     #[test]
     fn overlay_and_visibility_changes_keep_the_original_pixel_preferences() {
-        let preferences = layout::LayoutState {
-            sidebar_width: 480.,
-            history_width: 520.,
-            ..Default::default()
+        let preferences = {
+            let mut record = layout::LayoutState::default();
+            record.sidebar_width = 480.;
+            record.history_width = 520.;
+            record
         };
         let mut panes = PaneLayout::default();
         panes.fit(800., true, true, &preferences);

@@ -19,9 +19,10 @@ fn shared_settings_layout_renders_without_reentrant_entity_access(cx: &mut TestA
     });
     let (_, cx) = cx.add_window_view(|window, cx| {
         let form = cx.new(|_| {
-            Form::new(AppConfig {
-                pi_command: Some("/custom/onboarding-pi".into()),
-                ..Default::default()
+            Form::new({
+                let mut record = AppConfig::default();
+                record.pi_command = Some("/custom/onboarding-pi".into());
+                record
             })
         });
         let controller = cx.new(|cx| ConfigController::new(&form, cx));
@@ -31,8 +32,10 @@ fn shared_settings_layout_renders_without_reentrant_entity_access(cx: &mut TestA
             .clone()
             .update(cx, |form, cx| {
                 form.rebase(
-                    super::PiSettings {
-                        command: Some("/custom/settings-pi".into()),
+                    {
+                        let mut record = super::PiSettings::default();
+                        record.command = Some("/custom/settings-pi".into());
+                        record
                     },
                     cx,
                 )
@@ -190,27 +193,32 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
             let resources = settings.read(cx).resources.read(cx).controller.clone();
             resources.update(cx, |owner, _| {
                 let root = std::path::PathBuf::from("/tmp/settings-layout-fixture");
-                owner.set_catalog_for_test(Catalog {
-                    root: root.clone(),
-                    packages: vec![Package {
-                        source: "local-review-package".into(),
-                        path: root.clone(),
-                        version: Some("1.0.0".into()),
-                    }],
-                    resources: [Kind::Extension, Kind::Skill, Kind::Prompt]
+                owner.set_catalog_for_test({
+                    let mut record = Catalog::default();
+                    record.root = root.clone();
+                    record.packages = vec![{
+                        let mut package = Package::new("local-review-package".into(), root.clone());
+                        package.version = Some("1.0.0".into());
+                        package
+                    }];
+                    record.resources = [Kind::Extension, Kind::Skill, Kind::Prompt]
                         .into_iter()
-                        .map(|kind| Resource {
-                            kind,
-                            path: root.join("example.md"),
-                            base: root.clone(),
-                            package: None,
-                            name: "测试资源".into(),
-                            description: "用于布局检查的说明".into(),
-                            enabled: true,
-                            editable: kind != Kind::Extension,
+                        .map(|kind| {
+                            let mut record = Resource::new(
+                                kind,
+                                root.join("example.md"),
+                                root.clone(),
+                                "测试资源".into(),
+                            );
+                            record.package = None;
+                            record.description = "用于布局检查的说明".into();
+                            record.enabled = true;
+                            record.editable = kind != Kind::Extension;
+                            record
                         })
-                        .collect(),
-                    warnings: vec![],
+                        .collect();
+                    record.warnings = vec![];
+                    record
                 });
             });
             let view = cx.new(|_| SettingsPageFixture { settings, page });
@@ -283,9 +291,10 @@ fn native_update_disables_settings_controls_until_closed(cx: &mut TestAppContext
     let mut fixture = None;
     let (_, visual) = cx.add_window_view(|window, cx| {
         let form = cx.new(|_| {
-            Form::new(AppConfig {
-                auto_check_updates: Some(false),
-                ..Default::default()
+            Form::new({
+                let mut record = AppConfig::default();
+                record.auto_check_updates = Some(false);
+                record
             })
         });
         let controller = cx.new(|cx| {
@@ -293,10 +302,13 @@ fn native_update_disables_settings_controls_until_closed(cx: &mut TestAppContext
         });
         controller.update(cx, |owner, cx| {
             owner.settle_for_test(
-                ConfigData {
-                    path: directory.path().join("config.toml"),
-                    contents: ConfigContents::Missing,
-                    backup: None,
+                {
+                    let mut record = ConfigData::new(
+                        directory.path().join("config.toml"),
+                        ConfigContents::Missing,
+                    );
+                    record.backup = None;
+                    record
                 },
                 cx,
             )
@@ -330,10 +342,10 @@ fn native_update_disables_settings_controls_until_closed(cx: &mut TestAppContext
         assert_eq!(AppConfig::AUTO_CHECK_UPDATES.get(&form, cx), Some(true));
     });
     updates.update(visual, |owner, cx| {
-        owner.set_status_for_test(Status::Available(gupi_updates::releases::Release {
-            version: semver::Version::new(2, 0, 0),
-            url: "https://github.com/suxiaoshao/gupi/releases/tag/v2.0.0".into(),
-        }));
+        owner.set_status_for_test(Status::Available(gupi_updates::releases::Release::new(
+            semver::Version::new(2, 0, 0),
+            "https://github.com/suxiaoshao/gupi/releases/tag/v2.0.0".into(),
+        )));
         owner.start_install(cx).unwrap();
     });
     visual.update(|window, cx| {

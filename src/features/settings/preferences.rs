@@ -168,11 +168,7 @@ impl SettingsView {
                 ))
                 .disabled(busy || pi.is_running())
                 .on_click(cx.listener(|this, _, _, cx| {
-                    match (PiSettings {
-                        command: this.pi_command(cx),
-                    })
-                    .normalized()
-                    {
+                    match PiSettings::new(this.pi_command(cx)).normalized() {
                         Ok(config) => {
                             this.error = None;
                             this.draft_pi

@@ -16,6 +16,7 @@ pub fn default_window_size() -> Size<Pixels> {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct LayoutState {
     pub main_window: Option<WindowPlacement>,
     #[serde(default = "default_sidebar_width", deserialize_with = "read_width")]

@@ -152,10 +152,7 @@ impl Editor {
         let sub = cx.subscribe_in(&picker, window, |this, _, event, window, cx| {
             match event {
                 PickerEvent::Model(model) => {
-                    this.model = Some(ModelChoice {
-                        provider: model.provider.clone(),
-                        id: model.id.clone(),
-                    });
+                    this.model = Some(ModelChoice::new(model.provider.clone(), model.id.clone()));
                     this.load_levels(window, cx);
                 }
                 PickerEvent::Thinking(level) => this.thinking = Some(level.clone()),
@@ -293,16 +290,16 @@ impl Editor {
         let resources = gpui_tokio::Tokio::spawn(cx, async move {
             let snapshot = environment.load(false).await;
             let root = pi_resources::agent_dir()
-                .map_err(|error| pi_resources::Error(snapshot.explain(error)))?;
+                .map_err(|error| pi_resources::Error::new(snapshot.explain(error)))?;
             let variables = snapshot.variables();
             smol::unblock(move || pi_resources::scan(root, None, &variables))
                 .await
-                .map_err(|error| pi_resources::Error(snapshot.explain(error)))
+                .map_err(|error| pi_resources::Error::new(snapshot.explain(error)))
         });
         self.task = Some(cx.spawn_in(window, async move |owner, cx| {
             let catalog = resources
                 .await
-                .unwrap_or_else(|error| Err(pi_resources::Error(error.to_string())));
+                .unwrap_or_else(|error| Err(pi_resources::Error::new(error.to_string())));
             let _ = owner.update_in(cx, |this, window, cx| {
                 match catalog {
                     Ok(catalog) => {

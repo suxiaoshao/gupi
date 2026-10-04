@@ -28,6 +28,7 @@ impl Kind {
     }
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Resource {
     pub kind: Kind,
     pub path: PathBuf,
@@ -38,13 +39,40 @@ pub struct Resource {
     pub enabled: bool,
     pub editable: bool,
 }
+impl Resource {
+    pub fn new(kind: Kind, path: PathBuf, base: PathBuf, name: String) -> Self {
+        Self {
+            kind,
+            path,
+            base,
+            name,
+            package: None,
+            description: String::new(),
+            enabled: true,
+            editable: false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Package {
     pub source: String,
     pub path: PathBuf,
     pub version: Option<String>,
 }
+impl Package {
+    pub fn new(source: String, path: PathBuf) -> Self {
+        Self {
+            source,
+            path,
+            version: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Catalog {
     pub root: PathBuf,
     pub packages: Vec<Package>,
@@ -53,7 +81,14 @@ pub struct Catalog {
 }
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("{0}")]
+#[non_exhaustive]
 pub struct Error(pub String);
+impl Error {
+    pub fn new(value: String) -> Self {
+        Self(value)
+    }
+}
+
 impl From<std::io::Error> for Error {
     fn from(error: std::io::Error) -> Self {
         Self(error.to_string())

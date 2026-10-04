@@ -5,6 +5,7 @@ use gpui_kit::component::list::ListItem;
 use pi_rpc::protocol::Model;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ModelKey {
     pub provider: String,
     pub id: String,

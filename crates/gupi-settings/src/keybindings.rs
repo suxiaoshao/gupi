@@ -5,12 +5,24 @@ use gpui_kit::*;
 use std::collections::BTreeMap;
 
 pub type Overrides = BTreeMap<String, String>;
+#[non_exhaustive]
 pub struct Command {
     pub id: &'static str,
     pub label: &'static str,
     pub kind: Kind,
     pub default: &'static str,
 }
+impl Command {
+    pub fn new(id: &'static str, label: &'static str, kind: Kind, default: &'static str) -> Self {
+        Self {
+            id,
+            label,
+            kind,
+            default,
+        }
+    }
+}
+
 pub const COMMANDS: &[Command] = &[
     Command {
         id: "find",

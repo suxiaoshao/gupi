@@ -529,7 +529,7 @@ impl HomeView {
                         .icon(IconName::Square)
                         .tooltip_with_action(
                             t(cx, "conversation-stop"),
-                            &Run(Kind::Stop),
+                            &Run::new(Kind::Stop),
                             Some("Gupi"),
                         )
                         .accessibility_label(t(cx, "conversation-stop"))

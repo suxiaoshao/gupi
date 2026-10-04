@@ -493,13 +493,14 @@ mod validation_tests {
             // The configured command is available before any version probe.
             crate::app::temporary::set_command("pi".into(), cx);
             let mut config = gupi_settings::shortcuts::Shortcuts::default();
-            config.tasks.push(ShortcutTask {
-                id: "translate".into(),
-                name: "Translate".into(),
-                enabled: true,
-                template: "/test.md".into(),
-                source: gupi_settings::shortcuts::InputSource::Clipboard,
-                ..Default::default()
+            config.tasks.push({
+                let mut record = ShortcutTask::default();
+                record.id = "translate".into();
+                record.name = "Translate".into();
+                record.enabled = true;
+                record.template = "/test.md".into();
+                record.source = gupi_settings::shortcuts::InputSource::Clipboard;
+                record
             });
             cx.set_global(ShortcutsRuntime {
                 manager: Err("no OS registration in test".into()),
@@ -570,13 +571,14 @@ mod validation_tests {
                 config.shortcuts.launcher = key.into();
                 assert_eq!(prepare(&config, cx).unwrap_err(), "settings-key-conflict");
                 config.shortcuts.launcher.clear();
-                config.shortcuts.tasks.push(ShortcutTask {
-                    id: "test".into(),
-                    name: "Test".into(),
-                    binding: key.into(),
-                    enabled: true,
-                    template: "/test.md".into(),
-                    ..Default::default()
+                config.shortcuts.tasks.push({
+                    let mut record = ShortcutTask::default();
+                    record.id = "test".into();
+                    record.name = "Test".into();
+                    record.binding = key.into();
+                    record.enabled = true;
+                    record.template = "/test.md".into();
+                    record
                 });
                 assert_eq!(prepare(&config, cx).unwrap_err(), "settings-key-conflict");
                 config.shortcuts.tasks[0].enabled = false;

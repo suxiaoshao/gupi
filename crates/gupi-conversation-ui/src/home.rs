@@ -1133,7 +1133,7 @@ impl Render for HomeView {
             .on_action(cx.listener(Self::run_action))
             .on_action(cx.listener(
                 |this, _: &gupi_settings::commands::ShowCommandPalette, window, cx| {
-                    this.run_action(&actions::Run(actions::Kind::Palette), window, cx)
+                    this.run_action(&actions::Run::new(actions::Kind::Palette), window, cx)
                 },
             ))
             .size_full()

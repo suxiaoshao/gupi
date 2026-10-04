@@ -109,7 +109,13 @@ pub struct I18n {
     locale: &'static str,
 }
 
+#[non_exhaustive]
 pub struct SystemLocale(pub Option<String>);
+impl SystemLocale {
+    pub fn new(value: Option<String>) -> Self {
+        Self(value)
+    }
+}
 
 impl Global for I18n {}
 impl Global for SystemLocale {}

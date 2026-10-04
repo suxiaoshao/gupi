@@ -34,6 +34,7 @@ pub fn temporary_dir() -> io::Result<PathBuf> {
 }
 
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Discovery {
     pub home: PathBuf,
     pub agent: PathBuf,
@@ -41,6 +42,16 @@ pub struct Discovery {
     pub session_override: Option<PathBuf>,
 }
 impl Discovery {
+    /// Relative paths used when the process environment cannot be discovered.
+    pub fn fallback() -> Self {
+        Self {
+            home: PathBuf::from("."),
+            agent: PathBuf::from(".pi/agent"),
+            current: PathBuf::from("."),
+            session_override: None,
+        }
+    }
+
     pub fn environment() -> io::Result<Self> {
         let home =
             dirs_next::home_dir().ok_or_else(|| io::Error::other("home directory unavailable"))?;

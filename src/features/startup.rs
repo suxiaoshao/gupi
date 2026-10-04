@@ -279,7 +279,7 @@ impl StartupView {
             if let Some(home) = &self.home {
                 home.update(cx, |home, cx| home.close_commands(window, cx));
             }
-            if self.palette.take().is_some_and(|p| p.read(cx).is_open)
+            if self.palette.take().is_some_and(|p| p.read(cx).is_open())
                 && window.has_active_dialog(cx)
             {
                 window.close_dialog(cx);

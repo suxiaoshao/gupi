@@ -175,10 +175,11 @@ impl GlobalKeys {
                     .into_iter()
                     .find(|t| t.id == id)
             })
-            .unwrap_or_else(|| ShortcutTask {
-                id: uuid::Uuid::new_v4().to_string(),
-                enabled: true,
-                ..Default::default()
+            .unwrap_or_else(|| {
+                let mut record = ShortcutTask::default();
+                record.id = uuid::Uuid::new_v4().to_string();
+                record.enabled = true;
+                record
             });
         editor::open(definition, self.controller.clone(), window, cx);
     }

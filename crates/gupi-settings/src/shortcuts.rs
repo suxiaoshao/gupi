@@ -5,12 +5,14 @@ use std::path::PathBuf;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
 pub struct Shortcuts {
     pub launcher: String,
     pub tasks: Vec<ShortcutTask>,
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
 pub struct ShortcutTask {
     pub id: String,
     pub name: String,
@@ -23,10 +25,17 @@ pub struct ShortcutTask {
     pub thinking: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ModelChoice {
     pub provider: String,
     pub id: String,
 }
+impl ModelChoice {
+    pub fn new(provider: String, id: String) -> Self {
+        Self { provider, id }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InputSource {

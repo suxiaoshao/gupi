@@ -950,12 +950,15 @@ mod tests {
         assert!(wire.iter().all(|e| e["type"] != "message_end"));
     }
     fn message(id: &str, role: &str) -> DisplayMessage {
-        DisplayMessage {
-            id: id.into(),
-            entry: Some(id.into()),
-            value: serde_json::json!({"role":role,"content":id,"timestamp":id}),
-            final_answer_part: None,
-            completed_at: None,
+        {
+            let mut record = DisplayMessage::new(
+                id.into(),
+                serde_json::json! ({ "role" : role , "content" : id , "timestamp" : id }),
+            );
+            record.entry = Some(id.into());
+            record.final_answer_part = None;
+            record.completed_at = None;
+            record
         }
     }
     #[test]

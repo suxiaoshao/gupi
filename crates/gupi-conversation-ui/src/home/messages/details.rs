@@ -504,17 +504,19 @@ mod tests {
                 message.id = format!("entry-{}", message.id);
             }
             state.sessions_for_test().insert("source".into(), next);
-            cx.emit(ConversationEvent::Changed(Changes {
-                bodies: ["other".into()].into(),
-                ..Default::default()
+            cx.emit(ConversationEvent::Changed({
+                let mut record = Changes::default();
+                record.bodies = ["other".into()].into();
+                record
             }));
         });
         visual.run_until_parked();
         visual.update(|_, cx| assert_eq!(reader.read(cx).sections[1].copy_text(), "first"));
         state.update(visual, |_, cx| {
-            cx.emit(ConversationEvent::Changed(Changes {
-                bodies: ["source".into()].into(),
-                ..Default::default()
+            cx.emit(ConversationEvent::Changed({
+                let mut record = Changes::default();
+                record.bodies = ["source".into()].into();
+                record
             }))
         });
         visual.run_until_parked();

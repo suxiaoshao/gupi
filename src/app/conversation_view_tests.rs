@@ -126,10 +126,10 @@ fn fixture_session(name: &str) -> Session {
     session
 }
 fn answer(session: &mut Session, text: &str) {
-    session.live_for_test().push(gupi_conversation::history::DisplayMessage {
-        id: "answer".into(), entry: None, completed_at: None, final_answer_part: None,
-        value: serde_json::json!({"role":"assistant","stopReason":"stop","content":[{"type":"thinking","thinking":"private reasoning"},{"type":"text","text":text}]}),
-    });
+    session.live_for_test().push(gupi_conversation::history::DisplayMessage::new(
+        "answer".into(),
+        serde_json::json!({"role":"assistant","stopReason":"stop","content":[{"type":"thinking","thinking":"private reasoning"},{"type":"text","text":text}]}),
+    ));
     *session.content_revision_for_test() += 1;
 }
 
@@ -604,13 +604,10 @@ fn user_message_images_are_compact_separate_and_open_preview(cx: &mut TestAppCon
                 serde_json::json!([{"type":"text", "text":"会不会更好"}, image.clone(), image]),
             ),
         ] {
-            session.live_for_test().push(DisplayMessage {
-                id: id.into(),
-                entry: None,
-                completed_at: None,
-                final_answer_part: None,
-                value: serde_json::json!({"role":"user", "content":content}),
-            });
+            session.live_for_test().push(DisplayMessage::new(
+                id.into(),
+                serde_json::json! ({ "role" : "user" , "content" : content }),
+            ));
         }
         session.mark_transcript_message_for_test();
         *session.content_revision_for_test() += 1;
@@ -662,10 +659,10 @@ fn temporary_summary_dialog_escape_preserves_window_and_conversation(cx: &mut Te
     state.update(cx, |state, _| {
         let mut session = fixture_session("summary");
         session.mark_transcript_message_for_test();
-        session.live_for_test().push(gupi_conversation::history::DisplayMessage {
-            id: "summary-entry".into(), entry: None, completed_at: None, final_answer_part: None,
-            value: serde_json::json!({"role":"compaction", "content":"# Summary\n\nOriginal **Markdown**."}),
-        });
+        session.live_for_test().push(gupi_conversation::history::DisplayMessage::new(
+            "summary-entry".into(),
+            serde_json::json!({"role":"compaction", "content":"# Summary\n\nOriginal **Markdown**."}),
+        ));
         *session.content_revision_for_test() += 1;
         state.sessions_for_test().insert("summary".into(), session);
         *state.selected_for_test() = Some("summary".into());
@@ -879,13 +876,10 @@ fn find_expands_recorded_skill_instructions_and_copy_keeps_original(cx: &mut Tes
         let mut session = fixture_session("skill");
         session
             .live_for_test()
-            .push(gupi_conversation::history::DisplayMessage {
-                id: "user".into(),
-                entry: None,
-                completed_at: None,
-                final_answer_part: None,
-                value: serde_json::json!({"role":"user","content":original}),
-            });
+            .push(gupi_conversation::history::DisplayMessage::new(
+                "user".into(),
+                serde_json::json! ({ "role" : "user" , "content" : original }),
+            ));
         *session.content_revision_for_test() += 1;
         session.mark_transcript_message_for_test();
         state.sessions_for_test().insert("skill".into(), session);

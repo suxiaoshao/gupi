@@ -22,13 +22,17 @@ fn configured_windows_and_sessions_do_not_wait_for_a_probe(cx: &mut TestAppConte
         // reads or writes the user's configuration.
         view.read(cx).config.clone().update(cx, |owner, cx| {
             owner.settle_for_test(
-                ConfigData {
-                    path: "unused-config.toml".into(),
-                    contents: ConfigContents::Configured(AppConfig {
-                        pi_command: Some("missing-pi".into()),
-                        ..Default::default()
-                    }),
-                    backup: None,
+                {
+                    let mut record = ConfigData::new(
+                        "unused-config.toml".into(),
+                        ConfigContents::Configured({
+                            let mut record = AppConfig::default();
+                            record.pi_command = Some("missing-pi".into());
+                            record
+                        }),
+                    );
+                    record.backup = None;
+                    record
                 },
                 cx,
             )

@@ -52,6 +52,7 @@ pub enum ToolExecution {
 
 /// Pi owns scheduling; this deadline only describes its announced waiting period.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct RetryProgress {
     pub attempt: u64,
     pub max_attempts: u64,

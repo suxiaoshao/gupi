@@ -9,12 +9,19 @@ const LATEST: &str = "https://api.github.com/repos/suxiaoshao/gupi/releases/late
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Release {
     pub version: Version,
     pub url: String,
 }
+impl Release {
+    pub fn new(version: Version, url: String) -> Self {
+        Self { version, url }
+    }
+}
 
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct Cache {
     etag: Option<header::HeaderValue>,
     pub release: Option<Release>,

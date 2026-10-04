@@ -67,6 +67,23 @@ HomeView::render 不再同步原生菜单。同步由模型/视图通知、窗�
 
 “通过 gpui-kit 接入框架”不禁止已有 gpui-form、app-theme 或产品能力 crate；“稳定公共模块路径”也不要求恢复已删除的全局转发层。这两类措辞按各自范围解释，不构成需要删除产品边界的理由。
 
+## 公共记录边界
+
+本次 crate 拆分的公开字段记录已按完整能力范围检查，包括直接导出、再导出、公开返回值、tuple 包装及 `test-support` 接口。45 个记录均为 `#[non_exhaustive]`；本轮补齐其中 36 个，构造入口复用 `Default`、现有工厂或提供 `new`：
+
+| 能力 | 检查范围与构造入口 |
+| --- | --- |
+| pi-runtime | 公开状态与事件的字段已私有，通过现有方法访问，无公开字段记录 |
+| resources | `Discovery::environment/fallback`、`Resource::new`、`Package::new`、`Catalog::default`、`Error::new`、`PendingTemplate::new` |
+| updates | `Release::new`、`Cache::default`、`Available::new`、Windows `InstallPlan::new` |
+| settings | 配置、布局、快捷任务和提醒偏好使用 `Default`；`PiSettings`、`ConfigData`、`ModelChoice`、`Command`、`Run`、`ConversationCommands`、`SystemLocale` 提供 `new` |
+| conversation | 会话记录、工具记录、通知记录、历史行和消息、图节点与边、附件、重试进度、变更批次、读取结果及测试扫描状态；附件继续通过 `file/from_image` 创建，重试通过 `from_event` 创建，其他复用 `Default/new` |
+| conversation-ui | `ModelKey` 通过 `From<&Model>` 创建；命令面板的打开状态通过 `is_open()` 查询 |
+
+跨 crate 的完整字面量和 tuple 构造已迁移；所属 crate 内部仍可按需使用字面量。`Discovery::fallback()` 保留原有相对路径回退值。此调整不改变保存字段、序列化格式、平台功能入口或原有状态转换。
+
+全量复核采用 Rust AST 枚举所有公开结构体字段，再核对模块可达性和构造入口；宏生成的无字段 action、字段私有的行为 owner 及本次未改动的依赖公共类型不属于记录补齐范围。
+
 ## 验证
 
 2026-10-04，macOS Apple Silicon / Nix 开发环境：
@@ -77,3 +94,5 @@ HomeView::render 不再同步原生菜单。同步由模型/视图通知、窗�
 - 修改文档的本地链接检查通过；三个目标生产依赖已移除，Cargo.lock 外部包名称、版本和来源未变；官方安装 skill 未修改。
 
 Windows/Linux 原生运行、真实模型请求和发行包未验证。未进行性能基准，不宣称此次结构调整带来性能提升。
+
+公共记录边界补齐后的验证（同日、同一 macOS / Nix 环境）：`cargo test --workspace --locked` 通过 216 项测试（含文档测试），`cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`、格式与 diff 检查通过。Windows 专用 `InstallPlan` 已检查源代码及调用方；此次本地检查不能替代 Windows/Linux CI。

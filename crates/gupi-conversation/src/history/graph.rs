@@ -5,12 +5,24 @@ use std::collections::BTreeSet;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Edge {
     pub from: usize,
     pub to: usize,
     pub lane: usize,
     pub parent_lane: usize,
     pub indirect: bool,
+}
+impl Edge {
+    pub fn new(from: usize, to: usize, lane: usize, parent_lane: usize, indirect: bool) -> Self {
+        Self {
+            from,
+            to,
+            lane,
+            parent_lane,
+            indirect,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -101,6 +113,7 @@ mod tests {
 }
 
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct HistoryGraph {
     pub nodes: Vec<usize>,
     pub lanes: Vec<Vec<Edge>>,

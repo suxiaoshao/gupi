@@ -637,6 +637,7 @@ async fn snapshot(client: &Client, scope: ReadScope) -> Result<Snapshot, pi_rpc:
 }
 /// A batch of invalidations, delivered after the current GPUI update.
 #[derive(Default)]
+#[non_exhaustive]
 pub struct Changes {
     pub catalog: bool,
     pub progress: bool,
@@ -927,12 +928,7 @@ impl ConversationState {
                 },
             ),
         ];
-        let discovery = Discovery::environment().unwrap_or_else(|_| Discovery {
-            home: PathBuf::from("."),
-            agent: PathBuf::from(".pi/agent"),
-            current: PathBuf::from("."),
-            session_override: None,
-        });
+        let discovery = Discovery::environment().unwrap_or_else(|_| Discovery::fallback());
         Self {
             sessions: BTreeMap::new(),
             selected: None,

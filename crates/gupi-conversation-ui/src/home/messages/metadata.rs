@@ -127,12 +127,15 @@ mod tests {
     use gupi_conversation::history::DisplayMessage;
     #[test]
     fn process_title_tracks_the_last_attempt_instead_of_historical_errors() {
-        let message = |role, reason| DisplayMessage {
-            id: "m".into(),
-            entry: None,
-            value: serde_json::json!({"role":role, "stopReason":reason}),
-            final_answer_part: None,
-            completed_at: None,
+        let message = |role, reason| {
+            let mut record = DisplayMessage::new(
+                "m".into(),
+                serde_json::json! ({ "role" : role , "stopReason" : reason }),
+            );
+            record.entry = None;
+            record.final_answer_part = None;
+            record.completed_at = None;
+            record
         };
         let mut messages = vec![message("assistant", "error")];
         assert_eq!(
@@ -173,12 +176,15 @@ mod tests {
     }
     #[test]
     fn duration_uses_completion_instead_of_last_request_start() {
-        let message = |started, completed| DisplayMessage {
-            id: "m".into(),
-            entry: None,
-            value: serde_json::json!({"role":"assistant", "timestamp":started}),
-            final_answer_part: None,
-            completed_at: completed,
+        let message = |started, completed| {
+            let mut record = DisplayMessage::new(
+                "m".into(),
+                serde_json::json! ({ "role" : "assistant" , "timestamp" : started }),
+            );
+            record.entry = None;
+            record.final_answer_part = None;
+            record.completed_at = completed;
+            record
         };
         let messages = vec![message(1000, Some(2500)), message(3000, Some(6500))];
         assert_eq!(elapsed_ms(&messages, None, false, 0), Some(5500));

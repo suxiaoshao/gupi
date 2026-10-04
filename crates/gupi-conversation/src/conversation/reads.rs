@@ -1,6 +1,8 @@
 use super::loading::ReadMessage;
 use super::*;
 
+#[derive(Default)]
+#[non_exhaustive]
 pub struct ThinkingLevels {
     pub model: Option<(String, String)>,
     pub levels: Vec<String>,

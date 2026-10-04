@@ -40,6 +40,7 @@ pub enum AppLanguage {
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, FormSchema)]
 #[serde(default, deny_unknown_fields)]
+#[non_exhaustive]
 pub struct AppConfig {
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub keybindings: crate::keybindings::Overrides,
@@ -102,10 +103,15 @@ impl AppConfig {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, FormSchema)]
+#[non_exhaustive]
 pub struct PiSettings {
     pub command: Option<String>,
 }
 impl PiSettings {
+    pub fn new(command: Option<String>) -> Self {
+        Self { command }
+    }
+
     pub fn normalized(mut self) -> Result<Self, String> {
         self.command = self
             .command
@@ -171,12 +177,21 @@ pub enum ConfigContents {
     Configured(AppConfig),
 }
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct ConfigData {
     pub path: PathBuf,
     pub contents: ConfigContents,
     pub backup: Option<PathBuf>,
 }
 impl ConfigData {
+    pub fn new(path: PathBuf, contents: ConfigContents) -> Self {
+        Self {
+            path,
+            contents,
+            backup: None,
+        }
+    }
+
     pub fn configured(&self) -> Option<&AppConfig> {
         match &self.contents {
             ConfigContents::Missing => None,
@@ -836,10 +851,10 @@ mod update_preference_tests {
             });
             let updates = updates::get(cx);
             updates.update(cx, |owner, cx| {
-                owner.set_status_for_test(Status::Available(Release {
-                    version: semver::Version::new(2, 0, 0),
-                    url: "https://github.com/suxiaoshao/gupi/releases/tag/v2.0.0".into(),
-                }));
+                owner.set_status_for_test(Status::Available(Release::new(
+                    semver::Version::new(2, 0, 0),
+                    "https://github.com/suxiaoshao/gupi/releases/tag/v2.0.0".into(),
+                )));
                 owner.start_install(cx).unwrap();
             });
             (form, config, updates)

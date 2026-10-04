@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct Attachment {
     pub id: String,
     pub name: String,

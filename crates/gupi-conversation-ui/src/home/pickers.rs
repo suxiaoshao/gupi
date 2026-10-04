@@ -637,7 +637,7 @@ impl Render for Picker {
             .when(!self.open && data.overrides.is_none(), |button| {
                 button.tooltip_with_action(
                     format!("{}\n{name}\n{level}", t(cx, "composer-model-thinking")),
-                    &super::actions::Run(super::actions::Kind::Model),
+                    &super::actions::Run::new(super::actions::Kind::Model),
                     Some("Gupi"),
                 )
             })

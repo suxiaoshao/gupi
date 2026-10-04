@@ -34,6 +34,7 @@ pub enum HistoryScope {
 }
 
 #[derive(Clone, Default)]
+#[non_exhaustive]
 pub struct History {
     pub entries: Vec<SessionEntry>,
     pub leaf: Option<String>,
@@ -43,6 +44,7 @@ pub struct History {
     descriptions: HashMap<String, nodes::Description>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct HistoryRow {
     pub id: String,
     pub title: String,
@@ -54,6 +56,22 @@ pub struct HistoryRow {
     pub indirect_parent: bool,
     pub current: bool,
 }
+impl HistoryRow {
+    pub fn new(id: String, title: String, kind: HistoryKind) -> Self {
+        Self {
+            id,
+            title,
+            kind,
+            tool_kind: None,
+            timestamp: String::new(),
+            label: None,
+            parent: None,
+            indirect_parent: false,
+            current: false,
+        }
+    }
+}
+
 impl History {
     pub fn replace(&mut self, entries: Entries) {
         if self.entries == entries.entries && self.leaf == entries.leaf_id {
@@ -235,6 +253,7 @@ impl History {
     }
 }
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct DisplayMessage {
     pub id: String,
     pub entry: Option<String>,
@@ -243,6 +262,16 @@ pub struct DisplayMessage {
     pub final_answer_part: Option<usize>,
 }
 impl DisplayMessage {
+    pub fn new(id: String, value: Value) -> Self {
+        Self {
+            id,
+            value,
+            entry: None,
+            completed_at: None,
+            final_answer_part: None,
+        }
+    }
+
     pub fn from_entry(e: &SessionEntry) -> Option<Self> {
         let value = if e.kind == "message" {
             e.data.get("message")?.clone()

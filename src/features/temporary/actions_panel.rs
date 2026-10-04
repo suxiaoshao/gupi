@@ -216,7 +216,7 @@ impl Render for ActionsPanel {
                                 return;
                             }
                             view.close_actions(window, cx);
-                            view.run(&Run(kind), window, cx);
+                            view.run(&Run::new(kind), window, cx);
                         });
                     })
                     .on_cancel(move |window, cx| {

@@ -83,10 +83,14 @@ impl HomeView {
                     } else {
                         gpui_kit::component::IconName::PanelLeftOpen
                     })
-                    .tooltip_with_action(sidebar_label.clone(), &Run(Kind::Sidebar), Some("Gupi"))
+                    .tooltip_with_action(
+                        sidebar_label.clone(),
+                        &Run::new(Kind::Sidebar),
+                        Some("Gupi"),
+                    )
                     .accessibility_label(sidebar_label)
                     .on_click(cx.listener(|this, _, window, cx| {
-                        this.run_action(&Run(Kind::Sidebar), window, cx)
+                        this.run_action(&Run::new(Kind::Sidebar), window, cx)
                     })),
             ))
             .when(!self.show_sidebar, |view| {
@@ -96,7 +100,7 @@ impl HomeView {
                         .icon(IconName::SquarePen)
                         .tooltip_with_action(
                             t(cx, "conversation-new"),
-                            &Run(Kind::New),
+                            &Run::new(Kind::New),
                             Some("Gupi"),
                         )
                         .accessibility_label(t(cx, "conversation-new"))
@@ -167,12 +171,12 @@ impl HomeView {
                         .disabled(!can_export)
                         .tooltip_with_action(
                             t(cx, "conversation-export"),
-                            &Run(Kind::Export),
+                            &Run::new(Kind::Export),
                             Some("Gupi"),
                         )
                         .accessibility_label(t(cx, "conversation-export"))
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.run_action(&Run(Kind::Export), window, cx);
+                            this.run_action(&Run::new(Kind::Export), window, cx);
                         })),
                 ))
                 .child(chrome::control(
@@ -183,7 +187,7 @@ impl HomeView {
                         .disabled(!can_refresh)
                         .tooltip_with_action(
                             t(cx, "conversation-refresh-current"),
-                            &Run(Kind::Reconnect),
+                            &Run::new(Kind::Reconnect),
                             Some("Gupi"),
                         )
                         .accessibility_label(t(cx, "conversation-refresh-current"))
@@ -200,7 +204,7 @@ impl HomeView {
                     .icon(IconName::PanelRight)
                     .tooltip_with_action(
                         t(cx, "conversation-history"),
-                        &Run(Kind::History),
+                        &Run::new(Kind::History),
                         Some("Gupi"),
                     )
                     .accessibility_label(t(cx, "conversation-history"))

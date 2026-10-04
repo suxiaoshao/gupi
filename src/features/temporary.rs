@@ -114,7 +114,7 @@ impl TemporaryView {
                         return;
                     }
                     if !secondary && gupi_settings::keybindings::uses_enter(Kind::PasteAnswer, cx) {
-                        this.run(&Run(Kind::PasteAnswer), window, cx);
+                        this.run(&Run::new(Kind::PasteAnswer), window, cx);
                     }
                 }
             }),
@@ -351,7 +351,7 @@ impl TemporaryView {
             }
             Kind::HideTemporary => temporary::hide(window, cx),
             Kind::TrashTemporary => self.home.update(cx, |home, cx| {
-                home.run_action(&Run(Kind::Delete), window, cx)
+                home.run_action(&Run::new(Kind::Delete), window, cx)
             }),
             Kind::New => {
                 self.search
@@ -401,7 +401,7 @@ impl TemporaryView {
                     this.home
                         .update(cx, |home, cx| home.submit_or_paste(false, window, cx));
                 } else {
-                    this.run(&Run(Kind::PasteAnswer), window, cx);
+                    this.run(&Run::new(Kind::PasteAnswer), window, cx);
                 }
             }))
     }
@@ -512,7 +512,7 @@ impl Render for TemporaryView {
             .on_action(
                 cx.listener(|this, _: &menus::ShowCommandPalette, window, cx| {
                     this.home.update(cx, |home, cx| {
-                        home.run_action(&Run(Kind::Palette), window, cx)
+                        home.run_action(&Run::new(Kind::Palette), window, cx)
                     });
                 }),
             )

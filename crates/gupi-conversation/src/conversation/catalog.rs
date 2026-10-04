@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
+#[non_exhaustive]
 pub struct ScanWork<T> {
     pub id: u64,
     _task: T,

@@ -38,7 +38,14 @@ pub struct Updates {
 }
 
 /// Emitted once per newer version in this application session, for quiet in-app feedback.
+#[non_exhaustive]
 pub struct Available(pub Release);
+impl Available {
+    pub fn new(value: Release) -> Self {
+        Self(value)
+    }
+}
+
 impl EventEmitter<Available> for Updates {}
 struct Service(Entity<Updates>);
 impl Global for Service {}

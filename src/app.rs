@@ -97,7 +97,7 @@ pub(crate) fn run() {
         shortcuts::init(cx);
         app_theme::init(cx);
         gupi_settings::theme::init(cx);
-        cx.set_global(i18n::SystemLocale(system_locale));
+        cx.set_global(i18n::SystemLocale::new(system_locale));
         i18n::apply(initial_language, cx);
         menus::init(cx);
         menus::refresh(cx);

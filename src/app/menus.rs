@@ -128,7 +128,7 @@ fn app_menus(cx: &App) -> Vec<Menu> {
                     .map(|state| state.0[index])
             })
             .unwrap_or(false);
-        MenuItem::action(t(cx, label), Run(kind)).disabled(!enabled)
+        MenuItem::action(t(cx, label), Run::new(kind)).disabled(!enabled)
     };
     let mut app_items = vec![
         MenuItem::action(t(cx, "menu-about"), About),

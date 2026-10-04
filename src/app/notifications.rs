@@ -676,9 +676,10 @@ mod tests {
         // Disabling delivery doesn't discard unread results.
         cx.update(|cx| {
             configure(
-                Preferences {
-                    completion: gupi_settings::notifications::CompletionMode::Off,
-                    ..Default::default()
+                {
+                    let mut record = Preferences::default();
+                    record.completion = gupi_settings::notifications::CompletionMode::Off;
+                    record
                 },
                 cx,
             )

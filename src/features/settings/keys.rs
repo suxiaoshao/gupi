@@ -600,10 +600,13 @@ mod tests {
             // Use the onboarding form as an in-memory preference store. No user files are written.
             controller.update(cx, |owner, cx| {
                 owner.settle_for_test(
-                    ConfigData {
-                        path: "/tmp/keys-fixture/config.toml".into(),
-                        contents: ConfigContents::Missing,
-                        backup: None,
+                    {
+                        let mut record = ConfigData::new(
+                            "/tmp/keys-fixture/config.toml".into(),
+                            ConfigContents::Missing,
+                        );
+                        record.backup = None;
+                        record
                     },
                     cx,
                 )

@@ -83,7 +83,7 @@ pub struct CommandPalette {
     files: Option<Files>,
     submission: Option<Task<()>>,
     original_focus: Option<FocusHandle>,
-    pub is_open: bool,
+    pub(crate) is_open: bool,
     _subscriptions: Vec<Subscription>,
 }
 /// Only the editable name participates in completion. Arguments remain ordinary text.
@@ -139,7 +139,7 @@ pub fn binding(kind: Kind, window: &Window) -> Option<Kbd> {
         Kind::Settings => Kbd::binding_for_action(&menus::ShowSettings, None, window),
         Kind::Quit => Kbd::binding_for_action(&menus::Quit, None, window),
         _ => Kbd::binding_for_action(
-            &Run(kind),
+            &Run::new(kind),
             Some(if kind.temporary_only() {
                 "GupiTemporary"
             } else {
@@ -150,6 +150,10 @@ pub fn binding(kind: Kind, window: &Window) -> Option<Kbd> {
     }
 }
 impl CommandPalette {
+    pub fn is_open(&self) -> bool {
+        self.is_open
+    }
+
     pub fn opened_from_composer(&self) -> bool {
         self.from_composer
     }
@@ -474,8 +478,9 @@ impl CommandPalette {
                     self.close(window, cx);
                     window.defer(cx, move |window, cx| {
                         if let Some(home) = home {
-                            let _ =
-                                home.update(cx, |home, cx| home.run_action(&Run(kind), window, cx));
+                            let _ = home.update(cx, |home, cx| {
+                                home.run_action(&Run::new(kind), window, cx)
+                            });
                         } else {
                             let action: Box<dyn Action> = match kind {
                                 Kind::Settings => Box::new(menus::ShowSettings),
@@ -685,7 +690,7 @@ impl Render for CommandPalette {
                     if let Some(home) = home {
                         w.defer(cx, move |w, cx| {
                             let _ = home.update(cx, |home, cx| {
-                                home.run_action(&Run(Kind::QuickOpen), w, cx)
+                                home.run_action(&Run::new(Kind::QuickOpen), w, cx)
                             });
                         });
                     }

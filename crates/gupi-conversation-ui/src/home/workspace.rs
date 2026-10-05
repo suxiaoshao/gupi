@@ -23,7 +23,6 @@ impl HomeView {
         if let Some(source) = self.source.clone().filter(|s| s.read(cx).path == path) {
             if overlay {
                 self.show_history = false;
-                self.navigator_focus = None;
                 self.sync(false, window, cx);
             }
             if keyboard {
@@ -39,7 +38,6 @@ impl HomeView {
         });
         if overlay {
             self.show_history = false;
-            self.navigator_focus = None;
             self.sync(false, window, cx);
             preview.update(cx, |s, cx| s.focus_container(window, cx));
         }
@@ -103,11 +101,6 @@ impl HomeView {
                 .update(cx, |canvas, cx| canvas.clear_pointer(cx));
         }
         self.sync(false, window, cx);
-        if let Some(focus) = self.navigator_focus.take() {
-            focus.focus(window, cx);
-        } else {
-            self.focus_composer(window, cx);
-        }
         cx.notify();
     }
     pub(super) fn focus_overlay_navigator(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -120,16 +113,14 @@ impl HomeView {
             cx.global::<layout::LayoutState>(),
         );
         if self.show_history && self.pane_layout.overlay {
-            if self.files_tab {
-                self.files.update(cx, |files, cx| files.focus(window, cx));
-            } else if self.history_view == HistoryView::Tree {
-                if let Some(view) = self.shown_key.as_ref().and_then(|key| self.views.get(key)) {
-                    view.history_canvas
-                        .update(cx, |canvas, cx| canvas.focus(window, cx));
-                }
-            } else {
-                self.history_list.focus_handle(cx).focus(window, cx);
-            }
+            self.focus_navigator(window, cx);
+        }
+    }
+    pub(super) fn focus_navigator(&self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.files_tab {
+            self.files.update(cx, |files, cx| files.focus(window, cx));
+        } else {
+            self.history_focus_handle(cx).focus(window, cx);
         }
     }
     pub(super) fn save_source_split(&mut self, cx: &mut Context<Self>) {

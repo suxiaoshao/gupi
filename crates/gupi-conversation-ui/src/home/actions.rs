@@ -177,7 +177,6 @@ impl HomeView {
             }
             Kind::History => self.toggle_history(window, cx),
             Kind::ProjectFiles => {
-                self.navigator_focus = window.focused(cx);
                 self.files_tab = true;
                 self.show_history = true;
                 self.sync(false, window, cx);
@@ -274,9 +273,6 @@ impl HomeView {
         }
     }
     pub(super) fn toggle_history(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.show_history {
-            self.navigator_focus = window.focused(cx);
-        }
         self.show_history = self.files_tab || !self.show_history;
         self.files_tab = false;
         self.sync(true, window, cx);
@@ -298,10 +294,8 @@ impl HomeView {
                 }
             });
         }
-        if !self.show_history {
-            self.focus_composer(window, cx);
-        } else {
-            self.focus_overlay_navigator(window, cx);
+        if self.show_history {
+            self.focus_navigator(window, cx);
         }
         cx.notify();
     }

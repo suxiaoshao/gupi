@@ -97,7 +97,6 @@ pub struct HomeView {
     source_active: bool,
     source_save: Option<Task<()>>,
     source_split_touched: bool,
-    navigator_focus: Option<FocusHandle>,
     navigation: navigation::Navigation,
     projects_with_more: HashSet<PathBuf>,
     open_projects: HashSet<PathBuf>,
@@ -417,7 +416,6 @@ impl HomeView {
             source_active: false,
             source_save: None,
             source_split_touched: false,
-            navigator_focus: None,
             navigation: Default::default(),
             projects_with_more: HashSet::new(),
             open_projects: HashSet::new(),
@@ -488,7 +486,11 @@ impl HomeView {
             },
         ));
         view._subscriptions
-            .push(cx.on_focus_lost(window, |_, window, cx| {
+            .push(cx.on_focus_lost(window, |this, window, cx| {
+                let focus = window
+                    .focus_lost_restore_target(cx)
+                    .unwrap_or_else(|| this.focus_handle.clone());
+                focus.focus(window, cx);
                 cx.defer_in(window, |this, window, cx| this.sync_commands(window, cx));
             }));
         cx.defer_in(window, |this, window, cx| {

@@ -251,6 +251,10 @@ impl Files {
             self.read(root, window, cx);
         }
     }
+    #[cfg(test)]
+    pub(super) fn is_focused(&self, window: &Window, cx: &App) -> bool {
+        self.list.focus_handle(cx).is_focused(window)
+    }
     pub(super) fn focus(&self, window: &mut Window, cx: &mut App) {
         self.list.focus_handle(cx).focus(window, cx);
     }

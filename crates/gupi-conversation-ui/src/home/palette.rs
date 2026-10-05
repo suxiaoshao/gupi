@@ -580,6 +580,7 @@ mod tests {
     use super::HomeView;
     use gpui_kit::AppContext;
     use gpui_kit::Entity;
+    use gpui_kit::Focusable;
     use gpui_kit::Modifiers;
     use gpui_kit::TestAppContext;
     use gpui_kit::VisualTestContext;
@@ -693,6 +694,159 @@ mod tests {
             cx.simulate_keystrokes("escape");
             cx.update(|window, cx| {
                 assert!(home.read(cx).palette.is_none());
+                assert!(home.read(cx).focus_handle.is_focused(window));
+            });
+        }
+    }
+    fn ready_history(home: &Entity<HomeView>, cx: &mut VisualTestContext) {
+        cx.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                home.state.update(cx, |state, _| {
+                    state
+                        .sessions_for_test()
+                        .get_mut("empty")
+                        .unwrap()
+                        .replace_entries_for_test(pi_rpc::protocol::Entries {
+                            entries: vec![],
+                            leaf_id: None,
+                        });
+                });
+                home.sync(true, window, cx);
+            });
+        });
+    }
+    #[gpui_kit::test]
+    fn navigator_tab_switch_and_escape_leave_valid_workspace_focus(cx: &mut TestAppContext) {
+        let (home, cx) = setup(cx);
+        ready_history(&home, cx);
+        cx.simulate_keystrokes("escape");
+        cx.simulate_resize(size(px(600.), px(740.)));
+        cx.simulate_keystrokes("secondary-alt-b");
+        cx.update(|window, cx| {
+            assert!(home.read(cx).show_history);
+            assert!(home.read(cx).pane_layout.overlay);
+            assert!(
+                home.read(cx)
+                    .history_list
+                    .focus_handle(cx)
+                    .is_focused(window),
+                "actual {:?}, history {:?}, home {:?}",
+                window.focused(cx),
+                home.read(cx).history_list.focus_handle(cx),
+                home.read(cx).focus_handle
+            );
+            window.dispatch_action(Box::new(super::Run::new(super::Kind::ProjectFiles)), cx);
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.update(|window, cx| assert!(home.read(cx).files.read(cx).is_focused(window, cx)));
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            window.draw(cx).clear(cx);
+            assert!(!home.read(cx).show_history);
+            assert!(home.read(cx).focus_handle.is_focused(window));
+            assert!(
+                !home
+                    .read(cx)
+                    .input
+                    .read(cx)
+                    .focus_handle(cx)
+                    .is_focused(window)
+            );
+        });
+    }
+
+    #[gpui_kit::test]
+    fn history_toggle_close_does_not_force_composer_focus(cx: &mut TestAppContext) {
+        let (home, cx) = setup(cx);
+        ready_history(&home, cx);
+        cx.simulate_keystrokes("escape");
+        cx.simulate_resize(size(px(600.), px(740.)));
+        for workspace_focused in [false, true] {
+            cx.simulate_keystrokes("secondary-alt-b");
+            if workspace_focused {
+                cx.update(|window, cx| {
+                    home.read(cx)
+                        .input
+                        .read(cx)
+                        .focus_handle(cx)
+                        .focus(window, cx)
+                });
+            }
+            cx.simulate_keystrokes("secondary-alt-b");
+            cx.run_until_parked();
+            cx.update(|window, cx| {
+                window.draw(cx).clear(cx);
+                assert!(!home.read(cx).show_history);
+                assert_eq!(
+                    home.read(cx).focus_handle.is_focused(window),
+                    !workspace_focused
+                );
+                assert_eq!(
+                    home.read(cx)
+                        .input
+                        .read(cx)
+                        .focus_handle(cx)
+                        .is_focused(window),
+                    workspace_focused
+                );
+            });
+        }
+    }
+    #[gpui_kit::test]
+    fn history_keyboard_open_focuses_docked_content(cx: &mut TestAppContext) {
+        let (home, cx) = setup(cx);
+        ready_history(&home, cx);
+        cx.simulate_keystrokes("escape");
+        cx.simulate_resize(size(px(1280.), px(740.)));
+        cx.simulate_keystrokes("secondary-alt-b");
+        cx.update(|window, cx| {
+            assert!(home.read(cx).show_history);
+            assert!(!home.read(cx).pane_layout.overlay);
+            assert!(
+                home.read(cx)
+                    .history_list
+                    .focus_handle(cx)
+                    .is_focused(window),
+                "actual {:?}, history {:?}, home {:?}",
+                window.focused(cx),
+                home.read(cx).history_list.focus_handle(cx),
+                home.read(cx).focus_handle
+            );
+        });
+    }
+    #[gpui_kit::test]
+    fn empty_history_overlay_has_valid_focus_and_escape_closes_it(cx: &mut TestAppContext) {
+        let (home, cx) = setup(cx);
+        cx.simulate_keystrokes("escape");
+        cx.simulate_resize(size(px(600.), px(740.)));
+        for mode in [super::HistoryView::List, super::HistoryView::Tree] {
+            cx.update(|_, cx| {
+                home.update(cx, |home, cx| {
+                    home.history_view = mode;
+                    cx.notify();
+                })
+            });
+            cx.simulate_keystrokes("secondary-alt-b");
+            cx.update(|window, cx| {
+                let view = home.read(cx);
+                let expected = if mode == super::HistoryView::Tree {
+                    view.views
+                        .get(view.shown_key.as_ref().unwrap())
+                        .unwrap()
+                        .history_canvas
+                        .focus_handle(cx)
+                } else {
+                    view.history_list.focus_handle(cx)
+                };
+                assert!(expected.is_focused(window));
+            });
+            cx.simulate_keystrokes("escape");
+            cx.run_until_parked();
+            cx.update(|window, cx| {
+                window.draw(cx).clear(cx);
+                assert!(!home.read(cx).show_history);
                 assert!(home.read(cx).focus_handle.is_focused(window));
             });
         }

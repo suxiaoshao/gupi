@@ -241,6 +241,15 @@ impl HomeView {
         }
         cx.notify();
     }
+    pub(super) fn history_focus_handle(&self, cx: &App) -> FocusHandle {
+        if self.history_view == HistoryView::Tree
+            && let Some(view) = self.shown_key.as_ref().and_then(|key| self.views.get(key))
+        {
+            view.history_canvas.focus_handle(cx)
+        } else {
+            self.history_list.focus_handle(cx)
+        }
+    }
     pub(super) fn render_history(&self, cx: &mut Context<Self>) -> AnyElement {
         #[cfg(feature = "performance")]
         let _span = tracing::debug_span!(target: "gupi::performance", "history.render").entered();
@@ -366,6 +375,7 @@ impl HomeView {
             match session.body_state() {
                 BodyState::New => {
                     return panel
+                        .track_focus(&self.history_focus_handle(cx))
                         .child(
                             div()
                                 .p_3()
@@ -376,10 +386,14 @@ impl HomeView {
                         .into_any_element();
                 }
                 BodyState::Loading(stage) => {
-                    return panel.child(content::skeleton(stage, cx)).into_any_element();
+                    return panel
+                        .track_focus(&self.history_focus_handle(cx))
+                        .child(content::skeleton(stage, cx))
+                        .into_any_element();
                 }
                 BodyState::Failed(error) => {
                     return panel
+                        .track_focus(&self.history_focus_handle(cx))
                         .child(self.render_content_error("retry-history-panel", error, cx))
                         .into_any_element();
                 }

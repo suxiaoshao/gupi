@@ -208,7 +208,6 @@ impl HomeView {
                         if this.show_history {
                             this.close_navigator(window, cx);
                         } else {
-                            this.navigator_focus = window.focused(cx);
                             this.show_history = true;
                             this.sync(false, window, cx);
                             this.focus_overlay_navigator(window, cx);

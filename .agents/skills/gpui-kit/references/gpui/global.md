@@ -28,8 +28,7 @@ impl Global for AppSettings {}
 
 ```rust
 fn main() {
-    let app = Application::new();
-    app.run(|cx: &mut App| {
+    gpui_kit::application().run(|cx: &mut App| {
         // Set global
         cx.set_global(AppSettings {
             theme: Theme::Dark,
@@ -194,3 +193,4 @@ let user_entity = cx.new(|_| UserState { ... });
 - Component-specific state
 - State that changes frequently
 - State that needs notifications
+

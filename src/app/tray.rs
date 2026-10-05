@@ -48,10 +48,11 @@ fn build(cx: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let icon = Icon::from_rgba(image.as_raw().clone(), image.width(), image.height())?;
     let builder = TrayIconBuilder::new()
         .with_menu(Box::new(menu.clone()))
-        .with_icon(icon)
         .with_tooltip("Gupi");
     #[cfg(target_os = "macos")]
-    let builder = builder.with_icon_as_template(true);
+    let builder = builder.with_icon_templated(icon);
+    #[cfg(target_os = "windows")]
+    let builder = builder.with_icon(icon);
     let icon = builder.build()?;
     let items = [
         temporary.clone(),

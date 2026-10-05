@@ -244,192 +244,123 @@ impl HomeView {
     pub(super) fn render_history(&self, cx: &mut Context<Self>) -> AnyElement {
         #[cfg(feature = "performance")]
         let _span = tracing::debug_span!(target: "gupi::performance", "history.render").entered();
-        let toolbar = h_flex()
-            .px_2()
-            .py_2()
-            .gap_1()
-            .child(
-                div()
-                    .flex_1()
-                    .text_sm()
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(t(cx, "conversation-history")),
-            )
-            .child(
-                ToggleGroup::new("history-display-mode")
-                    .segmented()
-                    .outline()
-                    .small()
-                    .child(
-                        Toggle::new("history-list")
-                            .icon(Icon::new(IconName::List).size_4())
-                            .checked(self.history_view == HistoryView::List)
-                            .when(self.history_view == HistoryView::List, |toggle| {
-                                toggle
-                                    .bg(cx.theme().primary.opacity(0.12))
-                                    .text_color(cx.theme().primary)
-                            })
-                            .tooltip(t(cx, "history-view-list")),
-                    )
-                    .child(
-                        Toggle::new("history-tree")
-                            .icon(Icon::new(IconName::GitBranch).size_4())
-                            .checked(self.history_view == HistoryView::Tree)
-                            .when(self.history_view == HistoryView::Tree, |toggle| {
-                                toggle
-                                    .bg(cx.theme().primary.opacity(0.12))
-                                    .text_color(cx.theme().primary)
-                            })
-                            .tooltip(t(cx, "history-view-tree")),
-                    )
-                    .on_click(cx.listener(|this, states: &Vec<bool>, window, cx| {
-                        let next = [HistoryView::List, HistoryView::Tree]
-                            .into_iter()
-                            .enumerate()
-                            .find(|(i, view)| {
-                                *view != this.history_view && states.get(*i) == Some(&true)
-                            })
-                            .map(|(_, view)| view)
-                            .unwrap_or(this.history_view);
-                        if next != this.history_view {
-                            this.history_view = next;
-                            this.refresh_history_options(window, cx);
-                        }
-                        cx.notify();
-                    })),
-            )
-            .child(
-                Button::new("close-history")
-                    .ghost()
-                    .small()
-                    .icon(IconName::X)
-                    .tooltip(t(cx, "conversation-close-history"))
-                    .accessibility_label(t(cx, "conversation-close-history"))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        if let Some(view) =
-                            this.shown_key.as_ref().and_then(|key| this.views.get(key))
-                        {
-                            view.history_canvas
-                                .update(cx, |canvas, cx| canvas.clear_pointer(cx));
-                        }
-                        this.show_history = false;
-                        cx.notify();
-                    })),
-            );
-        let detail = self.history_detail;
-        let detail_label = t(
-            cx,
-            match detail {
-                HistoryDetail::Brief => "history-level-brief",
-                HistoryDetail::Detailed => "history-level-detailed",
-                HistoryDetail::All => "history-level-all",
-            },
+        let toolbar = h_flex().px_3().h_9().gap_1().child(
+            ToggleGroup::new("history-display-mode")
+                .segmented()
+                .outline()
+                .small()
+                .child(
+                    Toggle::new("history-list")
+                        .icon(Icon::new(IconName::List).size_4())
+                        .checked(self.history_view == HistoryView::List)
+                        .when(self.history_view == HistoryView::List, |toggle| {
+                            toggle
+                                .bg(cx.theme().primary.opacity(0.12))
+                                .text_color(cx.theme().primary)
+                        })
+                        .tooltip(t(cx, "history-view-list")),
+                )
+                .child(
+                    Toggle::new("history-tree")
+                        .icon(Icon::new(IconName::GitBranch).size_4())
+                        .checked(self.history_view == HistoryView::Tree)
+                        .when(self.history_view == HistoryView::Tree, |toggle| {
+                            toggle
+                                .bg(cx.theme().primary.opacity(0.12))
+                                .text_color(cx.theme().primary)
+                        })
+                        .tooltip(t(cx, "history-view-tree")),
+                )
+                .on_click(cx.listener(|this, states: &Vec<bool>, window, cx| {
+                    let next = [HistoryView::List, HistoryView::Tree]
+                        .into_iter()
+                        .enumerate()
+                        .find(|(i, view)| {
+                            *view != this.history_view && states.get(*i) == Some(&true)
+                        })
+                        .map(|(_, view)| view)
+                        .unwrap_or(this.history_view);
+                    if next != this.history_view {
+                        this.history_view = next;
+                        this.refresh_history_options(window, cx);
+                    }
+                    cx.notify();
+                })),
         );
+        let detail = self.history_detail;
+        let scope = self.history_scope;
+        let list = self.history_view == HistoryView::List;
         let owner = cx.weak_entity();
-        let detail_picker = h_flex()
-            .flex_none()
-            .gap_1()
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(t(cx, "history-content")),
-            )
-            .child(
-                Button::new("history-detail")
-                    .ghost()
-                    .small()
-                    .label(detail_label.clone())
-                    .dropdown_caret(true)
-                    .tooltip(t(
-                        cx,
-                        match detail {
-                            HistoryDetail::Brief => "conversation-history-brief",
-                            HistoryDetail::Detailed => "conversation-history-detailed",
-                            HistoryDetail::All => "history-level-all-description",
-                        },
-                    ))
-                    .accessibility_label(format!("{}: {}", t(cx, "history-content"), detail_label))
-                    .dropdown_menu(move |mut menu, _, cx| {
-                        for (level, key) in [
-                            (HistoryDetail::Brief, "history-level-brief"),
-                            (HistoryDetail::Detailed, "history-level-detailed"),
-                            (HistoryDetail::All, "history-level-all"),
-                        ] {
-                            let owner = owner.clone();
-                            menu = menu.item(
-                                PopupMenuItem::new(t(cx, key))
-                                    .checked(detail == level)
-                                    .on_click(move |_, window, cx| {
-                                        let _ = owner.update(cx, |this, cx| {
-                                            this.history_detail = level;
-                                            this.refresh_history_options(window, cx);
-                                        });
-                                    }),
-                            );
-                        }
-                        menu
-                    }),
-            );
-        let mut options = h_flex()
-            .w_full()
-            .flex_wrap()
-            .px_2()
-            .pb_2()
-            .gap_3()
-            .child(detail_picker);
-        if self.history_view == HistoryView::List {
-            let owner = cx.weak_entity();
-            let scope = self.history_scope;
-            let label = t(
-                cx,
-                if scope == HistoryScope::All {
-                    "history-scope-all"
-                } else {
-                    "history-scope-branch"
-                },
-            );
-            options = options.child(
-                h_flex()
-                    .flex_none()
-                    .gap_1()
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(t(cx, "history-range")),
-                    )
-                    .child(
-                        Button::new("history-scope")
-                            .ghost()
-                            .small()
-                            .label(label.clone())
-                            .dropdown_caret(true)
-                            .tooltip(label.clone())
-                            .accessibility_label(format!("{}: {}", t(cx, "history-range"), label))
-                            .dropdown_menu(move |mut menu, _, cx| {
-                                for (value, label) in [
-                                    (HistoryScope::All, "history-scope-all"),
-                                    (HistoryScope::Branch, "history-scope-branch"),
-                                ] {
-                                    let owner = owner.clone();
-                                    menu = menu.item(
-                                        PopupMenuItem::new(t(cx, label))
-                                            .checked(scope == value)
-                                            .on_click(move |_, window, cx| {
-                                                let _ = owner.update(cx, |this, cx| {
-                                                    this.history_scope = value;
-                                                    this.refresh_history_options(window, cx);
-                                                });
-                                            }),
-                                    );
-                                }
-                                menu
+        let menu = Button::new("history-options")
+            .small()
+            .ghost()
+            .label(t(cx, "files-view"))
+            .accessibility_label(format!(
+                "{}: {}, {}",
+                t(cx, "files-view"),
+                t(
+                    cx,
+                    match detail {
+                        HistoryDetail::Brief => "history-level-brief",
+                        HistoryDetail::Detailed => "history-level-detailed",
+                        HistoryDetail::All => "history-level-all",
+                    }
+                ),
+                t(
+                    cx,
+                    if !list || scope == HistoryScope::All {
+                        "history-scope-all"
+                    } else {
+                        "history-scope-branch"
+                    }
+                )
+            ))
+            .dropdown_caret(true)
+            .dropdown_menu(move |mut menu, _, cx| {
+                for (value, key) in [
+                    (HistoryDetail::Brief, "history-level-brief"),
+                    (HistoryDetail::Detailed, "history-level-detailed"),
+                    (HistoryDetail::All, "history-level-all"),
+                ] {
+                    let owner = owner.clone();
+                    menu = menu.item(
+                        PopupMenuItem::new(t(cx, key))
+                            .checked(value == detail)
+                            .on_click(move |_, window, cx| {
+                                let _ = owner.update(cx, |this, cx| {
+                                    this.history_detail = value;
+                                    this.refresh_history_options(window, cx);
+                                });
                             }),
-                    ),
-            );
-        }
-        let mut panel = v_flex().size_full().child(toolbar).child(options);
+                    );
+                }
+                if list {
+                    menu = menu.separator();
+                    for (value, key) in [
+                        (HistoryScope::All, "history-scope-all"),
+                        (HistoryScope::Branch, "history-scope-branch"),
+                    ] {
+                        let owner = owner.clone();
+                        menu = menu.item(
+                            PopupMenuItem::new(t(cx, key))
+                                .checked(value == scope)
+                                .on_click(move |_, window, cx| {
+                                    let _ = owner.update(cx, |this, cx| {
+                                        this.history_scope = value;
+                                        this.refresh_history_options(window, cx);
+                                    });
+                                }),
+                        );
+                    }
+                }
+                menu
+            });
+        let toolbar = toolbar
+            .child(div().flex_1())
+            .child(menu)
+            .border_b_1()
+            .border_color(cx.theme().border);
+        let mut panel = v_flex().size_full().min_h_0().child(toolbar);
         if let Some(session) = self.state.read(cx).current() {
             use gupi_conversation::conversation::BodyState;
             match session.body_state() {

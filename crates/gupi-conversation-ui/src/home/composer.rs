@@ -90,13 +90,19 @@ impl HomeView {
             .and_then(|v| v.preview.as_deref())
             .is_some_and(|id| !session.history().on_current_path(id));
         let mut shell = v_flex().w_full().max_w(px(820.)).gap_2();
-        if !session.notices().is_empty() {
+        use gupi_conversation::notifications::Severity;
+        let source_showing = self.pane_layout.single && self.source_active;
+        let visible_notices: Vec<_> = session
+            .notices()
+            .iter()
+            .filter(|notice| !source_showing || notice.severity != Severity::Info)
+            .collect();
+        if !visible_notices.is_empty() {
             use gpui_kit::component::collapsible::Collapsible;
-            use gupi_conversation::notifications::Severity;
-            let open = self.views.get(&key).is_some_and(|v| v.notices_open);
+            let open = source_showing || self.views.get(&key).is_some_and(|v| v.notices_open);
             let toggle = key.clone();
             let clear = key.clone();
-            let notices = v_flex().gap_2().children(session.notices().iter().map(|n| {
+            let notices = v_flex().gap_2().children(visible_notices.iter().map(|n| {
                 div()
                     .text_sm()
                     .whitespace_normal()
@@ -121,7 +127,7 @@ impl HomeView {
                                     .label(format!(
                                         "{} ({})",
                                         t(cx, "notification-session-notices"),
-                                        session.notices().len()
+                                        visible_notices.len()
                                     ))
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         if let Some(view) = this.views.get_mut(&toggle) {
@@ -221,7 +227,11 @@ impl HomeView {
                     .child(title.clone()),
             );
         }
-        for widget in session.widgets().values().filter(|w| !w.below) {
+        for widget in session
+            .widgets()
+            .values()
+            .filter(|w| !w.below && !(self.pane_layout.single && self.source_active))
+        {
             shell = shell.child(div().text_sm().child(widget.lines.join("\n")));
         }
         let mut editor = v_flex().w_full().min_w_0();

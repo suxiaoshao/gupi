@@ -685,3 +685,34 @@ updates-show-progress = Ver el progreso de la actualización…
 shortcut-screenshot = Captura de pantalla
 screenshot-failed = No se pudo capturar la pantalla. Inténtalo de nuevo.
 screenshot-permission-required = Se necesita permiso para grabar la pantalla. Autoriza a Gupi en Ajustes del Sistema → Privacidad y seguridad → Grabación de pantalla y vuelve a intentarlo. Si macOS pide reiniciar Gupi, hazlo primero.
+
+# Project files and source preview
+files-title = Archivos
+files-panel = Panel derecho
+files-close = Cerrar panel
+files-refresh = Actualizar archivos
+files-preview = Vista previa
+files-readonly = Solo lectura
+files-wrap = Ajustar líneas
+files-reload = Volver a cargar
+files-loading = Leyendo…
+files-expanded = Expandido
+files-collapsed = Contraído
+files-empty = Carpeta vacía
+files-incomplete = No se pudieron leer algunas entradas. Reintentar
+files-read-failed = No se pudo leer el archivo o la carpeta. Reintentar
+files-unsupported = Este archivo no admite vista previa de texto
+files-too-large = Se superó el límite de vista previa (1 MiB o 20.000 líneas)
+files-long-line = Líneas largas: resaltado de sintaxis desactivado
+files-no-session = Selecciona una conversación para explorar sus archivos
+
+files-actions = Acciones de archivo
+files-copy-path = Copiar ruta
+files-reveal = Mostrar en archivos
+files-close-source = Cerrar archivo
+files-focus-source = Enfocar código
+files-conversation = Conversación
+files-conversation-busy = Conversación, respondiendo
+files-view = Vista
+files-show-conversation = Mostrar conversación
+files-source = Código

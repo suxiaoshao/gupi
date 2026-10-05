@@ -118,6 +118,7 @@ fn local_icon(kind: Kind) -> IconName {
         Kind::New => IconName::Plus,
         Kind::Settings => IconName::Settings,
         Kind::Model => IconName::Brain,
+        Kind::ProjectFiles => IconName::Folder,
         Kind::History | Kind::OpenHistory => IconName::GitBranch,
         Kind::Export => IconName::Download,
         Kind::Clone | Kind::CopyLastAnswer => IconName::Copy,
@@ -129,7 +130,7 @@ fn local_icon(kind: Kind) -> IconName {
         Kind::Rename => IconName::SquarePen,
         Kind::CopyPath => IconName::Copy,
         Kind::Reveal => IconName::FolderOpen,
-        Kind::FocusInput | Kind::ShowMain => IconName::MessageCircle,
+        Kind::FocusInput | Kind::ShowMain | Kind::ShowConversation => IconName::MessageCircle,
         Kind::Stop => IconName::Square,
         _ => IconName::X,
     }

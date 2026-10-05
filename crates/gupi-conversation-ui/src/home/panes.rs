@@ -1,75 +1,99 @@
 use super::*;
 
-const CONTENT_MIN: f32 = 360.;
 const LEFT_MIN: f32 = 160.;
 const LEFT_MAX: f32 = 480.;
-const RIGHT_MIN: f32 = 240.;
 const RIGHT_MAX: f32 = 520.;
 
 #[derive(Clone, Copy)]
 pub(super) enum Side {
     Left,
     Right,
+    Source,
 }
 
 /// Displayed widths are independent of persisted preferences. Re-fit them only
 /// when the available space or visible panels change, never after a sibling drag.
 #[derive(Default)]
 pub(super) struct PaneLayout {
-    container: Option<(f32, bool, bool)>,
+    container: Option<(f32, bool, bool, bool, f32)>,
+    pub conversation: f32,
+    pub work: f32,
+    pub single: bool,
+    ratio: Option<f32>,
     pub left: f32,
     pub right: f32,
     pub overlay: bool,
 }
 
 impl PaneLayout {
-    pub fn fit(
+    pub fn fit_workspace(
         &mut self,
         width: f32,
         left: bool,
         right: bool,
+        source: bool,
+        rem: f32,
         preferences: &layout::LayoutState,
     ) -> bool {
-        let container = (width, left, right);
+        let container = (width, left, right, source, rem);
         if self.container == Some(container) {
             return false;
         }
         self.container = Some(container);
-        self.overlay = right && width < 1100.;
-        let right_min = if right && !self.overlay {
-            RIGHT_MIN
-        } else {
-            0.
-        };
-        if left || self.left == 0. {
-            self.left = preferences
-                .sidebar_width
-                .min((width - CONTENT_MIN - right_min).max(0.));
-        }
-        // Offcanvas needs its expanded content width while animating closed.
-        // Hidden panels retain that dimension but reserve no layout space.
-        let reserved_left = if left { self.left } else { 0. };
+        self.left = preferences.sidebar_width.min((width - 24. * rem).max(0.));
+        let main = width - if left { self.left } else { 0. };
+        let required = if source { 54. * rem } else { 24. * rem };
+        self.overlay = right && main < required + 15. * rem;
         self.right = if right {
-            preferences.history_width.min(if self.overlay {
-                (width - 100.).max(0.)
+            if self.overlay {
+                preferences
+                    .history_width
+                    .min((main - 6.25 * rem).max(15. * rem))
             } else {
-                (width - CONTENT_MIN - reserved_left).max(0.)
-            })
+                preferences
+                    .history_width
+                    .clamp(15. * rem, (main - required).max(15. * rem))
+            }
         } else {
             0.
         };
+        self.work = main
+            - if right && !self.overlay {
+                self.right
+            } else {
+                0.
+            };
+        self.single = source && self.work < 54. * rem;
+        self.fit_split(rem);
         true
     }
-
+    fn fit_split(&mut self, rem: f32) {
+        self.conversation = if self.single {
+            self.work
+        } else {
+            (self.ratio.unwrap_or(0.4) * self.work).clamp(
+                (24. * rem).min(self.work),
+                (self.work - 30. * rem).max((24. * rem).min(self.work)),
+            )
+        };
+    }
+    pub fn set_ratio(&mut self, ratio: f32) {
+        self.ratio = Some(ratio);
+        self.container = None;
+    }
+    pub fn ratio(&self) -> f32 {
+        self.ratio.unwrap_or(0.4)
+    }
     pub fn width(&self, side: Side) -> f32 {
         match side {
             Side::Left => self.left,
             Side::Right => self.right,
+            Side::Source => self.conversation,
         }
     }
 
     fn drag_to(&mut self, side: Side, x: f32) {
-        let Some((width, _, _)) = self.container else {
+        let Some((width, left, _, _, _)) = self.container else {
             return;
         };
         self.resize(
@@ -77,25 +101,39 @@ impl PaneLayout {
             match side {
                 Side::Left => x,
                 Side::Right => width - x,
+                Side::Source => x - if left { self.left } else { 0. },
             },
         );
     }
 
     pub fn resize(&mut self, side: Side, requested: f32) {
-        let Some((width, left_visible, _)) = self.container else {
+        let Some((width, left_visible, _, source, rem)) = self.container else {
             return;
+        };
+        if matches!(side, Side::Source) {
+            if !self.single && source && self.work > 0. {
+                self.conversation = requested.clamp(24. * rem, self.work - 30. * rem);
+                self.ratio = Some(self.conversation / self.work);
+            }
+            return;
+        }
+        let content_min = if source && !self.single {
+            54. * rem
+        } else {
+            24. * rem
         };
         let (minimum, maximum) = match side {
             Side::Left => (
                 LEFT_MIN,
-                (width - CONTENT_MIN - if self.overlay { 0. } else { self.right }).min(LEFT_MAX),
+                (width - content_min - if self.overlay { 0. } else { self.right }).min(LEFT_MAX),
             ),
+            Side::Source => unreachable!(),
             Side::Right => (
-                RIGHT_MIN,
+                15. * rem,
                 if self.overlay {
-                    width - 100.
+                    width - 6.25 * rem
                 } else {
-                    width - CONTENT_MIN - if left_visible { self.left } else { 0. }
+                    width - content_min - if left_visible { self.left } else { 0. }
                 }
                 .min(RIGHT_MAX),
             ),
@@ -104,7 +142,11 @@ impl PaneLayout {
         match side {
             Side::Left => self.left = value,
             Side::Right => self.right = value,
+            Side::Source => unreachable!(),
         }
+        let main = width - if left_visible { self.left } else { 0. };
+        self.work = main - if self.overlay { 0. } else { self.right };
+        self.fit_split(rem);
     }
 }
 
@@ -137,6 +179,7 @@ impl HomeView {
             match side {
                 Side::Left => "sidebar-resize",
                 Side::Right => "history-resize",
+                Side::Source => "source-resize",
             },
             Axis::Horizontal,
         )
@@ -163,6 +206,7 @@ impl HomeView {
             match drag.side {
                 Side::Left => self.save_layout(Some(width), None, window, cx),
                 Side::Right => self.save_layout(None, Some(width), window, cx),
+                Side::Source => self.save_source_split(cx),
             }
         }
         cx.notify();
@@ -352,14 +396,14 @@ mod tests {
             record
         };
         let mut panes = PaneLayout::default();
-        panes.fit(1200., true, true, &preferences);
-        assert_eq!((panes.left, panes.right), (480., 360.));
-        panes.fit(1200., false, true, &preferences);
+        panes.fit_workspace(1200., true, true, false, 16., &preferences);
+        assert_eq!((panes.left, panes.right), (480., 336.));
+        panes.fit_workspace(1200., false, true, false, 16., &preferences);
         assert_eq!((panes.left, panes.right), (480., 520.));
         panes.resize(Side::Right, 520.);
         assert_eq!(panes.right, 520.);
-        panes.fit(1200., true, true, &preferences);
-        assert_eq!((panes.left, panes.right), (480., 360.));
+        panes.fit_workspace(1200., true, true, false, 16., &preferences);
+        assert_eq!((panes.left, panes.right), (480., 336.));
     }
     #[test]
     fn resizing_one_sidebar_never_borrows_from_the_other() {
@@ -370,13 +414,13 @@ mod tests {
             record
         };
         let mut panes = PaneLayout::default();
-        panes.fit(1200., true, true, &preferences);
+        panes.fit_workspace(1200., true, true, false, 16., &preferences);
         panes.resize(Side::Right, 600.);
-        assert_eq!((panes.left, panes.right), (300., 520.));
+        assert_eq!((panes.left, panes.right), (300., 516.));
         panes.resize(Side::Left, 480.);
-        assert_eq!((panes.left, panes.right), (320., 520.));
+        assert_eq!((panes.left, panes.right), (300., 516.));
         panes.resize(Side::Right, 100.);
-        assert_eq!((panes.left, panes.right), (320., 240.));
+        assert_eq!((panes.left, panes.right), (300., 240.));
     }
     #[test]
     fn temporary_constraints_and_sibling_drag_do_not_restore_or_overwrite_preferences() {
@@ -387,13 +431,13 @@ mod tests {
             record
         };
         let mut panes = PaneLayout::default();
-        panes.fit(1100., true, true, &preferences);
-        assert_eq!((panes.left, panes.right), (480., 260.));
+        panes.fit_workspace(1100., true, true, false, 16., &preferences);
+        assert_eq!((panes.left, panes.right), (480., 520.));
         panes.resize(Side::Left, 400.);
         // A redraw after dragging the left edge must not expand the right edge.
-        assert!(!panes.fit(1100., true, true, &preferences));
-        assert_eq!((panes.left, panes.right), (400., 260.));
-        panes.fit(1500., true, true, &preferences);
+        assert!(!panes.fit_workspace(1100., true, true, false, 16., &preferences));
+        assert_eq!((panes.left, panes.right), (400., 520.));
+        panes.fit_workspace(1500., true, true, false, 16., &preferences);
         assert_eq!((panes.left, panes.right), (480., 520.));
         assert_eq!(
             (preferences.sidebar_width, preferences.history_width),
@@ -409,14 +453,33 @@ mod tests {
             record
         };
         let mut panes = PaneLayout::default();
-        panes.fit(800., true, true, &preferences);
+        panes.fit_workspace(800., true, true, false, 16., &preferences);
         assert!(panes.overlay);
-        assert_eq!((panes.left, panes.right), (440., 520.));
+        assert_eq!((panes.left, panes.right), (416., 284.));
         panes.resize(Side::Right, 300.);
-        assert_eq!(panes.left, 440.);
-        panes.fit(1500., true, false, &preferences);
+        assert_eq!(panes.left, 416.);
+        panes.fit_workspace(1500., true, false, false, 16., &preferences);
         assert_eq!((panes.left, panes.right), (480., 0.));
-        panes.fit(1500., true, true, &preferences);
+        panes.fit_workspace(1500., true, true, false, 16., &preferences);
         assert_eq!((panes.left, panes.right), (480., 520.));
+    }
+    #[test]
+    fn source_layout_fits_minima_and_keeps_the_saved_split() {
+        let preferences = layout::LayoutState::default();
+        let mut panes = PaneLayout::default();
+        panes.set_ratio(0.45);
+        panes.fit_workspace(1728., true, true, true, 16., &preferences);
+        assert!(!panes.overlay && !panes.single);
+        assert!(panes.conversation >= 384. && panes.work - panes.conversation >= 480.);
+        panes.resize(Side::Source, 600.);
+        let ratio = panes.ratio();
+        panes.fit_workspace(1200., true, true, true, 16., &preferences);
+        assert!(panes.overlay && !panes.single);
+        panes.fit_workspace(960., true, false, true, 16., &preferences);
+        assert!(panes.single);
+        assert_eq!(panes.ratio(), ratio);
+        panes.fit_workspace(1440., true, true, true, 20., &preferences);
+        assert!(panes.overlay && !panes.single);
+        assert_eq!(preferences.history_width, 300.);
     }
 }

@@ -25,6 +25,10 @@ impl HomeView {
                     | Kind::Sidebar
                     | Kind::History
                     | Kind::OpenHistory
+                    | Kind::ProjectFiles
+                    | Kind::CloseSource
+                    | Kind::FocusSource
+                    | Kind::ShowConversation
                     | Kind::Scan
                     | Kind::Clone
                     | Kind::Export
@@ -47,7 +51,13 @@ impl HomeView {
             Kind::Palette | Kind::QuickOpen | Kind::Settings | Kind::ShowMain | Kind::Quit => true,
             Kind::New | Kind::Sidebar => !state.draining(),
             Kind::Scan => !state.draining() && !state.scanning(),
-            Kind::FocusInput | Kind::History | Kind::OpenHistory => s.is_some(),
+            Kind::FocusInput | Kind::History | Kind::OpenHistory | Kind::ProjectFiles => {
+                s.is_some()
+            }
+            Kind::CloseSource | Kind::FocusSource => self.source.is_some(),
+            Kind::ShowConversation => {
+                self.source.is_some() && self.pane_layout.single && self.source_active
+            }
             Kind::Export => state
                 .selected()
                 .as_ref()
@@ -124,7 +134,27 @@ impl HomeView {
         }
         let key = self.state.read(cx).selected().clone();
         match action.0 {
-            Kind::Find => self.open_find(window, cx),
+            Kind::ShowConversation => {
+                self.source_active = false;
+                self.focus_composer(window, cx);
+            }
+            Kind::CloseSource => self.close_source(window, cx),
+            Kind::FocusSource => {
+                self.source_active = true;
+                if let Some(source) = self.source.clone() {
+                    source.update(cx, |s, cx| s.focus(window, cx));
+                }
+            }
+            Kind::Find => {
+                if let Some(source) = self.source.as_ref().filter(|s| {
+                    (self.pane_layout.single && self.source_active)
+                        || s.read(cx).contains_focus(window, cx)
+                }) {
+                    source.update(cx, |source, cx| source.find(window, cx));
+                } else {
+                    self.open_find(window, cx);
+                }
+            }
             Kind::New => self.new_conversation(window, cx),
             Kind::Settings => window.dispatch_action(Box::new(menus::ShowSettings), cx),
             Kind::ShowMain => window.dispatch_action(Box::new(menus::ShowMainWindow), cx),
@@ -136,8 +166,15 @@ impl HomeView {
                 }
             }
             Kind::History => self.toggle_history(window, cx),
+            Kind::ProjectFiles => {
+                self.navigator_focus = window.focused(cx);
+                self.files_tab = true;
+                self.show_history = true;
+                self.sync(false, window, cx);
+                self.files.update(cx, |files, cx| files.focus(window, cx));
+            }
             Kind::OpenHistory => {
-                if !self.show_history {
+                if !self.show_history || self.files_tab {
                     self.toggle_history(window, cx);
                 }
             }
@@ -227,7 +264,11 @@ impl HomeView {
         }
     }
     pub(super) fn toggle_history(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.show_history = !self.show_history;
+        if !self.show_history {
+            self.navigator_focus = window.focused(cx);
+        }
+        self.show_history = self.files_tab || !self.show_history;
+        self.files_tab = false;
         self.sync(true, window, cx);
         if !self.show_history
             && let Some(view) = self.shown_key.as_ref().and_then(|key| self.views.get(key))
@@ -249,6 +290,8 @@ impl HomeView {
         }
         if !self.show_history {
             self.focus_composer(window, cx);
+        } else {
+            self.focus_overlay_navigator(window, cx);
         }
         cx.notify();
     }

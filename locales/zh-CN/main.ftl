@@ -686,3 +686,34 @@ updates-show-progress = 查看更新进度…
 shortcut-screenshot = 截图
 screenshot-failed = 无法截取屏幕，请重试。
 screenshot-permission-required = 截图需要屏幕录制权限。请在“系统设置 → 隐私与安全性 → 屏幕录制”中允许 Gupi，然后重试。如系统提示重启 Gupi，请先重启。
+
+# Project files and source preview
+files-title = 文件
+files-panel = 右侧面板
+files-close = 关闭面板
+files-refresh = 刷新文件
+files-preview = 预览
+files-readonly = 只读
+files-wrap = 自动换行
+files-reload = 重新读取
+files-loading = 正在读取…
+files-expanded = 已展开
+files-collapsed = 已收起
+files-empty = 空目录
+files-incomplete = 部分项目无法读取，点击重试
+files-read-failed = 无法读取文件或目录，请重试
+files-unsupported = 此文件暂不支持文本预览
+files-too-large = 文件超过预览上限（1 MiB 或 20,000 行）
+files-long-line = 存在超长行，已关闭语法高亮
+files-no-session = 选择会话以浏览项目文件
+
+files-actions = 文件操作
+files-copy-path = 复制路径
+files-reveal = 在文件中定位
+files-close-source = 关闭文件
+files-focus-source = 聚焦源码
+files-conversation = 会话
+files-conversation-busy = 会话，正在回复
+files-view = 视图
+files-show-conversation = 显示会话
+files-source = 源码

@@ -64,6 +64,12 @@ struct Frame {
 }
 impl EventEmitter<CanvasEvent> for HistoryCanvas {}
 impl HistoryCanvas {
+    pub(crate) fn is_focused(&self, window: &Window) -> bool {
+        self.focus.is_focused(window)
+    }
+    pub(crate) fn focus(&self, window: &mut Window, cx: &mut App) {
+        self.focus.focus(window, cx);
+    }
     pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
             tree: Tree::default(),

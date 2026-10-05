@@ -679,3 +679,34 @@ updates-show-progress = 更新の進行状況を表示…
 shortcut-screenshot = スクリーンショット
 screenshot-failed = 画面をキャプチャできませんでした。もう一度お試しください。
 screenshot-permission-required = スクリーンショットには画面収録の許可が必要です。「システム設定 → プライバシーとセキュリティ → 画面収録」で Gupi を許可してから、もう一度お試しください。macOS から再起動を求められた場合は、先に Gupi を再起動してください。
+
+# Project files and source preview
+files-title = ファイル
+files-panel = 右パネル
+files-close = パネルを閉じる
+files-refresh = ファイルを更新
+files-preview = プレビュー
+files-readonly = 読み取り専用
+files-wrap = 折り返し
+files-reload = 再読み込み
+files-loading = 読み込み中…
+files-expanded = 展開済み
+files-collapsed = 折りたたみ
+files-empty = 空のフォルダー
+files-incomplete = 一部の項目を読み込めません。再試行
+files-read-failed = ファイルまたはフォルダーを読み込めません。再試行
+files-unsupported = このファイルはテキストプレビューに対応していません
+files-too-large = プレビュー上限（1 MiB または20,000行）を超えています
+files-long-line = 長い行があるため構文強調を無効にしました
+files-no-session = 会話を選択してプロジェクトのファイルを表示
+
+files-actions = ファイル操作
+files-copy-path = パスをコピー
+files-reveal = ファイル一覧で表示
+files-close-source = ファイルを閉じる
+files-focus-source = ソースにフォーカス
+files-conversation = 会話
+files-conversation-busy = 会話、応答中
+files-view = 表示
+files-show-conversation = 会話を表示
+files-source = ソース

@@ -686,3 +686,34 @@ updates-show-progress = Show update progress…
 shortcut-screenshot = Screenshot
 screenshot-failed = Couldn’t capture the screen. Try again.
 screenshot-permission-required = Screen recording access is required. Enable Gupi in System Settings → Privacy & Security → Screen Recording, then try again. If macOS asks you to restart Gupi, restart it first.
+
+# Project files and source preview
+files-title = Files
+files-panel = Right panel
+files-close = Close panel
+files-refresh = Refresh files
+files-preview = Preview
+files-readonly = Read only
+files-wrap = Wrap lines
+files-reload = Reload
+files-loading = Reading…
+files-expanded = Expanded
+files-collapsed = Collapsed
+files-empty = Empty directory
+files-incomplete = Some entries could not be read. Retry
+files-read-failed = Could not read this file or directory. Retry
+files-unsupported = This file does not support text preview
+files-too-large = File exceeds the preview limit (1 MiB or 20,000 lines)
+files-long-line = Long lines: syntax highlighting is disabled
+files-no-session = Select a conversation to browse project files
+
+files-actions = File actions
+files-copy-path = Copy path
+files-reveal = Reveal in files
+files-close-source = Close file
+files-focus-source = Focus source
+files-conversation = Conversation
+files-conversation-busy = Conversation, responding
+files-view = View
+files-show-conversation = Show conversation
+files-source = Source

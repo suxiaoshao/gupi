@@ -465,7 +465,7 @@ impl HomeView {
                 )
                 // Gupi owns spacing between row kinds; the scroller's default
                 // bottom padding would separate compaction from its run.
-                .with_row_style(StyleRefinement::default().pb_0())
+                .with_row_style(StyleRefinement::default().px_5().pb_0())
                 .with_jump_button_label(t(cx, "conversation-bottom"))
                 .size_full(),
             );

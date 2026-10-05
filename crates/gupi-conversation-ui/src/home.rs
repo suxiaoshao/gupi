@@ -2,6 +2,7 @@ pub mod actions;
 mod attachments;
 mod composer;
 mod content;
+mod files;
 mod find;
 mod history;
 mod image_preview;
@@ -13,8 +14,10 @@ pub mod pickers;
 mod progress;
 mod session_info;
 mod slash;
+mod source;
 mod titlebar;
 mod welcome;
+mod workspace;
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::component::Disableable;
 use gpui_kit::component::Sizable;
@@ -86,6 +89,15 @@ pub struct HomeView {
     history_scope: HistoryScope,
     show_sidebar: bool,
     show_history: bool,
+    files_tab: bool,
+    files: Entity<files::Files>,
+    source: Option<Entity<source::Preview>>,
+    source_subscription: Option<Subscription>,
+    source_root: Option<PathBuf>,
+    source_active: bool,
+    source_save: Option<Task<()>>,
+    source_split_touched: bool,
+    navigator_focus: Option<FocusHandle>,
     navigation: navigation::Navigation,
     projects_with_more: HashSet<PathBuf>,
     open_projects: HashSet<PathBuf>,
@@ -260,6 +272,7 @@ impl HomeView {
         cx: &mut Context<Self>,
     ) -> Self {
         actions::init(cx);
+        files::init(cx);
         for context in ["GupiComposer > Input", "GupiPalette > Input"] {
             cx.bind_keys([
                 KeyBinding::new(
@@ -396,6 +409,15 @@ impl HomeView {
             history_scope: Default::default(),
             show_sidebar: true,
             show_history: false,
+            files_tab: false,
+            files: cx.new(|cx| files::Files::new(window, cx)),
+            source: None,
+            source_subscription: None,
+            source_root: None,
+            source_active: false,
+            source_save: None,
+            source_split_touched: false,
+            navigator_focus: None,
             navigation: Default::default(),
             projects_with_more: HashSet::new(),
             open_projects: HashSet::new(),
@@ -413,6 +435,31 @@ impl HomeView {
             extension_focus: cx.focus_handle(),
             _subscriptions: subscriptions,
         };
+        view._subscriptions.push(cx.subscribe_in(
+            &view.files,
+            window,
+            |this, _, event: &files::OpenFile, window, cx| {
+                this.open_source(event.0.clone(), event.1, window, cx)
+            },
+        ));
+        if !view.state.read(cx).is_temporary() {
+            let task = cx.background_spawn(async move {
+                gupi_resources::paths::config_dir()
+                    .ok()
+                    .map(|d| gupi_settings::source_split::load(&d.join("source-split.toml")))
+                    .unwrap_or(0.4)
+            });
+            cx.spawn(async move |owner, cx| {
+                let ratio = task.await;
+                let _ = owner.update(cx, |this, cx| {
+                    if !this.source_split_touched {
+                        this.pane_layout.set_ratio(ratio);
+                        cx.notify();
+                    }
+                });
+            })
+            .detach();
+        }
         view.sync_navigation(None, cx);
         view.sync(false, window, cx);
         view.focus_composer(window, cx);
@@ -471,6 +518,33 @@ impl HomeView {
     fn sync(&mut self, force: bool, window: &mut Window, cx: &mut Context<Self>) {
         let key = self.state.read(cx).selected().clone();
         let changed = self.shown_key != key;
+        let root = self.state.read(cx).current().map(|s| s.info().cwd.clone());
+        let reset_source_focus = self.source_root != root
+            && self
+                .source
+                .as_ref()
+                .is_some_and(|s| s.read(cx).contains_focus(window, cx));
+        if self.source_root != root {
+            if self
+                .source
+                .as_ref()
+                .is_some_and(|s| s.read(cx).contains_focus(window, cx))
+            {
+                // Focus the new session's input below, after its state is installed.
+                self.focus_handle.focus(window, cx);
+            }
+            self.close_source(window, cx);
+            self.source_root = root.clone();
+        }
+        self.files.update(cx, |files, cx| {
+            files.sync(
+                root,
+                self.show_history && self.files_tab,
+                changed,
+                window,
+                cx,
+            )
+        });
         if changed {
             self.close_find(false, window, cx);
             self.slash = Default::default();
@@ -828,7 +902,7 @@ impl HomeView {
                 cx.notify();
             });
         }
-        if self.show_history {
+        if self.show_history && !self.files_tab {
             self.state
                 .update(cx, |state, cx| state.read_visible_history(&key, cx));
         }
@@ -938,9 +1012,13 @@ impl HomeView {
             self.input_questionnaire = None;
             self.input.update(cx, |input, cx| input.focus(window, cx));
         }
+        if reset_source_focus {
+            self.focus_composer(window, cx);
+        }
         cx.notify();
     }
     fn preview_node(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        self.source_active = false;
         self.close_find(false, window, cx);
         let Some(key) = self.shown_key.clone() else {
             return;
@@ -1050,8 +1128,12 @@ impl HomeView {
     pub fn flush(&mut self, cx: &mut Context<Self>) -> Task<()> {
         let save = self.state.update(cx, |s, cx| s.flush(cx));
         let layout = self.layout_save.take();
+        let source = self.source_save.take();
         cx.spawn(async move |_, _| {
             save.await;
+            if let Some(source) = source {
+                source.await;
+            }
             if let Some(layout) = layout {
                 layout.await;
             }
@@ -1100,10 +1182,12 @@ impl Render for HomeView {
             let content = crate::performance::measure("home", false, content);
             return content;
         }
-        if self.pane_layout.fit(
+        if self.pane_layout.fit_workspace(
             f32::from(window.viewport_size().width),
             self.show_sidebar,
             self.show_history,
+            self.source.is_some(),
+            f32::from(window.rem_size()),
             cx.global::<layout::LayoutState>(),
         ) {
             // A window resize or panel toggle ends an in-progress drag without
@@ -1113,12 +1197,7 @@ impl Render for HomeView {
             }
         }
         let titlebar = self.render_titlebar(window, cx);
-        let center = v_flex()
-            .size_full()
-            .min_w_0()
-            .children(self.find.clone())
-            .child(self.render_messages(window, cx))
-            .child(self.render_composer(window, cx));
+        let center = self.render_workspace(window, cx);
         // Keep the component mounted: Offcanvas owns the closing animation and
         // removes its contents from the tab order after the transition finishes.
         let mut columns = h_flex().size_full().child(self.render_sidebar(window, cx));
@@ -1141,7 +1220,9 @@ impl Render for HomeView {
                     .w(px(self.pane_layout.right))
                     .h_full()
                     .flex_none()
-                    .child(self.render_history(cx))
+                    .border_l_1()
+                    .border_color(cx.theme().border)
+                    .child(self.render_right_panel(cx))
                     .child(self.pane_handle(panes::Side::Right, cx)),
             );
         }
@@ -1157,7 +1238,26 @@ impl Render for HomeView {
                     .w(px(self.pane_layout.right))
                     .bg(cx.theme().background)
                     .shadow_md()
-                    .child(self.render_history(cx))
+                    .capture_action(cx.listener(
+                        |this, _: &gpui_kit::base::actions::Cancel, window, cx| {
+                            if this.navigator_is_focused(window, cx) {
+                                this.close_navigator(window, cx);
+                                cx.stop_propagation();
+                            } else {
+                                cx.propagate();
+                            }
+                        },
+                    ))
+                    .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                        if event.keystroke.key == "escape" && this.navigator_is_focused(window, cx)
+                        {
+                            this.close_navigator(window, cx);
+                            cx.stop_propagation();
+                        }
+                    }))
+                    .border_l_1()
+                    .border_color(cx.theme().border)
+                    .child(self.render_right_panel(cx))
                     .child(self.pane_handle(panes::Side::Right, cx)),
             );
         }

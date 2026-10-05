@@ -3,10 +3,20 @@ use gupi_settings::commands as menus;
 pub use gupi_settings::commands::Kind;
 pub use gupi_settings::commands::Run;
 
-actions!(gupi, [ConfirmExtension, CancelExtension]);
+actions!(
+    gupi,
+    [
+        ConfirmExtension,
+        CancelExtension,
+        CloseNavigator,
+        ReturnFromSource
+    ]
+);
 
 pub(super) fn init(cx: &mut App) {
     cx.bind_keys([
+        KeyBinding::new("escape", CloseNavigator, Some("GupiNavigatorOverlay")),
+        KeyBinding::new("escape", ReturnFromSource, Some("SourcePreview")),
         KeyBinding::new("enter", ConfirmExtension, Some("GupiExtension")),
         KeyBinding::new("escape", CancelExtension, Some("GupiExtension")),
     ]);

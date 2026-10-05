@@ -104,6 +104,21 @@ pub(super) enum Event {
 }
 impl EventEmitter<Event> for Preview {}
 impl Preview {
+    fn return_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if window.has_active_dialog(cx) {
+            cx.propagate();
+            return;
+        }
+        if self.editor.read(cx).search_session().open {
+            self.editor.update(cx, |editor, cx| {
+                editor.close_search(cx);
+                editor.focus(window, cx);
+            });
+        } else {
+            cx.emit(Event::Return);
+        }
+        cx.stop_propagation();
+    }
     pub(super) fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
         if self.loaded {
             self.editor.update(cx, |e, cx| e.focus(window, cx));
@@ -136,37 +151,18 @@ impl Render for Preview {
             .min_h_0()
             .track_focus(&self.focus)
             .key_context("SourcePreview")
+            .on_action(
+                cx.listener(|this, _: &actions::ReturnFromSource, window, cx| {
+                    this.return_focus(window, cx)
+                }),
+            )
             .capture_action(cx.listener(
                 |this, _: &gpui_kit::component::input::Escape, window, cx| {
-                    if window.has_active_dialog(cx) {
-                        cx.propagate();
-                        return;
-                    }
-                    if this.editor.read(cx).search_session().open {
-                        this.editor.update(cx, |e, cx| {
-                            e.close_search(cx);
-                            e.focus(window, cx);
-                        });
-                    } else {
-                        cx.emit(Event::Return);
-                    }
-                    cx.stop_propagation();
+                    this.return_focus(window, cx);
                 },
             ))
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                if event.keystroke.key == "escape" && !window.has_active_dialog(cx) {
-                    if this.editor.read(cx).search_session().open {
-                        this.editor.update(cx, |e, cx| {
-                            e.close_search(cx);
-                            e.focus(window, cx);
-                        });
-                    } else {
-                        cx.emit(Event::Return);
-                    }
-                    cx.stop_propagation();
-                } else if this.focus.is_focused(window)
-                    && matches!(event.keystroke.key.as_str(), "tab" | "enter")
-                {
+                if this.focus.is_focused(window) && event.keystroke.key == "enter" {
                     this.focus(window, cx);
                     cx.stop_propagation();
                 }

@@ -110,18 +110,6 @@ impl HomeView {
         }
         cx.notify();
     }
-    pub(super) fn navigator_is_focused(&self, window: &Window, cx: &App) -> bool {
-        if self.files_tab {
-            self.files.read(cx).is_focused(window, cx)
-        } else if self.history_view == HistoryView::Tree {
-            self.shown_key
-                .as_ref()
-                .and_then(|key| self.views.get(key))
-                .is_some_and(|view| view.history_canvas.read(cx).is_focused(window))
-        } else {
-            self.history_list.focus_handle(cx).is_focused(window)
-        }
-    }
     pub(super) fn focus_overlay_navigator(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.pane_layout.fit_workspace(
             f32::from(window.viewport_size().width),

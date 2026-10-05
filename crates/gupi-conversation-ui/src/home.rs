@@ -1238,23 +1238,12 @@ impl Render for HomeView {
                     .w(px(self.pane_layout.right))
                     .bg(cx.theme().background)
                     .shadow_md()
-                    .capture_action(cx.listener(
-                        |this, _: &gpui_kit::base::actions::Cancel, window, cx| {
-                            if this.navigator_is_focused(window, cx) {
-                                this.close_navigator(window, cx);
-                                cx.stop_propagation();
-                            } else {
-                                cx.propagate();
-                            }
-                        },
-                    ))
-                    .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                        if event.keystroke.key == "escape" && this.navigator_is_focused(window, cx)
-                        {
+                    .key_context("GupiNavigatorOverlay")
+                    .on_action(
+                        cx.listener(|this, _: &actions::CloseNavigator, window, cx| {
                             this.close_navigator(window, cx);
-                            cx.stop_propagation();
-                        }
-                    }))
+                        }),
+                    )
                     .border_l_1()
                     .border_color(cx.theme().border)
                     .child(self.render_right_panel(cx))

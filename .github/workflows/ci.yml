@@ -58,8 +58,9 @@ jobs:
 
   test:
     needs: changes
-    # A failed classifier must not silently skip required checks.
-    if: ${{ !cancelled() && needs.changes.outputs.run != 'false' }}
+    # Expand the matrix even for docs so required check names are preserved.
+    # A failed classifier still runs the full checks.
+    if: ${{ !cancelled() }}
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
@@ -80,24 +81,34 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Documentation-only changes
+        if: ${{ needs.changes.outputs.run == 'false' }}
+        run: echo 'Documentation-only changes; Rust checks are not needed.' >> "$GITHUB_STEP_SUMMARY"
+
       - name: Checkout
+        if: ${{ needs.changes.outputs.run != 'false' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Set up native toolchain
+        if: ${{ needs.changes.outputs.run != 'false' }}
         uses: ./.github/actions/setup
         with:
           target: ${{ matrix.target }}
 
       - name: Cargo fmt
+        if: ${{ needs.changes.outputs.run != 'false' }}
         run: cargo fmt --all -- --check
 
       - name: Cargo build
+        if: ${{ needs.changes.outputs.run != 'false' }}
         run: cargo build --workspace --locked
 
       - name: Cargo test
+        if: ${{ needs.changes.outputs.run != 'false' }}
         run: cargo test --workspace --locked
 
       - name: Cargo clippy
+        if: ${{ needs.changes.outputs.run != 'false' }}
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings

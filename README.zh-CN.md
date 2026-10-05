@@ -55,12 +55,12 @@ Gupi 带有内置更新功能，`--greedy` 会将它的 Cask 纳入 Homebrew 升
 
 ### 下载 Gupi
 
-| 平台 | 下载 v0.1.1 | 安装方法 |
+| 平台 | 下载 v0.1.3 | 安装方法 |
 | --- | --- | --- |
-| macOS · Apple 芯片 | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.1/Gupi_0.1.1_aarch64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.1/Gupi_0.1.1_aarch64_macos.zip) | 打开 DMG，将 `Gupi.app` 拖到“应用程序”；也可以解压 ZIP 后将应用移入该目录。 |
-| macOS · Intel | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.1/Gupi_0.1.1_x86_64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.1/Gupi_0.1.1_x86_64_macos.zip) | 打开 DMG，将 `Gupi.app` 拖到“应用程序”；也可以解压 ZIP 后将应用移入该目录。 |
-| Windows · x64 | [简体中文 MSI](https://github.com/suxiaoshao/gupi/releases/download/v0.1.1/Gupi_0.1.1_x64_zh-CN.msi) · [全部安装语言](https://github.com/suxiaoshao/gupi/releases/tag/v0.1.1) | 运行 MSI 完成安装，再从开始菜单打开 Gupi。 |
-| Linux · x64 Debian/Ubuntu | [deb](https://github.com/suxiaoshao/gupi/releases/download/v0.1.1/Gupi_0.1.1_amd64.deb) | 执行 `sudo apt install ./Gupi_0.1.1_amd64.deb`，然后在图形桌面会话中启动 Gupi。 |
+| macOS · Apple 芯片 | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.3/Gupi_0.1.3_aarch64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.3/Gupi_0.1.3_aarch64_macos.zip) | 打开 DMG，将 `Gupi.app` 拖到“应用程序”；也可以解压 ZIP 后将应用移入该目录。 |
+| macOS · Intel | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.3/Gupi_0.1.3_x86_64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.3/Gupi_0.1.3_x86_64_macos.zip) | 打开 DMG，将 `Gupi.app` 拖到“应用程序”；也可以解压 ZIP 后将应用移入该目录。 |
+| Windows · x64 | [简体中文 MSI](https://github.com/suxiaoshao/gupi/releases/download/v0.1.3/Gupi_0.1.3_x64_zh-CN.msi) · [全部安装语言](https://github.com/suxiaoshao/gupi/releases/tag/v0.1.3) | 运行 MSI 完成安装，再从开始菜单打开 Gupi。 |
+| Linux · x64 Debian/Ubuntu | [deb](https://github.com/suxiaoshao/gupi/releases/download/v0.1.3/Gupi_0.1.3_amd64.deb) | 执行 `sudo apt install ./Gupi_0.1.3_amd64.deb`，然后在图形桌面会话中启动 Gupi。 |
 
 macOS 安装包要求 macOS 11 或更高版本，已使用 Developer ID 签名并通过 Apple 公证。Windows 安装包尚未做 Authenticode 签名，系统可能显示“未知发布者”；Linux 包也未签名。Release 中提供 `SHA256SUMS`，用于校验下载文件。
 
@@ -277,7 +277,7 @@ macOS 系统通知需要应用 bundle 和系统授权，专注模式可能影响
 
 macOS 发现新版后，可选择**下载并安装…**，并在更新窗口中继续。可通过**查看更新进度…**重新打开该窗口。安装前，Gupi 会保存草稿、关闭 Pi 连接，并重新启动新版。下载由你主动开始。跳过某个版本后，不再自动提醒该版本，仍可手动检查并安装。
 
-Windows 安装版可能检测到更新，却只显示**更新说明与下载**，没有安装按钮。遇到此情况，请下载与已安装语言一致的新版 MSI 并运行升级。当前应用内安装受到这一已知问题影响。
+Windows 0.1.0/0.1.1 安装版可能检测到更新，却只显示**更新说明与下载**，没有安装按钮。请手动下载与已安装语言一致的新版 MSI 并运行升级，获得 0.1.2 引入的安装识别修复。Windows 自动升级完整链路仍待实机确认。
 
 保存设置时，**下载并安装…**暂不可用。更新窗口打开期间暂停设置修改，窗口关闭且进行中的保存完成后恢复。
 

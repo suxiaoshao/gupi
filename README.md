@@ -55,12 +55,12 @@ brew uninstall --cask suxiaoshao/tap/gupi
 
 ### Download Gupi
 
-| Platform | Download v0.1.1 | Installation |
+| Platform | Download v0.1.3 | Installation |
 | --- | --- | --- |
-| macOS · Apple silicon | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.1/Gupi_0.1.1_aarch64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.1/Gupi_0.1.1_aarch64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
-| macOS · Intel | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.1/Gupi_0.1.1_x86_64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.1/Gupi_0.1.1_x86_64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
-| Windows · x64 | [English MSI](https://github.com/suxiaoshao/gupi/releases/download/v0.1.1/Gupi_0.1.1_x64_en-US.msi) · [All installer languages](https://github.com/suxiaoshao/gupi/releases/tag/v0.1.1) | Run the MSI, complete the installation, and open Gupi from the Start menu. |
-| Linux · x64 Debian/Ubuntu | [deb](https://github.com/suxiaoshao/gupi/releases/download/v0.1.1/Gupi_0.1.1_amd64.deb) | Run `sudo apt install ./Gupi_0.1.1_amd64.deb`, then launch Gupi in a graphical desktop session. |
+| macOS · Apple silicon | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.3/Gupi_0.1.3_aarch64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.3/Gupi_0.1.3_aarch64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
+| macOS · Intel | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.3/Gupi_0.1.3_x86_64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.3/Gupi_0.1.3_x86_64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
+| Windows · x64 | [English MSI](https://github.com/suxiaoshao/gupi/releases/download/v0.1.3/Gupi_0.1.3_x64_en-US.msi) · [All installer languages](https://github.com/suxiaoshao/gupi/releases/tag/v0.1.3) | Run the MSI, complete the installation, and open Gupi from the Start menu. |
+| Linux · x64 Debian/Ubuntu | [deb](https://github.com/suxiaoshao/gupi/releases/download/v0.1.3/Gupi_0.1.3_amd64.deb) | Run `sudo apt install ./Gupi_0.1.3_amd64.deb`, then launch Gupi in a graphical desktop session. |
 
 macOS packages require macOS 11 or later and are signed with Developer ID and notarized by Apple. Windows installers are not yet Authenticode-signed, so Windows may show an unknown publisher. Linux packages are also unsigned. The release includes `SHA256SUMS` for checking downloaded files.
 
@@ -277,7 +277,7 @@ Choose **Gupi → Check for updates…**, or open **Settings → About → Updat
 
 On macOS, choose **Download and install…** when a new version is available, then follow the update window. Use **Show update progress…** to bring that window back. Before installation, Gupi saves drafts, closes Pi connections, and restarts into the new version. Downloads begin only when you choose. Skipping a version stops automatic reminders for that version; you can still check and install it manually.
 
-Windows installations may detect an update but show only **Release notes and downloads**, without the install button. In that case, download and run the new MSI in your installed language to upgrade. In-app installation is currently affected by this known issue.
+Windows 0.1.0/0.1.1 installations may detect an update but show only **Release notes and downloads**, without the install button. Manually download and run the new MSI in your installed language to receive the installation-recognition fix introduced in 0.1.2. The complete Windows native upgrade path still requires device verification.
 
 While settings are being saved, **Download and install…** is disabled. Settings changes are disabled while the update window is open and become available again when it closes and any pending save finishes.
 

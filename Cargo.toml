@@ -10,7 +10,7 @@ authors = ["suxiaoshao <48886207+suxiaoshao@users.noreply.github.com>"]
 repository = "https://github.com/suxiaoshao/gupi"
 
 [workspace.package]
-version = "0.1.2"
+version = "0.1.3"
 
 [workspace]
 members = [
@@ -49,12 +49,12 @@ gpui-store = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", re
 platform-ext = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "9d7eb499bf6747b0c380976a5152f3b04c40de80" }
 
 # Internal crates are released with Gupi.
-gupi-conversation-ui = { version = "0.1.2", path = "crates/gupi-conversation-ui" }
-gupi-conversation = { version = "0.1.2", path = "crates/gupi-conversation" }
-gupi-screen-capture = { version = "0.1.2", path = "crates/gupi-screen-capture" }
-gupi-settings = { version = "0.1.2", path = "crates/gupi-settings" }
-gupi-updates = { version = "0.1.2", path = "crates/gupi-updates" }
-gupi-resources = { version = "0.1.2", path = "crates/gupi-resources" }
+gupi-conversation-ui = { version = "0.1.3", path = "crates/gupi-conversation-ui" }
+gupi-conversation = { version = "0.1.3", path = "crates/gupi-conversation" }
+gupi-screen-capture = { version = "0.1.3", path = "crates/gupi-screen-capture" }
+gupi-settings = { version = "0.1.3", path = "crates/gupi-settings" }
+gupi-updates = { version = "0.1.3", path = "crates/gupi-updates" }
+gupi-resources = { version = "0.1.3", path = "crates/gupi-resources" }
 gupi-pi-runtime = { version = "0.1.0", path = "crates/gupi-pi-runtime" }
 gpui-lucide = { version = "0.1.0", path = "crates/gpui-lucide" }
 gpui-tokio = { version = "0.1.0", path = "crates/gpui-tokio" }

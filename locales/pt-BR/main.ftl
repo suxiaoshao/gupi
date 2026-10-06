@@ -685,3 +685,38 @@ updates-show-progress = Ver o progresso da atualização…
 shortcut-screenshot = Captura de tela
 screenshot-failed = Não foi possível capturar a tela. Tente novamente.
 screenshot-permission-required = É necessária permissão para gravar a tela. Permita o Gupi em Ajustes do Sistema → Privacidade e Segurança → Gravação da Tela e tente novamente. Se o macOS solicitar que reinicie o Gupi, faça isso primeiro.
+
+# Project files and source preview
+files-title = Arquivos
+files-panel = Painel direito
+files-close = Fechar painel
+files-refresh = Atualizar arquivos
+files-preview = Prévia
+files-readonly = Somente leitura
+files-wrap = Quebrar linhas
+files-reload = Recarregar
+files-loading = Lendo…
+files-expanded = Expandido
+files-collapsed = Recolhido
+files-incomplete = Não foi possível ler algumas entradas. Tentar novamente
+files-read-failed = Não foi possível ler o arquivo ou a pasta. Tentar novamente
+files-unsupported = Este arquivo não permite prévia de texto
+files-too-large = Limite de prévia excedido (1 MiB ou 20.000 linhas)
+files-long-line = Linhas longas: realce de sintaxe desativado
+files-no-session = Selecione uma conversa para explorar os arquivos do projeto
+
+files-actions = Ações do arquivo
+files-copy-path = Copiar caminho
+files-reveal = Mostrar nos arquivos
+files-close-source = Fechar arquivo
+files-focus-source = Focar código
+files-conversation = Conversa
+files-conversation-busy = Conversa, respondendo
+files-view = Visualização
+files-show-conversation = Mostrar conversa
+files-source = Código
+
+files-link-label = { $name } — link simbólico
+files-link-directory-label = { $name } — pasta vinculada, { $state }
+files-link-unavailable-label = { $name } — destino do link indisponível
+files-link-unavailable = Destino do link indisponível

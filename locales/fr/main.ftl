@@ -686,3 +686,38 @@ updates-show-progress = Afficher la progression de la mise à jour…
 shortcut-screenshot = Capture d’écran
 screenshot-failed = Impossible de capturer l’écran. Réessayez.
 screenshot-permission-required = L’autorisation d’enregistrer l’écran est nécessaire. Autorisez Gupi dans Réglages Système → Confidentialité et sécurité → Enregistrement de l’écran, puis réessayez. Si macOS demande de redémarrer Gupi, faites-le d’abord.
+
+# Project files and source preview
+files-title = Fichiers
+files-panel = Panneau droit
+files-close = Fermer le panneau
+files-refresh = Actualiser les fichiers
+files-preview = Aperçu
+files-readonly = Lecture seule
+files-wrap = Retour à la ligne
+files-reload = Recharger
+files-loading = Lecture…
+files-expanded = Développé
+files-collapsed = Réduit
+files-incomplete = Certaines entrées sont illisibles. Réessayer
+files-read-failed = Impossible de lire le fichier ou le dossier. Réessayer
+files-unsupported = Ce fichier ne prend pas en charge l’aperçu texte
+files-too-large = Limite d’aperçu dépassée (1 MiB ou 20 000 lignes)
+files-long-line = Lignes longues : coloration syntaxique désactivée
+files-no-session = Sélectionnez une conversation pour parcourir ses fichiers
+
+files-actions = Actions du fichier
+files-copy-path = Copier le chemin
+files-reveal = Afficher dans les fichiers
+files-close-source = Fermer le fichier
+files-focus-source = Activer le code source
+files-conversation = Conversation
+files-conversation-busy = Conversation, réponse en cours
+files-view = Vue
+files-show-conversation = Afficher la conversation
+files-source = Source
+
+files-link-label = { $name } — lien symbolique
+files-link-directory-label = { $name } — dossier lié, { $state }
+files-link-unavailable-label = { $name } — cible du lien indisponible
+files-link-unavailable = Cible du lien indisponible

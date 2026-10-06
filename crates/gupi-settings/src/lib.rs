@@ -10,3 +10,5 @@ pub mod layout;
 pub mod notifications;
 pub mod shortcuts;
 pub mod theme;
+
+pub mod source_split;

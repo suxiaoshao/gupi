@@ -298,6 +298,7 @@ impl Command {
                 KeyBinding::new(text, Run(self.kind), Some("Gupi")),
                 KeyBinding::new(text, Run(self.kind), Some("GupiPalette")),
             ],
+            Kind::Find => vec![KeyBinding::new(text, Run(self.kind), Some("GupiMessages"))],
             Kind::Stop => vec![KeyBinding::new(text, Run(self.kind), Some("Gupi"))],
             _ => ["Gupi", "GupiPalette"]
                 .map(|context| KeyBinding::new(text, Run(self.kind), Some(context)))

@@ -832,6 +832,7 @@ fn temporary_find_shortcut_does_not_filter_sessions_or_edit_the_draft(cx: &mut T
     state.update(cx, |state, _| {
         let mut session = fixture_session("Alpha");
         answer(&mut session, "# Searchable **needle**");
+        session.mark_transcript_message_for_test();
         *session.draft_for_test() = "draft".into();
         state.sessions_for_test().insert("alpha".into(), session);
         *state.selected_for_test() = Some("alpha".into());
@@ -843,6 +844,11 @@ fn temporary_find_shortcut_does_not_filter_sessions_or_edit_the_draft(cx: &mut T
     });
     visual.simulate_resize(size(px(960.), px(620.)));
     visual.run_until_parked();
+    let messages = visual.debug_bounds("conversation-messages").unwrap();
+    visual.simulate_click(
+        messages.origin + gpui_kit::point(px(8.), px(8.)),
+        Default::default(),
+    );
     visual.simulate_keystrokes("secondary-f");
     visual.simulate_input("needle");
     visual.run_until_parked();
@@ -853,8 +859,8 @@ fn temporary_find_shortcut_does_not_filter_sessions_or_edit_the_draft(cx: &mut T
     visual.simulate_keystrokes("escape");
     visual.run_until_parked();
     assert!(visual.debug_bounds("conversation-find-scope").is_none());
-    // Esc restores the sidebar search; its existing Tab path still focuses the composer.
-    visual.simulate_keystrokes("tab");
+    // Escape returns to the message search owner; Focus input explicitly targets the composer.
+    visual.simulate_keystrokes("secondary-l");
     visual.dispatch_action(gpui_kit::component::input::MoveToEnd);
     visual.simulate_input(" preserved");
     state.read_with(visual, |state, _| {
@@ -895,6 +901,11 @@ fn find_expands_recorded_skill_instructions_and_copy_keeps_original(cx: &mut Tes
         window.render_frame(cx);
         assert_eq!(window.find("skill-user").expanded(), Some(false));
     });
+    let messages = visual.debug_bounds("conversation-messages").unwrap();
+    visual.simulate_click(
+        messages.origin + gpui_kit::point(px(8.), px(8.)),
+        Default::default(),
+    );
     visual.simulate_keystrokes("secondary-f");
     visual.simulate_input("hidden-needle");
     visual.run_until_parked();
@@ -915,6 +926,27 @@ fn session_editors_preserve_composition_selection_and_undo_across_switches(
     cx: &mut TestAppContext,
 ) {
     use gpui_kit::EntityInputHandler;
+    use gpui_kit::prelude::*;
+    use gpui_kit::{Context, Entity, FocusHandle, IntoElement, Render, Window, div};
+
+    struct FocusFixture {
+        home: Entity<HomeView>,
+        other: FocusHandle,
+    }
+    impl Render for FocusFixture {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .size_full()
+                .child(
+                    div()
+                        .id("other-focus")
+                        .track_focus(&self.other)
+                        .child("Other workspace control"),
+                )
+                .child(self.home.clone())
+        }
+    }
+
     use gpui_kit::Focusable;
     use gupi_conversation_ui::home::HomeView;
     init_interactions(cx);
@@ -928,14 +960,18 @@ fn session_editors_preserve_composition_selection_and_undo_across_switches(
         *state.selected_for_test() = Some("first".into());
     });
     let mut home = None;
+    let other_focus = cx.update(|cx| cx.focus_handle());
     let (_, visual) = cx.add_window_view(|window, cx| {
         let view = cx.new(|cx| HomeView::with_state(state.clone(), window, cx));
         home = Some(view.clone());
-        Root::new(view, window, cx)
+        let fixture = cx.new(|_| FocusFixture {
+            home: view,
+            other: other_focus.clone(),
+        });
+        Root::new(fixture, window, cx)
     });
     let home = home.unwrap();
     visual.run_until_parked();
-    let other_focus = visual.update(|_, cx| cx.focus_handle());
     let first = visual.update(|window, cx| {
         let input = home.read(cx).input().clone();
         input.update(cx, |input, cx| {

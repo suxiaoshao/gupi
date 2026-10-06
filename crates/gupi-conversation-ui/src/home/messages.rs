@@ -379,6 +379,21 @@ impl HomeView {
                 body = body.child(self.render_content_error("retry-messages", error, cx))
             }
         }
+        let ring = cx.theme().ring;
+        let mut body = body
+            .id("conversation-messages")
+            .debug_selector(|| "conversation-messages".into())
+            .key_context("GupiMessages")
+            .track_focus(&self.messages_focus)
+            .focus_visible(move |style| {
+                style.shadow(vec![BoxShadow {
+                    color: ring,
+                    offset: point(px(0.), px(0.)),
+                    blur_radius: px(0.),
+                    spread_radius: px(2.),
+                    inset: true,
+                }])
+            });
         if view
             .preview
             .as_deref()
@@ -465,7 +480,7 @@ impl HomeView {
                 )
                 // Gupi owns spacing between row kinds; the scroller's default
                 // bottom padding would separate compaction from its run.
-                .with_row_style(StyleRefinement::default().pb_0())
+                .with_row_style(StyleRefinement::default().px_5().pb_0())
                 .with_jump_button_label(t(cx, "conversation-bottom"))
                 .size_full(),
             );

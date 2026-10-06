@@ -128,7 +128,12 @@ impl HomeView {
         {
             return t(cx, "temporary-hide");
         }
-        palette::label(kind, self.show_sidebar, self.show_history, cx)
+        palette::label(
+            kind,
+            self.show_sidebar,
+            self.show_history && !self.files_tab,
+            cx,
+        )
     }
     pub fn commands_closed(&mut self, from_composer: bool, cx: &mut Context<Self>) {
         self.command_panel = None;

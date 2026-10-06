@@ -189,7 +189,7 @@ When sending fails, Gupi keeps the draft and attachments for you to retry. Queue
 
 Responses render as Markdown with code blocks, lists, and tables. Expand a process section to inspect thinking and tool calls, or open tool details to read and copy their content. Click a local file resource to open it with the system's default application.
 
-Use **Cmd/Ctrl+F** to find text in the conversation you are viewing. Token totals and the context indicator below the composer open usage details. The model control also lets you change the thinking level when the selected model supports it.
+With focus in conversation messages, **Cmd/Ctrl+F** searches that conversation. In the composer or source editor, it searches that control’s own text. Token totals and the context indicator below the composer open usage details. The model control also lets you change the thinking level when the selected model supports it.
 
 Extensions can ask you to select an option, confirm an action, enter a line of text, or edit longer text. Answer in the conversation's input area. Gupi also displays extension notifications, status text, and text widgets; custom terminal interfaces are not supported.
 
@@ -250,7 +250,7 @@ After an external change, refresh the resource page; refresh/reconnect an existi
 | Cmd/Ctrl+N | New conversation |
 | Cmd/Ctrl+P | Search conversations |
 | Cmd/Ctrl+Shift+P | Command palette |
-| Cmd/Ctrl+F | Find conversation text |
+| Cmd/Ctrl+F | Search the focused messages, draft, or source editor |
 | Cmd/Ctrl+L | Focus the composer |
 | Cmd/Ctrl+Alt+/ | Model and thinking |
 | Cmd/Ctrl+Alt+B | Conversation history |

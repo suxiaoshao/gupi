@@ -202,14 +202,17 @@ impl HomeView {
                 "history-control",
                 chrome::button("toggle-history")
                     .icon(IconName::PanelRight)
-                    .tooltip_with_action(
-                        t(cx, "conversation-history"),
-                        &Run::new(Kind::History),
-                        Some("Gupi"),
-                    )
-                    .accessibility_label(t(cx, "conversation-history"))
+                    .tooltip(t(cx, "files-panel"))
+                    .accessibility_label(t(cx, "files-panel"))
                     .on_click(cx.listener(|this, _, window, cx| {
-                        this.toggle_history(window, cx);
+                        if this.show_history {
+                            this.close_navigator(window, cx);
+                        } else {
+                            this.show_history = true;
+                            this.sync(false, window, cx);
+                            this.focus_overlay_navigator(window, cx);
+                        }
+                        cx.notify();
                     })),
             ));
         let mut bar = chrome::title_bar(cx);

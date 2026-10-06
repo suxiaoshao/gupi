@@ -679,3 +679,38 @@ updates-show-progress = 업데이트 진행 상황 보기…
 shortcut-screenshot = 스크린샷
 screenshot-failed = 화면을 캡처하지 못했습니다. 다시 시도하세요.
 screenshot-permission-required = 스크린샷을 찍으려면 화면 기록 권한이 필요합니다. 시스템 설정 → 개인정보 보호 및 보안 → 화면 기록에서 Gupi를 허용한 후 다시 시도하세요. macOS에서 Gupi를 재시작하라는 안내가 나오면 먼저 재시작하세요.
+
+# Project files and source preview
+files-title = 파일
+files-panel = 오른쪽 패널
+files-close = 패널 닫기
+files-refresh = 파일 새로 고침
+files-preview = 미리 보기
+files-readonly = 읽기 전용
+files-wrap = 줄 바꿈
+files-reload = 다시 읽기
+files-loading = 읽는 중…
+files-expanded = 펼침
+files-collapsed = 접힘
+files-incomplete = 일부 항목을 읽지 못했습니다. 다시 시도
+files-read-failed = 파일 또는 폴더를 읽지 못했습니다. 다시 시도
+files-unsupported = 텍스트 미리 보기를 지원하지 않는 파일입니다
+files-too-large = 미리 보기 한도(1 MiB 또는 20,000줄)를 초과했습니다
+files-long-line = 긴 줄이 있어 구문 강조를 껐습니다
+files-no-session = 대화를 선택하여 프로젝트 파일을 확인하세요
+
+files-actions = 파일 작업
+files-copy-path = 경로 복사
+files-reveal = 파일 목록에서 표시
+files-close-source = 파일 닫기
+files-focus-source = 소스에 포커스
+files-conversation = 대화
+files-conversation-busy = 대화, 응답 중
+files-view = 보기
+files-show-conversation = 대화 표시
+files-source = 소스
+
+files-link-label = { $name } — 심볼릭 링크
+files-link-directory-label = { $name } — 폴더 링크, { $state }
+files-link-unavailable-label = { $name } — 링크 대상을 사용할 수 없음
+files-link-unavailable = 링크 대상을 사용할 수 없음

@@ -686,3 +686,38 @@ updates-show-progress = Update-Fortschritt anzeigen…
 shortcut-screenshot = Bildschirmaufnahme
 screenshot-failed = Der Bildschirm konnte nicht aufgenommen werden. Versuche es erneut.
 screenshot-permission-required = Für Screenshots ist die Erlaubnis zur Bildschirmaufnahme erforderlich. Erlaube Gupi unter Systemeinstellungen → Datenschutz & Sicherheit → Bildschirmaufnahme und versuche es erneut. Starte Gupi zuerst neu, falls macOS dazu auffordert.
+
+# Project files and source preview
+files-title = Dateien
+files-panel = Rechtes Panel
+files-close = Panel schließen
+files-refresh = Dateien aktualisieren
+files-preview = Vorschau
+files-readonly = Schreibgeschützt
+files-wrap = Zeilenumbruch
+files-reload = Neu laden
+files-loading = Wird gelesen…
+files-expanded = Aufgeklappt
+files-collapsed = Zugeklappt
+files-incomplete = Einige Einträge konnten nicht gelesen werden. Erneut versuchen
+files-read-failed = Datei oder Ordner konnte nicht gelesen werden. Erneut versuchen
+files-unsupported = Diese Datei unterstützt keine Textvorschau
+files-too-large = Vorschaulimit überschritten (1 MiB oder 20.000 Zeilen)
+files-long-line = Lange Zeilen: Syntaxhervorhebung deaktiviert
+files-no-session = Wählen Sie eine Unterhaltung, um Projektdateien anzuzeigen
+
+files-actions = Dateiaktionen
+files-copy-path = Pfad kopieren
+files-reveal = In Dateien anzeigen
+files-close-source = Datei schließen
+files-focus-source = Quelltext fokussieren
+files-conversation = Unterhaltung
+files-conversation-busy = Unterhaltung, Antwort läuft
+files-view = Ansicht
+files-show-conversation = Unterhaltung anzeigen
+files-source = Quelltext
+
+files-link-label = { $name } — symbolischer Link
+files-link-directory-label = { $name } — verknüpfter Ordner, { $state }
+files-link-unavailable-label = { $name } — Link-Ziel nicht verfügbar
+files-link-unavailable = Link-Ziel nicht verfügbar

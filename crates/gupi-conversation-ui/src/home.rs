@@ -2,6 +2,7 @@ pub mod actions;
 mod attachments;
 mod composer;
 mod content;
+mod files;
 mod find;
 mod history;
 mod image_preview;
@@ -13,8 +14,10 @@ pub mod pickers;
 mod progress;
 mod session_info;
 mod slash;
+mod source;
 mod titlebar;
 mod welcome;
+mod workspace;
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::component::Disableable;
 use gpui_kit::component::Sizable;
@@ -47,7 +50,17 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+#[cfg(test)]
+struct TestLayoutDirectory(PathBuf);
+#[cfg(test)]
+impl Global for TestLayoutDirectory {}
+
 struct SessionView {
+    files: Entity<files::Files>,
+    _files_subscription: Subscription,
+    source: Option<Entity<source::Preview>>,
+    source_subscription: Option<Subscription>,
+    source_active: bool,
     input: Entity<TextareaState>,
     // Last persisted/external snapshot, excluding the editor's uncommitted IME text.
     input_draft: gpui_kit::component::input::InputContent,
@@ -86,6 +99,9 @@ pub struct HomeView {
     history_scope: HistoryScope,
     show_sidebar: bool,
     show_history: bool,
+    files_tab: bool,
+    source_save: Option<Task<()>>,
+    source_split_touched: bool,
     navigation: navigation::Navigation,
     projects_with_more: HashSet<PathBuf>,
     open_projects: HashSet<PathBuf>,
@@ -100,10 +116,21 @@ pub struct HomeView {
     slash: slash::Completion,
     command_panel: Option<Entity<super::command_palette::CommandPalette>>,
     focus_handle: FocusHandle,
+    messages_focus: FocusHandle,
     extension_focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
 impl HomeView {
+    fn layout_directory(cx: &App) -> Result<PathBuf, String> {
+        #[cfg(not(test))]
+        let _ = cx;
+        #[cfg(test)]
+        if let Some(directory) = cx.try_global::<TestLayoutDirectory>() {
+            return Ok(directory.0.clone());
+        }
+        gupi_resources::paths::config_dir().map_err(|error| error.to_string())
+    }
+
     pub fn state(&self) -> &Entity<ConversationState> {
         &self.state
     }
@@ -260,6 +287,7 @@ impl HomeView {
         cx: &mut Context<Self>,
     ) -> Self {
         actions::init(cx);
+        files::init(cx);
         for context in ["GupiComposer > Input", "GupiPalette > Input"] {
             cx.bind_keys([
                 KeyBinding::new(
@@ -283,11 +311,13 @@ impl HomeView {
         let input = cx.new(|cx| {
             TextareaState::new(window, cx)
                 .auto_grow(2, 8)
+                .searchable(true)
                 .submit_on_enter(true)
         });
         let extension_input = cx.new(|cx| {
             TextareaState::new(window, cx)
                 .auto_grow(2, 10)
+                .searchable(true)
                 .submit_on_enter(true)
         });
         let extension_line = cx.new(|cx| InputState::new(window, cx));
@@ -396,6 +426,9 @@ impl HomeView {
             history_scope: Default::default(),
             show_sidebar: true,
             show_history: false,
+            files_tab: false,
+            source_save: None,
+            source_split_touched: false,
             navigation: Default::default(),
             projects_with_more: HashSet::new(),
             open_projects: HashSet::new(),
@@ -410,9 +443,29 @@ impl HomeView {
             slash: Default::default(),
             command_panel: None,
             focus_handle: cx.focus_handle(),
+            messages_focus: cx.focus_handle().tab_stop(true),
             extension_focus: cx.focus_handle(),
             _subscriptions: subscriptions,
         };
+        if !view.state.read(cx).is_temporary() {
+            let directory = Self::layout_directory(cx);
+            let task = cx.background_spawn(async move {
+                directory
+                    .ok()
+                    .map(|d| gupi_settings::source_split::load(&d.join("source-split.toml")))
+                    .unwrap_or(0.4)
+            });
+            cx.spawn(async move |owner, cx| {
+                let ratio = task.await;
+                let _ = owner.update(cx, |this, cx| {
+                    if !this.source_split_touched {
+                        this.pane_layout.set_ratio(ratio);
+                        cx.notify();
+                    }
+                });
+            })
+            .detach();
+        }
         view.sync_navigation(None, cx);
         view.sync(false, window, cx);
         view.focus_composer(window, cx);
@@ -440,8 +493,27 @@ impl HomeView {
                 cx.defer_in(window, |this, window, cx| this.sync_commands(window, cx));
             },
         ));
+        let resize_window = window.window_handle();
+        let resize_owner = cx.weak_entity();
         view._subscriptions
-            .push(cx.on_focus_lost(window, |_, window, cx| {
+            .push(cx.intercept_keystrokes(move |event, window, cx| {
+                if window.window_handle() != resize_window || event.keystroke.key != "escape" {
+                    return;
+                }
+                let _ = resize_owner.update(cx, |this, cx| {
+                    if this.pane_drag.is_some() {
+                        this.finish_pane_drag(window, cx);
+                        cx.stop_active_drag(window);
+                        cx.stop_propagation();
+                    }
+                });
+            }));
+        view._subscriptions
+            .push(cx.on_focus_lost(window, |this, window, cx| {
+                let focus = window
+                    .focus_lost_restore_target(cx)
+                    .unwrap_or_else(|| this.focus_handle.clone());
+                focus.focus(window, cx);
                 cx.defer_in(window, |this, window, cx| this.sync_commands(window, cx));
             }));
         cx.defer_in(window, |this, window, cx| {
@@ -596,6 +668,7 @@ impl HomeView {
             let input = cx.new(|cx| {
                 let mut input = TextareaState::new(window, cx)
                     .auto_grow(2, 8)
+                    .searchable(true)
                     .submit_on_enter(true);
                 input.set_value(draft.clone(), window, cx);
                 input
@@ -640,9 +713,26 @@ impl HomeView {
                     },
                 ),
             ];
+            let root = self.state.read(cx).sessions()[&key].info().cwd.clone();
+            let files = cx.new(|cx| files::Files::new(root, window, cx));
+            let files_key = key.clone();
+            let files_subscription = cx.subscribe_in(
+                &files,
+                window,
+                move |this, _, event: &files::OpenFile, window, cx| {
+                    if this.shown_key.as_ref() == Some(&files_key) {
+                        this.open_source(event.0.clone(), event.1, window, cx);
+                    }
+                },
+            );
             self.views.insert(
                 key.clone(),
                 SessionView {
+                    files,
+                    _files_subscription: files_subscription,
+                    source: None,
+                    source_subscription: None,
+                    source_active: false,
                     input,
                     input_draft: draft,
                     _input_subscriptions: input_subscriptions,
@@ -663,6 +753,11 @@ impl HomeView {
                     markdown: Default::default(),
                 },
             );
+        }
+        if self.show_history && self.files_tab {
+            self.views[&key]
+                .files
+                .update(cx, |files, cx| files.ensure_loaded(window, cx));
         }
         // The page selects the session's retained editor; switching never resets it.
         let input = self.views[&key].input.clone();
@@ -828,7 +923,7 @@ impl HomeView {
                 cx.notify();
             });
         }
-        if self.show_history {
+        if self.show_history && !self.files_tab {
             self.state
                 .update(cx, |state, cx| state.read_visible_history(&key, cx));
         }
@@ -941,6 +1036,7 @@ impl HomeView {
         cx.notify();
     }
     fn preview_node(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        self.set_source_active(false);
         self.close_find(false, window, cx);
         let Some(key) = self.shown_key.clone() else {
             return;
@@ -1025,23 +1121,23 @@ impl HomeView {
         }
         let mut layout = layout::capture(window, cx.global::<layout::LayoutState>());
         if let Some(width) = left {
-            layout.sidebar_width = width.clamp(160., 480.);
+            layout.sidebar_width_rem = width / f32::from(window.rem_size());
         }
         if let Some(width) = right {
-            layout.history_width = width.clamp(240., 520.);
+            layout.navigator_width_rem = width / f32::from(window.rem_size());
         }
         cx.set_global(layout.clone());
         let previous = self.layout_save.take();
-        self.layout_save = Some(cx.spawn(async move |_, _| {
+        let directory = Self::layout_directory(cx);
+        self.layout_save = Some(cx.spawn(async move |_, cx| {
             if let Some(previous) = previous {
                 previous.await;
             }
-            let result = smol::unblock(move || {
-                gupi_resources::paths::config_dir()
-                    .map_err(|e| e.to_string())
-                    .and_then(|dir| layout::save(&dir.join("state.toml"), &layout))
-            })
-            .await;
+            let result = cx
+                .background_spawn(async move {
+                    directory.and_then(|dir| layout::save(&dir.join("state.toml"), &layout))
+                })
+                .await;
             if let Err(error) = result {
                 tracing::warn!(%error,"panel layout save failed");
             }
@@ -1050,8 +1146,12 @@ impl HomeView {
     pub fn flush(&mut self, cx: &mut Context<Self>) -> Task<()> {
         let save = self.state.update(cx, |s, cx| s.flush(cx));
         let layout = self.layout_save.take();
+        let source = self.source_save.take();
         cx.spawn(async move |_, _| {
             save.await;
+            if let Some(source) = source {
+                source.await;
+            }
             if let Some(layout) = layout {
                 layout.await;
             }
@@ -1100,25 +1200,20 @@ impl Render for HomeView {
             let content = crate::performance::measure("home", false, content);
             return content;
         }
-        if self.pane_layout.fit(
+        if self.pane_layout.fit_workspace(
             f32::from(window.viewport_size().width),
             self.show_sidebar,
             self.show_history,
+            self.source().is_some(),
+            f32::from(window.rem_size()),
             cx.global::<layout::LayoutState>(),
         ) {
             // A window resize or panel toggle ends an in-progress drag without
             // persisting a width that was only imposed by the available space.
-            if self.pane_drag.take().is_some() {
-                cx.stop_active_drag(window);
-            }
+            self.interrupt_pane_drag(window, cx);
         }
         let titlebar = self.render_titlebar(window, cx);
-        let center = v_flex()
-            .size_full()
-            .min_w_0()
-            .children(self.find.clone())
-            .child(self.render_messages(window, cx))
-            .child(self.render_composer(window, cx));
+        let center = self.render_workspace(window, cx);
         // Keep the component mounted: Offcanvas owns the closing animation and
         // removes its contents from the tab order after the transition finishes.
         let mut columns = h_flex().size_full().child(self.render_sidebar(window, cx));
@@ -1141,7 +1236,9 @@ impl Render for HomeView {
                     .w(px(self.pane_layout.right))
                     .h_full()
                     .flex_none()
-                    .child(self.render_history(cx))
+                    .border_l_1()
+                    .border_color(cx.theme().border)
+                    .child(self.render_right_panel(cx))
                     .child(self.pane_handle(panes::Side::Right, cx)),
             );
         }
@@ -1157,7 +1254,15 @@ impl Render for HomeView {
                     .w(px(self.pane_layout.right))
                     .bg(cx.theme().background)
                     .shadow_md()
-                    .child(self.render_history(cx))
+                    .key_context("GupiNavigatorOverlay")
+                    .on_action(
+                        cx.listener(|this, _: &actions::CloseNavigator, window, cx| {
+                            this.close_navigator(window, cx);
+                        }),
+                    )
+                    .border_l_1()
+                    .border_color(cx.theme().border)
+                    .child(self.render_right_panel(cx))
                     .child(self.pane_handle(panes::Side::Right, cx)),
             );
         }

@@ -62,6 +62,11 @@ struct Frame {
     lines: Vec<(Vec<Point<f32>>, bool, Hsla)>,
     mask: ContentMask<Pixels>,
 }
+impl Focusable for HistoryCanvas {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus.clone()
+    }
+}
 impl EventEmitter<CanvasEvent> for HistoryCanvas {}
 impl HistoryCanvas {
     pub fn new(cx: &mut Context<Self>) -> Self {

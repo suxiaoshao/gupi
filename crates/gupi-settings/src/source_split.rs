@@ -1,4 +1,4 @@
-//! Independent UI preference: older layout readers must not see new fields.
+//! Conversation/source split preference.
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 #[derive(Serialize, Deserialize)]

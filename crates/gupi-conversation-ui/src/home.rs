@@ -116,6 +116,7 @@ pub struct HomeView {
     slash: slash::Completion,
     command_panel: Option<Entity<super::command_palette::CommandPalette>>,
     focus_handle: FocusHandle,
+    messages_focus: FocusHandle,
     extension_focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -310,11 +311,13 @@ impl HomeView {
         let input = cx.new(|cx| {
             TextareaState::new(window, cx)
                 .auto_grow(2, 8)
+                .searchable(true)
                 .submit_on_enter(true)
         });
         let extension_input = cx.new(|cx| {
             TextareaState::new(window, cx)
                 .auto_grow(2, 10)
+                .searchable(true)
                 .submit_on_enter(true)
         });
         let extension_line = cx.new(|cx| InputState::new(window, cx));
@@ -445,6 +448,7 @@ impl HomeView {
             slash: Default::default(),
             command_panel: None,
             focus_handle: cx.focus_handle(),
+            messages_focus: cx.focus_handle().tab_stop(true),
             extension_focus: cx.focus_handle(),
             _subscriptions: subscriptions,
         };
@@ -703,6 +707,7 @@ impl HomeView {
             let input = cx.new(|cx| {
                 let mut input = TextareaState::new(window, cx)
                     .auto_grow(2, 8)
+                    .searchable(true)
                     .submit_on_enter(true);
                 input.set_value(draft.clone(), window, cx);
                 input
@@ -1136,10 +1141,10 @@ impl HomeView {
         }
         let mut layout = layout::capture(window, cx.global::<layout::LayoutState>());
         if let Some(width) = left {
-            layout.sidebar_width = width.clamp(160., 480.);
+            layout.sidebar_width_rem = width / f32::from(window.rem_size());
         }
         if let Some(width) = right {
-            layout.history_width = width.clamp(240., 520.);
+            layout.navigator_width_rem = width / f32::from(window.rem_size());
         }
         cx.set_global(layout.clone());
         let previous = self.layout_save.take();

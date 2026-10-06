@@ -156,14 +156,11 @@ impl HomeView {
                 }
             }
             Kind::Find => {
-                if let Some(source) = self.source.as_ref().filter(|s| {
-                    (self.pane_layout.single && self.source_active)
-                        || s.read(cx).contains_focus(window, cx)
-                }) {
-                    source.update(cx, |source, cx| source.find(window, cx));
-                } else {
-                    self.open_find(window, cx);
-                }
+                // This explicitly named command targets conversation messages.
+                // The shortcut is owned by the messages region, never the window.
+                self.source_active = false;
+                self.open_find(window, cx);
+                cx.notify();
             }
             Kind::New => self.new_conversation(window, cx),
             Kind::Settings => window.dispatch_action(Box::new(menus::ShowSettings), cx),

@@ -19,26 +19,29 @@ pub fn default_window_size() -> Size<Pixels> {
 #[non_exhaustive]
 pub struct LayoutState {
     pub main_window: Option<WindowPlacement>,
-    #[serde(default = "default_sidebar_width", deserialize_with = "read_width")]
-    pub sidebar_width: f32,
-    #[serde(default = "default_history_width", deserialize_with = "read_width")]
-    pub history_width: f32,
+    #[serde(default = "default_sidebar_width_rem", deserialize_with = "read_width")]
+    pub sidebar_width_rem: f32,
+    #[serde(
+        default = "default_navigator_width_rem",
+        deserialize_with = "read_width"
+    )]
+    pub navigator_width_rem: f32,
 }
 impl Global for LayoutState {}
 impl Default for LayoutState {
     fn default() -> Self {
         Self {
             main_window: None,
-            sidebar_width: default_sidebar_width(),
-            history_width: default_history_width(),
+            sidebar_width_rem: default_sidebar_width_rem(),
+            navigator_width_rem: default_navigator_width_rem(),
         }
     }
 }
-fn default_sidebar_width() -> f32 {
-    220.
+fn default_sidebar_width_rem() -> f32 {
+    14.
 }
-fn default_history_width() -> f32 {
-    300.
+fn default_navigator_width_rem() -> f32 {
+    20.
 }
 fn read_width<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<f32, D::Error> {
     let value = toml::Value::deserialize(deserializer)?;
@@ -144,11 +147,11 @@ pub fn read(path: &Path) -> Result<LayoutState, String> {
     if let Some(placement) = value.main_window {
         placement.validate()?;
     }
-    if !value.sidebar_width.is_finite() || !(160. ..=480.).contains(&value.sidebar_width) {
-        value.sidebar_width = default_sidebar_width();
+    if !value.sidebar_width_rem.is_finite() || value.sidebar_width_rem <= 0. {
+        value.sidebar_width_rem = default_sidebar_width_rem();
     }
-    if !value.history_width.is_finite() || !(240. ..=520.).contains(&value.history_width) {
-        value.history_width = default_history_width();
+    if !value.navigator_width_rem.is_finite() || value.navigator_width_rem <= 0. {
+        value.navigator_width_rem = default_navigator_width_rem();
     }
     Ok(value)
 }
@@ -165,8 +168,8 @@ pub fn capture(window: &Window, previous: &LayoutState) -> LayoutState {
             height: bounds.size.height.into(),
             maximized,
         }),
-        sidebar_width: previous.sidebar_width,
-        history_width: previous.history_width,
+        sidebar_width_rem: previous.sidebar_width_rem,
+        navigator_width_rem: previous.navigator_width_rem,
     }
 }
 pub fn save(path: &Path, value: &LayoutState) -> Result<(), String> {
@@ -185,4 +188,43 @@ pub fn save(path: &Path, value: &LayoutState) -> Result<(), String> {
         .and_then(|dir| dir.sync_all())
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LayoutState, load, read, save};
+    use std::fs;
+
+    #[test]
+    fn rem_preferences_round_trip_without_pixel_range_clamps() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("state.toml");
+        for (sidebar, navigator) in [(0.5, 1.25), (14., 20.), (300., 800.)] {
+            let value = LayoutState {
+                sidebar_width_rem: sidebar,
+                navigator_width_rem: navigator,
+                ..Default::default()
+            };
+            save(&path, &value).unwrap();
+            let loaded = read(&path).unwrap();
+            assert_eq!(loaded.sidebar_width_rem, sidebar);
+            assert_eq!(loaded.navigator_width_rem, navigator);
+        }
+        fs::write(&path, "sidebar_width_rem = -1\nnavigator_width_rem = 0\n").unwrap();
+        let loaded = read(&path).unwrap();
+        assert_eq!(loaded.sidebar_width_rem, 14.);
+        assert_eq!(loaded.navigator_width_rem, 20.);
+    }
+
+    #[test]
+    fn old_pixel_layout_is_discarded_without_migration() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("state.toml");
+        fs::write(&path, "sidebar_width = 480\nhistory_width = 520\n").unwrap();
+        assert!(read(&path).is_err());
+        let loaded = load(&path);
+        assert_eq!(loaded.sidebar_width_rem, 14.);
+        assert_eq!(loaded.navigator_width_rem, 20.);
+        assert!(!path.exists());
+    }
 }

@@ -832,6 +832,7 @@ fn temporary_find_shortcut_does_not_filter_sessions_or_edit_the_draft(cx: &mut T
     state.update(cx, |state, _| {
         let mut session = fixture_session("Alpha");
         answer(&mut session, "# Searchable **needle**");
+        session.mark_transcript_message_for_test();
         *session.draft_for_test() = "draft".into();
         state.sessions_for_test().insert("alpha".into(), session);
         *state.selected_for_test() = Some("alpha".into());
@@ -843,6 +844,11 @@ fn temporary_find_shortcut_does_not_filter_sessions_or_edit_the_draft(cx: &mut T
     });
     visual.simulate_resize(size(px(960.), px(620.)));
     visual.run_until_parked();
+    let messages = visual.debug_bounds("conversation-messages").unwrap();
+    visual.simulate_click(
+        messages.origin + gpui_kit::point(px(8.), px(8.)),
+        Default::default(),
+    );
     visual.simulate_keystrokes("secondary-f");
     visual.simulate_input("needle");
     visual.run_until_parked();
@@ -853,8 +859,8 @@ fn temporary_find_shortcut_does_not_filter_sessions_or_edit_the_draft(cx: &mut T
     visual.simulate_keystrokes("escape");
     visual.run_until_parked();
     assert!(visual.debug_bounds("conversation-find-scope").is_none());
-    // Esc restores the sidebar search; its existing Tab path still focuses the composer.
-    visual.simulate_keystrokes("tab");
+    // Escape returns to the message search owner; Focus input explicitly targets the composer.
+    visual.simulate_keystrokes("secondary-l");
     visual.dispatch_action(gpui_kit::component::input::MoveToEnd);
     visual.simulate_input(" preserved");
     state.read_with(visual, |state, _| {
@@ -895,6 +901,11 @@ fn find_expands_recorded_skill_instructions_and_copy_keeps_original(cx: &mut Tes
         window.render_frame(cx);
         assert_eq!(window.find("skill-user").expanded(), Some(false));
     });
+    let messages = visual.debug_bounds("conversation-messages").unwrap();
+    visual.simulate_click(
+        messages.origin + gpui_kit::point(px(8.), px(8.)),
+        Default::default(),
+    );
     visual.simulate_keystrokes("secondary-f");
     visual.simulate_input("hidden-needle");
     visual.run_until_parked();

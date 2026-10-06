@@ -851,4 +851,94 @@ mod tests {
             });
         }
     }
+    #[gpui_kit::test]
+    fn find_is_owned_by_the_focused_control(cx: &mut TestAppContext) {
+        let (home, cx) = setup(cx);
+        cx.simulate_keystrokes("escape");
+        ready_history(&home, cx);
+        cx.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                home.state.update(cx, |state, _| {
+                    let session = state.sessions_for_test().get_mut("empty").unwrap();
+                    session
+                        .live_for_test()
+                        .push(gupi_conversation::history::DisplayMessage::new(
+                            "local-find-message".into(),
+                            serde_json::json!({"role":"user", "content":"message needle"}),
+                        ));
+                    *session.content_revision_for_test() += 1;
+                });
+                home.sync(true, window, cx);
+            })
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        let messages = cx.debug_bounds("conversation-messages").unwrap();
+        cx.simulate_click(messages.origin + point(px(8.), px(8.)), Default::default());
+        cx.simulate_keystrokes("secondary-f");
+        cx.update(|_, cx| assert!(home.read(cx).find.is_some()));
+        cx.simulate_keystrokes("escape");
+
+        cx.update(|window, cx| {
+            home.read(cx)
+                .input
+                .clone()
+                .update(cx, |input, cx| input.focus(window, cx))
+        });
+        cx.simulate_keystrokes("secondary-f");
+        cx.update(|_, cx| {
+            assert!(home.read(cx).input.read(cx).search_session().open);
+            assert!(home.read(cx).find.is_none());
+        });
+        cx.simulate_keystrokes("escape");
+        cx.update(|window, cx| {
+            assert!(!home.read(cx).input.read(cx).search_session().open);
+            assert!(
+                home.read(cx)
+                    .input
+                    .read(cx)
+                    .focus_handle(cx)
+                    .is_focused(window)
+            );
+        });
+
+        cx.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                home.run_action(&super::Run::new(super::Kind::History), window, cx)
+            })
+        });
+        cx.simulate_keystrokes("secondary-f");
+        cx.update(|_, cx| assert!(home.read(cx).find.is_none()));
+        cx.simulate_resize(size(px(800.), px(740.)));
+        cx.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                home.close_navigator(window, cx);
+                home.open_source("/tmp/gupi-missing-find-preview.rs".into(), true, window, cx);
+            })
+        });
+        cx.run_until_parked();
+        cx.simulate_keystrokes("secondary-f");
+        cx.update(|window, cx| {
+            assert!(home.read(cx).find.is_none());
+            assert!(
+                home.read(cx)
+                    .source
+                    .as_ref()
+                    .unwrap()
+                    .read(cx)
+                    .contains_focus(window, cx)
+            );
+        });
+        cx.update(|window, cx| {
+            home.read(cx)
+                .input
+                .clone()
+                .update(cx, |input, cx| input.focus(window, cx))
+        });
+        cx.simulate_keystrokes("secondary-f");
+        cx.update(|_, cx| {
+            assert!(home.read(cx).input.read(cx).search_session().open);
+            assert!(home.read(cx).find.is_none());
+        });
+    }
 }

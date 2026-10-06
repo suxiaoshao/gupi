@@ -379,6 +379,21 @@ impl HomeView {
                 body = body.child(self.render_content_error("retry-messages", error, cx))
             }
         }
+        let ring = cx.theme().ring;
+        let mut body = body
+            .id("conversation-messages")
+            .debug_selector(|| "conversation-messages".into())
+            .key_context("GupiMessages")
+            .track_focus(&self.messages_focus)
+            .focus_visible(move |style| {
+                style.shadow(vec![BoxShadow {
+                    color: ring,
+                    offset: point(px(0.), px(0.)),
+                    blur_radius: px(0.),
+                    spread_radius: px(2.),
+                    inset: true,
+                }])
+            });
         if view
             .preview
             .as_deref()

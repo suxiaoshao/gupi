@@ -126,12 +126,6 @@ impl Preview {
             self.focus.focus(window, cx);
         }
     }
-    pub(super) fn find(&self, window: &mut Window, cx: &mut Context<Self>) {
-        self.editor.update(cx, |editor, cx| {
-            editor.focus(window, cx);
-            editor.open_search(false, cx);
-        });
-    }
     pub(super) fn focus_container(&self, window: &mut Window, cx: &mut App) {
         self.focus.focus(window, cx);
     }
@@ -393,7 +387,7 @@ mod tests {
             preview.update(cx, |this, cx| {
                 assert_eq!(this.editor.read(cx).value().as_str(), SOURCE);
             });
-            preview.update(cx, |this, cx| this.find(window, cx));
+            window.press("secondary-f", cx);
             window.render_frame(cx);
             preview.update(cx, |this, cx| {
                 assert!(this.editor.read(cx).search_session().open)

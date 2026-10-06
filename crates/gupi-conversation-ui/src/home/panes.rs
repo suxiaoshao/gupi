@@ -1,11 +1,19 @@
 use super::*;
 
-const LEFT_MIN: f32 = 160.;
-const LEFT_MAX: f32 = 480.;
-const RIGHT_MAX: f32 = 520.;
+const LEFT_MIN_REM: f32 = 10.;
+const LEFT_MAX_REM: f32 = 30.;
+const RIGHT_MIN_REM: f32 = 15.;
+const RIGHT_MAX_REM: f32 = 32.5;
 
-fn navigator_min(rem: f32) -> f32 {
-    (15. * rem).clamp(240., RIGHT_MAX)
+fn sidebar_bounds(width: f32, reserved: f32, content: f32, rem: f32) -> (f32, f32) {
+    let maximum = (width - reserved - content).clamp(0., LEFT_MAX_REM * rem);
+    ((LEFT_MIN_REM * rem).min(maximum), maximum)
+}
+
+fn navigator_bounds(main: f32, content: f32, overlay: bool, rem: f32) -> (f32, f32) {
+    let reserved = if overlay { 6.25 * rem } else { content };
+    let maximum = (main - reserved).clamp(0., RIGHT_MAX_REM * rem);
+    ((RIGHT_MIN_REM * rem).min(maximum), maximum)
 }
 
 #[derive(Clone, Copy)]
@@ -44,21 +52,14 @@ impl PaneLayout {
             return false;
         }
         self.container = Some(container);
-        self.left = preferences.sidebar_width.min((width - 24. * rem).max(0.));
+        let (minimum, maximum) = sidebar_bounds(width, 0., 24. * rem, rem);
+        self.left = (preferences.sidebar_width_rem * rem).clamp(minimum, maximum);
         let main = width - if left { self.left } else { 0. };
         let required = if source { 54. * rem } else { 24. * rem };
-        let minimum = navigator_min(rem);
-        self.overlay = right && main < required + minimum;
+        self.overlay = right && main < required + RIGHT_MIN_REM * rem;
         self.right = if right {
-            if self.overlay {
-                preferences
-                    .history_width
-                    .clamp(minimum, (main - 6.25 * rem).max(minimum))
-            } else {
-                preferences
-                    .history_width
-                    .clamp(minimum, (main - required).max(minimum))
-            }
+            let (minimum, maximum) = navigator_bounds(main, required, self.overlay, rem);
+            (preferences.navigator_width_rem * rem).clamp(minimum, maximum)
         } else {
             0.
         };
@@ -128,22 +129,21 @@ impl PaneLayout {
             24. * rem
         };
         let (minimum, maximum) = match side {
-            Side::Left => (
-                LEFT_MIN,
-                (width - content_min - if self.overlay { 0. } else { self.right }).min(LEFT_MAX),
+            Side::Left => sidebar_bounds(
+                width,
+                if self.overlay { 0. } else { self.right },
+                content_min,
+                rem,
+            ),
+            Side::Right => navigator_bounds(
+                width - if left_visible { self.left } else { 0. },
+                content_min,
+                self.overlay,
+                rem,
             ),
             Side::Source => unreachable!(),
-            Side::Right => (
-                navigator_min(rem),
-                if self.overlay {
-                    width - if left_visible { self.left } else { 0. } - 6.25 * rem
-                } else {
-                    width - content_min - if left_visible { self.left } else { 0. }
-                }
-                .min(RIGHT_MAX),
-            ),
         };
-        let value = requested.clamp(minimum.min(maximum.max(0.)), maximum.max(0.));
+        let value = requested.clamp(minimum, maximum);
         match side {
             Side::Left => self.left = value,
             Side::Right => self.right = value,
@@ -414,8 +414,8 @@ mod tests {
     fn hidden_sidebar_keeps_animation_width_without_reserving_layout_space() {
         let preferences = {
             let mut record = layout::LayoutState::default();
-            record.sidebar_width = 480.;
-            record.history_width = 520.;
+            record.sidebar_width_rem = 30.;
+            record.navigator_width_rem = 32.5;
             record
         };
         let mut panes = PaneLayout::default();
@@ -432,8 +432,8 @@ mod tests {
     fn resizing_one_sidebar_never_borrows_from_the_other() {
         let preferences = {
             let mut record = layout::LayoutState::default();
-            record.sidebar_width = 300.;
-            record.history_width = 300.;
+            record.sidebar_width_rem = 18.75;
+            record.navigator_width_rem = 18.75;
             record
         };
         let mut panes = PaneLayout::default();
@@ -449,8 +449,8 @@ mod tests {
     fn temporary_constraints_and_sibling_drag_do_not_restore_or_overwrite_preferences() {
         let preferences = {
             let mut record = layout::LayoutState::default();
-            record.sidebar_width = 480.;
-            record.history_width = 520.;
+            record.sidebar_width_rem = 30.;
+            record.navigator_width_rem = 32.5;
             record
         };
         let mut panes = PaneLayout::default();
@@ -463,16 +463,19 @@ mod tests {
         panes.fit_workspace(1500., true, true, false, 16., &preferences);
         assert_eq!((panes.left, panes.right), (480., 520.));
         assert_eq!(
-            (preferences.sidebar_width, preferences.history_width),
-            (480., 520.)
+            (
+                preferences.sidebar_width_rem,
+                preferences.navigator_width_rem
+            ),
+            (30., 32.5)
         );
     }
     #[test]
     fn overlay_and_visibility_changes_keep_the_original_pixel_preferences() {
         let preferences = {
             let mut record = layout::LayoutState::default();
-            record.sidebar_width = 480.;
-            record.history_width = 520.;
+            record.sidebar_width_rem = 30.;
+            record.navigator_width_rem = 32.5;
             record
         };
         let mut panes = PaneLayout::default();
@@ -503,31 +506,33 @@ mod tests {
         assert_eq!(panes.ratio(), ratio);
         panes.fit_workspace(1440., true, true, true, 20., &preferences);
         assert!(panes.overlay && !panes.single);
-        assert_eq!(preferences.history_width, 300.);
+        assert_eq!(preferences.navigator_width_rem, 20.);
     }
     #[test]
-    fn navigator_minimum_matches_persistence_and_refit_across_zoom() {
-        for (rem, expected) in [(14., 240.), (16., 240.), (20., 300.), (40., 520.)] {
-            let mut preferences = layout::LayoutState::default();
-            let mut panes = PaneLayout::default();
-            panes.fit_workspace(4000., false, true, false, rem, &preferences);
-            panes.resize(Side::Right, 0.);
-            assert_eq!(panes.right, expected);
-            preferences.history_width = panes.right.clamp(240., 520.);
-            panes.fit_workspace(4000., false, false, false, rem, &preferences);
-            panes.fit_workspace(4000., false, true, false, rem, &preferences);
-            assert_eq!(panes.right, expected);
-            panes.fit_workspace(
-                24. * rem + expected - 1.,
-                false,
-                true,
-                false,
-                rem,
-                &preferences,
-            );
-            assert!(panes.overlay);
-            assert_eq!(panes.right, expected);
+    fn navigator_fit_drag_and_reopen_share_feasible_rem_bounds() {
+        for rem in [12., 13., 14., 16., 20., 40.] {
+            for width in [800., 1200., 4000.] {
+                let mut preferences = layout::LayoutState::default();
+                preferences.sidebar_width_rem = 30.;
+                let mut panes = PaneLayout::default();
+                panes.fit_workspace(width, true, true, false, rem, &preferences);
+                for requested in [0., 10000.] {
+                    panes.resize(Side::Right, requested);
+                    let dragged = panes.right;
+                    assert!(dragged > 0.);
+                    preferences.navigator_width_rem = dragged / rem;
+                    panes.fit_workspace(width, true, false, false, rem, &preferences);
+                    panes.fit_workspace(width, true, true, false, rem, &preferences);
+                    assert!((panes.right - dragged).abs() < 0.001);
+                }
+            }
         }
+        let mut panes = PaneLayout::default();
+        let preferences = layout::LayoutState::default();
+        panes.fit_workspace(4000., false, true, false, 14., &preferences);
+        assert_eq!(panes.right, 20. * 14.);
+        panes.fit_workspace(4000., false, true, false, 20., &preferences);
+        assert_eq!(panes.right, 20. * 20.);
     }
 
     fn start_drag(
@@ -570,9 +575,13 @@ mod tests {
         start_drag(&home, visual, Side::Right, 40.);
         let width = visual.update(|_, cx| home.read(cx).pane_layout.right);
         visual.simulate_keystrokes("escape");
-        visual.update(|_, cx| {
+        visual.update(|window, cx| {
             assert!(home.read(cx).pane_drag.is_none());
-            assert_eq!(cx.global::<layout::LayoutState>().history_width, width);
+            assert_eq!(
+                cx.global::<layout::LayoutState>().navigator_width_rem
+                    * f32::from(window.rem_size()),
+                width
+            );
             assert!(home.read(cx).layout_save.is_some());
         });
         for escape in [true, false] {
@@ -605,8 +614,8 @@ mod tests {
                 .join("source-split.toml");
             assert!((gupi_settings::source_split::load(&path) - ratio).abs() < 0.0001);
             assert_eq!(
-                layout::load(&path.with_file_name("state.toml")).history_width,
-                width
+                layout::load(&path.with_file_name("state.toml")).navigator_width_rem,
+                visual.update(|window, _| width / f32::from(window.rem_size()))
             );
         }
         let directory = visual.update(|_, cx| super::HomeView::layout_directory(cx).unwrap());

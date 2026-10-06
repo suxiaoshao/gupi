@@ -699,7 +699,6 @@ files-reload = 重新读取
 files-loading = 正在读取…
 files-expanded = 已展开
 files-collapsed = 已收起
-files-empty = 空目录
 files-incomplete = 部分项目无法读取，点击重试
 files-read-failed = 无法读取文件或目录，请重试
 files-unsupported = 此文件暂不支持文本预览

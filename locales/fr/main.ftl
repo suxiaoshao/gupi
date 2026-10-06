@@ -699,7 +699,6 @@ files-reload = Recharger
 files-loading = Lecture…
 files-expanded = Développé
 files-collapsed = Réduit
-files-empty = Dossier vide
 files-incomplete = Certaines entrées sont illisibles. Réessayer
 files-read-failed = Impossible de lire le fichier ou le dossier. Réessayer
 files-unsupported = Ce fichier ne prend pas en charge l’aperçu texte

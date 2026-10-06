@@ -692,7 +692,6 @@ files-reload = 再読み込み
 files-loading = 読み込み中…
 files-expanded = 展開済み
 files-collapsed = 折りたたみ
-files-empty = 空のフォルダー
 files-incomplete = 一部の項目を読み込めません。再試行
 files-read-failed = ファイルまたはフォルダーを読み込めません。再試行
 files-unsupported = このファイルはテキストプレビューに対応していません

@@ -698,7 +698,6 @@ files-reload = Recarregar
 files-loading = Lendo…
 files-expanded = Expandido
 files-collapsed = Recolhido
-files-empty = Pasta vazia
 files-incomplete = Não foi possível ler algumas entradas. Tentar novamente
 files-read-failed = Não foi possível ler o arquivo ou a pasta. Tentar novamente
 files-unsupported = Este arquivo não permite prévia de texto

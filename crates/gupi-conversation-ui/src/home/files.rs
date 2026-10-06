@@ -375,7 +375,7 @@ impl Files {
                         self.rows(&entry.path, depth + 1, rows);
                     }
                 }
-                if dir.entries.is_empty() || dir.incomplete {
+                if dir.incomplete {
                     rows.push(Row {
                         path: path.to_owned(),
                         kind: directory::Kind::Other,
@@ -383,11 +383,7 @@ impl Files {
                         target: None,
                         depth,
                         expanded: false,
-                        status: Some(if dir.incomplete {
-                            "files-incomplete"
-                        } else {
-                            "files-empty"
-                        }),
+                        status: Some("files-incomplete"),
                         error: None,
                     });
                 }
@@ -783,6 +779,11 @@ mod tests {
                     assert!(this.expanded.contains(&kept));
                     assert!(this.directories.contains_key(&kept));
                     assert!(this.tasks.contains_key(&kept));
+                    let rows = &this.list.read(cx).delegate().rows;
+                    let kept_rows: Vec<_> = rows.iter().filter(|row| row.path == kept).collect();
+                    assert_eq!(kept_rows.len(), 1);
+                    assert!(kept_rows[0].expanded);
+                    assert!(kept_rows[0].status.is_none());
                     // Even stale expansion state cannot add children to a file.
                     this.expanded.insert(changed.clone());
                     this.directories

@@ -699,7 +699,6 @@ files-reload = Neu laden
 files-loading = Wird gelesen…
 files-expanded = Aufgeklappt
 files-collapsed = Zugeklappt
-files-empty = Leerer Ordner
 files-incomplete = Einige Einträge konnten nicht gelesen werden. Erneut versuchen
 files-read-failed = Datei oder Ordner konnte nicht gelesen werden. Erneut versuchen
 files-unsupported = Diese Datei unterstützt keine Textvorschau

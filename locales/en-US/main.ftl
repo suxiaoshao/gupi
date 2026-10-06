@@ -699,7 +699,6 @@ files-reload = Reload
 files-loading = Reading…
 files-expanded = Expanded
 files-collapsed = Collapsed
-files-empty = Empty directory
 files-incomplete = Some entries could not be read. Retry
 files-read-failed = Could not read this file or directory. Retry
 files-unsupported = This file does not support text preview

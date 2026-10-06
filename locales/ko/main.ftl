@@ -692,7 +692,6 @@ files-reload = 다시 읽기
 files-loading = 읽는 중…
 files-expanded = 펼침
 files-collapsed = 접힘
-files-empty = 빈 폴더
 files-incomplete = 일부 항목을 읽지 못했습니다. 다시 시도
 files-read-failed = 파일 또는 폴더를 읽지 못했습니다. 다시 시도
 files-unsupported = 텍스트 미리 보기를 지원하지 않는 파일입니다

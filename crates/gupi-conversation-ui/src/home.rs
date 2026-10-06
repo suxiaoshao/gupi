@@ -50,6 +50,11 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+#[cfg(test)]
+struct TestLayoutDirectory(PathBuf);
+#[cfg(test)]
+impl Global for TestLayoutDirectory {}
+
 struct SessionView {
     input: Entity<TextareaState>,
     // Last persisted/external snapshot, excluding the editor's uncommitted IME text.
@@ -115,6 +120,16 @@ pub struct HomeView {
     _subscriptions: Vec<Subscription>,
 }
 impl HomeView {
+    fn layout_directory(cx: &App) -> Result<PathBuf, String> {
+        #[cfg(not(test))]
+        let _ = cx;
+        #[cfg(test)]
+        if let Some(directory) = cx.try_global::<TestLayoutDirectory>() {
+            return Ok(directory.0.clone());
+        }
+        gupi_resources::paths::config_dir().map_err(|error| error.to_string())
+    }
+
     pub fn state(&self) -> &Entity<ConversationState> {
         &self.state
     }
@@ -441,8 +456,9 @@ impl HomeView {
             },
         ));
         if !view.state.read(cx).is_temporary() {
+            let directory = Self::layout_directory(cx);
             let task = cx.background_spawn(async move {
-                gupi_resources::paths::config_dir()
+                directory
                     .ok()
                     .map(|d| gupi_settings::source_split::load(&d.join("source-split.toml")))
                     .unwrap_or(0.4)
@@ -485,6 +501,21 @@ impl HomeView {
                 cx.defer_in(window, |this, window, cx| this.sync_commands(window, cx));
             },
         ));
+        let resize_window = window.window_handle();
+        let resize_owner = cx.weak_entity();
+        view._subscriptions
+            .push(cx.intercept_keystrokes(move |event, window, cx| {
+                if window.window_handle() != resize_window || event.keystroke.key != "escape" {
+                    return;
+                }
+                let _ = resize_owner.update(cx, |this, cx| {
+                    if this.pane_drag.is_some() {
+                        this.finish_pane_drag(window, cx);
+                        cx.stop_active_drag(window);
+                        cx.stop_propagation();
+                    }
+                });
+            }));
         view._subscriptions
             .push(cx.on_focus_lost(window, |this, window, cx| {
                 let focus = window
@@ -1112,16 +1143,16 @@ impl HomeView {
         }
         cx.set_global(layout.clone());
         let previous = self.layout_save.take();
-        self.layout_save = Some(cx.spawn(async move |_, _| {
+        let directory = Self::layout_directory(cx);
+        self.layout_save = Some(cx.spawn(async move |_, cx| {
             if let Some(previous) = previous {
                 previous.await;
             }
-            let result = smol::unblock(move || {
-                gupi_resources::paths::config_dir()
-                    .map_err(|e| e.to_string())
-                    .and_then(|dir| layout::save(&dir.join("state.toml"), &layout))
-            })
-            .await;
+            let result = cx
+                .background_spawn(async move {
+                    directory.and_then(|dir| layout::save(&dir.join("state.toml"), &layout))
+                })
+                .await;
             if let Err(error) = result {
                 tracing::warn!(%error,"panel layout save failed");
             }
@@ -1194,9 +1225,7 @@ impl Render for HomeView {
         ) {
             // A window resize or panel toggle ends an in-progress drag without
             // persisting a width that was only imposed by the available space.
-            if self.pane_drag.take().is_some() {
-                cx.stop_active_drag(window);
-            }
+            self.interrupt_pane_drag(window, cx);
         }
         let titlebar = self.render_titlebar(window, cx);
         let center = self.render_workspace(window, cx);

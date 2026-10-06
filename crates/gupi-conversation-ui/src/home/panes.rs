@@ -4,6 +4,10 @@ const LEFT_MIN: f32 = 160.;
 const LEFT_MAX: f32 = 480.;
 const RIGHT_MAX: f32 = 520.;
 
+fn navigator_min(rem: f32) -> f32 {
+    (15. * rem).clamp(240., RIGHT_MAX)
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum Side {
     Left,
@@ -43,16 +47,17 @@ impl PaneLayout {
         self.left = preferences.sidebar_width.min((width - 24. * rem).max(0.));
         let main = width - if left { self.left } else { 0. };
         let required = if source { 54. * rem } else { 24. * rem };
-        self.overlay = right && main < required + 15. * rem;
+        let minimum = navigator_min(rem);
+        self.overlay = right && main < required + minimum;
         self.right = if right {
             if self.overlay {
                 preferences
                     .history_width
-                    .min((main - 6.25 * rem).max(15. * rem))
+                    .clamp(minimum, (main - 6.25 * rem).max(minimum))
             } else {
                 preferences
                     .history_width
-                    .clamp(15. * rem, (main - required).max(15. * rem))
+                    .clamp(minimum, (main - required).max(minimum))
             }
         } else {
             0.
@@ -129,9 +134,9 @@ impl PaneLayout {
             ),
             Side::Source => unreachable!(),
             Side::Right => (
-                15. * rem,
+                navigator_min(rem),
                 if self.overlay {
-                    width - 6.25 * rem
+                    width - if left_visible { self.left } else { 0. } - 6.25 * rem
                 } else {
                     width - content_min - if left_visible { self.left } else { 0. }
                 }
@@ -153,6 +158,7 @@ impl PaneLayout {
 pub(super) struct Drag {
     side: Side,
     start_width: f32,
+    start_ratio: Option<f32>,
 }
 
 struct DragPreview;
@@ -188,6 +194,7 @@ impl HomeView {
                 this.pane_drag = Some(Drag {
                     side,
                     start_width: this.pane_layout.width(side),
+                    start_ratio: this.pane_layout.ratio,
                 });
                 this.pane_layout
                     .drag_to(side, f32::from(window.mouse_position().x));
@@ -197,7 +204,15 @@ impl HomeView {
         })
     }
 
-    fn finish_pane_drag(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn interrupt_pane_drag(&mut self, window: &mut Window, cx: &mut App) {
+        if let Some(drag) = self.pane_drag.take() {
+            self.pane_layout.ratio = drag.start_ratio;
+            self.pane_layout.fit_split(f32::from(window.rem_size()));
+            cx.stop_active_drag(window);
+        }
+    }
+
+    pub(super) fn finish_pane_drag(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(drag) = self.pane_drag.take() else {
             return;
         };
@@ -281,20 +296,6 @@ impl Element for ResizeEvents {
             }
             let _ = owner.update(cx, |this, cx| this.finish_pane_drag(window, cx));
         });
-        let owner = self.0.clone();
-        window.on_key_event(move |event: &KeyDownEvent, phase, window, cx| {
-            if !phase.capture() || event.keystroke.key != "escape" {
-                return;
-            }
-            let _ = owner.update(cx, |this, cx| {
-                if this.pane_drag.take().is_some() {
-                    this.pane_layout.container = None;
-                    cx.stop_active_drag(window);
-                    cx.notify();
-                    cx.stop_propagation();
-                }
-            });
-        });
     }
 }
 
@@ -304,23 +305,32 @@ mod tests {
     use super::Side;
     use gupi_settings::layout;
 
-    #[gpui_kit::test]
-    fn sidebar_drag_tracks_pointer_without_width_transitions(cx: &mut gpui_kit::TestAppContext) {
+    fn setup(
+        cx: &mut gpui_kit::TestAppContext,
+    ) -> (
+        gpui_kit::Entity<super::HomeView>,
+        &mut gpui_kit::VisualTestContext,
+    ) {
         use crate::home::HomeView;
         use gpui_kit::AppContext;
-        use gpui_kit::Modifiers;
-        use gpui_kit::MouseButton;
         use gpui_kit::component::Root;
-        use gpui_kit::point;
         use gpui_kit::px;
         use gpui_kit::size;
         use gupi_conversation::conversation::ConversationState;
         cx.update(|cx| {
             gpui_kit::init(cx);
+            let unique = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            cx.set_global(super::super::TestLayoutDirectory(
+                std::env::temp_dir().join(format!("gupi-resize-{}-{unique}", std::process::id())),
+            ));
             crate::host::install_headless(cx);
             app_theme::init(cx);
             gupi_settings::theme::init(cx);
             gupi_settings::i18n::apply(Default::default(), cx);
+            gupi_settings::keybindings::apply(&Default::default(), cx);
             gupi_pi_runtime::init(cx);
             cx.set_global(layout::LayoutState::default());
         });
@@ -344,8 +354,21 @@ mod tests {
             Root::new(view, window, cx)
         });
         let home = home.unwrap();
-        visual.simulate_resize(size(px(1200.), px(800.)));
+        visual.simulate_resize(size(px(1728.), px(800.)));
         visual.run_until_parked();
+        visual.update(|window, cx| window.draw(cx).clear(cx));
+        (home, visual)
+    }
+
+    #[gpui_kit::test]
+    fn sidebar_drag_tracks_pointer_without_width_transitions(cx: &mut gpui_kit::TestAppContext) {
+        use gpui_kit::Modifiers;
+        use gpui_kit::MouseButton;
+        use gpui_kit::point;
+        use gpui_kit::px;
+        use gpui_kit::size;
+        let (home, visual) = setup(cx);
+        visual.simulate_resize(size(px(1200.), px(800.)));
         visual.update(|window, cx| window.draw(cx).clear(cx));
         let initial = visual.debug_bounds("conversation-center").unwrap().origin.x;
         let start = point(initial, px(300.));
@@ -481,5 +504,149 @@ mod tests {
         panes.fit_workspace(1440., true, true, true, 20., &preferences);
         assert!(panes.overlay && !panes.single);
         assert_eq!(preferences.history_width, 300.);
+    }
+    #[test]
+    fn navigator_minimum_matches_persistence_and_refit_across_zoom() {
+        for (rem, expected) in [(14., 240.), (16., 240.), (20., 300.), (40., 520.)] {
+            let mut preferences = layout::LayoutState::default();
+            let mut panes = PaneLayout::default();
+            panes.fit_workspace(4000., false, true, false, rem, &preferences);
+            panes.resize(Side::Right, 0.);
+            assert_eq!(panes.right, expected);
+            preferences.history_width = panes.right.clamp(240., 520.);
+            panes.fit_workspace(4000., false, false, false, rem, &preferences);
+            panes.fit_workspace(4000., false, true, false, rem, &preferences);
+            assert_eq!(panes.right, expected);
+            panes.fit_workspace(
+                24. * rem + expected - 1.,
+                false,
+                true,
+                false,
+                rem,
+                &preferences,
+            );
+            assert!(panes.overlay);
+            assert_eq!(panes.right, expected);
+        }
+    }
+
+    fn start_drag(
+        home: &gpui_kit::Entity<super::HomeView>,
+        visual: &mut gpui_kit::VisualTestContext,
+        side: Side,
+        delta: f32,
+    ) -> gpui_kit::Point<gpui_kit::Pixels> {
+        use gpui_kit::{Modifiers, MouseButton, point, px};
+        visual.update(|window, cx| window.draw(cx).clear(cx));
+        let x = visual.update(|window, cx| {
+            let panes = &home.read(cx).pane_layout;
+            match side {
+                Side::Left => panes.left,
+                Side::Right => f32::from(window.viewport_size().width) - panes.right,
+                Side::Source => panes.left + panes.conversation,
+            }
+        });
+        let start = point(px(x), px(300.));
+        let end = point(px(x + delta), px(300.));
+        visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+        visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
+        visual.update(|window, cx| window.draw(cx).clear(cx));
+        visual.update(|_, cx| assert!(home.read(cx).pane_drag.is_some()));
+        end
+    }
+
+    #[gpui_kit::test]
+    async fn escape_and_release_commit_dragged_sizes(cx: &mut gpui_kit::TestAppContext) {
+        use gpui_kit::{Modifiers, MouseButton};
+        let (home, visual) = setup(cx);
+        visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                home.show_history = true;
+                home.open_source("/tmp/gupi-resize-fixture.rs".into(), false, window, cx);
+                home.pane_layout.set_ratio(0.4);
+            })
+        });
+        visual.run_until_parked();
+        start_drag(&home, visual, Side::Right, 40.);
+        let width = visual.update(|_, cx| home.read(cx).pane_layout.right);
+        visual.simulate_keystrokes("escape");
+        visual.update(|_, cx| {
+            assert!(home.read(cx).pane_drag.is_none());
+            assert_eq!(cx.global::<layout::LayoutState>().history_width, width);
+            assert!(home.read(cx).layout_save.is_some());
+        });
+        for escape in [true, false] {
+            let end = start_drag(&home, visual, Side::Source, 50.);
+            let ratio = visual.update(|_, cx| home.read(cx).pane_layout.ratio());
+            if escape {
+                visual.simulate_keystrokes("escape");
+            } else {
+                visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+            }
+            visual.update(|_, cx| {
+                assert!(home.read(cx).pane_drag.is_none());
+                assert!(home.read(cx).source_split_touched);
+                assert!(home.read(cx).source_save.is_some());
+                assert_eq!(home.read(cx).pane_layout.ratio(), ratio);
+            });
+            let (layout, source) = visual.update(|_, cx| {
+                home.update(cx, |home, _| {
+                    (home.layout_save.take(), home.source_save.take())
+                })
+            });
+            if let Some(save) = layout {
+                save.await;
+            }
+            if let Some(save) = source {
+                save.await;
+            }
+            let path = visual
+                .update(|_, cx| super::HomeView::layout_directory(cx).unwrap())
+                .join("source-split.toml");
+            assert!((gupi_settings::source_split::load(&path) - ratio).abs() < 0.0001);
+            assert_eq!(
+                layout::load(&path.with_file_name("state.toml")).history_width,
+                width
+            );
+        }
+        let directory = visual.update(|_, cx| super::HomeView::layout_directory(cx).unwrap());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[gpui_kit::test]
+    fn layout_change_interrupts_source_drag_without_saving(cx: &mut gpui_kit::TestAppContext) {
+        use gpui_kit::{px, size};
+        let (home, visual) = setup(cx);
+        visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                home.open_source("/tmp/gupi-resize-fixture.rs".into(), false, window, cx);
+            })
+        });
+        visual.run_until_parked();
+        for initial in [None, Some(0.45)] {
+            visual.update(|_, cx| {
+                home.update(cx, |home, cx| {
+                    home.pane_layout.ratio = initial;
+                    home.pane_layout.container = None;
+                    cx.notify();
+                })
+            });
+            start_drag(&home, visual, Side::Source, 80.);
+            visual.simulate_resize(size(px(1800.), px(800.)));
+            visual.update(|window, cx| {
+                window.draw(cx).clear(cx);
+                let home = home.read(cx);
+                assert!(home.pane_drag.is_none());
+                assert_eq!(home.pane_layout.ratio, initial);
+                assert!(home.source_save.is_none());
+                let panes = &home.pane_layout;
+                let expected = (initial.unwrap_or(0.4) * panes.work).clamp(
+                    24. * f32::from(window.rem_size()),
+                    panes.work - 30. * f32::from(window.rem_size()),
+                );
+                assert!((panes.conversation - expected).abs() < 0.01);
+            });
+            visual.simulate_resize(size(px(1728.), px(800.)));
+        }
     }
 }

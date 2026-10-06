@@ -130,18 +130,18 @@ impl HomeView {
         self.source_split_touched = true;
         let ratio = self.pane_layout.ratio();
         let previous = self.source_save.take();
-        self.source_save = Some(cx.spawn(async move |_, _| {
+        let directory = Self::layout_directory(cx);
+        self.source_save = Some(cx.spawn(async move |_, cx| {
             if let Some(previous) = previous {
                 previous.await;
             }
-            let result = smol::unblock(move || {
-                gupi_resources::paths::config_dir()
-                    .map_err(|e| e.to_string())
-                    .and_then(|dir| {
+            let result = cx
+                .background_spawn(async move {
+                    directory.and_then(|dir| {
                         gupi_settings::source_split::save(&dir.join("source-split.toml"), ratio)
                     })
-            })
-            .await;
+                })
+                .await;
             if let Err(error) = result {
                 tracing::warn!(%error,"source split save failed");
             }

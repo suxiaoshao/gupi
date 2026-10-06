@@ -717,3 +717,8 @@ files-conversation-busy = Unterhaltung, Antwort läuft
 files-view = Ansicht
 files-show-conversation = Unterhaltung anzeigen
 files-source = Quelltext
+
+files-link-label = { $name } — symbolischer Link
+files-link-directory-label = { $name } — verknüpfter Ordner, { $state }
+files-link-unavailable-label = { $name } — Link-Ziel nicht verfügbar
+files-link-unavailable = Link-Ziel nicht verfügbar

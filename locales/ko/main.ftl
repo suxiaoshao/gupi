@@ -710,3 +710,8 @@ files-conversation-busy = 대화, 응답 중
 files-view = 보기
 files-show-conversation = 대화 표시
 files-source = 소스
+
+files-link-label = { $name } — 심볼릭 링크
+files-link-directory-label = { $name } — 폴더 링크, { $state }
+files-link-unavailable-label = { $name } — 링크 대상을 사용할 수 없음
+files-link-unavailable = 링크 대상을 사용할 수 없음

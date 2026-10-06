@@ -710,3 +710,8 @@ files-conversation-busy = 会話、応答中
 files-view = 表示
 files-show-conversation = 会話を表示
 files-source = ソース
+
+files-link-label = { $name } — シンボリックリンク
+files-link-directory-label = { $name } — フォルダーリンク、{ $state }
+files-link-unavailable-label = { $name } — リンク先を利用できません
+files-link-unavailable = リンク先を利用できません

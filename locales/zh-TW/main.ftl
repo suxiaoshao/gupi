@@ -717,3 +717,8 @@ files-conversation-busy = 對話，正在回覆
 files-view = 檢視
 files-show-conversation = 顯示對話
 files-source = 原始碼
+
+files-link-label = { $name } — 符號連結
+files-link-directory-label = { $name } — 資料夾連結，{ $state }
+files-link-unavailable-label = { $name } — 連結目標無法使用
+files-link-unavailable = 連結目標無法使用

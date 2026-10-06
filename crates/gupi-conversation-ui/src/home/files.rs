@@ -8,6 +8,8 @@ use gpui_kit::component::{Icon, IndexPath};
 
 pub(super) struct OpenFile(pub PathBuf, pub bool);
 impl EventEmitter<OpenFile> for Files {}
+use fluent_bundle::FluentArgs;
+use gupi_settings::i18n::t_with_args;
 use std::path::Path;
 
 actions!(project_files, [Expand, Collapse, First, Last]);
@@ -25,6 +27,8 @@ pub(super) fn init(cx: &mut App) {
 struct Row {
     path: PathBuf,
     kind: directory::Kind,
+    link: bool,
+    target: Option<PathBuf>,
     depth: usize,
     expanded: bool,
     status: Option<&'static str>,
@@ -69,6 +73,13 @@ impl ListDelegate for Delegate {
         });
         let owner = self.owner.clone();
         let mut tooltip = row.path.to_string_lossy().into_owned();
+        if let Some(target) = &row.target {
+            tooltip.push_str(&format!("\n→ {}", target.display()));
+        }
+        let unavailable_link = row.link && row.error.is_some();
+        if unavailable_link {
+            tooltip.push_str(&format!("\n{}", t(cx, "files-link-unavailable")));
+        }
         if let Some(error) = &row.error {
             tooltip.push('\n');
             tooltip.push_str(error);
@@ -91,6 +102,34 @@ impl ListDelegate for Delegate {
         } else {
             title.clone()
         };
+        let label = if row.link {
+            let mut args = FluentArgs::new();
+            args.set("name", title.clone());
+            args.set(
+                "state",
+                t(
+                    cx,
+                    if row.expanded {
+                        "files-expanded"
+                    } else {
+                        "files-collapsed"
+                    },
+                ),
+            );
+            t_with_args(
+                cx,
+                if unavailable_link {
+                    "files-link-unavailable-label"
+                } else if directory {
+                    "files-link-directory-label"
+                } else {
+                    "files-link-label"
+                },
+                &args,
+            )
+        } else {
+            label
+        };
         Some(
             ListItem::new(ElementId::Path(row.path.clone().into()))
                 .accessibility_label(label)
@@ -112,10 +151,12 @@ impl ListDelegate for Delegate {
                             )
                         }))
                         .child(
-                            Icon::new(match row.kind {
-                                directory::Kind::Directory => IconName::Folder,
-                                directory::Kind::Link => IconName::Link,
-                                _ => IconName::FileText,
+                            Icon::new(if row.link {
+                                IconName::Link
+                            } else if directory {
+                                IconName::Folder
+                            } else {
+                                IconName::FileText
                             })
                             .size_4(),
                         )
@@ -127,6 +168,9 @@ impl ListDelegate for Delegate {
                                 .text_sm()
                                 .when(self.open_path.as_ref() == Some(&row.path), |v| {
                                     v.font_weight(FontWeight::MEDIUM)
+                                })
+                                .when(unavailable_link, |view| {
+                                    view.text_color(cx.theme().muted_foreground)
                                 })
                                 .child(title),
                         )
@@ -301,10 +345,12 @@ impl Files {
                     rows.push(Row {
                         path: entry.path.clone(),
                         kind: entry.kind,
+                        link: entry.link,
+                        target: entry.target.clone(),
                         depth,
                         expanded,
                         status: None,
-                        error: None,
+                        error: entry.error.clone(),
                     });
                     if expanded {
                         self.rows(&entry.path, depth + 1, rows);
@@ -314,6 +360,8 @@ impl Files {
                     rows.push(Row {
                         path: path.to_owned(),
                         kind: directory::Kind::Other,
+                        link: false,
+                        target: None,
                         depth,
                         expanded: false,
                         status: Some(if dir.incomplete {
@@ -328,6 +376,8 @@ impl Files {
             result => rows.push(Row {
                 path: path.to_owned(),
                 kind: directory::Kind::Other,
+                link: false,
+                target: None,
                 depth,
                 expanded: false,
                 status: Some(match result {
@@ -672,10 +722,23 @@ mod tests {
                             Entry {
                                 path: "/project/src".into(),
                                 kind: Kind::Directory,
+                                link: true,
+                                target: Some("/external-target".into()),
+                                error: None,
                             },
                             Entry {
                                 path: "/project/README.md".into(),
                                 kind: Kind::File,
+                                link: true,
+                                target: Some("/external-target".into()),
+                                error: None,
+                            },
+                            Entry {
+                                path: "/project/broken".into(),
+                                kind: Kind::Other,
+                                link: true,
+                                target: Some("/missing-target".into()),
+                                error: Some("target unavailable".into()),
                             },
                         ],
                         incomplete: false,
@@ -689,6 +752,9 @@ mod tests {
                         entries: vec![Entry {
                             path: "/project/src/main.rs".into(),
                             kind: Kind::File,
+                            link: false,
+                            target: None,
+                            error: None,
                         }],
                         incomplete: false,
                     }),
@@ -698,6 +764,13 @@ mod tests {
             Root::new(view, window, cx)
         });
         let files = files.unwrap();
+        let opened = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let received = opened.clone();
+        let _subscription = files.update(cx, |_, cx| {
+            cx.subscribe(&files, move |_, _, event: &super::OpenFile, _| {
+                received.borrow_mut().push(event.0.clone());
+            })
+        });
         cx.update_window(window.into(), |_, window, cx| {
             window.render_frame(cx);
             files.update(cx, |this, cx| this.focus(window, cx));
@@ -715,6 +788,20 @@ mod tests {
             });
             window.press("left", cx);
             window.press("left", cx);
+            window.press("end", cx);
+            window.press("enter", cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert!(opened.borrow().is_empty());
+        cx.update_window(window.into(), |_, window, cx| {
+            window.press("up", cx);
+            window.press("enter", cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+        assert_eq!(*opened.borrow(), vec![PathBuf::from("/project/README.md")]);
+        cx.update_window(window.into(), |_, window, cx| {
             files.update(cx, |this, cx| {
                 assert!(!this.expanded.contains(&PathBuf::from("/project/src")));
                 // A directory read finishing after collapse must not reopen it.

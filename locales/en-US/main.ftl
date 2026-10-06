@@ -717,3 +717,8 @@ files-conversation-busy = Conversation, responding
 files-view = View
 files-show-conversation = Show conversation
 files-source = Source
+
+files-link-label = { $name } — symbolic link
+files-link-directory-label = { $name } — linked folder, { $state }
+files-link-unavailable-label = { $name } — link target unavailable
+files-link-unavailable = Link target unavailable

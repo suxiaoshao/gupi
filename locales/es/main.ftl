@@ -716,3 +716,8 @@ files-conversation-busy = Conversación, respondiendo
 files-view = Vista
 files-show-conversation = Mostrar conversación
 files-source = Código
+
+files-link-label = { $name } — enlace simbólico
+files-link-directory-label = { $name } — carpeta enlazada, { $state }
+files-link-unavailable-label = { $name } — destino del enlace no disponible
+files-link-unavailable = Destino del enlace no disponible

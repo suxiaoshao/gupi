@@ -717,3 +717,8 @@ files-conversation-busy = 会话，正在回复
 files-view = 视图
 files-show-conversation = 显示会话
 files-source = 源码
+
+files-link-label = { $name } — 符号链接
+files-link-directory-label = { $name } — 目录链接，{ $state }
+files-link-unavailable-label = { $name } — 链接目标不可用
+files-link-unavailable = 链接目标不可用

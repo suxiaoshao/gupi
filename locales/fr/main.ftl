@@ -717,3 +717,8 @@ files-conversation-busy = Conversation, réponse en cours
 files-view = Vue
 files-show-conversation = Afficher la conversation
 files-source = Source
+
+files-link-label = { $name } — lien symbolique
+files-link-directory-label = { $name } — dossier lié, { $state }
+files-link-unavailable-label = { $name } — cible du lien indisponible
+files-link-unavailable = Cible du lien indisponible

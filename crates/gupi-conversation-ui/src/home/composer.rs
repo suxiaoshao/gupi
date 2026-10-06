@@ -91,7 +91,7 @@ impl HomeView {
             .is_some_and(|id| !session.history().on_current_path(id));
         let mut shell = v_flex().w_full().max_w(px(820.)).gap_2();
         use gupi_conversation::notifications::Severity;
-        let source_showing = self.pane_layout.single && self.source_active;
+        let source_showing = self.pane_layout.single && self.source_active();
         let visible_notices: Vec<_> = session
             .notices()
             .iter()

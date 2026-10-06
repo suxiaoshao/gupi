@@ -56,6 +56,11 @@ struct TestLayoutDirectory(PathBuf);
 impl Global for TestLayoutDirectory {}
 
 struct SessionView {
+    files: Entity<files::Files>,
+    _files_subscription: Subscription,
+    source: Option<Entity<source::Preview>>,
+    source_subscription: Option<Subscription>,
+    source_active: bool,
     input: Entity<TextareaState>,
     // Last persisted/external snapshot, excluding the editor's uncommitted IME text.
     input_draft: gpui_kit::component::input::InputContent,
@@ -95,11 +100,6 @@ pub struct HomeView {
     show_sidebar: bool,
     show_history: bool,
     files_tab: bool,
-    files: Entity<files::Files>,
-    source: Option<Entity<source::Preview>>,
-    source_subscription: Option<Subscription>,
-    source_root: Option<PathBuf>,
-    source_active: bool,
     source_save: Option<Task<()>>,
     source_split_touched: bool,
     navigation: navigation::Navigation,
@@ -427,11 +427,6 @@ impl HomeView {
             show_sidebar: true,
             show_history: false,
             files_tab: false,
-            files: cx.new(|cx| files::Files::new(window, cx)),
-            source: None,
-            source_subscription: None,
-            source_root: None,
-            source_active: false,
             source_save: None,
             source_split_touched: false,
             navigation: Default::default(),
@@ -452,13 +447,6 @@ impl HomeView {
             extension_focus: cx.focus_handle(),
             _subscriptions: subscriptions,
         };
-        view._subscriptions.push(cx.subscribe_in(
-            &view.files,
-            window,
-            |this, _, event: &files::OpenFile, window, cx| {
-                this.open_source(event.0.clone(), event.1, window, cx)
-            },
-        ));
         if !view.state.read(cx).is_temporary() {
             let directory = Self::layout_directory(cx);
             let task = cx.background_spawn(async move {
@@ -555,33 +543,6 @@ impl HomeView {
     fn sync(&mut self, force: bool, window: &mut Window, cx: &mut Context<Self>) {
         let key = self.state.read(cx).selected().clone();
         let changed = self.shown_key != key;
-        let root = self.state.read(cx).current().map(|s| s.info().cwd.clone());
-        let reset_source_focus = self.source_root != root
-            && self
-                .source
-                .as_ref()
-                .is_some_and(|s| s.read(cx).contains_focus(window, cx));
-        if self.source_root != root {
-            if self
-                .source
-                .as_ref()
-                .is_some_and(|s| s.read(cx).contains_focus(window, cx))
-            {
-                // Focus the new session's input below, after its state is installed.
-                self.focus_handle.focus(window, cx);
-            }
-            self.close_source(window, cx);
-            self.source_root = root.clone();
-        }
-        self.files.update(cx, |files, cx| {
-            files.sync(
-                root,
-                self.show_history && self.files_tab,
-                changed,
-                window,
-                cx,
-            )
-        });
         if changed {
             self.close_find(false, window, cx);
             self.slash = Default::default();
@@ -752,9 +713,26 @@ impl HomeView {
                     },
                 ),
             ];
+            let root = self.state.read(cx).sessions()[&key].info().cwd.clone();
+            let files = cx.new(|cx| files::Files::new(root, window, cx));
+            let files_key = key.clone();
+            let files_subscription = cx.subscribe_in(
+                &files,
+                window,
+                move |this, _, event: &files::OpenFile, window, cx| {
+                    if this.shown_key.as_ref() == Some(&files_key) {
+                        this.open_source(event.0.clone(), event.1, window, cx);
+                    }
+                },
+            );
             self.views.insert(
                 key.clone(),
                 SessionView {
+                    files,
+                    _files_subscription: files_subscription,
+                    source: None,
+                    source_subscription: None,
+                    source_active: false,
                     input,
                     input_draft: draft,
                     _input_subscriptions: input_subscriptions,
@@ -775,6 +753,11 @@ impl HomeView {
                     markdown: Default::default(),
                 },
             );
+        }
+        if self.show_history && self.files_tab {
+            self.views[&key]
+                .files
+                .update(cx, |files, cx| files.ensure_loaded(window, cx));
         }
         // The page selects the session's retained editor; switching never resets it.
         let input = self.views[&key].input.clone();
@@ -1050,13 +1033,10 @@ impl HomeView {
             self.input_questionnaire = None;
             self.input.update(cx, |input, cx| input.focus(window, cx));
         }
-        if reset_source_focus {
-            self.focus_composer(window, cx);
-        }
         cx.notify();
     }
     fn preview_node(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        self.source_active = false;
+        self.set_source_active(false);
         self.close_find(false, window, cx);
         let Some(key) = self.shown_key.clone() else {
             return;
@@ -1224,7 +1204,7 @@ impl Render for HomeView {
             f32::from(window.viewport_size().width),
             self.show_sidebar,
             self.show_history,
-            self.source.is_some(),
+            self.source().is_some(),
             f32::from(window.rem_size()),
             cx.global::<layout::LayoutState>(),
         ) {

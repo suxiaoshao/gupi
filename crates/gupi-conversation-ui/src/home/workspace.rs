@@ -3,6 +3,27 @@ use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::tab::{Tab, TabBar};
 
 impl HomeView {
+    fn session_view(&self) -> Option<&SessionView> {
+        self.shown_key.as_ref().and_then(|key| self.views.get(key))
+    }
+    pub(super) fn files(&self) -> Option<Entity<files::Files>> {
+        self.session_view().map(|view| view.files.clone())
+    }
+    pub(super) fn source(&self) -> Option<Entity<source::Preview>> {
+        self.session_view().and_then(|view| view.source.clone())
+    }
+    pub(super) fn source_active(&self) -> bool {
+        self.session_view().is_some_and(|view| view.source_active)
+    }
+    pub(super) fn set_source_active(&mut self, active: bool) {
+        if let Some(view) = self
+            .shown_key
+            .as_ref()
+            .and_then(|key| self.views.get_mut(key))
+        {
+            view.source_active = active;
+        }
+    }
     pub(super) fn open_source(
         &mut self,
         path: PathBuf,
@@ -10,7 +31,14 @@ impl HomeView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.source_active = true;
+        let Some(key) = self
+            .shown_key
+            .clone()
+            .filter(|key| self.views.contains_key(key))
+        else {
+            return;
+        };
+        self.set_source_active(true);
         self.pane_layout.fit_workspace(
             f32::from(window.viewport_size().width),
             self.show_sidebar,
@@ -20,7 +48,7 @@ impl HomeView {
             cx.global::<layout::LayoutState>(),
         );
         let overlay = self.pane_layout.overlay;
-        if let Some(source) = self.source.clone().filter(|s| s.read(cx).path == path) {
+        if let Some(source) = self.source().filter(|s| s.read(cx).path == path) {
             if overlay {
                 self.show_history = false;
                 self.sync(false, window, cx);
@@ -33,38 +61,46 @@ impl HomeView {
             cx.notify();
             return;
         }
-        let preview = cx.new(|cx| {
-            source::Preview::new(path.clone(), self.source_root.clone(), keyboard, window, cx)
-        });
+        let root = self.state.read(cx).sessions()[&key].info().cwd.clone();
+        let preview =
+            cx.new(|cx| source::Preview::new(path.clone(), Some(root), keyboard, window, cx));
         if overlay {
             self.show_history = false;
             self.sync(false, window, cx);
             preview.update(cx, |s, cx| s.focus_container(window, cx));
         }
-        self.files
+        self.files()
+            .unwrap()
             .update(cx, |files, cx| files.set_open_path(Some(path), cx));
-        self.source_subscription = Some(cx.subscribe_in(
+        let preview_key = key.clone();
+        let subscription = cx.subscribe_in(
             &preview,
             window,
-            |this, _, event: &source::Event, window, cx| {
+            move |this, _, event: &source::Event, window, cx| {
+                if this.shown_key.as_ref() != Some(&preview_key) {
+                    return;
+                }
                 match event {
                     source::Event::Close => this.close_source(window, cx),
                     source::Event::Return => this.return_from_source(window, cx),
                     source::Event::Reveal => {
-                        let path = this.source.as_ref().map(|s| s.read(cx).path.clone());
+                        let path = this.source().as_ref().map(|s| s.read(cx).path.clone());
                         this.files_tab = true;
                         this.show_history = true;
                         this.sync(false, window, cx);
                         if let Some(path) = path {
-                            this.files
+                            this.files()
+                                .unwrap()
                                 .update(cx, |files, cx| files.reveal(path, window, cx));
                         }
                     }
                 }
                 cx.notify();
             },
-        ));
-        self.source = Some(preview);
+        );
+        let view = self.views.get_mut(&key).unwrap();
+        view.source_subscription = Some(subscription);
+        view.source = Some(preview);
         cx.notify();
     }
     pub(super) fn return_from_source(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -73,7 +109,8 @@ impl HomeView {
             && !self.pane_layout.overlay
             && !self.pane_layout.single
         {
-            self.files
+            self.files()
+                .unwrap()
                 .update(cx, |files, cx| files.focus_open(window, cx));
         } else {
             self.focus_composer(window, cx);
@@ -81,17 +118,23 @@ impl HomeView {
     }
     pub(super) fn close_source(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let focused = self
-            .source
+            .source()
             .as_ref()
             .is_some_and(|s| s.read(cx).contains_focus(window, cx));
         if focused {
             self.return_from_source(window, cx);
         }
-        self.source = None;
-        self.source_subscription = None;
-        self.source_active = false;
-        self.files
-            .update(cx, |files, cx| files.set_open_path(None, cx));
+        if let Some(view) = self
+            .shown_key
+            .as_ref()
+            .and_then(|key| self.views.get_mut(key))
+        {
+            view.source = None;
+            view.source_subscription = None;
+            view.source_active = false;
+            view.files
+                .update(cx, |files, cx| files.set_open_path(None, cx));
+        }
         cx.notify();
     }
     pub(super) fn close_navigator(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -108,7 +151,7 @@ impl HomeView {
             f32::from(window.viewport_size().width),
             self.show_sidebar,
             self.show_history,
-            self.source.is_some(),
+            self.source().is_some(),
             f32::from(window.rem_size()),
             cx.global::<layout::LayoutState>(),
         );
@@ -118,7 +161,9 @@ impl HomeView {
     }
     pub(super) fn focus_navigator(&self, window: &mut Window, cx: &mut Context<Self>) {
         if self.files_tab {
-            self.files.update(cx, |files, cx| files.focus(window, cx));
+            if let Some(files) = self.files() {
+                files.update(cx, |files, cx| files.focus(window, cx));
+            }
         } else {
             self.history_focus_handle(cx).focus(window, cx);
         }
@@ -158,7 +203,7 @@ impl HomeView {
             .min_w_0()
             .children(self.find.clone())
             .child(self.render_messages(window, cx));
-        let Some(source) = self.source.clone() else {
+        let Some(source) = self.source() else {
             return conversation
                 .child(self.render_composer(window, cx))
                 .into_any_element();
@@ -176,7 +221,7 @@ impl HomeView {
             let tabs = TabBar::new("workspace-tabs")
                 .segmented()
                 .small()
-                .selected_index(usize::from(self.source_active))
+                .selected_index(usize::from(self.source_active()))
                 .child(
                     Tab::new()
                         .label(label)
@@ -184,9 +229,9 @@ impl HomeView {
                 )
                 .child(Tab::new().label(t(cx, "files-source")))
                 .on_click(cx.listener(|this, ix: &usize, window, cx| {
-                    this.source_active = *ix == 1;
-                    if this.source_active {
-                        if let Some(source) = this.source.clone() {
+                    this.set_source_active(*ix == 1);
+                    if this.source_active() {
+                        if let Some(source) = this.source() {
                             source.update(cx, |s, cx| s.focus(window, cx));
                         }
                     } else {
@@ -211,7 +256,7 @@ impl HomeView {
                         .flex_1()
                         .min_h_0()
                         .min_w_0()
-                        .child(if self.source_active {
+                        .child(if self.source_active() {
                             source.into_any_element()
                         } else {
                             conversation.into_any_element()
@@ -223,7 +268,7 @@ impl HomeView {
                         .w_full()
                         .border_t_1()
                         .border_color(cx.theme().border)
-                        .when(self.source_active, |view| {
+                        .when(self.source_active(), |view| {
                             view.child(
                                 div()
                                     .px_5()

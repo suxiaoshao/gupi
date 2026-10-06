@@ -224,8 +224,7 @@ impl ListDelegate for Delegate {
 }
 
 pub(super) struct Files {
-    root: Option<PathBuf>,
-    active: bool,
+    root: PathBuf,
     generation: u64,
     directories: HashMap<PathBuf, Result<directory::Directory, String>>,
     expanded: HashSet<PathBuf>,
@@ -237,7 +236,7 @@ pub(super) struct Files {
 }
 
 impl Files {
-    pub(super) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub(super) fn new(root: PathBuf, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let owner = cx.weak_entity();
         let list = cx.new(|inner| {
             ListState::new(
@@ -254,8 +253,7 @@ impl Files {
         });
         let subscriptions = vec![cx.observe(&list, |_, _, cx| cx.notify())];
         Self {
-            root: None,
-            active: false,
+            root,
             generation: 0,
             directories: HashMap::new(),
             expanded: HashSet::new(),
@@ -266,33 +264,9 @@ impl Files {
             _subscriptions: subscriptions,
         }
     }
-    pub(super) fn sync(
-        &mut self,
-        root: Option<PathBuf>,
-        active: bool,
-        _session_changed: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if self.root != root {
-            self.generation += 1;
-            self.tasks.clear();
-            self.directories.clear();
-            self.expanded.clear();
-            self.root = root;
-            self.open_path = None;
-            self.reveal_path = None;
-            self.list
-                .update(cx, |list, cx| list.set_selected_index(None, window, cx));
-            self.rebuild(window, cx);
-        }
-        self.active = active;
-        if active
-            && let Some(root) = self.root.clone()
-            && !self.directories.contains_key(&root)
-            && !self.tasks.contains_key(&root)
-        {
-            self.read(root, window, cx);
+    pub(super) fn ensure_loaded(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.directories.contains_key(&self.root) && !self.is_loading(&self.root) {
+            self.read(self.root.clone(), window, cx);
             self.rebuild(window, cx);
         }
     }
@@ -307,7 +281,7 @@ impl Files {
         self.tasks.contains_key(path)
     }
     fn read(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.active || self.is_loading(&path) {
+        if self.is_loading(&path) {
             return;
         }
         let generation = self.generation;
@@ -417,9 +391,7 @@ impl Files {
     }
     fn rebuild(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let mut rows = vec![];
-        if let Some(root) = &self.root {
-            self.rows(root, 0, &mut rows);
-        }
+        self.rows(&self.root, 0, &mut rows);
         let unread: Vec<_> = rows
             .iter()
             .filter(|row| {
@@ -435,9 +407,7 @@ impl Files {
                 self.read(path, window, cx);
             }
             rows.clear();
-            if let Some(root) = &self.root {
-                self.rows(root, 0, &mut rows);
-            }
+            self.rows(&self.root, 0, &mut rows);
         }
         self.list.update(cx, |list, cx| {
             let mut selected = list
@@ -467,12 +437,7 @@ impl Files {
             .cloned()
     }
     fn activate(&mut self, row: Row, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.active
-            || self
-                .root
-                .as_ref()
-                .is_none_or(|root| !row.path.starts_with(root))
-        {
+        if !row.path.starts_with(&self.root) {
             return;
         }
         if row.status.is_some() {
@@ -500,10 +465,8 @@ impl Files {
     }
     pub(super) fn reveal(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         self.reveal_path = Some(path.clone());
-        if let Some(root) = self.root.clone()
-            && let Ok(relative) = path.strip_prefix(&root)
-        {
-            let mut parent = root;
+        if let Ok(relative) = path.strip_prefix(&self.root) {
+            let mut parent = self.root.clone();
             for part in relative.components() {
                 match self.directories.get(&parent) {
                     Some(Ok(_)) => {}
@@ -546,9 +509,7 @@ impl Files {
         self.focus(window, cx);
     }
     fn refresh(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(root) = self.root.clone() else {
-            return;
-        };
+        let root = self.root.clone();
         let visible: Vec<_> = self
             .list
             .read(cx)
@@ -619,7 +580,7 @@ impl Render for Files {
                     this.select(ix, window, cx);
                 }
             }))
-            .when_some(root, |view, root| {
+            .map(|view| {
                 let full = root.to_string_lossy().into_owned();
                 let name = root
                     .file_name()
@@ -684,9 +645,6 @@ impl Render for Files {
                 )
                 .child(div().flex_1().min_h_0().child(List::new(&self.list)))
             })
-            .when(self.root.is_none(), |v| {
-                v.child(div().p_3().text_sm().child(t(cx, "files-no-session")))
-            })
     }
 }
 
@@ -731,7 +689,14 @@ impl HomeView {
                     ),
             )
             .child(div().flex_1().min_h_0().child(if self.files_tab {
-                self.files.clone().into_any_element()
+                self.files()
+                    .map(|files| files.into_any_element())
+                    .unwrap_or_else(|| {
+                        div()
+                            .p_3()
+                            .child(t(cx, "files-no-session"))
+                            .into_any_element()
+                    })
             } else {
                 self.render_history(cx)
             }))
@@ -747,6 +712,161 @@ mod tests {
     use gpui_kit::test::TestWindowExt;
     use gpui_kit::{AppContext, TestAppContext, px, size};
     use std::path::PathBuf;
+
+    #[gpui_kit::test]
+    fn conversations_own_independent_file_trees_and_source_previews(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            crate::host::install_headless(cx);
+            app_theme::init(cx);
+            gupi_settings::theme::init(cx);
+            gupi_settings::i18n::apply(Default::default(), cx);
+            gpui_tokio::init(cx);
+            gupi_pi_runtime::init(cx);
+            cx.set_global(gupi_settings::layout::LayoutState::default());
+        });
+        let state = cx.new(|cx| {
+            gupi_conversation::conversation::ConversationState::new("unused-pi".into(), cx)
+        });
+        state.update(cx, |state, _| {
+            for (key, cwd) in [
+                ("a", "/project-a"),
+                ("b", "/project-b"),
+                ("c", "/project-a"),
+            ] {
+                let info = gupi_conversation::session_catalog::SessionInfo::new(
+                    Default::default(),
+                    key.into(),
+                    cwd.into(),
+                );
+                state.sessions_for_test().insert(
+                    key.into(),
+                    gupi_conversation::conversation::Session::new(info, String::new()),
+                );
+            }
+            *state.selected_for_test() = Some("a".into());
+        });
+        let mut home = None;
+        let window = cx.open_window(size(px(2000.), px(740.)), |window, cx| {
+            let view = cx.new(|cx| super::HomeView::with_state(state.clone(), window, cx));
+            home = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let home = home.unwrap();
+        let mut original_tree = None;
+        let mut original_source = None;
+        cx.update_window(window.into(), |_, window, cx| {
+            home.update(cx, |home, cx| {
+                let files = home.files().unwrap();
+                files.update(cx, |files, cx| {
+                    let root = files.root.clone();
+                    files.install(
+                        0,
+                        root.clone(),
+                        Ok(Directory {
+                            entries: (0..100)
+                                .map(|index| Entry {
+                                    path: root.join(format!("{index:03}")),
+                                    kind: Kind::Directory,
+                                    link: false,
+                                    target: None,
+                                    error: None,
+                                })
+                                .collect(),
+                            incomplete: false,
+                        }),
+                        window,
+                        cx,
+                    );
+                    files.select(80, window, cx);
+                    files.expanded.insert(root.join("080"));
+                    files.directories.insert(
+                        root.join("080"),
+                        Ok(Directory {
+                            entries: vec![],
+                            incomplete: false,
+                        }),
+                    );
+                    files.rebuild(window, cx);
+                });
+                home.show_history = true;
+                home.files_tab = true;
+                home.open_source("/project-a/preview.rs".into(), false, window, cx);
+                original_tree = Some(files);
+                original_source = home.source();
+            });
+            window.render_frame(cx);
+        })
+        .unwrap();
+        let files_a = original_tree.unwrap();
+        let source_a = original_source.unwrap();
+        let offset_a = cx.update(|cx| {
+            files_a
+                .read(cx)
+                .list
+                .read(cx)
+                .scroll_handle()
+                .base_handle()
+                .offset()
+        });
+        assert!(offset_a.y < px(0.));
+        cx.update_window(window.into(), |_, window, cx| {
+            for key in ["b", "c"] {
+                state.update(cx, |state, _| *state.selected_for_test() = Some(key.into()));
+                home.update(cx, |home, cx| {
+                    home.sync(false, window, cx);
+                    let files = home.files().unwrap();
+                    assert_ne!(files.entity_id(), files_a.entity_id());
+                    assert!(files.read(cx).expanded.is_empty());
+                    assert!(files.read(cx).list.read(cx).selected_index().is_none());
+                    assert_eq!(
+                        files
+                            .read(cx)
+                            .list
+                            .read(cx)
+                            .scroll_handle()
+                            .base_handle()
+                            .offset()
+                            .y,
+                        px(0.)
+                    );
+                    assert!(home.source().is_none());
+                    home.open_source(format!("/project-{key}/other.rs").into(), false, window, cx);
+                    assert_ne!(home.source().unwrap().entity_id(), source_a.entity_id());
+                });
+                window.render_frame(cx);
+            }
+            state.update(cx, |state, _| *state.selected_for_test() = Some("a".into()));
+            home.update(cx, |home, cx| {
+                home.sync(false, window, cx);
+                assert_eq!(home.files().unwrap().entity_id(), files_a.entity_id());
+                assert_eq!(home.source().unwrap().entity_id(), source_a.entity_id());
+                let files = files_a.read(cx);
+                assert!(files.expanded.contains(&files.root.join("080")));
+                assert_eq!(
+                    files.list.read(cx).selected_index(),
+                    Some(gpui_kit::component::IndexPath::new(80))
+                );
+                assert_eq!(
+                    files.list.read(cx).scroll_handle().base_handle().offset(),
+                    offset_a
+                );
+                assert!(home.source_active());
+            });
+            window.render_frame(cx);
+            assert_eq!(
+                files_a
+                    .read(cx)
+                    .list
+                    .read(cx)
+                    .scroll_handle()
+                    .base_handle()
+                    .offset(),
+                offset_a
+            );
+        })
+        .unwrap();
+    }
 
     #[gpui_kit::test]
     fn refresh_reloads_expanded_descendants_when_they_become_visible(cx: &mut TestAppContext) {
@@ -770,15 +890,13 @@ mod tests {
         std::fs::write(&file, "fn main() {}").unwrap();
         let mut files = None;
         let window = cx.open_window(size(px(500.), px(600.)), |window, cx| {
-            let view = cx.new(|cx| Files::new(window, cx));
+            let view = cx.new(|cx| Files::new(root.clone(), window, cx));
             view.update(cx, |this, cx| {
-                this.root = Some(root.clone());
                 for path in [&root, &a, &b] {
                     this.install(0, path.clone(), super::directory::read(path), window, cx);
                 }
                 this.expanded.extend([a.clone(), b.clone()]);
                 this.rebuild(window, cx);
-                this.active = true;
                 let row = this.list.read(cx).delegate().rows[0].clone();
                 this.activate(row, window, cx); // Collapse A, retaining B's expansion.
                 this.refresh(window, cx);
@@ -848,14 +966,13 @@ mod tests {
         });
         let mut files = None;
         let window = cx.open_window(size(px(500.), px(600.)), |window, cx| {
-            let view = cx.new(|cx| Files::new(window, cx));
+            let view = cx.new(|cx| Files::new("/project".into(), window, cx));
             files = Some(view.clone());
             Root::new(view, window, cx)
         });
         let files = files.unwrap();
         cx.update_window(window.into(), |_, window, cx| {
             files.update(cx, |this, cx| {
-                this.root = Some("/project".into());
                 let changed = PathBuf::from("/project/changed");
                 let nested = changed.join("nested");
                 let kept = PathBuf::from("/project/kept");
@@ -933,10 +1050,8 @@ mod tests {
         });
         let mut files = None;
         let window = cx.open_window(size(px(500.), px(600.)), |window, cx| {
-            let view = cx.new(|cx| Files::new(window, cx));
+            let view = cx.new(|cx| Files::new("/project".into(), window, cx));
             view.update(cx, |this, cx| {
-                this.root = Some(PathBuf::from("/project"));
-                this.active = true;
                 this.install(
                     0,
                     "/project".into(),
@@ -1039,7 +1154,7 @@ mod tests {
                     cx,
                 );
                 assert!(!this.expanded.contains(&PathBuf::from("/project/src")));
-                this.sync(Some("/another".into()), false, true, window, cx);
+                this.generation += 1;
                 this.install(
                     0,
                     "/project".into(),
@@ -1050,9 +1165,16 @@ mod tests {
                     window,
                     cx,
                 );
-                assert!(!this.directories.contains_key(&PathBuf::from("/project")));
-                assert_eq!(this.root.as_deref(), Some(std::path::Path::new("/another")));
-                assert!(this.list.read(cx).delegate().selected.is_none());
+                assert_eq!(this.generation, 1);
+                assert_eq!(this.root, PathBuf::from("/project"));
+                assert_eq!(
+                    this.directories[&PathBuf::from("/project")]
+                        .as_ref()
+                        .unwrap()
+                        .entries
+                        .len(),
+                    3
+                );
             });
         })
         .unwrap();

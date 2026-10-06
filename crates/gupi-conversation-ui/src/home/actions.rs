@@ -64,9 +64,9 @@ impl HomeView {
             Kind::FocusInput | Kind::History | Kind::OpenHistory | Kind::ProjectFiles => {
                 s.is_some()
             }
-            Kind::CloseSource | Kind::FocusSource => self.source.is_some(),
+            Kind::CloseSource | Kind::FocusSource => self.source().is_some(),
             Kind::ShowConversation => {
-                self.source.is_some() && self.pane_layout.single && self.source_active
+                self.source().is_some() && self.pane_layout.single && self.source_active()
             }
             Kind::Export => state
                 .selected()
@@ -145,20 +145,20 @@ impl HomeView {
         let key = self.state.read(cx).selected().clone();
         match action.0 {
             Kind::ShowConversation => {
-                self.source_active = false;
+                self.set_source_active(false);
                 self.focus_composer(window, cx);
             }
             Kind::CloseSource => self.close_source(window, cx),
             Kind::FocusSource => {
-                self.source_active = true;
-                if let Some(source) = self.source.clone() {
+                self.set_source_active(true);
+                if let Some(source) = self.source() {
                     source.update(cx, |s, cx| s.focus(window, cx));
                 }
             }
             Kind::Find => {
                 // This explicitly named command targets conversation messages.
                 // The shortcut is owned by the messages region, never the window.
-                self.source_active = false;
+                self.set_source_active(false);
                 self.open_find(window, cx);
                 cx.notify();
             }
@@ -177,7 +177,9 @@ impl HomeView {
                 self.files_tab = true;
                 self.show_history = true;
                 self.sync(false, window, cx);
-                self.files.update(cx, |files, cx| files.focus(window, cx));
+                self.files()
+                    .unwrap()
+                    .update(cx, |files, cx| files.focus(window, cx));
             }
             Kind::OpenHistory => {
                 if !self.show_history || self.files_tab {

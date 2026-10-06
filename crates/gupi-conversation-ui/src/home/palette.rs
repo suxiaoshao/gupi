@@ -739,7 +739,15 @@ mod tests {
         });
         cx.run_until_parked();
         cx.update(|window, cx| window.draw(cx).clear(cx));
-        cx.update(|window, cx| assert!(home.read(cx).files.read(cx).is_focused(window, cx)));
+        cx.update(|window, cx| {
+            assert!(
+                home.read(cx)
+                    .files()
+                    .unwrap()
+                    .read(cx)
+                    .is_focused(window, cx)
+            )
+        });
         cx.simulate_keystrokes("escape");
         cx.run_until_parked();
         cx.update(|window, cx| {
@@ -922,7 +930,7 @@ mod tests {
             assert!(home.read(cx).find.is_none());
             assert!(
                 home.read(cx)
-                    .source
+                    .source()
                     .as_ref()
                     .unwrap()
                     .read(cx)

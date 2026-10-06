@@ -227,11 +227,7 @@ impl HomeView {
                     .child(title.clone()),
             );
         }
-        for widget in session
-            .widgets()
-            .values()
-            .filter(|w| !w.below && !(self.pane_layout.single && self.source_active))
-        {
+        for widget in session.widgets().values().filter(|w| !w.below) {
             shell = shell.child(div().text_sm().child(widget.lines.join("\n")));
         }
         let mut editor = v_flex().w_full().min_w_0();

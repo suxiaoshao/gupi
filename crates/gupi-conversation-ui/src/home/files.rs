@@ -293,6 +293,7 @@ impl Files {
             && !self.tasks.contains_key(&root)
         {
             self.read(root, window, cx);
+            self.rebuild(window, cx);
         }
     }
     #[cfg(test)]
@@ -302,8 +303,11 @@ impl Files {
     pub(super) fn focus(&self, window: &mut Window, cx: &mut App) {
         self.list.focus_handle(cx).focus(window, cx);
     }
+    fn is_loading(&self, path: &Path) -> bool {
+        self.tasks.contains_key(path)
+    }
     fn read(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.active || self.tasks.contains_key(&path) {
+        if !self.active || self.is_loading(&path) {
             return;
         }
         let generation = self.generation;
@@ -317,7 +321,6 @@ impl Files {
             });
         });
         self.tasks.insert(path, task);
-        self.rebuild(window, cx);
     }
     fn install(
         &mut self,
@@ -388,25 +391,53 @@ impl Files {
                     });
                 }
             }
-            result => rows.push(Row {
-                path: path.to_owned(),
-                kind: directory::Kind::Other,
-                link: false,
-                target: None,
-                depth,
-                expanded: false,
-                status: Some(match result {
-                    Some(Err(_)) => "files-read-failed",
-                    _ => "files-loading",
-                }),
-                error: result.and_then(|result| result.as_ref().err()).cloned(),
-            }),
+            result => {
+                let loading = self.is_loading(path);
+                if result.is_none() && !loading {
+                    return;
+                }
+                rows.push(Row {
+                    path: path.to_owned(),
+                    kind: directory::Kind::Other,
+                    link: false,
+                    target: None,
+                    depth,
+                    expanded: false,
+                    status: Some(if loading {
+                        "files-loading"
+                    } else {
+                        "files-read-failed"
+                    }),
+                    error: (!loading)
+                        .then(|| result.and_then(|result| result.as_ref().err()).cloned())
+                        .flatten(),
+                });
+            }
         }
     }
     fn rebuild(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let mut rows = vec![];
         if let Some(root) = &self.root {
             self.rows(root, 0, &mut rows);
+        }
+        let unread: Vec<_> = rows
+            .iter()
+            .filter(|row| {
+                row.kind == directory::Kind::Directory
+                    && row.expanded
+                    && !self.directories.contains_key(&row.path)
+                    && !self.is_loading(&row.path)
+            })
+            .map(|row| row.path.clone())
+            .collect();
+        if !unread.is_empty() {
+            for path in unread {
+                self.read(path, window, cx);
+            }
+            rows.clear();
+            if let Some(root) = &self.root {
+                self.rows(root, 0, &mut rows);
+            }
         }
         self.list.update(cx, |list, cx| {
             let mut selected = list
@@ -446,6 +477,7 @@ impl Files {
         }
         if row.status.is_some() {
             self.read(row.path, window, cx);
+            self.rebuild(window, cx);
         } else if row.kind == directory::Kind::Directory {
             if !self.expanded.remove(&row.path) {
                 self.expanded.insert(row.path.clone());
@@ -534,6 +566,7 @@ impl Files {
         for path in visible {
             self.read(path, window, cx);
         }
+        self.rebuild(window, cx);
     }
     fn navigate(&mut self, expand: bool, window: &mut Window, cx: &mut Context<Self>) {
         let Some(row) = self.selected(cx) else {
@@ -714,6 +747,97 @@ mod tests {
     use gpui_kit::test::TestWindowExt;
     use gpui_kit::{AppContext, TestAppContext, px, size};
     use std::path::PathBuf;
+
+    #[gpui_kit::test]
+    fn refresh_reloads_expanded_descendants_when_they_become_visible(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            app_theme::init(cx);
+            gupi_settings::i18n::apply(Default::default(), cx);
+        });
+        let root = std::env::temp_dir().join(format!(
+            "gupi-tree-refresh-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let a = root.join("A");
+        let b = a.join("B");
+        let file = b.join("file.rs");
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(&file, "fn main() {}").unwrap();
+        let mut files = None;
+        let window = cx.open_window(size(px(500.), px(600.)), |window, cx| {
+            let view = cx.new(|cx| Files::new(window, cx));
+            view.update(cx, |this, cx| {
+                this.root = Some(root.clone());
+                for path in [&root, &a, &b] {
+                    this.install(0, path.clone(), super::directory::read(path), window, cx);
+                }
+                this.expanded.extend([a.clone(), b.clone()]);
+                this.rebuild(window, cx);
+                this.active = true;
+                let row = this.list.read(cx).delegate().rows[0].clone();
+                this.activate(row, window, cx); // Collapse A, retaining B's expansion.
+                this.refresh(window, cx);
+                assert!(this.expanded.contains(&b));
+                assert!(!this.directories.contains_key(&b));
+                assert!(!this.is_loading(&b));
+                let mut rows = vec![];
+                this.rows(&b, 0, &mut rows);
+                assert!(rows.is_empty(), "no task means no loading placeholder");
+                this.directories
+                    .insert(b.clone(), Err("old read error".into()));
+                this.tasks.insert(
+                    b.clone(),
+                    cx.spawn(async |_, _| std::future::pending::<()>().await),
+                );
+                this.rows(&b, 0, &mut rows);
+                assert_eq!(rows[0].status, Some("files-loading"));
+                assert!(rows[0].error.is_none());
+                this.tasks.remove(&b);
+                rows.clear();
+                this.rows(&b, 0, &mut rows);
+                assert_eq!(rows[0].status, Some("files-read-failed"));
+                this.directories.remove(&b);
+            });
+            files = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let files = files.unwrap();
+        cx.run_until_parked();
+        cx.update_window(window.into(), |_, window, cx| {
+            files.update(cx, |this, cx| {
+                let row = this.list.read(cx).delegate().rows[0].clone();
+                this.activate(row, window, cx); // Reopen A and lazily reread A/B.
+                assert!(this.is_loading(&a));
+                assert!(
+                    this.list
+                        .read(cx)
+                        .delegate()
+                        .rows
+                        .iter()
+                        .any(|row| { row.path == a && row.status == Some("files-loading") })
+                );
+            });
+        })
+        .unwrap();
+        cx.run_until_parked();
+        files.update(cx, |this, cx| {
+            assert!(!this.is_loading(&a));
+            assert!(!this.is_loading(&b));
+            assert!(this.directories.get(&b).is_some_and(Result::is_ok));
+            let rows = &this.list.read(cx).delegate().rows;
+            assert!(
+                rows.iter()
+                    .any(|row| row.path == file && row.status.is_none())
+            );
+            assert!(rows.iter().all(|row| row.status != Some("files-loading")));
+        });
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[gpui_kit::test]
     fn refreshed_parent_removes_former_directory_subtrees(cx: &mut TestAppContext) {

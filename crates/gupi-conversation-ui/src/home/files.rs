@@ -331,6 +331,24 @@ impl Files {
             return;
         }
         self.tasks.remove(&path);
+        if let Ok(directory) = &result {
+            let children: HashSet<_> = directory
+                .entries
+                .iter()
+                .filter(|entry| entry.kind == directory::Kind::Directory)
+                .map(|entry| entry.path.as_path())
+                .collect();
+            // Remove former directory subtrees, including reads still in flight.
+            let keep = |candidate: &PathBuf| {
+                candidate
+                    .ancestors()
+                    .find(|ancestor| ancestor.parent() == Some(path.as_path()))
+                    .is_none_or(|child| children.contains(child))
+            };
+            self.expanded.retain(keep);
+            self.directories.retain(|candidate, _| keep(candidate));
+            self.tasks.retain(|candidate, _| keep(candidate));
+        }
         self.directories.insert(path, result);
         if let Some(path) = self.reveal_path.clone() {
             self.reveal(path, window, cx);
@@ -341,7 +359,8 @@ impl Files {
         match self.directories.get(path) {
             Some(Ok(dir)) => {
                 for entry in &dir.entries {
-                    let expanded = self.expanded.contains(&entry.path);
+                    let expanded = entry.kind == directory::Kind::Directory
+                        && self.expanded.contains(&entry.path);
                     rows.push(Row {
                         path: entry.path.clone(),
                         kind: entry.kind,
@@ -699,6 +718,85 @@ mod tests {
     use gpui_kit::test::TestWindowExt;
     use gpui_kit::{AppContext, TestAppContext, px, size};
     use std::path::PathBuf;
+
+    #[gpui_kit::test]
+    fn refreshed_parent_removes_former_directory_subtrees(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            app_theme::init(cx);
+            gupi_settings::i18n::apply(Default::default(), cx);
+        });
+        let mut files = None;
+        let window = cx.open_window(size(px(500.), px(600.)), |window, cx| {
+            let view = cx.new(|cx| Files::new(window, cx));
+            files = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let files = files.unwrap();
+        cx.update_window(window.into(), |_, window, cx| {
+            files.update(cx, |this, cx| {
+                this.root = Some("/project".into());
+                let changed = PathBuf::from("/project/changed");
+                let nested = changed.join("nested");
+                let kept = PathBuf::from("/project/kept");
+                for replacement in [Some(Kind::File), Some(Kind::Other), None] {
+                    for path in [&changed, &nested, &kept] {
+                        this.expanded.insert(path.clone());
+                        this.directories.insert(
+                            path.clone(),
+                            Ok(Directory {
+                                entries: vec![],
+                                incomplete: false,
+                            }),
+                        );
+                        this.tasks.insert(
+                            path.clone(),
+                            cx.spawn(async |_, _| std::future::pending::<()>().await),
+                        );
+                    }
+                    let entry = |path: PathBuf, kind| Entry {
+                        path,
+                        kind,
+                        link: false,
+                        target: None,
+                        error: None,
+                    };
+                    let mut entries = vec![entry(kept.clone(), Kind::Directory)];
+                    if let Some(kind) = replacement {
+                        entries.insert(0, entry(changed.clone(), kind));
+                    }
+                    this.install(
+                        0,
+                        "/project".into(),
+                        Ok(Directory {
+                            entries,
+                            incomplete: false,
+                        }),
+                        window,
+                        cx,
+                    );
+                    for path in [&changed, &nested] {
+                        assert!(!this.expanded.contains(path));
+                        assert!(!this.directories.contains_key(path));
+                        assert!(!this.tasks.contains_key(path));
+                    }
+                    assert!(this.expanded.contains(&kept));
+                    assert!(this.directories.contains_key(&kept));
+                    assert!(this.tasks.contains_key(&kept));
+                    // Even stale expansion state cannot add children to a file.
+                    this.expanded.insert(changed.clone());
+                    this.directories
+                        .insert(changed.clone(), Err("not a directory".into()));
+                    this.rebuild(window, cx);
+                    assert!(this.list.read(cx).delegate().rows.iter().all(|row| {
+                        !row.path.starts_with(&changed)
+                            || (row.path == changed && row.status.is_none() && !row.expanded)
+                    }));
+                }
+            });
+        })
+        .unwrap();
+    }
 
     #[gpui_kit::test]
     fn tree_navigation_and_old_results_preserve_the_current_project(cx: &mut TestAppContext) {

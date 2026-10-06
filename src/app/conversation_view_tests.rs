@@ -915,6 +915,27 @@ fn session_editors_preserve_composition_selection_and_undo_across_switches(
     cx: &mut TestAppContext,
 ) {
     use gpui_kit::EntityInputHandler;
+    use gpui_kit::prelude::*;
+    use gpui_kit::{Context, Entity, FocusHandle, IntoElement, Render, Window, div};
+
+    struct FocusFixture {
+        home: Entity<HomeView>,
+        other: FocusHandle,
+    }
+    impl Render for FocusFixture {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .size_full()
+                .child(
+                    div()
+                        .id("other-focus")
+                        .track_focus(&self.other)
+                        .child("Other workspace control"),
+                )
+                .child(self.home.clone())
+        }
+    }
+
     use gpui_kit::Focusable;
     use gupi_conversation_ui::home::HomeView;
     init_interactions(cx);
@@ -928,14 +949,18 @@ fn session_editors_preserve_composition_selection_and_undo_across_switches(
         *state.selected_for_test() = Some("first".into());
     });
     let mut home = None;
+    let other_focus = cx.update(|cx| cx.focus_handle());
     let (_, visual) = cx.add_window_view(|window, cx| {
         let view = cx.new(|cx| HomeView::with_state(state.clone(), window, cx));
         home = Some(view.clone());
-        Root::new(view, window, cx)
+        let fixture = cx.new(|_| FocusFixture {
+            home: view,
+            other: other_focus.clone(),
+        });
+        Root::new(fixture, window, cx)
     });
     let home = home.unwrap();
     visual.run_until_parked();
-    let other_focus = visual.update(|_, cx| cx.focus_handle());
     let first = visual.update(|window, cx| {
         let input = home.read(cx).input().clone();
         input.update(cx, |input, cx| {

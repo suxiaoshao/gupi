@@ -471,8 +471,11 @@ impl Render for StartupView {
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
             .when(!main, |view| {
+                view.children(chrome::window_title_bar(window, cx))
+            })
+            .when(!main, |view| {
                 view.child(
-                    chrome::title_bar(cx).child(
+                    chrome::page_bar(cx).child(
                         h_flex()
                             .size_full()
                             .pl(chrome::leading_space(window))
@@ -496,9 +499,6 @@ impl Render for StartupView {
                             .child(page_title),
                     ),
                 )
-            })
-            .when(!main, |view| {
-                view.children(chrome::app_menu_bar(window, cx))
             })
             .child(
                 div()

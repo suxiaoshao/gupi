@@ -1213,6 +1213,7 @@ impl Render for HomeView {
             self.interrupt_pane_drag(window, cx);
         }
         let titlebar = self.render_titlebar(window, cx);
+        let window_titlebar = crate::chrome::window_title_bar(window, cx);
         let center = self.render_workspace(window, cx);
         // Keep the component mounted: Offcanvas owns the closing animation and
         // removes its contents from the tab order after the transition finishes.
@@ -1278,8 +1279,8 @@ impl Render for HomeView {
             ))
             .size_full()
             .relative()
+            .children(window_titlebar)
             .child(titlebar)
-            .children(crate::chrome::app_menu_bar(window, cx))
             .child(shell)
             .children(self.render_session_search(window, cx))
             .child(self.image_preview.clone())

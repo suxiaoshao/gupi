@@ -94,10 +94,7 @@ impl TemporaryStartup {
                 _ => None,
             })
     }
-}
-
-impl Render for TemporaryStartup {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_content(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         if let Some(content) = &self.content {
             return content.clone().into_any_element();
         }
@@ -145,5 +142,18 @@ impl Render for TemporaryStartup {
             .child(body)
             .child(actions)
             .into_any_element()
+    }
+}
+
+impl Render for TemporaryStartup {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let content = self.render_content(window, cx);
+        let titlebar = gupi_conversation_ui::chrome::window_title_bar(window, cx)
+            .map(|bar| bar.on_close_window(|_, window, cx| temporary::hide(window, cx)));
+        v_flex()
+            .size_full()
+            .bg(cx.theme().background)
+            .children(titlebar)
+            .child(div().flex_1().min_h_0().child(content))
     }
 }

@@ -172,7 +172,7 @@ The folder selected when creating a session becomes Pi's working directory and c
 
 Open the right-hand navigator and select **Files** to browse the current conversation's project directory. Click folders to expand or collapse them, refresh after external changes, and select a text file to open its read-only source preview.
 
-![Project files and read-only source beside the conversation](docs/screenshots/files-en.png)
+![Project files and read-only source beside the conversation](docs/screenshots/files-en.jpg)
 
 The preview supports syntax highlighting, line numbers, selection, copying, search and line wrapping. It shows a snapshot: use **Reload** to read changes from disk. Opening the same file again preserves its reading position and search state. Previewing does not edit or save the file, or send its content to the model; use `@` in the composer to reference it in a message.
 

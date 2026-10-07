@@ -1110,3 +1110,106 @@ fn hidden_home_does_not_restore_commands_from_background_changes(cx: &mut TestAp
     visual.run_until_parked();
     visual.update(|_, cx| assert!(cx.global::<ConversationCommands>().0[0]));
 }
+
+#[cfg(target_os = "windows")]
+#[gpui_kit::test]
+fn window_menus_fit_above_page_controls_and_restore_editor_focus(cx: &mut TestAppContext) {
+    use gpui_kit::Focusable;
+    use gpui_kit::component::Theme;
+    use gpui_kit::test::TestWindowExt;
+    use gupi_conversation_ui::home::HomeView;
+
+    init_interactions(cx);
+    let state = cx.new(|cx| ConversationState::new("unused-pi".into(), cx));
+    state.update(cx, |state, _| {
+        state
+            .sessions_for_test()
+            .insert("first".into(), fixture_session("first"));
+        *state.selected_for_test() = Some("first".into());
+    });
+    let mut home = None;
+    let (_, visual) = cx.add_window_view(|window, cx| {
+        crate::app::menus::refresh_native(cx);
+        let view = cx.new(|cx| HomeView::with_state(state.clone(), window, cx));
+        home = Some(view.clone());
+        Root::new(view, window, cx)
+    });
+    let home = home.unwrap();
+    visual.simulate_resize(size(px(800.), px(600.)));
+    for language in [
+        AppLanguage::Chinese,
+        AppLanguage::English,
+        AppLanguage::German,
+    ] {
+        for font_size in [14., 20., 24.] {
+            visual.update(|_, cx| {
+                gupi_settings::i18n::apply(language, cx);
+                crate::app::menus::refresh_native(cx);
+                Theme::update(cx, |theme| theme.font_size = px(font_size));
+            });
+            visual.run_until_parked();
+            visual.update(|window, cx| {
+                window.render_frame(cx);
+                let sidebar = window.find("toggle-sidebar").bounds();
+                let mut previous_right = sidebar.left();
+                for ix in 0..6_usize {
+                    let menu = window.within("app-menu-bar").within(ix).find("menu");
+                    let bounds = menu.bounds();
+                    if font_size == 14. {
+                        assert!(
+                            menu.visible(),
+                            "menu {ix} must remain visible at default size"
+                        );
+                    }
+                    assert!(bounds.top() >= px(0.) && bounds.bottom() <= sidebar.top());
+                    assert!(bounds.left() >= previous_right);
+                    if ix == 0 {
+                        assert_eq!(bounds.left(), sidebar.left());
+                    }
+                    previous_right = bounds.right();
+                }
+                // Long labels at larger rem may scroll, but must remain reachable
+                // without consuming the platform controls or the drag target.
+                let menu_limit = window.viewport_size().width - px(102.) - window.rem_size() * 4.;
+                let menu_index = if previous_right > menu_limit {
+                    assert!(
+                        font_size > 14.,
+                        "default-size menus must fit without scrolling"
+                    );
+                    window.within("app-menu-bar").within(0_usize).scroll(
+                        "menu",
+                        gpui_kit::ScrollDelta::Pixels(gpui_kit::point(px(-1000.), px(0.))),
+                        cx,
+                    );
+                    let last = window.within("app-menu-bar").within(5_usize).find("menu");
+                    assert!(last.visible());
+                    assert!(
+                        last.bounds().right() <= menu_limit,
+                        "{language:?} font {font_size}: {:?}, limit {menu_limit:?}",
+                        last.bounds()
+                    );
+                    5_usize
+                } else {
+                    0_usize
+                };
+                home.update(cx, |home, cx| home.focus_composer(window, cx));
+                window
+                    .within("app-menu-bar")
+                    .within(menu_index)
+                    .click("menu", cx);
+            });
+            visual.run_until_parked();
+            visual.simulate_keystrokes("right escape");
+            visual.run_until_parked();
+            visual.update(|window, cx| {
+                assert!(
+                    home.read(cx)
+                        .input()
+                        .read(cx)
+                        .focus_handle(cx)
+                        .is_focused(window)
+                );
+            });
+        }
+    }
+}

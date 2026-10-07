@@ -1,5 +1,7 @@
 # Gupi 开发文档
 
+**[Windows / Linux 窗口菜单布局（Gupi #30）](issue-30/README.md)**：已确认的菜单置顶、常驻展开设计，GPUI Kit 组件选择及 Windows 开发交接。
+
 **[项目目录文件浏览（Gupi #31）](issue-31/README.md)**：按需目录读取、只读文件预览及 [会话/源码工作区 UI 改造方案](issue-31/ui-redesign.md)。
 
 **[应用架构改造](capability-architecture/README.md)**：六个能力 crate 的当前职责、依赖和验证；[接口与依赖收敛](capability-architecture/refinement.md)记录官方 skill 核对结果。

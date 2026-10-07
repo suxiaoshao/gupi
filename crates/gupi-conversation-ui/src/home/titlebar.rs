@@ -215,10 +215,6 @@ impl HomeView {
                         cx.notify();
                     })),
             ));
-        let mut bar = chrome::title_bar(cx);
-        if temporary {
-            bar = bar.on_close_window(|_, window, cx| crate::host::hide(window, cx));
-        }
-        bar.child(h_flex().size_full().min_w_0().child(left).child(main))
+        chrome::page_bar(cx).child(h_flex().size_full().min_w_0().child(left).child(main))
     }
 }

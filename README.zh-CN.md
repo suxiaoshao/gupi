@@ -55,12 +55,12 @@ Gupi 带有内置更新功能，`--greedy` 会将它的 Cask 纳入 Homebrew 升
 
 ### 下载 Gupi
 
-| 平台 | 下载 v0.1.3 | 安装方法 |
+| 平台 | 下载 v0.1.4 | 安装方法 |
 | --- | --- | --- |
-| macOS · Apple 芯片 | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.3/Gupi_0.1.3_aarch64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.3/Gupi_0.1.3_aarch64_macos.zip) | 打开 DMG，将 `Gupi.app` 拖到“应用程序”；也可以解压 ZIP 后将应用移入该目录。 |
-| macOS · Intel | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.3/Gupi_0.1.3_x86_64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.3/Gupi_0.1.3_x86_64_macos.zip) | 打开 DMG，将 `Gupi.app` 拖到“应用程序”；也可以解压 ZIP 后将应用移入该目录。 |
-| Windows · x64 | [简体中文 MSI](https://github.com/suxiaoshao/gupi/releases/download/v0.1.3/Gupi_0.1.3_x64_zh-CN.msi) · [全部安装语言](https://github.com/suxiaoshao/gupi/releases/tag/v0.1.3) | 运行 MSI 完成安装，再从开始菜单打开 Gupi。 |
-| Linux · x64 Debian/Ubuntu | [deb](https://github.com/suxiaoshao/gupi/releases/download/v0.1.3/Gupi_0.1.3_amd64.deb) | 执行 `sudo apt install ./Gupi_0.1.3_amd64.deb`，然后在图形桌面会话中启动 Gupi。 |
+| macOS · Apple 芯片 | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.4/Gupi_0.1.4_aarch64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.4/Gupi_0.1.4_aarch64_macos.zip) | 打开 DMG，将 `Gupi.app` 拖到“应用程序”；也可以解压 ZIP 后将应用移入该目录。 |
+| macOS · Intel | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.4/Gupi_0.1.4_x86_64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.4/Gupi_0.1.4_x86_64_macos.zip) | 打开 DMG，将 `Gupi.app` 拖到“应用程序”；也可以解压 ZIP 后将应用移入该目录。 |
+| Windows · x64 | [简体中文 MSI](https://github.com/suxiaoshao/gupi/releases/download/v0.1.4/Gupi_0.1.4_x64_zh-CN.msi) · [全部安装语言](https://github.com/suxiaoshao/gupi/releases/tag/v0.1.4) | 运行 MSI 完成安装，再从开始菜单打开 Gupi。 |
+| Linux · x64 Debian/Ubuntu | [deb](https://github.com/suxiaoshao/gupi/releases/download/v0.1.4/Gupi_0.1.4_amd64.deb) | 执行 `sudo apt install ./Gupi_0.1.4_amd64.deb`，然后在图形桌面会话中启动 Gupi。 |
 
 macOS 安装包要求 macOS 11 或更高版本，已使用 Developer ID 签名并通过 Apple 公证。Windows 安装包尚未做 Authenticode 签名，系统可能显示“未知发布者”；Linux 包也未签名。Release 中提供 `SHA256SUMS`，用于校验下载文件。
 

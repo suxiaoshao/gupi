@@ -168,6 +168,20 @@ The sidebar groups conversations by project. Open a session to resume it, or pre
 
 The folder selected when creating a session becomes Pi's working directory and cannot be changed later. Session menus provide rename, reveal paths, stop generation, end the running connection, and move to Trash.
 
+### Project files and source
+
+Open the right-hand navigator and select **Files** to browse the current conversation's project directory. Click folders to expand or collapse them, refresh after external changes, and select a text file to open its read-only source preview.
+
+![Project files and read-only source beside the conversation](docs/screenshots/files-en.png)
+
+The preview supports syntax highlighting, line numbers, selection, copying, search and line wrapping. It shows a snapshot: use **Reload** to read changes from disk. Opening the same file again preserves its reading position and search state. Previewing does not edit or save the file, or send its content to the model; use `@` in the composer to reference it in a message.
+
+Wide windows show conversation, source and navigator side by side. Narrow windows let you switch between conversation and source while keeping the composer available. Drag dividers to adjust the layout. Files and conversation history share the navigator's tabs.
+
+Use arrow keys to navigate the file tree and **Enter** to open a file. **Cmd/Ctrl+F** searches the focused source editor, composer or message area. Text previews are limited to 1 MiB and 20,000 lines; unsupported encodings, binary files and oversized files show an explanation.
+
+On Windows and Linux, application menus and window controls occupy the top row; conversation and page actions sit below it. Drag the blank area in the top row to move the window. macOS uses its system menu bar. Upgrading from 0.1.3 resets old window-position and pane-width preferences once; subsequent layout choices are saved.
+
 ### Messages and attachments
 
 | Action | How |

@@ -249,6 +249,7 @@ struct BindingInput {
     saved: String,
     error: Option<String>,
     capture: Option<Subscription>,
+    editing: bool,
     _subscriptions: Vec<Subscription>,
 }
 fn value(config: &Shortcuts, id: &str) -> String {
@@ -297,6 +298,7 @@ impl BindingInput {
             saved,
             error: None,
             capture: None,
+            editing: false,
             _subscriptions: vec![blur, config],
         }
     }
@@ -326,18 +328,24 @@ impl BindingInput {
         self.controller.update(cx, |c, cx| {
             c.set_preference(PreferenceChange::Shortcuts(config), cx)
         });
+        self.editing = false;
         if onboarding {
             self.saved = binding;
         }
         cx.notify();
     }
     fn cancel(&mut self, cx: &mut Context<Self>) {
+        self.editing = false;
         self.capture = None;
         self.error = None;
         self.draft = self.saved.clone();
         cx.notify();
     }
     fn clear(&mut self, cx: &mut Context<Self>) {
+        if self.controller.read(cx).busy(cx) {
+            return;
+        }
+        self.editing = true;
         self.capture = None;
         self.error = None;
         self.draft.clear();
@@ -347,6 +355,7 @@ impl BindingInput {
         if self.controller.read(cx).busy(cx) {
             return;
         }
+        self.editing = true;
         self.focus.focus(window, cx);
         self.error = None;
         let listener = cx.listener(|this, event: &KeystrokeEvent, _, cx| {
@@ -368,7 +377,6 @@ impl Render for BindingInput {
         let recording = self.capture.is_some();
         let dirty = self.draft != self.saved;
         let has_value = !self.draft.is_empty();
-        let owner = cx.entity().downgrade();
         let area = keys::key_area("binding-area", &self.focus, &self.draft, recording, cx)
             .on_click(cx.listener(|this, _, window, cx| {
                 if this.capture.is_none() {
@@ -383,7 +391,7 @@ impl Render for BindingInput {
                 match event.keystroke.key.as_str() {
                     "enter" if dirty => this.save(cx),
                     "enter" | "space" => this.record(window, cx),
-                    "escape" if dirty => this.cancel(cx),
+                    "escape" if this.editing => this.cancel(cx),
                     _ => return,
                 }
                 cx.stop_propagation();
@@ -404,53 +412,35 @@ impl Render for BindingInput {
                         )
                     })
                     .child(area)
-                    .when(dirty || recording, |row| {
+                    .child(
+                        Button::new("binding-clear")
+                            .small()
+                            .ghost()
+                            .icon(IconName::Eraser)
+                            .tooltip(t(cx, "settings-key-clear"))
+                            .accessibility_label(t(cx, "settings-key-clear"))
+                            .disabled(busy || !has_value)
+                            .on_click(cx.listener(|this, _, _, cx| this.clear(cx))),
+                    )
+                    .when(self.editing || dirty, |row| {
                         row.child(
-                            Button::new("confirm")
-                                .small()
-                                .label(t(cx, "settings-key-save"))
-                                .disabled(busy || recording)
-                                .on_click(cx.listener(|this, _, _, cx| this.save(cx))),
-                        )
-                        .child(
                             Button::new("cancel")
                                 .small()
                                 .ghost()
+                                .icon(IconName::X)
                                 .label(t(cx, "action-cancel"))
                                 .disabled(busy)
                                 .on_click(cx.listener(|this, _, _, cx| this.cancel(cx))),
                         )
-                    })
-                    .child(
-                        Button::new("binding-actions")
-                            .ghost()
-                            .small()
-                            .icon(IconName::Ellipsis)
-                            .tooltip(t(cx, "settings-key-actions"))
-                            .accessibility_label(t(cx, "settings-key-actions"))
-                            .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, cx| {
-                                let record = owner.clone();
-                                let clear = owner.clone();
-                                menu.item(
-                                    PopupMenuItem::new(t(cx, "settings-key-record"))
-                                        .icon(IconName::Keyboard)
-                                        .disabled(busy)
-                                        .on_click(move |_, window, cx| {
-                                            record
-                                                .update(cx, |this, cx| this.record(window, cx))
-                                                .ok();
-                                        }),
-                                )
-                                .item(
-                                    PopupMenuItem::new(t(cx, "settings-key-clear"))
-                                        .icon(IconName::Eraser)
-                                        .disabled(busy || !has_value)
-                                        .on_click(move |_, _, cx| {
-                                            clear.update(cx, |this, cx| this.clear(cx)).ok();
-                                        }),
-                                )
-                            }),
-                    ),
+                        .child(
+                            Button::new("confirm")
+                                .small()
+                                .icon(IconName::Check)
+                                .label(t(cx, "settings-key-confirm"))
+                                .disabled(busy || recording || !dirty)
+                                .on_click(cx.listener(|this, _, _, cx| this.save(cx))),
+                        )
+                    }),
             )
             .children(self.error.as_ref().map(|error| {
                 div()

@@ -3,8 +3,6 @@ use gpui_kit::component::Selectable;
 use gpui_kit::component::Sizable;
 use gpui_kit::component::WindowExt;
 use gpui_kit::component::kbd::Kbd;
-use gpui_kit::component::menu::DropdownMenu;
-use gpui_kit::component::menu::PopupMenuItem;
 use gpui_kit::component::setting::RenderOptions;
 use gpui_kit::component::setting::SettingField;
 use gpui_kit::component::setting::SettingGroup;
@@ -673,52 +671,6 @@ impl KeysView {
         let value = self.drafts[index].clone();
         let dirty = value.as_ref() != command.value(&config.keybindings);
         let customized = config.keybindings.contains_key(command.id);
-        let owner = cx.entity().downgrade();
-        let menu = {
-            let owner = owner.clone();
-            let has_value = !value.is_empty();
-            move |menu: gpui_kit::component::menu::PopupMenu,
-                  _: &mut Window,
-                  cx: &mut Context<gpui_kit::component::menu::PopupMenu>| {
-                let record = owner.clone();
-                let clear = owner.clone();
-                let reset = owner.clone();
-                menu.item(
-                    PopupMenuItem::new(t(cx, "settings-key-record"))
-                        .icon(IconName::Keyboard)
-                        .disabled(busy)
-                        .on_click(move |_, window, cx| {
-                            record
-                                .update(cx, |this, cx| this.start_recording(index, window, cx))
-                                .ok();
-                        }),
-                )
-                .item(
-                    PopupMenuItem::new(t(cx, "settings-key-clear"))
-                        .icon(IconName::Eraser)
-                        .disabled(busy || !has_value)
-                        .on_click(move |_, window, cx| {
-                            clear
-                                .update(cx, |this, cx| this.clear(index, window, cx))
-                                .ok();
-                        }),
-                )
-                .when(customized, |menu| {
-                    menu.separator().item(
-                        PopupMenuItem::new(t(cx, "settings-key-reset"))
-                            .icon(IconName::Undo2)
-                            .disabled(busy || recording)
-                            .on_click(move |_, window, cx| {
-                                reset
-                                    .update(cx, |this, cx| {
-                                        this.save(index, None, window, cx);
-                                    })
-                                    .ok();
-                            }),
-                    )
-                })
-            }
-        };
         let area = key_area(
             ("key-area", index),
             &self.focus[index],
@@ -738,7 +690,7 @@ impl KeysView {
             }
             match event.keystroke.key.as_str() {
                 "enter" => {
-                    if this.editing == Some(index) {
+                    if this.drafts[index].as_ref() != this.saved(index, cx) {
                         this.confirm(index, window, cx);
                     } else {
                         this.start_recording(index, window, cx);
@@ -771,37 +723,56 @@ impl KeysView {
                 )
             })
             .child(area)
-            .when(editing && (dirty || recording), |row| {
+            .child(
+                Button::new(("key-clear", index))
+                    .small()
+                    .ghost()
+                    .icon(IconName::Eraser)
+                    .tooltip(t(cx, "settings-key-clear"))
+                    .accessibility_label(t(cx, "settings-key-clear"))
+                    .disabled(busy || value.is_empty())
+                    .debug_selector(move || format!("key-clear-{}", command.id))
+                    .on_click(
+                        cx.listener(move |this, _, window, cx| this.clear(index, window, cx)),
+                    ),
+            )
+            .when(editing, |row| {
                 row.child(
-                    Button::new(("key-confirm", index))
-                        .small()
-                        .label(t(cx, "settings-key-save"))
-                        .disabled(busy || recording)
-                        .debug_selector(move || format!("key-confirm-{}", command.id))
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.confirm(index, window, cx);
-                        })),
-                )
-                .child(
                     Button::new(("key-cancel", index))
                         .small()
                         .ghost()
+                        .icon(IconName::X)
                         .label(t(cx, "action-cancel"))
                         .disabled(busy)
                         .debug_selector(move || format!("key-cancel-{}", command.id))
                         .on_click(cx.listener(|this, _, window, cx| this.cancel(window, cx))),
                 )
+                .child(
+                    Button::new(("key-confirm", index))
+                        .small()
+                        .icon(IconName::Check)
+                        .label(t(cx, "settings-key-confirm"))
+                        .disabled(busy || recording || !dirty)
+                        .debug_selector(move || format!("key-confirm-{}", command.id))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.confirm(index, window, cx);
+                        })),
+                )
             })
-            .child(
-                Button::new(("key-actions", index))
-                    .ghost()
-                    .small()
-                    .icon(IconName::Ellipsis)
-                    .tooltip(t(cx, "settings-key-actions"))
-                    .accessibility_label(t(cx, "settings-key-actions"))
-                    .debug_selector(move || format!("key-actions-{}", command.id))
-                    .dropdown_menu_with_anchor(Anchor::TopRight, menu),
-            );
+            .when(customized && !dirty && !recording, |row| {
+                row.child(
+                    Button::new(("key-reset", index))
+                        .small()
+                        .ghost()
+                        .icon(IconName::Undo2)
+                        .tooltip(t(cx, "settings-key-reset"))
+                        .accessibility_label(t(cx, "settings-key-reset"))
+                        .disabled(busy)
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.save(index, None, window, cx);
+                        })),
+                )
+            });
         v_flex()
             .id(("key-field", index))
             .debug_selector(move || format!("key-binding-{}", command.id))
@@ -1066,6 +1037,36 @@ mod tests {
         });
         click(cx, "key-reset-all");
         cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
+    }
+
+    #[gpui_kit::test]
+    fn shortcut_controls_record_on_first_enter_and_clear_without_recording(
+        cx: &mut TestAppContext,
+    ) {
+        let (keys, _, cx) = setup(cx);
+        let index = command_index("palette");
+        assert!(cx.debug_bounds("key-clear-palette").is_some());
+        click(cx, "key-clear-palette");
+        assert!(draft(cx, &keys, index).is_empty());
+        click(cx, "key-cancel-palette");
+        assert_eq!(draft(cx, &keys, index), "secondary-shift-p");
+        cx.update(|window, cx| {
+            let focus = keys.read(cx).focus[index].clone();
+            focus.focus(window, cx);
+        });
+        cx.simulate_keystrokes("enter");
+        cx.update(|_, cx| assert!(keys.read(cx).capture.is_some()));
+        click(cx, "key-cancel-palette");
+        cx.update(|_, cx| assert!(keys.read(cx).capture.is_none()));
+        click(cx, "key-record-palette");
+        cx.update(|_, cx| assert!(keys.read(cx).capture.is_some()));
+        cx.simulate_keystrokes("ctrl-alt-7");
+        cx.simulate_keystrokes("enter");
+        cx.update(|_, cx| {
+            let view = keys.read(cx);
+            assert!(view.capture.is_none());
+            assert_eq!(view.saved(index, cx), "ctrl-alt-7");
+        });
     }
 
     #[gpui_kit::test]

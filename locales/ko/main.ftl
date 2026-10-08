@@ -809,3 +809,4 @@ packages-page = { $page }페이지
 packages-page-empty = 이 페이지에 조건에 맞는 패키지가 없습니다.
 packages-close = 세부 정보 닫기
 packages-local-unavailable = 로컬 패키지 정보를 사용할 수 없습니다. 리소스를 새로 고친 후 패키지를 관리하세요.
+packages-refresh-details = 상세 정보 새로 고침

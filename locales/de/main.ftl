@@ -816,3 +816,4 @@ packages-page = Seite { $page }
 packages-page-empty = Keine passenden Pakete auf dieser Seite.
 packages-close = Details schließen
 packages-local-unavailable = Lokale Paketinformationen sind nicht verfügbar. Aktualisieren Sie die Ressourcen, um Paketaktionen zu aktivieren.
+packages-refresh-details = Details aktualisieren

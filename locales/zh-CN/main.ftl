@@ -816,3 +816,4 @@ packages-page = 第 { $page } 页
 packages-page-empty = 本页无符合条件的包。
 packages-close = 关闭详情
 packages-local-unavailable = 本地包信息不可用，请刷新资源后再操作。
+packages-refresh-details = 刷新详情

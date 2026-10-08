@@ -83,6 +83,13 @@ impl Browse {
 
 impl ResourcesView {
     fn schedule_search(&mut self, cx: &mut Context<Self>) {
+        // Invalidate the old query immediately, including its in-flight response.
+        self.browse.serial += 1;
+        self.browse.searching = None;
+        self.browse.page = None;
+        self.browse.problem = None;
+        self.browse.selected = None;
+        self.browse.showing_detail = false;
         // Wait for typing to pause before asking the registry (Zed uses 250 ms).
         self.browse.debounce = Some(cx.spawn(async move |owner, cx| {
             cx.background_executor()
@@ -90,6 +97,7 @@ impl ResourcesView {
                 .await;
             let _ = owner.update(cx, |this, cx| this.search_catalog(0, cx));
         }));
+        cx.notify();
     }
 
     pub(super) fn search_catalog(&mut self, from: usize, cx: &mut Context<Self>) {
@@ -100,6 +108,7 @@ impl ResourcesView {
     fn start_search(&mut self, query: String, from: usize, cx: &mut Context<Self>) {
         self.browse.debounce = None;
         self.browse.problem = None;
+        self.browse.page = None;
         self.browse.serial += 1;
         let serial = self.browse.serial;
         let request = Tokio::spawn(cx, catalog::search(query.clone(), from));
@@ -115,7 +124,6 @@ impl ResourcesView {
                         this.browse.page = Some(page);
                         this.browse.problem = None;
                     }
-                    // Keep the previous results visible next to the error.
                     Err(problem) => {
                         this.browse.problem = Some(FailedSearch {
                             query,
@@ -188,11 +196,16 @@ impl ResourcesView {
         if self.browse.page.is_none()
             && self.browse.problem.is_none()
             && self.browse.searching.is_none()
+            && self.browse.debounce.is_none()
         {
             let owner = cx.entity().downgrade();
             cx.defer(move |cx| {
                 let _ = owner.update(cx, |this, cx| {
-                    if this.browse.searching.is_none() && this.browse.page.is_none() {
+                    if this.browse.searching.is_none()
+                        && this.browse.debounce.is_none()
+                        && this.browse.page.is_none()
+                        && this.browse.problem.is_none()
+                    {
                         this.search_catalog(0, cx);
                     }
                 });
@@ -334,8 +347,19 @@ impl ResourcesView {
         mount: Mount,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let refreshing = matches!(self.browse.details.get(name), Some(DetailState::Loading(_)));
+        let target = name.to_owned();
+        let refresh = Button::new("package-details-refresh")
+            .ghost()
+            .small()
+            .icon(IconName::RotateCw)
+            .tooltip(t(cx, "packages-refresh-details"))
+            .accessibility_label(t(cx, "packages-refresh-details"))
+            .loading(refreshing)
+            .disabled(refreshing)
+            .on_click(cx.listener(move |this, _, _, cx| this.load_details(target.clone(), cx)));
         let header = if narrow {
-            h_flex().child(
+            h_flex().justify_between().child(
                 Button::new("packages-back")
                     .ghost()
                     .small()
@@ -373,6 +397,7 @@ impl ResourcesView {
                         })),
                 )
         };
+        let header = header.child(refresh);
         v_flex()
             .size_full()
             .min_h_0()
@@ -413,7 +438,7 @@ impl ResourcesView {
             );
         }
         let Some(page) = &self.browse.page else {
-            if self.browse.searching.is_some() {
+            if self.browse.searching.is_some() || self.browse.debounce.is_some() {
                 view = view.child(
                     h_flex()
                         .gap_2()
@@ -906,5 +931,62 @@ fn declared_key(kind: Declared) -> &'static str {
         Declared::Skills => "settings-package-kind-skills",
         Declared::Prompts => "settings-package-kind-prompts",
         Declared::Themes => "settings-package-kind-themes",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FailedSearch, Problem, ResourcesView, SearchPage};
+    use crate::features::settings::{AppConfig, AppLanguage, ConfigController, PiProbeController};
+    use gpui_form::Form;
+    use gpui_kit::{AppContext, TestAppContext};
+
+    struct EmptyView;
+    impl gpui_kit::Render for EmptyView {
+        fn render(
+            &mut self,
+            _: &mut gpui_kit::Window,
+            _: &mut gpui_kit::Context<Self>,
+        ) -> impl gpui_kit::IntoElement {
+            gpui_kit::div()
+        }
+    }
+
+    #[gpui_kit::test]
+    fn changing_query_clears_results_and_failure_before_debounce(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            crate::app::init_capability_hosts(cx);
+            app_theme::init(cx);
+            gupi_settings::theme::init(cx);
+            gupi_settings::i18n::apply(AppLanguage::English, cx);
+        });
+        cx.add_window_view(|window, cx| {
+            let form = cx.new(|_| Form::new(AppConfig::default()));
+            let config = cx.new(|cx| ConfigController::new(&form, cx));
+            let probe = cx.new(|_| PiProbeController::new());
+            let resources = cx.new(|cx| ResourcesView::new(config, probe, window, cx));
+            resources.update(cx, |view, cx| {
+                view.browse.page = Some(SearchPage::default());
+                view.browse.problem = Some(FailedSearch {
+                    query: "old".into(),
+                    from: 20,
+                    problem: Problem::Network,
+                });
+                view.browse.selected = Some("old-package".into());
+                view.browse.showing_detail = true;
+                let serial = view.browse.serial;
+                view.schedule_search(cx);
+                assert!(view.browse.page.is_none());
+                assert!(view.browse.problem.is_none());
+                assert!(view.browse.selected.is_none());
+                assert!(!view.browse.showing_detail);
+                assert!(view.browse.searching.is_none());
+                assert!(view.browse.serial > serial);
+                assert!(view.browse.debounce.is_some());
+                view.browse.debounce = None;
+            });
+            EmptyView
+        });
     }
 }

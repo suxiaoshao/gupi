@@ -258,7 +258,7 @@ impl SettingsView {
             .group(keys::KeysView::actions(&keys, &self.global_keys))
             .groups(global_keys::GlobalKeys::groups(
                 &self.global_keys,
-                keys_view.customized_only(),
+                keys_view,
                 cx,
             ))
             .groups(command_groups);

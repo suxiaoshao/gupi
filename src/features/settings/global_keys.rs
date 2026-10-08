@@ -24,7 +24,7 @@ impl GlobalKeys {
         }
     }
     /// The system-wide section: the temporary window launcher and template tasks.
-    pub fn groups(owner: &Entity<Self>, customized_only: bool, cx: &App) -> Vec<SettingGroup> {
+    pub fn groups(owner: &Entity<Self>, filter: &keys::KeysView, cx: &App) -> Vec<SettingGroup> {
         let config = owner.read(cx).controller.read(cx).preferences(cx).shortcuts;
         let row = |id: String, label: String, description: String| {
             let owner = owner.clone();
@@ -40,12 +40,26 @@ impl GlobalKeys {
                 "global system-wide shortcut 全局 系统级 快捷键".into(),
             ])
         };
-        let launcher = (!customized_only || !config.launcher.is_empty())
-            .then(|| row(String::new(), t(cx, "shortcut-launcher"), String::new()));
+        let matches = |label: &str, id: &str, binding: &str| {
+            filter.matches_binding(
+                binding,
+                !binding.is_empty(),
+                &[
+                    label.to_owned(),
+                    id.to_owned(),
+                    t(cx, "settings-key-group-system"),
+                    "global system-wide shortcut 全局 系统级 快捷键".into(),
+                ],
+                cx,
+            )
+        };
+        let launcher_label = t(cx, "shortcut-launcher");
+        let launcher = matches(&launcher_label, "launcher", &config.launcher)
+            .then(|| row(String::new(), launcher_label, String::new()));
         let tasks = config
             .tasks
             .iter()
-            .filter(|task| !customized_only || !task.binding.is_empty())
+            .filter(|task| matches(&task.name, &task.id, &task.binding))
             .map(|task| {
                 let mut args = fluent_bundle::FluentArgs::new();
                 args.set(

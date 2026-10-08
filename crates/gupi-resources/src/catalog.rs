@@ -64,8 +64,19 @@ impl Entry {
 #[non_exhaustive]
 pub struct SearchPage {
     pub entries: Vec<Entry>,
+    /// Raw registry hit count before package validation; not a browsable package count.
     pub total: usize,
     pub from: usize,
+}
+
+impl SearchPage {
+    pub fn number(&self) -> usize {
+        self.from / PAGE_SIZE + 1
+    }
+
+    pub fn has_next(&self) -> bool {
+        self.from.saturating_add(PAGE_SIZE) < self.total
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -330,6 +341,22 @@ pub fn parse_details(body: &[u8], name: &str) -> Result<Details, Problem> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pagination_keeps_raw_offsets_even_when_validation_empties_a_page() {
+        let body = br#"{"total": 41, "objects": [
+            {"package": {"name": "other", "version": "1.0.0", "keywords": ["cli"]}}
+        ]}"#;
+        for (from, number, has_next) in [(0, 1, true), (20, 2, true), (40, 3, false)] {
+            let page = parse_search(body, from).unwrap();
+            assert!(page.entries.is_empty());
+            assert_eq!(page.number(), number);
+            assert_eq!(page.has_next(), has_next);
+        }
+        let empty = parse_search(br#"{"total": 0, "objects": []}"#, 0).unwrap();
+        assert_eq!(empty.number(), 1);
+        assert!(!empty.has_next());
+    }
 
     #[test]
     fn search_keeps_only_tagged_valid_packages() {

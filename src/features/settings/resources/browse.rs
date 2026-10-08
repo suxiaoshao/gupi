@@ -270,60 +270,49 @@ impl ResourcesView {
                     .flex_shrink_0()
                     .child(t(cx, "packages-directory")),
             );
-        let pager = self
-            .browse
-            .page
-            .as_ref()
-            .filter(|page| page.total > catalog::PAGE_SIZE)
-            .map(|page| {
-                let mut args = fluent_bundle::FluentArgs::new();
-                args.set("first", (page.from + 1) as i64);
-                args.set("last", (page.from + page.entries.len().max(1)) as i64);
-                args.set("total", page.total as i64);
-                let from = page.from;
-                let has_next = page.from + catalog::PAGE_SIZE < page.total;
-                let busy = self.browse.searching.is_some();
-                h_flex()
-                    .flex_shrink_0()
-                    .gap_1()
-                    .items_center()
-                    .child(
-                        Button::new("packages-previous")
-                            .ghost()
-                            .xsmall()
-                            .icon(IconName::ChevronLeft)
-                            .tooltip(t(cx, "packages-previous"))
-                            .accessibility_label(t(cx, "packages-previous"))
-                            .disabled(busy || from == 0)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.search_catalog(from.saturating_sub(catalog::PAGE_SIZE), cx)
-                            })),
+        let pager = self.browse.page.as_ref().map(|page| {
+            let mut args = fluent_bundle::FluentArgs::new();
+            args.set("page", page.number() as i64);
+            let from = page.from;
+            let has_next = page.has_next();
+            let busy = self.browse.searching.is_some();
+            h_flex()
+                .flex_shrink_0()
+                .gap_1()
+                .items_center()
+                .child(
+                    Button::new("packages-previous")
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::ChevronLeft)
+                        .tooltip(t(cx, "packages-previous"))
+                        .accessibility_label(t(cx, "packages-previous"))
+                        .disabled(busy || from == 0)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.search_catalog(from.saturating_sub(catalog::PAGE_SIZE), cx)
+                        })),
+                )
+                .when(!compact, |row| {
+                    row.child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(gupi_settings::i18n::t_with_args(cx, "packages-page", &args)),
                     )
-                    .when(!compact, |row| {
-                        row.child(
-                            div()
-                                .text_sm()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(gupi_settings::i18n::t_with_args(
-                                    cx,
-                                    "packages-range-short",
-                                    &args,
-                                )),
-                        )
-                    })
-                    .child(
-                        Button::new("packages-next")
-                            .ghost()
-                            .xsmall()
-                            .icon(IconName::ChevronRight)
-                            .tooltip(t(cx, "packages-next"))
-                            .accessibility_label(t(cx, "packages-next"))
-                            .disabled(busy || !has_next)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.search_catalog(from + catalog::PAGE_SIZE, cx)
-                            })),
-                    )
-            });
+                })
+                .child(
+                    Button::new("packages-next")
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::ChevronRight)
+                        .tooltip(t(cx, "packages-next"))
+                        .accessibility_label(t(cx, "packages-next"))
+                        .disabled(busy || !has_next)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.search_catalog(from + catalog::PAGE_SIZE, cx)
+                        })),
+                )
+        });
         h_flex()
             .flex_shrink_0()
             .pt_2()
@@ -437,20 +426,14 @@ impl ResourcesView {
             return view.into_any_element();
         };
         if page.entries.is_empty() {
-            let query = self.browse.query.read(cx).value().trim().to_owned();
             view = view.child(
                 div()
                     .text_sm()
                     .text_color(cx.theme().muted_foreground)
-                    .child(if query.is_empty() {
-                        t(cx, "packages-empty")
-                    } else {
-                        let mut args = fluent_bundle::FluentArgs::new();
-                        args.set("query", query);
-                        gupi_settings::i18n::t_with_args(cx, "packages-no-match", &args)
-                    }),
+                    .child(t(cx, "packages-page-empty")),
             );
         }
+
         for entry in &page.entries {
             let selected = self.browse.selected.as_deref() == Some(entry.name.as_str());
             let installed = self.installed_package(&entry.name, cx).is_some();

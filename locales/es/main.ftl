@@ -780,8 +780,6 @@ packages-source-npm = Los resultados provienen de paquetes npm con la palabra cl
 packages-directory = Directorio de paquetes de Pi
 packages-loading = Cargando…
 packages-retry = Reintentar
-packages-empty = No se encontraron paquetes.
-packages-no-match = Ningún paquete coincide con «{ $query }».
 packages-installed = Instalado
 packages-previous = Anterior
 packages-next = Siguiente
@@ -813,5 +811,6 @@ settings-package-remove-ellipsis = Quitar…
 
 # Package browser layout
 packages-source-short = npm · pi-package
-packages-range-short = { $first }–{ $last } / { $total }
+packages-page = Página { $page }
+packages-page-empty = No hay paquetes coincidentes en esta página.
 packages-close = Cerrar detalles

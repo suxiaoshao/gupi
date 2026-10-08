@@ -303,10 +303,29 @@ impl KeysView {
         }
         let command = &COMMANDS[index];
         let config = self.controller.read(cx).preferences(cx);
-        if self.customized_only && !config.keybindings.contains_key(command.id) {
+        self.matches_binding(
+            command.value(&config.keybindings),
+            config.keybindings.contains_key(command.id),
+            &[
+                t(cx, command.label),
+                t(cx, scope_key(command.kind)),
+                command.id.to_owned(),
+                command.kind.search_terms().to_owned(),
+            ],
+            cx,
+        )
+    }
+
+    pub(super) fn matches_binding(
+        &self,
+        value: &str,
+        customized: bool,
+        terms: &[String],
+        cx: &App,
+    ) -> bool {
+        if self.customized_only && !customized {
             return false;
         }
-        let value = command.value(&config.keybindings);
         if let Some(key) = &self.key_query {
             let first = value
                 .split_whitespace()
@@ -318,24 +337,15 @@ impl KeysView {
         }
         let query = self.search.read(cx).value().trim().to_lowercase();
         query.is_empty()
-            || [
-                t(cx, command.label),
-                t(cx, scope_key(command.kind)),
-                command.id.to_owned(),
-                command.kind.search_terms().to_owned(),
-            ]
-            .iter()
-            .any(|text| text.to_lowercase().contains(&query))
+            || terms
+                .iter()
+                .any(|text| text.to_lowercase().contains(&query))
     }
 
     pub fn filtering(&self, cx: &App) -> bool {
         self.customized_only
             || self.key_query.is_some()
             || !self.search.read(cx).value().trim().is_empty()
-    }
-
-    pub fn customized_only(&self) -> bool {
-        self.customized_only
     }
 
     pub fn sessions_open(&self) -> bool {
@@ -839,14 +849,17 @@ mod tests {
     use super::COMMANDS;
     use super::ConfigController;
     use super::KeysView;
+    use super::PreferenceChange;
     use crate::features::settings::global_keys::GlobalKeys;
     use gpui_form::Form;
+    use gpui_kit::App;
     use gpui_kit::AppContext;
     use gpui_kit::Context;
     use gpui_kit::Entity;
     use gpui_kit::InteractiveElement;
     use gpui_kit::IntoElement;
     use gpui_kit::KeyBinding;
+    use gpui_kit::Keystroke;
     use gpui_kit::Modifiers;
     use gpui_kit::ParentElement;
     use gpui_kit::Render;
@@ -1246,6 +1259,51 @@ mod tests {
         cx.update(|window, cx| window.draw(cx).clear(cx));
         assert!(cx.debug_bounds("key-binding-palette").is_some());
         assert!(cx.debug_bounds("key-binding-quick_open").is_none());
+    }
+
+    #[gpui_kit::test]
+    fn system_shortcuts_follow_page_search_and_key_filters(cx: &mut TestAppContext) {
+        let (keys, _, cx) = setup(cx);
+        cx.update(|window, cx| {
+            let controller = keys.read(cx).controller.clone();
+            let global = cx.new(|_| GlobalKeys::new(controller.clone()));
+            let mut config = gupi_settings::shortcuts::Shortcuts::default();
+            config.launcher = "ctrl-alt-l".into();
+            let mut task = gupi_settings::shortcuts::ShortcutTask::default();
+            task.id = "summarize".into();
+            task.name = "Summarize clipboard".into();
+            task.binding = "ctrl-alt-s".into();
+            task.template = "summary.md".into();
+            config.tasks.push(task);
+            controller.update(cx, |owner, cx| {
+                owner.set_preference(PreferenceChange::Shortcuts(config), cx)
+            });
+            keys.update(cx, |this, cx| {
+                let visible =
+                    |this: &KeysView, cx: &App| !GlobalKeys::groups(&global, this, cx).is_empty();
+                this.search
+                    .update(cx, |input, cx| input.set_value("unrelated", window, cx));
+                assert!(!visible(this, cx));
+                this.search
+                    .update(cx, |input, cx| input.set_value("SUMMARIZE", window, cx));
+                assert!(visible(this, cx));
+                this.key_query = Keystroke::parse("ctrl-alt-l").ok();
+                assert!(!visible(this, cx));
+                this.key_query = Keystroke::parse("ctrl-alt-s").ok();
+                assert!(visible(this, cx));
+                this.customized_only = true;
+                assert!(visible(this, cx));
+                this.search
+                    .update(cx, |input, cx| input.set_value("launcher", window, cx));
+                assert!(!visible(this, cx));
+                this.key_query = Keystroke::parse("ctrl-alt-l").ok();
+                assert!(visible(this, cx));
+                this.search
+                    .update(cx, |input, cx| input.set_value("", window, cx));
+                this.key_query = Keystroke::parse("ctrl-alt-z").ok();
+                assert!(!visible(this, cx));
+            });
+        });
     }
 
     #[gpui_kit::test]

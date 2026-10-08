@@ -781,8 +781,6 @@ packages-source-npm = Ergebnisse stammen aus npm-Paketen mit dem Schlagwort „p
 packages-directory = Pi-Paketverzeichnis
 packages-loading = Wird geladen …
 packages-retry = Erneut versuchen
-packages-empty = Keine Pakete gefunden.
-packages-no-match = Keine Pakete passen zu „{ $query }“.
 packages-installed = Installiert
 packages-previous = Zurück
 packages-next = Weiter
@@ -814,5 +812,6 @@ settings-package-remove-ellipsis = Entfernen …
 
 # Package browser layout
 packages-source-short = npm · pi-package
-packages-range-short = { $first }–{ $last } / { $total }
+packages-page = Seite { $page }
+packages-page-empty = Keine passenden Pakete auf dieser Seite.
 packages-close = Details schließen

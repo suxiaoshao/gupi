@@ -774,8 +774,6 @@ packages-source-npm = 結果は npm で「pi-package」キーワードが付い�
 packages-directory = Pi パッケージディレクトリ
 packages-loading = 読み込み中…
 packages-retry = 再試行
-packages-empty = パッケージが見つかりません。
-packages-no-match = 「{ $query }」に一致するパッケージはありません。
 packages-installed = インストール済み
 packages-previous = 前へ
 packages-next = 次へ
@@ -807,5 +805,6 @@ settings-package-remove-ellipsis = 削除…
 
 # Package browser layout
 packages-source-short = npm · pi-package
-packages-range-short = { $first }–{ $last } / { $total }
+packages-page = { $page } ページ
+packages-page-empty = このページに条件に一致するパッケージはありません。
 packages-close = 詳細を閉じる

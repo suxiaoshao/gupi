@@ -774,8 +774,6 @@ packages-source-npm = 결과는 npm에서 “pi-package” 키워드가 있는 �
 packages-directory = Pi 패키지 디렉터리
 packages-loading = 불러오는 중…
 packages-retry = 다시 시도
-packages-empty = 패키지를 찾을 수 없습니다.
-packages-no-match = “{ $query }”과(와) 일치하는 패키지가 없습니다.
 packages-installed = 설치됨
 packages-previous = 이전
 packages-next = 다음
@@ -807,5 +805,6 @@ settings-package-remove-ellipsis = 제거…
 
 # Package browser layout
 packages-source-short = npm · pi-package
-packages-range-short = { $first }–{ $last } / { $total }
+packages-page = { $page }페이지
+packages-page-empty = 이 페이지에 조건에 맞는 패키지가 없습니다.
 packages-close = 세부 정보 닫기

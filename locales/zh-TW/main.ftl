@@ -781,8 +781,6 @@ packages-source-npm = 結果來自 npm 上帶有 pi-package 關鍵字的套件�
 packages-directory = Pi 套件目錄
 packages-loading = 正在載入…
 packages-retry = 重試
-packages-empty = 沒有找到套件。
-packages-no-match = 沒有符合「{ $query }」的套件。
 packages-installed = 已安裝
 packages-previous = 上一頁
 packages-next = 下一頁
@@ -814,5 +812,6 @@ settings-package-remove-ellipsis = 移除…
 
 # Package browser layout
 packages-source-short = npm · pi-package
-packages-range-short = { $first }–{ $last } / { $total }
+packages-page = 第 { $page } 頁
+packages-page-empty = 本頁無符合條件的套件。
 packages-close = 關閉詳細資料

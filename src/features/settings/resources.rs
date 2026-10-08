@@ -81,7 +81,7 @@ pub(super) struct ResourcesView {
     browsing: bool,
     browse: browse::Browse,
     installed_scroll: ScrollHandle,
-    /// The latest Pi operation result per package source, shown in details.
+    /// The latest Pi operation result per registry package name, shown in details.
     package_results: std::collections::BTreeMap<String, Result<(), io::Error>>,
     error: Option<(Kind, String)>,
     _subscriptions: Vec<Subscription>,
@@ -293,8 +293,10 @@ impl ResourcesView {
                     change,
                 } = event
                 {
-                    if matches!(change, Change::Package { .. }) {
-                        this.package_results.insert(target.clone(), result.clone());
+                    if let Change::Package { source, .. } = change
+                        && let Some(name) = gupi_resources::catalog::installed_name(source)
+                    {
+                        this.package_results.insert(name.to_owned(), result.clone());
                     }
                     let mut args = fluent_bundle::FluentArgs::new();
                     args.set("target", target.clone());
@@ -392,7 +394,9 @@ impl ResourcesView {
         if !self.package_available(cx) {
             return;
         }
-        self.package_results.remove(&source);
+        if let Some(name) = gupi_resources::catalog::installed_name(&source) {
+            self.package_results.remove(name);
+        }
         self.change(
             Change::Package {
                 command,

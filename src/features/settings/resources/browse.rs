@@ -821,7 +821,7 @@ impl ResourcesView {
                     ),
             );
         }
-        if let Some(result) = self.package_results.get(&source) {
+        if let Some(result) = self.package_results.get(name) {
             view = view.child(match result {
                 Ok(()) => div()
                     .text_sm()
@@ -949,6 +949,66 @@ mod tests {
             _: &mut gpui_kit::Context<Self>,
         ) -> impl gpui_kit::IntoElement {
             gpui_kit::div()
+        }
+    }
+
+    #[gpui_kit::test]
+    fn removal_results_use_registry_identity_without_an_installed_package(cx: &mut TestAppContext) {
+        use gupi_resources::pi_resources::Error;
+        use gupi_resources::resources::{Change, ResourceEvent};
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            crate::app::init_capability_hosts(cx);
+            app_theme::init(cx);
+            gupi_settings::theme::init(cx);
+            gupi_settings::i18n::apply(AppLanguage::English, cx);
+        });
+        let mut resources = None;
+        let (_, visual) = cx.add_window_view(|window, cx| {
+            let form = cx.new(|_| Form::new(AppConfig::default()));
+            let config = cx.new(|cx| ConfigController::new(&form, cx));
+            let probe = cx.new(|_| PiProbeController::new());
+            resources = Some(cx.new(|cx| ResourcesView::new(config, probe, window, cx)));
+            let view = cx.new(|_| EmptyView);
+            gpui_kit::component::Root::new(view, window, cx)
+        });
+        let resources = resources.unwrap();
+        for (source, name, result) in [
+            ("npm:foo@1.2.0", "foo", Ok(())),
+            (
+                "npm:@scope/foo@latest",
+                "@scope/foo",
+                Err(Error::new("partial removal".into())),
+            ),
+        ] {
+            visual.update(|_, cx| {
+                let controller = resources.read(cx).controller.clone();
+                controller.update(cx, |_, cx| {
+                    cx.emit(ResourceEvent::Finished {
+                        target: source.into(),
+                        result: result.clone(),
+                        change: Change::Package {
+                            command: "pi".into(),
+                            action: "remove",
+                            source: source.into(),
+                        },
+                    })
+                });
+            });
+            visual.run_until_parked();
+            visual.update(|_, cx| {
+                let view = resources.read(cx);
+                assert!(view.installed_package(name, cx).is_none());
+                let actual = view
+                    .package_results
+                    .get(name)
+                    .expect("result survives missing installed entry");
+                assert_eq!(
+                    actual.as_ref().map_err(ToString::to_string),
+                    result.as_ref().map_err(ToString::to_string)
+                );
+                assert!(!view.package_results.contains_key(source));
+            });
         }
     }
 

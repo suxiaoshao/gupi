@@ -462,7 +462,7 @@ impl SettingsView {
                                 busy,
                             )),
                     )
-                    .child(self.render_icon_themes(cx)),
+                    .child(self.render_icon_themes(true, cx)),
             );
 
         v_flex()

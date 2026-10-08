@@ -3,6 +3,7 @@ use gpui_kit::component::Icon;
 use gpui_kit::component::collapsible::Collapsible;
 use gpui_kit::component::group_box::GroupBox;
 use gpui_kit::component::group_box::GroupBoxVariants;
+use gpui_kit::component::menu::DropdownMenu;
 use gpui_kit::component::tooltip::Tooltip;
 
 const RESOURCE_KINDS: [(Kind, &str, IconName); 4] = [
@@ -28,8 +29,62 @@ const RESOURCE_KINDS: [(Kind, &str, IconName); 4] = [
     ),
 ];
 
+/// Where the Packages body is mounted. A page-filling slot bounds its height,
+/// so the lists scroll inside it; a settings group-list item sizes to its
+/// content and leaves scrolling to the settings page.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Mount {
+    #[allow(dead_code)]
+    Bounded,
+    Content,
+}
+
+/// A region that owns its scrolling in a bounded body and keeps its natural
+/// height otherwise.
+pub(super) fn region(id: &'static str, scroll: &ScrollHandle, mount: Mount) -> Stateful<Div> {
+    let region = div().id(id).min_w_0();
+    match mount {
+        Mount::Bounded => region
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .track_scroll(scroll),
+        Mount::Content => region,
+    }
+}
+
 impl ResourcesView {
-    pub(super) fn render_packages(&self, cx: &Context<Self>) -> AnyElement {
+    /// The Packages body; `width` is its own measured width.
+    pub(super) fn render_packages(
+        &mut self,
+        width: Pixels,
+        mount: Mount,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        if self.browsing {
+            self.render_browse(width, mount, cx)
+        } else {
+            self.render_installed(mount, cx)
+        }
+    }
+
+    pub(super) fn render_packages_tabs(&self, cx: &Context<Self>) -> AnyElement {
+        use gpui_kit::component::tab::Tab;
+        use gpui_kit::component::tab::TabBar;
+        TabBar::new("packages-view")
+            .segmented()
+            .small()
+            .selected_index(usize::from(self.browsing))
+            .child(Tab::new().label(t(cx, "packages-installed-tab")))
+            .child(Tab::new().label(t(cx, "packages-browse-tab")))
+            .on_click(cx.listener(|this, index: &usize, _, cx| {
+                this.browsing = *index == 1;
+                cx.notify();
+            }))
+            .into_any_element()
+    }
+
+    fn render_installed(&self, mount: Mount, cx: &Context<Self>) -> AnyElement {
         let controller = self.controller.read(cx);
         let Some(catalog) = controller.catalog().data() else {
             return div().into_any_element();
@@ -41,7 +96,7 @@ impl ResourcesView {
             .read(cx)
             .ready_for(configured.as_deref())
             .is_some();
-        let mut view = v_flex().gap_3().child(
+        let mut toolbar = v_flex().flex_shrink_0().gap_3().child(
             h_flex()
                 .justify_between()
                 .gap_2()
@@ -52,8 +107,9 @@ impl ResourcesView {
                 )
                 .child(
                     Button::new("package-add")
+                        .small()
                         .icon(IconName::Plus)
-                        .label(t(cx, "settings-package-install"))
+                        .label(t(cx, "settings-package-install-source"))
                         .disabled(busy || !pi_ready || self.installing)
                         .debug_selector(|| "package-add".into())
                         .on_click(cx.listener(|this, _, window, cx| {
@@ -64,7 +120,7 @@ impl ResourcesView {
                 ),
         );
         if !pi_ready {
-            view = view.child(
+            toolbar = toolbar.child(
                 div()
                     .text_sm()
                     .text_color(cx.theme().muted_foreground)
@@ -72,7 +128,7 @@ impl ResourcesView {
             );
         }
         if self.installing {
-            view = view
+            toolbar = toolbar
                 .child(
                     gpui_kit::component::form::field()
                         .label(t(cx, "settings-package-source"))
@@ -110,6 +166,7 @@ impl ResourcesView {
                         ),
                 );
         }
+        let mut view = v_flex().gap_3();
         if catalog.packages.is_empty() {
             view = view.child(
                 div()
@@ -143,7 +200,14 @@ impl ResourcesView {
                 );
             }
         }
-        view.into_any_element()
+        // The toolbar stays put; the installed list owns its scrolling.
+        v_flex()
+            .size_full()
+            .min_h_0()
+            .gap_3()
+            .child(toolbar)
+            .child(region("packages-installed", &self.installed_scroll, mount).child(view))
+            .into_any_element()
     }
 
     fn render_package(
@@ -189,6 +253,29 @@ impl ResourcesView {
                         .child(version)
                 })),
         );
+        if !package.path.exists() {
+            heading = heading.child(
+                h_flex().child(
+                    Tag::danger()
+                        .small()
+                        .outline()
+                        .child(t(cx, "packages-files-missing")),
+                ),
+            );
+        } else if let Some(pinned) = gupi_resources::catalog::pinned_version(&source) {
+            let mut args = fluent_bundle::FluentArgs::new();
+            args.set("version", pinned.to_owned());
+            heading = heading.child(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(gupi_settings::i18n::t_with_args(
+                        cx,
+                        "packages-pinned-installed",
+                        &args,
+                    )),
+            );
+        }
         if let Some(counts) = io_counts(catalog, &source, cx) {
             heading = heading.child(
                 div()
@@ -231,43 +318,66 @@ impl ResourcesView {
                 }
                 cx.notify();
             }));
+        let pending = self.pending_package.as_deref() == Some(source.as_str());
+        let owner = cx.entity().downgrade();
+        let copy = source.clone();
+        let menu =
+            move |menu: gpui_kit::component::menu::PopupMenu,
+                  _: &mut Window,
+                  cx: &mut Context<gpui_kit::component::menu::PopupMenu>| {
+                let reveal = reveal.clone();
+                let copy = copy.clone();
+                let owner = owner.clone();
+                let remove = remove.clone();
+                menu.item(
+                    PopupMenuItem::new(t(cx, "settings-resource-location"))
+                        .icon(IconName::FolderOpen)
+                        .on_click(move |_, _, cx| cx.reveal_path(&reveal)),
+                )
+                .item(
+                    PopupMenuItem::new(t(cx, "packages-copy-source"))
+                        .icon(IconName::Copy)
+                        .on_click(move |_, _, cx| {
+                            cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()))
+                        }),
+                )
+                .separator()
+                .item(
+                    PopupMenuItem::new(t(cx, "settings-package-remove-ellipsis"))
+                        .icon(IconName::Trash)
+                        .disabled(busy || !pi_ready)
+                        .on_click(move |_, window, cx| {
+                            owner
+                                .update(cx, |this, cx| {
+                                    this.confirm_remove(None, remove.clone(), window, cx)
+                                })
+                                .ok();
+                        }),
+                )
+            };
         let mut card = Collapsible::new().open(expanded).gap_3().child(
             h_flex().gap_2().child(heading).child(
                 h_flex()
                     .flex_shrink_0()
                     .gap_1()
                     .child(
-                        Button::new(id("path"))
-                            .ghost()
-                            .small()
-                            .icon(IconName::FolderOpen)
-                            .tooltip(t(cx, "settings-resource-location"))
-                            .accessibility_label(t(cx, "settings-resource-location"))
-                            .on_click(move |_, _, cx| cx.reveal_path(&reveal)),
-                    )
-                    .child(
                         Button::new(id("update"))
-                            .ghost()
                             .small()
-                            .icon(IconName::RotateCw)
-                            .tooltip(t(cx, "settings-package-update"))
-                            .accessibility_label(t(cx, "settings-package-update"))
+                            .label(t(cx, "settings-package-update"))
+                            .loading(pending)
                             .disabled(busy || !pi_ready)
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.package("update", update.clone(), cx);
                             })),
                     )
                     .child(
-                        Button::new(id("remove"))
+                        Button::new(id("more"))
                             .ghost()
                             .small()
-                            .icon(IconName::Trash)
-                            .tooltip(t(cx, "settings-package-remove"))
-                            .accessibility_label(t(cx, "settings-package-remove"))
-                            .disabled(busy || !pi_ready)
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.confirm_remove(None, remove.clone(), window, cx);
-                            })),
+                            .icon(IconName::Ellipsis)
+                            .tooltip(t(cx, "settings-resource-actions"))
+                            .accessibility_label(t(cx, "settings-resource-actions"))
+                            .dropdown_menu_with_anchor(Anchor::TopRight, menu),
                     )
                     .child(expand),
             ),

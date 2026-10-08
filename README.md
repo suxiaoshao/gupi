@@ -242,14 +242,14 @@ For screenshot input on macOS and Windows, Gupi freezes the display under the po
 
 ### Personal packages, skills, and prompts
 
-The **Plugins**, **Skills**, and **Prompts** settings pages manage your personal Pi resources:
+The **Packages**, **Skills**, and **Prompts** settings pages manage your personal Pi resources:
 
-- Install a package from a known source, update it, or remove it through Pi.
+- Browse npm packages tagged `pi-package` under **Packages → Browse**, read their published details and declared contents, and install one; or install from a known source. Installing, updating, and removing always run through Pi.
 - Search and enable/disable resources.
 - Register a local skill, or edit a skill/prompt you own.
 - Edit personal `SYSTEM.md` and `APPEND_SYSTEM.md` instructions.
 
-Package-owned and externally registered content is read-only. Gupi does not provide a package marketplace or a project-level configuration editor. Personal resources come from `PI_CODING_AGENT_DIR` (normally `~/.pi/agent`) and personal `~/.agents/skills`.
+Package-owned and externally registered content is read-only, and can still be enabled or disabled. Browsing contacts the npm registry; installed packages stay manageable offline. Gupi does not provide a project-level configuration editor. Personal resources come from `PI_CODING_AGENT_DIR` (normally `~/.pi/agent`) and personal `~/.agents/skills`.
 
 After an external change, refresh the resource page; refresh/reconnect an existing session when it needs to load changed resources.
 

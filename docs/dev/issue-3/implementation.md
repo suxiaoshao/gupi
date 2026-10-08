@@ -114,3 +114,11 @@
 验证：在临时副本中以 `[patch.crates-io]` 指向打过补丁的 0.7.1 源码构建并运行（未改动本分支依赖），确认页面不再整体滚动、只有列表滚动、页脚与搜索固定、选择后可拖动分隔线、窄宽度下返回保留列表位置。本分支未升级、未打补丁、未发布任何依赖；是否提交上游、发布并升级 `gpui-kit = "=0.7.1"` 需用户决定。
 
 本轮检查：`cargo fmt --all -- --check`、`cargo clippy -p gupi --all-targets --locked -- -D warnings`、`cargo test -p gupi --locked features::settings`（10 项）通过；9 个语言文件键数一致（723）。macOS 原生检查覆盖分支构建（无空详情、拖动分隔线、标题行切换与列表页脚）与上述临时副本（仅列表滚动、窄宽度返回）。
+
+## 包目录错误恢复
+
+- 在线浏览先于本地资源目录的可用性检查渲染；本地 Pi 配置扫描失败且没有缓存时，仍可搜索 npm 包。已安装视图继续自行检查本地目录。
+- 失败状态保留该次请求的查询词、分页偏移和错误；“重试”重新提交同一请求，不使用上一张成功页面的位置。开始请求时清除旧错误，保留已加载结果，并继续通过请求序号忽略迟到响应。
+- 通知权限说明函数与调用位置使用相同的平台条件，仅在 macOS/Windows 编译。
+
+本次修正验证（macOS、Nix 开发环境）：`cargo fmt --all -- --check`、`cargo test -p gupi --locked features::settings`（10 项）、`cargo clippy -p gupi --all-targets --all-features --locked -- -D warnings` 通过。两条错误恢复路径经代码检查，未进行真实网络故障注入。

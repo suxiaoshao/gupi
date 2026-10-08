@@ -590,9 +590,6 @@ impl ResourcesView {
             }
             return view.into_any_element();
         }
-        if catalog.is_none() {
-            return view.into_any_element();
-        }
         if section == Section::Packages {
             // Settings 0.7.1 mounts pages in its group list, which sizes each
             // item to content; `Mount::Bounded` needs a page-filling slot.
@@ -607,6 +604,9 @@ impl ResourcesView {
             })
             .size_full()
             .into_any_element();
+        }
+        if catalog.is_none() {
+            return view.into_any_element();
         }
         if kind != Kind::Extension {
             // Library toolbar: search, then the ordinary create command.

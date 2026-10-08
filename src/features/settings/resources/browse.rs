@@ -29,14 +29,19 @@ enum DetailState {
     Failed(Problem),
 }
 
+struct FailedSearch {
+    query: String,
+    from: usize,
+    problem: Problem,
+}
+
 /// Catalog browsing owned by the settings window; nothing is persisted.
 pub(super) struct Browse {
     query: Entity<InputState>,
-    from: usize,
     /// Identity of the latest search; older responses are ignored.
     serial: u64,
     page: Option<SearchPage>,
-    problem: Option<Problem>,
+    problem: Option<FailedSearch>,
     searching: Option<Task<()>>,
     debounce: Option<Task<()>>,
     selected: Option<String>,
@@ -59,7 +64,6 @@ impl Browse {
         (
             Self {
                 query,
-                from: 0,
                 serial: 0,
                 page: None,
                 problem: None,
@@ -89,11 +93,16 @@ impl ResourcesView {
     }
 
     pub(super) fn search_catalog(&mut self, from: usize, cx: &mut Context<Self>) {
+        let query = self.browse.query.read(cx).value().to_string();
+        self.start_search(query, from, cx);
+    }
+
+    fn start_search(&mut self, query: String, from: usize, cx: &mut Context<Self>) {
         self.browse.debounce = None;
+        self.browse.problem = None;
         self.browse.serial += 1;
         let serial = self.browse.serial;
-        let query = self.browse.query.read(cx).value().to_string();
-        let request = Tokio::spawn(cx, catalog::search(query, from));
+        let request = Tokio::spawn(cx, catalog::search(query.clone(), from));
         self.browse.searching = Some(cx.spawn(async move |owner, cx| {
             let result = request.await.unwrap_or(Err(Problem::Network));
             let _ = owner.update(cx, |this, cx| {
@@ -103,12 +112,17 @@ impl ResourcesView {
                 this.browse.searching = None;
                 match result {
                     Ok(page) => {
-                        this.browse.from = page.from;
                         this.browse.page = Some(page);
                         this.browse.problem = None;
                     }
                     // Keep the previous results visible next to the error.
-                    Err(problem) => this.browse.problem = Some(problem),
+                    Err(problem) => {
+                        this.browse.problem = Some(FailedSearch {
+                            query,
+                            from,
+                            problem,
+                        });
+                    }
                 }
                 cx.notify();
             });
@@ -385,7 +399,7 @@ impl ResourcesView {
 
     fn render_results(&self, cx: &mut Context<Self>) -> AnyElement {
         let mut view = v_flex().gap_1();
-        if let Some(problem) = &self.browse.problem {
+        if let Some(failure) = &self.browse.problem {
             view = view.child(
                 h_flex()
                     .gap_2()
@@ -394,7 +408,7 @@ impl ResourcesView {
                         div()
                             .text_sm()
                             .text_color(cx.theme().danger)
-                            .child(t(cx, problem.key())),
+                            .child(t(cx, failure.problem.key())),
                     )
                     .child(
                         Button::new("packages-retry")
@@ -402,7 +416,9 @@ impl ResourcesView {
                             .outline()
                             .label(t(cx, "packages-retry"))
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.search_catalog(this.browse.from, cx)
+                                if let Some(failure) = this.browse.problem.take() {
+                                    this.start_search(failure.query, failure.from, cx);
+                                }
                             })),
                     ),
             );

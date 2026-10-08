@@ -729,6 +729,7 @@ fn icon_help_key() -> &'static str {
     }
 }
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn notification_permission_help_key() -> &'static str {
     if cfg!(target_os = "macos") {
         "settings-notification-permission-help"

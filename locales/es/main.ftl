@@ -814,3 +814,4 @@ packages-source-short = npm · pi-package
 packages-page = Página { $page }
 packages-page-empty = No hay paquetes coincidentes en esta página.
 packages-close = Cerrar detalles
+packages-local-unavailable = La información de paquetes locales no está disponible. Actualiza los recursos para habilitar las acciones de paquetes.

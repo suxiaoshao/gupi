@@ -110,7 +110,7 @@ impl ResourcesView {
                         .small()
                         .icon(IconName::Plus)
                         .label(t(cx, "settings-package-install-source"))
-                        .disabled(busy || !pi_ready || self.installing)
+                        .disabled(!self.package_available(cx) || self.installing)
                         .debug_selector(|| "package-add".into())
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.installing = true;
@@ -133,7 +133,7 @@ impl ResourcesView {
                     gpui_kit::component::form::field()
                         .label(t(cx, "settings-package-source"))
                         .description(t(cx, "settings-package-source-help"))
-                        .child(Input::new(&self.source).disabled(busy || !pi_ready)),
+                        .child(Input::new(&self.source).disabled(!self.package_available(cx))),
                 )
                 .child(
                     h_flex()
@@ -143,7 +143,7 @@ impl ResourcesView {
                                 .primary()
                                 .label(t(cx, "settings-package-install"))
                                 .disabled(
-                                    busy || !pi_ready
+                                    !self.package_available(cx)
                                         || self.source.read(cx).value().trim().is_empty(),
                                 )
                                 .on_click(cx.listener(|this, _, _, cx| {
@@ -176,7 +176,7 @@ impl ResourcesView {
             );
         }
         for package in &catalog.packages {
-            view = view.child(self.render_package(package, catalog, busy, pi_ready, cx));
+            view = view.child(self.render_package(package, catalog, busy, cx));
         }
         let independent: Vec<_> = catalog
             .resources
@@ -215,7 +215,6 @@ impl ResourcesView {
         package: &io::Package,
         catalog: &io::Catalog,
         busy: bool,
-        pi_ready: bool,
         cx: &Context<Self>,
     ) -> AnyElement {
         let source = package.source.clone();
@@ -318,7 +317,12 @@ impl ResourcesView {
                 }
                 cx.notify();
             }));
-        let pending = self.pending_package.as_deref() == Some(source.as_str());
+        let package_disabled = !self.package_available(cx);
+        let pending = self
+            .controller
+            .read(cx)
+            .mutation()
+            .package_running(&source, "update");
         let owner = cx.entity().downgrade();
         let copy = source.clone();
         let menu =
@@ -345,7 +349,7 @@ impl ResourcesView {
                 .item(
                     PopupMenuItem::new(t(cx, "settings-package-remove-ellipsis"))
                         .icon(IconName::Trash)
-                        .disabled(busy || !pi_ready)
+                        .disabled(package_disabled)
                         .on_click(move |_, window, cx| {
                             owner
                                 .update(cx, |this, cx| {
@@ -365,7 +369,7 @@ impl ResourcesView {
                             .small()
                             .label(t(cx, "settings-package-update"))
                             .loading(pending)
-                            .disabled(busy || !pi_ready)
+                            .disabled(!self.package_available(cx))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.package("update", update.clone(), cx);
                             })),

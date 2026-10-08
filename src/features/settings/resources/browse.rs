@@ -683,7 +683,6 @@ impl ResourcesView {
         npm: Option<String>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let busy = self.controller.read(cx).busy() || self.config.read(cx).busy(cx);
         let configured = self.config.read(cx).preferences(cx).pi_command;
         let pi_ready = self
             .applied_pi
@@ -695,7 +694,10 @@ impl ResourcesView {
             .as_ref()
             .map(|package| package.source.clone())
             .unwrap_or_else(|| catalog::source(name));
-        let pending = self.pending_package.as_deref() == Some(source.as_str());
+        let mutation = self.controller.read(cx).mutation();
+        let updating = mutation.package_running(&source, "update");
+        let installing = mutation.package_running(&source, "install");
+        let removing = mutation.package_running(&source, "remove");
         let mut view = v_flex().gap_2();
         if let Some(package) = &installed {
             let mut state = h_flex().gap_2().items_center().child(
@@ -751,6 +753,29 @@ impl ResourcesView {
                 .text_color(cx.theme().muted_foreground)
                 .child(t(cx, "packages-trust")),
         );
+        if self.controller.read(cx).catalog().data().is_none() {
+            view = view.child(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(t(
+                        cx,
+                        if self.controller.read(cx).catalog().is_running() {
+                            "settings-resource-loading"
+                        } else {
+                            "packages-local-unavailable"
+                        },
+                    )),
+            );
+            if let Some(error) = self.controller.read(cx).catalog().problem() {
+                view = view.child(
+                    div()
+                        .text_sm()
+                        .text_color(cx.theme().danger)
+                        .child(error.to_string()),
+                );
+            }
+        }
         if !pi_ready {
             view = view.child(
                 h_flex()
@@ -797,7 +822,7 @@ impl ResourcesView {
                     .into_any_element(),
             });
         }
-        let disabled = busy || !pi_ready;
+        let disabled = !self.package_available(cx);
         let actions = if installed.is_some() {
             let update = source.clone();
             let remove = source.clone();
@@ -807,7 +832,7 @@ impl ResourcesView {
                     Button::new("package-detail-update")
                         .small()
                         .label(t(cx, "settings-package-update"))
-                        .loading(pending)
+                        .loading(updating)
                         .disabled(disabled)
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.package("update", update.clone(), cx)
@@ -817,6 +842,7 @@ impl ResourcesView {
                     Button::new("package-detail-remove")
                         .small()
                         .label(t(cx, "settings-package-remove-ellipsis"))
+                        .loading(removing)
                         .disabled(disabled)
                         .on_click(cx.listener(move |this, _, window, cx| {
                             this.confirm_remove(None, remove.clone(), window, cx)
@@ -829,7 +855,7 @@ impl ResourcesView {
                     .small()
                     .primary()
                     .label(t(cx, "packages-install"))
-                    .loading(pending)
+                    .loading(installing)
                     .disabled(disabled)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.package("install", install.clone(), cx)

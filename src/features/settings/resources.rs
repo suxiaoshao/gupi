@@ -81,8 +81,6 @@ pub(super) struct ResourcesView {
     browsing: bool,
     browse: browse::Browse,
     installed_scroll: ScrollHandle,
-    /// The package source whose Pi operation is running.
-    pending_package: Option<String>,
     /// The latest Pi operation result per package source, shown in details.
     package_results: std::collections::BTreeMap<String, Result<(), io::Error>>,
     error: Option<(Kind, String)>,
@@ -289,9 +287,13 @@ impl ResourcesView {
         let change = cx.subscribe(&search, |_, _, _: &InputEvent, cx| cx.notify());
         let saved = cx.subscribe_in(&controller, window, |this, _, event, window, cx| {
             let ResourceEvent::Saved(path, text) = event else {
-                if let ResourceEvent::Finished { target, result } = event {
-                    if this.pending_package.as_deref() == Some(target.as_str()) {
-                        this.pending_package = None;
+                if let ResourceEvent::Finished {
+                    target,
+                    result,
+                    change,
+                } = event
+                {
+                    if matches!(change, Change::Package { .. }) {
                         this.package_results.insert(target.clone(), result.clone());
                     }
                     let mut args = fluent_bundle::FluentArgs::new();
@@ -350,7 +352,6 @@ impl ResourcesView {
             browsing: false,
             browse,
             installed_scroll: ScrollHandle::new(),
-            pending_package: None,
             package_results: Default::default(),
             error: None,
             _subscriptions: subscriptions,
@@ -363,6 +364,19 @@ impl ResourcesView {
         self.error = None;
         self.controller.update(cx, |c, cx| c.change(change, cx));
     }
+    fn package_available(&self, cx: &App) -> bool {
+        let controller = self.controller.read(cx);
+        let config = self.config.read(cx);
+        !controller.busy()
+            && controller.catalog().data().is_some()
+            && !config.busy(cx)
+            && self
+                .applied_pi
+                .read(cx)
+                .ready_for(config.preferences(cx).pi_command.as_deref())
+                .is_some()
+    }
+
     fn package(&mut self, action: &'static str, source: String, cx: &mut Context<Self>) {
         let command = self.config.read(cx).preferences(cx).pi_command;
         let Some(command) = self
@@ -375,11 +389,10 @@ impl ResourcesView {
             cx.notify();
             return;
         };
-        if self.controller.read(cx).busy() || self.config.read(cx).busy(cx) {
+        if !self.package_available(cx) {
             return;
         }
         self.package_results.remove(&source);
-        self.pending_package = Some(source.clone());
         self.change(
             Change::Package {
                 command,

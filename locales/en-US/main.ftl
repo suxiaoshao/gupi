@@ -815,3 +815,4 @@ packages-source-short = npm · pi-package
 packages-page = Page { $page }
 packages-page-empty = No matching packages on this page.
 packages-close = Close details
+packages-local-unavailable = Local package information is unavailable. Refresh resources to enable package actions.

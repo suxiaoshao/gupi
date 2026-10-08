@@ -815,3 +815,4 @@ packages-source-short = npm · pi-package
 packages-page = 第 { $page } 頁
 packages-page-empty = 本頁無符合條件的套件。
 packages-close = 關閉詳細資料
+packages-local-unavailable = 本機套件資訊無法使用，請重新整理資源後再操作。

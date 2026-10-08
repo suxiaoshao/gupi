@@ -814,3 +814,4 @@ packages-source-short = npm · pi-package
 packages-page = Página { $page }
 packages-page-empty = Nenhum pacote correspondente nesta página.
 packages-close = Fechar detalhes
+packages-local-unavailable = As informações dos pacotes locais estão indisponíveis. Atualize os recursos para habilitar as ações dos pacotes.

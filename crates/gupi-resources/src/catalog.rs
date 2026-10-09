@@ -150,14 +150,6 @@ pub fn installed_name(source: &str) -> Option<&str> {
     valid_name(name).then_some(name)
 }
 
-/// The version an installed `npm:` source is fixed to, if it names one.
-pub fn pinned_version(source: &str) -> Option<&str> {
-    let spec = source.strip_prefix("npm:")?.trim();
-    let name = installed_name(source)?;
-    spec.get(name.len() + 1..)
-        .filter(|version| !version.is_empty())
-}
-
 fn client() -> Result<Client, Problem> {
     // Proxy variables come from Gupi's process environment, the same
     // environment Pi package subprocesses inherit.
@@ -409,8 +401,6 @@ mod tests {
         assert_eq!(installed_name("npm:pi-web@1.2.0"), Some("pi-web"));
         assert_eq!(installed_name("npm:@a/pi@^2"), Some("@a/pi"));
         assert_eq!(installed_name("https://github.com/a/pi"), None);
-        assert_eq!(pinned_version("npm:@a/pi@2.0.0"), Some("2.0.0"));
-        assert_eq!(pinned_version("npm:pi-web"), None);
         assert!(!valid_name("-flag"));
         assert!(!valid_name("UPPER"));
     }

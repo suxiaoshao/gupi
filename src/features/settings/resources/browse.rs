@@ -622,7 +622,7 @@ impl ResourcesView {
                     .child(source.clone()),
             ),
         );
-        view = view.child(self.render_detail_actions(name, latest, repository, npm, cx));
+        view = view.child(self.render_detail_actions(name, repository, npm, cx));
         view.into_any_element()
     }
 
@@ -703,7 +703,6 @@ impl ResourcesView {
     fn render_detail_actions(
         &self,
         name: &str,
-        latest: Option<String>,
         repository: Option<String>,
         npm: Option<String>,
         cx: &mut Context<Self>,
@@ -753,24 +752,6 @@ impl ResourcesView {
                 );
             }
             view = view.child(state);
-            if let Some(pinned) = catalog::pinned_version(&package.source) {
-                let mut args = fluent_bundle::FluentArgs::new();
-                args.set("pinned", pinned.to_owned());
-                args.set("version", pinned.to_owned());
-                let key = match &latest {
-                    Some(latest) => {
-                        args.set("latest", latest.clone());
-                        "packages-pinned"
-                    }
-                    None => "packages-pinned-installed",
-                };
-                view = view.child(
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(gupi_settings::i18n::t_with_args(cx, key, &args)),
-                );
-            }
         }
         view = view.child(
             div()

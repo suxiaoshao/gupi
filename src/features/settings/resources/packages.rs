@@ -261,19 +261,6 @@ impl ResourcesView {
                         .child(t(cx, "packages-files-missing")),
                 ),
             );
-        } else if let Some(pinned) = gupi_resources::catalog::pinned_version(&source) {
-            let mut args = fluent_bundle::FluentArgs::new();
-            args.set("version", pinned.to_owned());
-            heading = heading.child(
-                div()
-                    .text_sm()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(gupi_settings::i18n::t_with_args(
-                        cx,
-                        "packages-pinned-installed",
-                        &args,
-                    )),
-            );
         }
         if let Some(counts) = io_counts(catalog, &source, cx) {
             heading = heading.child(

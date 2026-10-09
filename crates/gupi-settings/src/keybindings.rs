@@ -355,12 +355,8 @@ pub fn validate(id: &str, text: &str, overrides: &Overrides, cx: &App) -> Result
         return Ok(());
     }
     let candidate = Keystroke::parse(text).map_err(|_| "settings-key-invalid".to_owned())?;
-    for other in COMMANDS.iter().filter(|c| c.id != id) {
-        for binding in other.bindings(other.value(overrides)) {
-            if starts_with(&binding, &candidate) {
-                return Err(other.label.into());
-            }
-        }
+    if let Some(other) = conflicting_command(id, &candidate, overrides) {
+        return Err(other.label.into());
     }
     // Evaluate component bindings only in focus stacks that coexist with application actions.
     let global = matches!(command.kind, Kind::Settings | Kind::ShowMain | Kind::Quit);
@@ -392,6 +388,19 @@ pub fn validate(id: &str, text: &str, overrides: &Overrides, cx: &App) -> Result
         }
     }
     Ok(())
+}
+/// The other application command whose binding already starts with `candidate`.
+pub fn conflicting_command(
+    id: &str,
+    candidate: &Keystroke,
+    overrides: &Overrides,
+) -> Option<&'static Command> {
+    COMMANDS.iter().filter(|c| c.id != id).find(|other| {
+        other
+            .bindings(other.value(overrides))
+            .iter()
+            .any(|binding| starts_with(binding, candidate))
+    })
 }
 /// System shortcuts apply in every focus context, including the first stroke
 /// of a component chord. Application command conflicts are checked by AppConfig.

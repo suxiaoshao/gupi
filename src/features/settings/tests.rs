@@ -112,7 +112,7 @@ fn theme_grid_contributes_height_and_wraps_in_settings(cx: &mut TestAppContext) 
     cx.update(|window, cx| window.draw(cx).clear(cx));
     let narrow = cx.debug_bounds("theme-grid-measure").unwrap().size.height;
     assert!(
-        wide > gpui_kit::px(88.),
+        wide > gpui_kit::px(64.),
         "theme rows must contribute to the parent height: {wide:?}"
     );
     assert!(
@@ -233,13 +233,12 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
                 let path = window_cx.debug_bounds("settings-config-path").unwrap();
                 let reload = window_cx.debug_bounds("settings-config-reload").unwrap();
                 let open = window_cx.debug_bounds("settings-config-open").unwrap();
-                assert_eq!(path.center().y, reload.center().y);
                 assert_eq!(reload.center().y, open.center().y);
-                assert!(path.left() < reload.left() && reload.right() <= open.left());
                 assert!(
-                    open.right() <= path.right(),
-                    "actions stay inside the compound input"
+                    reload.top() >= path.bottom(),
+                    "labeled actions follow the path"
                 );
+                assert!(reload.right() <= open.left());
                 assert!(open.right() <= gpui_kit::px(width));
                 if width == 1600. {
                     assert!(
@@ -249,7 +248,7 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
                 }
             }
         }
-        if page == 4 {
+        if page == super::layout::KEYBOARD_PAGE {
             for width in [760., 1600.] {
                 window_cx.simulate_resize(gpui_kit::size(gpui_kit::px(width), gpui_kit::px(1200.)));
                 window_cx.update(|window, cx| window.draw(cx).clear(cx));

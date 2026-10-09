@@ -13,6 +13,7 @@ use gpui_form::ControlProjection;
 use gpui_form::Form;
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::component::Disableable;
+use gpui_kit::component::Sizable as _;
 use gpui_kit::component::button::Button;
 use gpui_kit::component::button::ButtonVariants;
 use gpui_kit::component::combobox::ComboboxEvent;
@@ -20,9 +21,6 @@ use gpui_kit::component::combobox::ComboboxState;
 use gpui_kit::component::h_flex;
 use gpui_kit::component::input::Input;
 use gpui_kit::component::input::InputEvent;
-use gpui_kit::component::input::InputGroup;
-use gpui_kit::component::input::InputGroupAddon;
-use gpui_kit::component::input::InputGroupAddonAlignment;
 use gpui_kit::component::input::InputState;
 use gpui_kit::component::searchable_list::SearchableVec;
 use gpui_kit::component::v_flex;
@@ -62,6 +60,8 @@ pub(crate) struct SettingsView {
     transition: Option<onboarding::PageTransition>,
     transition_serial: u64,
     page_scroll: [ScrollHandle; 4],
+    /// Settings navigation serial and requested page index.
+    navigation: (usize, usize),
     language: Entity<ComboboxState<SearchableVec<LanguageItem>>>,
     updates: Entity<super::updates::UpdatesView>,
 }
@@ -90,6 +90,15 @@ impl SettingsView {
             )
         });
         let resources_sub = cx.observe(&resources, |_, _, cx| cx.notify());
+        let package_sub = cx.subscribe(&resources, |this, _, event: &resources::Navigate, cx| {
+            this.open_page(
+                match event {
+                    resources::Navigate::Package => layout::PACKAGES_PAGE,
+                    resources::Navigate::Pi => layout::PI_PAGE,
+                },
+                cx,
+            )
+        });
         let keys_sub = cx.observe(&keys, |_, _, cx| cx.notify());
         let applied_sub = cx.observe(&applied_pi, |_, _, cx| cx.notify());
         let input = cx.new(|cx| {
@@ -207,6 +216,7 @@ impl SettingsView {
             _subscriptions: vec![
                 temporary_sub,
                 resources_sub,
+                package_sub,
                 keys_sub,
                 applied_sub,
                 input_sub,
@@ -229,6 +239,7 @@ impl SettingsView {
             transition: None,
             transition_serial: 0,
             page_scroll: std::array::from_fn(|_| ScrollHandle::new()),
+            navigation: (0, 0),
             language,
             error: None,
             confirmation: None,
@@ -340,45 +351,42 @@ impl SettingsView {
             .read(cx)
             .path()
             .map(std::path::Path::to_path_buf);
-        let mut view = v_flex().gap_2().child(
-            div()
-                .debug_selector(|| "settings-config-path".into())
+        let mut view =
+            v_flex()
+                .gap_2()
                 .child(
-                    InputGroup::new("config-path")
-                        .readonly(true)
-                        .input(Input::new(&self.config_path))
-                        .addon(
-                            InputGroupAddon::new("actions")
-                                .align(InputGroupAddonAlignment::InlineEnd)
-                                .child(
-                                    Button::new("reload-config")
-                                        .debug_selector(|| "settings-config-reload".into())
-                                        .ghost()
-                                        .icon(IconName::RotateCw)
-                                        .tooltip(t(cx, "settings-reload"))
-                                        .accessibility_label(t(cx, "settings-reload"))
-                                        .disabled(busy)
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.request(ConfigRepair::Reload, cx)
-                                        })),
-                                )
-                                .child(
-                                    Button::new("open-config")
-                                        .debug_selector(|| "settings-config-open".into())
-                                        .ghost()
-                                        .icon(IconName::FileText)
-                                        .tooltip(t(cx, "settings-config-open"))
-                                        .accessibility_label(t(cx, "settings-config-open"))
-                                        .disabled(path.is_none())
-                                        .on_click(move |_, _, cx| {
-                                            if let Some(path) = &path {
-                                                cx.open_with_system(path);
-                                            }
-                                        }),
-                                ),
+                    div()
+                        .debug_selector(|| "settings-config-path".into())
+                        .child(Input::new(&self.config_path).readonly(true)),
+                )
+                .child(
+                    h_flex()
+                        .gap_2()
+                        .child(
+                            Button::new("reload-config")
+                                .debug_selector(|| "settings-config-reload".into())
+                                .small()
+                                .icon(IconName::RotateCw)
+                                .label(t(cx, "settings-reload"))
+                                .disabled(busy)
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.request(ConfigRepair::Reload, cx)
+                                })),
+                        )
+                        .child(
+                            Button::new("open-config")
+                                .debug_selector(|| "settings-config-open".into())
+                                .small()
+                                .icon(IconName::FileText)
+                                .label(t(cx, "settings-config-open"))
+                                .disabled(path.is_none())
+                                .on_click(move |_, _, cx| {
+                                    if let Some(path) = &path {
+                                        cx.open_with_system(path);
+                                    }
+                                }),
                         ),
-                ),
-        );
+                );
         if can_write {
             view = view.child(
                 Button::new("write-current")

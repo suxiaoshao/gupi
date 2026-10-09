@@ -1,5 +1,7 @@
 # Gupi 开发文档
 
+**[Pi 包发现与设置页面改进（Gupi #3）](issue-3/README.md)**：已确认设计；按设置页面、快捷键、包浏览、目录来源及实现验证拆分，记录采用方案、取舍与待验证问题。
+
 **[Windows / Linux 窗口菜单布局（Gupi #30）](issue-30/README.md)**：已确认的菜单置顶、常驻展开设计，GPUI Kit 组件选择及 Windows 开发交接。
 
 **[项目目录文件浏览（Gupi #31）](issue-31/README.md)**：按需目录读取、只读文件预览及 [会话/源码工作区 UI 改造方案](issue-31/ui-redesign.md)。

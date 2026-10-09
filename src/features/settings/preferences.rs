@@ -140,10 +140,32 @@ impl SettingsView {
                 .is_running();
         let onboarding = self.controller.read(cx).is_onboarding(cx);
         let dirty = self.controller.read(cx).pi_form().read(cx).is_dirty();
+        let label = t(cx, "settings-pi-command");
+        let state = (!onboarding).then(|| {
+            t(
+                cx,
+                if dirty {
+                    "settings-pi-draft"
+                } else {
+                    "settings-pi-saved-tag"
+                },
+            )
+        });
         let mut view = v_flex().gap_4().child(
             v_form().child(
                 field()
-                    .label(t(cx, "settings-pi-command"))
+                    .label_fn(move |_, _| {
+                        h_flex()
+                            .gap_2()
+                            .items_center()
+                            .child(label.clone())
+                            .children(state.clone().map(|state| {
+                                gpui_kit::component::tag::Tag::secondary()
+                                    .outline()
+                                    .small()
+                                    .child(state)
+                            }))
+                    })
                     .description(t(cx, "settings-path-help"))
                     .child(
                         Input::new(self.pi_input(cx))
@@ -235,6 +257,44 @@ impl SettingsView {
             }
         }
         view.into_any_element()
+    }
+}
+
+impl SettingsView {
+    /// Settings Pi page: the saved path's latest check first, then the editable path.
+    pub(super) fn render_pi_settings(&self, cx: &Context<Self>) -> AnyElement {
+        let applied = self.applied_pi.read(cx);
+        let (color, status) = if applied.is_running() {
+            (cx.theme().muted_foreground, t(cx, "startup-checking"))
+        } else if let Some(problem) = applied.problem() {
+            (cx.theme().danger, t(cx, problem.key()))
+        } else if let Some(data) = applied.data() {
+            let mut args = fluent_bundle::FluentArgs::new();
+            args.set("version", data.version.clone());
+            args.set("path", data.command.display().to_string());
+            (
+                cx.theme().success,
+                gupi_settings::i18n::t_with_args(cx, "settings-pi-status-ready", &args),
+            )
+        } else {
+            (
+                cx.theme().muted_foreground,
+                t(cx, "settings-about-unavailable"),
+            )
+        };
+        v_flex()
+            .gap_4()
+            .child(
+                h_flex()
+                    .id("settings-pi-status")
+                    .gap_2()
+                    .items_center()
+                    .min_w_0()
+                    .child(div().size_2().flex_shrink_0().rounded_full().bg(color))
+                    .child(div().text_sm().min_w_0().truncate().child(status)),
+            )
+            .child(self.render_pi(cx))
+            .into_any_element()
     }
 }
 
@@ -359,14 +419,14 @@ pub(super) fn theme_grid_content(
                         .w_full()
                         .child(
                             h_flex()
-                                .h(px(88.))
+                                .h(px(64.))
                                 .w_full()
                                 .child(
                                     v_flex()
                                         .w(px(48.))
                                         .h_full()
                                         .p_2()
-                                        .gap_2()
+                                        .gap_1p5()
                                         .bg(colors.sidebar)
                                         .child(
                                             div()
@@ -394,8 +454,8 @@ pub(super) fn theme_grid_content(
                                     v_flex()
                                         .flex_1()
                                         .min_w_0()
-                                        .p_3()
-                                        .gap_2()
+                                        .p_2()
+                                        .gap_1p5()
                                         .child(
                                             div()
                                                 .h(px(6.))
@@ -419,7 +479,7 @@ pub(super) fn theme_grid_content(
                                         )
                                         .child(
                                             div()
-                                                .h(px(13.))
+                                                .h(px(10.))
                                                 .w(px(30.))
                                                 .rounded_sm()
                                                 .bg(colors.primary),

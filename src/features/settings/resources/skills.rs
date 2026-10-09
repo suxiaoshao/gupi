@@ -2,6 +2,8 @@ use super::*;
 use gpui_kit::component::collapsible::Collapsible;
 use gpui_kit::component::group_box::GroupBox;
 use gpui_kit::component::group_box::GroupBoxVariants;
+use gpui_kit::component::menu::ContextMenuExt;
+use gpui_kit::component::menu::DropdownMenu;
 use gpui_kit::component::setting::SettingItem;
 use gpui_kit::component::tag::Tag;
 use gpui_kit::component::text::TextView;
@@ -64,14 +66,6 @@ impl ResourcesView {
         let preview = self.previews.get(&path);
         let expanded = preview.is_some();
         let toggle = resource.clone();
-        let reveal = path.clone();
-        let edit = Open {
-            path: path.clone(),
-            kind: Kind::Skill,
-            editable: true,
-            create: false,
-        };
-        let remove = resource.clone();
         let toggle_path = path.clone();
         let toggle_label = t(
             cx,
@@ -102,50 +96,16 @@ impl ResourcesView {
                     })),
             )
             .child(div().flex_1())
-            .when(resource.editable, |row| {
-                row.child(
-                    Button::new(ElementId::NamedChild(id.clone(), "edit".into()))
-                        .ghost()
-                        .small()
-                        .icon(IconName::SquarePen)
-                        .tooltip(t(cx, "settings-resource-edit"))
-                        .accessibility_label(t(cx, "settings-resource-edit"))
-                        .debug_selector(|| "skill-edit".into())
-                        .disabled(busy || self.open.is_running())
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.request_open(edit.clone(), window, cx);
-                        })),
-                )
-            })
             .child(
-                Button::new(ElementId::NamedChild(id.clone(), "reveal".into()))
+                Button::new(ElementId::NamedChild(id.clone(), "actions".into()))
                     .ghost()
                     .small()
-                    .icon(IconName::FolderOpen)
-                    .tooltip(t(cx, "settings-resource-location"))
-                    .accessibility_label(t(cx, "settings-resource-location"))
-                    .on_click(move |_, _, cx| cx.reveal_path(&reveal)),
-            )
-            .when(resource.editable, |row| {
-                row.child(
-                    Button::new(ElementId::NamedChild(id.clone(), "delete".into()))
-                        .ghost()
-                        .small()
-                        .icon(IconName::Trash)
-                        .tooltip(t(cx, "settings-resource-delete"))
-                        .accessibility_label(t(cx, "settings-resource-delete"))
-                        .debug_selector(|| "skill-delete".into())
-                        .disabled(busy)
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.confirm_remove(
-                                Some(remove.clone()),
-                                remove.name.clone(),
-                                window,
-                                cx,
-                            );
-                        })),
-                )
-            });
+                    .icon(IconName::Ellipsis)
+                    .tooltip(t(cx, "settings-resource-actions"))
+                    .accessibility_label(t(cx, "settings-resource-actions"))
+                    .debug_selector(|| "skill-actions".into())
+                    .dropdown_menu_with_anchor(Anchor::TopRight, self.resource_menu(resource, cx)),
+            );
 
         let mut card = Collapsible::new()
             .open(expanded)
@@ -161,12 +121,7 @@ impl ResourcesView {
                             .truncate()
                             .child(resource.name.clone()),
                     )
-                    .child(
-                        Tag::secondary()
-                            .small()
-                            .outline()
-                            .child(self.resource_source(resource, cx)),
-                    )
+                    .child(self.render_source(resource, cx))
                     .when(!resource.editable, |row| {
                         row.child(
                             Tag::secondary()
@@ -223,16 +178,21 @@ impl ResourcesView {
             }
             if let Some(text) = preview.data() {
                 content = content.child(TextView::markdown(
-                    ElementId::NamedChild(id, "markdown".into()),
+                    ElementId::NamedChild(id.clone(), "markdown".into()),
                     preview_body(text).to_owned(),
                 ));
             }
             card = card.content(content);
         }
-        GroupBox::new()
-            .outline()
-            .content_style(StyleRefinement::default().p_3().bg(cx.theme().background))
-            .child(card)
+        div()
+            .id(ElementId::NamedChild(id.clone(), "card".into()))
+            .child(
+                GroupBox::new()
+                    .outline()
+                    .content_style(StyleRefinement::default().p_3().bg(cx.theme().background))
+                    .child(card),
+            )
+            .context_menu(self.resource_menu(resource, cx))
             .into_any_element()
     }
 }

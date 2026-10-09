@@ -4799,6 +4799,7 @@ dependencies = [
  "ignore",
  "pi-rpc",
  "regex",
+ "reqwest 0.13.5",
  "serde_json",
  "serde_yaml_ng",
  "smol",

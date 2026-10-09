@@ -4,6 +4,8 @@ use gpui_kit::component::Selectable;
 use gpui_kit::component::collapsible::Collapsible;
 use gpui_kit::component::group_box::GroupBox;
 use gpui_kit::component::group_box::GroupBoxVariants;
+use gpui_kit::component::menu::ContextMenuExt;
+use gpui_kit::component::menu::DropdownMenu;
 use gpui_kit::component::setting::SettingItem;
 use gpui_kit::component::tag::Tag;
 use gpui_kit::component::text::TextView;
@@ -162,14 +164,6 @@ impl ResourcesView {
         let preview = self.previews.get(&resource.path);
         let expanded = preview.is_some();
         let toggle_path = resource.path.clone();
-        let reveal = resource.path.clone();
-        let edit = Open {
-            path: resource.path.clone(),
-            kind: Kind::Prompt,
-            editable: resource.editable,
-            create: false,
-        };
-        let remove = resource.clone();
         let toggle = resource.clone();
         let preview_label = t(
             cx,
@@ -200,75 +194,24 @@ impl ResourcesView {
                     })),
             )
             .child(
-                Button::new(id("reveal"))
-                    .ghost()
-                    .small()
-                    .icon(IconName::FolderOpen)
-                    .tooltip(t(cx, "settings-resource-location"))
-                    .accessibility_label(t(cx, "settings-resource-location"))
-                    .on_click(move |_, _, cx| cx.reveal_path(&reveal)),
-            )
-            .when(resource.editable, |row| {
-                row.child(
-                    Button::new(id("edit"))
-                        .ghost()
-                        .small()
-                        .icon(IconName::SquarePen)
-                        .tooltip(t(cx, "settings-resource-edit"))
-                        .accessibility_label(t(cx, "settings-resource-edit"))
-                        .debug_selector(|| "template-edit".into())
-                        .disabled(busy || self.open.is_running())
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.request_open(edit.clone(), window, cx)
-                        })),
-                )
-                .child(
-                    Button::new(id("delete"))
-                        .ghost()
-                        .small()
-                        .icon(IconName::Trash)
-                        .tooltip(t(cx, "settings-resource-delete"))
-                        .accessibility_label(t(cx, "settings-resource-delete"))
-                        .debug_selector(|| "template-delete".into())
-                        .disabled(busy)
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.confirm_remove(
-                                Some(remove.clone()),
-                                remove.name.clone(),
-                                window,
-                                cx,
-                            )
-                        })),
-                )
-            })
-            .child(
                 Switch::new(id("enabled"))
                     .checked(resource.enabled)
                     .disabled(busy)
                     .on_click(cx.listener(move |this, active, _, cx| {
                         this.change(Change::Toggle(toggle.clone(), *active), cx)
                     })),
+            )
+            .child(
+                Button::new(id("actions"))
+                    .ghost()
+                    .small()
+                    .icon(IconName::Ellipsis)
+                    .tooltip(t(cx, "settings-resource-actions"))
+                    .accessibility_label(t(cx, "settings-resource-actions"))
+                    .debug_selector(|| "template-actions-menu".into())
+                    .dropdown_menu_with_anchor(Anchor::TopRight, self.resource_menu(resource, cx)),
             );
         let source = self.resource_source(resource, cx);
-        let source_label = resource
-            .package
-            .as_ref()
-            .and_then(|source| {
-                self.controller
-                    .read(cx)
-                    .catalog()
-                    .data()?
-                    .packages
-                    .iter()
-                    .find(|package| &package.source == source)
-            })
-            .map(packages::package_name)
-            .unwrap_or_else(|| source.strip_prefix("npm:").unwrap_or(&source).to_owned());
-        let source_help = if resource.editable {
-            source.clone()
-        } else {
-            format!("{} · {source}", t(cx, "settings-resource-readonly-badge"))
-        };
         let path_help = resource.path.display().to_string();
         let mut card = Collapsible::new()
             .open(expanded)
@@ -306,16 +249,15 @@ impl ResourcesView {
                 )
             })
             .child(
-                h_flex().child(
-                    div()
-                        .id(id("source"))
-                        .max_w_full()
-                        .truncate()
-                        .tooltip(move |window, cx| {
-                            Tooltip::new(source_help.clone()).build(window, cx)
-                        })
-                        .child(
-                            Tag::secondary().small().outline().child(
+                h_flex()
+                    .gap_2()
+                    .child(if resource.package.is_some() {
+                        self.render_source(resource, cx)
+                    } else {
+                        Tag::secondary()
+                            .small()
+                            .outline()
+                            .child(
                                 h_flex()
                                     .gap_1()
                                     .child(
@@ -326,10 +268,18 @@ impl ResourcesView {
                                         })
                                         .xsmall(),
                                     )
-                                    .child(source_label),
-                            ),
-                        ),
-                ),
+                                    .child(source),
+                            )
+                            .into_any_element()
+                    })
+                    .when(!resource.editable, |row| {
+                        row.child(
+                            Tag::secondary()
+                                .small()
+                                .outline()
+                                .child(t(cx, "settings-resource-readonly-badge")),
+                        )
+                    }),
             );
         if let Some(preview) = preview {
             let mut content = v_flex()
@@ -358,10 +308,15 @@ impl ResourcesView {
             }
             card = card.content(content);
         }
-        GroupBox::new()
-            .outline()
-            .content_style(StyleRefinement::default().p_3().bg(cx.theme().background))
-            .child(card)
+        div()
+            .id(id("card"))
+            .child(
+                GroupBox::new()
+                    .outline()
+                    .content_style(StyleRefinement::default().p_3().bg(cx.theme().background))
+                    .child(card),
+            )
+            .context_menu(self.resource_menu(resource, cx))
             .into_any_element()
     }
 }

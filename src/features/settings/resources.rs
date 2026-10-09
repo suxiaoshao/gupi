@@ -4,8 +4,11 @@ use gpui_kit::component::Sizable;
 use gpui_kit::component::WindowExt;
 use gpui_kit::component::input::Editor as CodeEditor;
 use gpui_kit::component::input::EditorState;
+use gpui_kit::component::menu::PopupMenu;
+use gpui_kit::component::menu::PopupMenuItem;
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::switch::Switch;
+use gpui_kit::component::tag::Tag;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_operation::Complete;
 use gpui_operation::Load;
@@ -21,6 +24,7 @@ use gupi_resources::resources::ResourceController;
 use gupi_resources::resources::ResourceEvent;
 use std::path::PathBuf;
 
+mod browse;
 mod editor;
 mod packages;
 mod prompts;
@@ -52,6 +56,13 @@ pub(super) enum Section {
     Packages,
     Catalog,
 }
+/// Requests that settings show another page.
+pub(super) enum Navigate {
+    /// The installed packages view, with the requested package expanded.
+    Package,
+    Pi,
+}
+
 pub(super) struct ResourcesView {
     pub controller: Entity<ResourceController>,
     config: Entity<ConfigController>,
@@ -66,10 +77,137 @@ pub(super) struct ResourcesView {
     creating: Option<Kind>,
     installing: bool,
     expanded_packages: std::collections::BTreeSet<String>,
+    /// Packages page view: the catalog when true, installed packages otherwise.
+    browsing: bool,
+    browse: browse::Browse,
+    installed_scroll: ScrollHandle,
+    /// The latest Pi operation result per registry package name, shown in details.
+    package_results: std::collections::BTreeMap<String, Result<(), io::Error>>,
     error: Option<(Kind, String)>,
     _subscriptions: Vec<Subscription>,
 }
+impl EventEmitter<Navigate> for ResourcesView {}
+
 impl ResourcesView {
+    /// Shows a package on the installed packages page.
+    fn reveal_package(&mut self, source: String, cx: &mut Context<Self>) {
+        self.expanded_packages.insert(source);
+        self.browsing = false;
+        cx.emit(Navigate::Package);
+        cx.notify();
+    }
+
+    /// Row commands shared by the visible menu button and the context menu.
+    fn resource_menu(
+        &self,
+        resource: &Resource,
+        cx: &Context<Self>,
+    ) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
+        let owner = cx.entity().downgrade();
+        let busy = self.controller.read(cx).busy() || self.config.read(cx).busy(cx);
+        let opening = self.open.is_running();
+        let resource = resource.clone();
+        move |menu, _, cx| {
+            let mut menu = menu;
+            if resource.editable {
+                let owner = owner.clone();
+                let open = Open {
+                    path: resource.path.clone(),
+                    kind: resource.kind,
+                    editable: true,
+                    create: false,
+                };
+                menu = menu.item(
+                    PopupMenuItem::new(t(cx, "settings-resource-edit"))
+                        .icon(IconName::SquarePen)
+                        .disabled(busy || opening)
+                        .on_click(move |_, window, cx| {
+                            owner
+                                .update(cx, |this, cx| this.request_open(open.clone(), window, cx))
+                                .ok();
+                        }),
+                );
+            }
+            let reveal = resource.path.clone();
+            menu = menu.item(
+                PopupMenuItem::new(t(cx, "settings-resource-location"))
+                    .icon(IconName::FolderOpen)
+                    .on_click(move |_, _, cx| cx.reveal_path(&reveal)),
+            );
+            if let Some(source) = resource.package.clone() {
+                let owner = owner.clone();
+                menu = menu.item(
+                    PopupMenuItem::new(t(cx, "settings-resource-open-package"))
+                        .icon(IconName::Package)
+                        .on_click(move |_, _, cx| {
+                            owner
+                                .update(cx, |this, cx| this.reveal_package(source.clone(), cx))
+                                .ok();
+                        }),
+                );
+            }
+            if resource.editable {
+                let owner = owner.clone();
+                let remove = resource.clone();
+                menu = menu.separator().item(
+                    PopupMenuItem::new(t(cx, "settings-resource-delete-ellipsis"))
+                        .icon(IconName::Trash)
+                        .disabled(busy)
+                        .on_click(move |_, window, cx| {
+                            owner
+                                .update(cx, |this, cx| {
+                                    this.confirm_remove(
+                                        Some(remove.clone()),
+                                        remove.name.clone(),
+                                        window,
+                                        cx,
+                                    )
+                                })
+                                .ok();
+                        }),
+                );
+            }
+            menu
+        }
+    }
+
+    /// The source label: a button to the owning package, otherwise a plain tag.
+    fn render_source(&self, resource: &Resource, cx: &Context<Self>) -> AnyElement {
+        let source = self.resource_source(resource, cx);
+        let Some(package) = resource.package.clone() else {
+            return Tag::secondary()
+                .small()
+                .outline()
+                .child(source)
+                .into_any_element();
+        };
+        let name = self
+            .controller
+            .read(cx)
+            .catalog()
+            .data()
+            .and_then(|catalog| catalog.packages.iter().find(|p| p.source == package))
+            .map(packages::package_name)
+            .unwrap_or_else(|| package.strip_prefix("npm:").unwrap_or(&package).to_owned());
+        let mut args = fluent_bundle::FluentArgs::new();
+        args.set("package", name);
+        Button::new(SharedString::from(format!(
+            "from-package-{}",
+            resource.path.display()
+        )))
+        .xsmall()
+        .outline()
+        .icon(IconName::Package)
+        .label(gupi_settings::i18n::t_with_args(
+            cx,
+            "settings-resource-from-package",
+            &args,
+        ))
+        .tooltip(source)
+        .on_click(cx.listener(move |this, _, _, cx| this.reveal_package(package.clone(), cx)))
+        .into_any_element()
+    }
+
     fn resource_source(&self, resource: &Resource, cx: &App) -> String {
         resource.package.clone().unwrap_or_else(|| {
             let personal = resource.editable
@@ -149,7 +287,17 @@ impl ResourcesView {
         let change = cx.subscribe(&search, |_, _, _: &InputEvent, cx| cx.notify());
         let saved = cx.subscribe_in(&controller, window, |this, _, event, window, cx| {
             let ResourceEvent::Saved(path, text) = event else {
-                if let ResourceEvent::Finished { target, result } = event {
+                if let ResourceEvent::Finished {
+                    target,
+                    result,
+                    change,
+                } = event
+                {
+                    if let Change::Package { source, .. } = change
+                        && let Some(name) = gupi_resources::catalog::installed_name(source)
+                    {
+                        this.package_results.insert(name.to_owned(), result.clone());
+                    }
                     let mut args = fluent_bundle::FluentArgs::new();
                     args.set("target", target.clone());
                     let message = gupi_settings::i18n::t_with_args(
@@ -183,7 +331,8 @@ impl ResourcesView {
             }
             cx.notify();
         });
-        let mut subscriptions = vec![observe, catalog_changed, change, saved];
+        let (browse, browse_query) = browse::Browse::new(window, cx);
+        let mut subscriptions = vec![observe, catalog_changed, change, saved, browse_query];
         for input in [&source, &names[0], &names[1], &prompt_search] {
             subscriptions.push(cx.subscribe(input, |_, _, _: &InputEvent, cx| cx.notify()));
         }
@@ -202,6 +351,10 @@ impl ResourcesView {
             creating: None,
             installing: false,
             expanded_packages: Default::default(),
+            browsing: false,
+            browse,
+            installed_scroll: ScrollHandle::new(),
+            package_results: Default::default(),
             error: None,
             _subscriptions: subscriptions,
         }
@@ -213,6 +366,19 @@ impl ResourcesView {
         self.error = None;
         self.controller.update(cx, |c, cx| c.change(change, cx));
     }
+    fn package_available(&self, cx: &App) -> bool {
+        let controller = self.controller.read(cx);
+        let config = self.config.read(cx);
+        !controller.busy()
+            && controller.catalog().data().is_some()
+            && !config.busy(cx)
+            && self
+                .applied_pi
+                .read(cx)
+                .ready_for(config.preferences(cx).pi_command.as_deref())
+                .is_some()
+    }
+
     fn package(&mut self, action: &'static str, source: String, cx: &mut Context<Self>) {
         let command = self.config.read(cx).preferences(cx).pi_command;
         let Some(command) = self
@@ -225,6 +391,12 @@ impl ResourcesView {
             cx.notify();
             return;
         };
+        if !self.package_available(cx) {
+            return;
+        }
+        if let Some(name) = gupi_resources::catalog::installed_name(&source) {
+            self.package_results.remove(name);
+        }
         self.change(
             Change::Package {
                 command,
@@ -327,9 +499,13 @@ impl ResourcesView {
                 })
         });
     }
-    pub fn render_header(&self, cx: &Context<Self>) -> AnyElement {
+    pub fn render_header(&self, kind: Kind, cx: &Context<Self>) -> AnyElement {
         let controller = self.controller.read(cx);
         h_flex()
+            .gap_1()
+            .when(kind == Kind::Extension, |header| {
+                header.child(div().mr_2().child(self.render_packages_tabs(cx)))
+            })
             .child(
                 Button::new("resources-help")
                     .ghost()
@@ -369,7 +545,12 @@ impl ResourcesView {
                 .data()
                 .is_some_and(|catalog| !catalog.warnings.is_empty())
     }
-    pub fn render_page(&self, kind: Kind, section: Section, cx: &mut Context<Self>) -> AnyElement {
+    pub fn render_page(
+        &mut self,
+        kind: Kind,
+        section: Section,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         if matches!(
             self.controller.read(cx).catalog(),
             refresh::Operation::Idle(_)
@@ -426,29 +607,38 @@ impl ResourcesView {
             }
             return view.into_any_element();
         }
+        if section == Section::Packages {
+            // Settings 0.7.1 mounts pages in its group list, which sizes each
+            // item to content; `Mount::Bounded` needs a page-filling slot.
+            // Layout decisions follow the body's own width, not the window's.
+            let owner = cx.entity().downgrade();
+            return container_query(move |size, _, cx| {
+                owner
+                    .update(cx, |this, cx| {
+                        this.render_packages(size.width, packages::Mount::Content, cx)
+                    })
+                    .unwrap_or_else(|_| div().into_any_element())
+            })
+            .size_full()
+            .into_any_element();
+        }
         if catalog.is_none() {
             return view.into_any_element();
         }
-        if section == Section::Packages {
-            return self.render_packages(cx);
-        }
         if kind != Kind::Extension {
-            let mut toolbar = h_flex().flex_wrap().gap_2();
-            if kind == Kind::Prompt {
-                toolbar = toolbar.justify_between().child(
-                    div()
-                        .debug_selector(|| "template-heading".into())
-                        .child(t(cx, "settings-template-heading")),
-                );
-            }
-            if kind == Kind::Skill {
-                toolbar = toolbar.child(
-                    div().flex_1().min_w(px(160.)).child(
-                        Input::new(&self.search)
-                            .prefix(gpui_kit::component::Icon::new(IconName::Search)),
-                    ),
-                );
-            }
+            // Library toolbar: search, then the ordinary create command.
+            let search = if kind == Kind::Prompt {
+                &self.prompt_search
+            } else {
+                &self.search
+            };
+            let mut toolbar =
+                h_flex()
+                    .flex_wrap()
+                    .gap_2()
+                    .child(div().flex_1().min_w(px(160.)).child(
+                        Input::new(search).prefix(gpui_kit::component::Icon::new(IconName::Search)),
+                    ));
             toolbar = toolbar.child(
                 Button::new("resource-add")
                     .icon(IconName::Plus)
@@ -470,12 +660,6 @@ impl ResourcesView {
                 );
             }
             view = view.child(toolbar);
-            if kind == Kind::Prompt {
-                view = view.child(
-                    Input::new(&self.prompt_search)
-                        .prefix(gpui_kit::component::Icon::new(IconName::Search)),
-                );
-            }
             if self.creating == Some(kind) {
                 view = view
                     .child(

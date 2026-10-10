@@ -314,14 +314,16 @@ impl SidebarItem for ProjectItem {
                     state.update(cx, |s, cx| s.new_or_reuse(Some(cwd.clone()), cx))
                 }),
             )
-            .item(PopupMenuItem::new(t(cx, "pi-project-settings")).on_click(
-                move |_, window, cx| {
-                    window.dispatch_action(
-                        Box::new(menus::ShowProjectPiSettings::new(settings.clone())),
-                        cx,
-                    )
-                },
-            ))
+            .item(
+                PopupMenuItem::new(t(cx, "pi-project-settings"))
+                    .disabled(settings.as_os_str().is_empty())
+                    .on_click(move |_, window, cx| {
+                        window.dispatch_action(
+                            Box::new(menus::ShowProjectPiSettings::new(settings.clone())),
+                            cx,
+                        )
+                    }),
+            )
             .separator()
             .item(
                 PopupMenuItem::new(t(cx, "action-locate"))
@@ -495,16 +497,19 @@ pub fn session_menu(
     let clone_state = state.clone();
     let info_owner = owner.clone();
     let info_key = key.clone();
-    let cwd = current.map(|s| s.info().cwd.clone()).or_else(|| {
-        state
-            .read(cx)
-            .catalog()
-            .data()
-            .into_iter()
-            .flat_map(|catalog| &catalog.sessions)
-            .find(|i| i.key() == key)
-            .map(|i| i.cwd.clone())
-    });
+    let cwd = current
+        .map(|s| s.info().cwd.clone())
+        .or_else(|| {
+            state
+                .read(cx)
+                .catalog()
+                .data()
+                .into_iter()
+                .flat_map(|catalog| &catalog.sessions)
+                .find(|i| i.key() == key)
+                .map(|i| i.cwd.clone())
+        })
+        .filter(|cwd| !cwd.as_os_str().is_empty());
     let mut menu = menu
         .item(
             PopupMenuItem::new(t(cx, "conversation-session-info-command")).on_click(

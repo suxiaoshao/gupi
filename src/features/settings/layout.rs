@@ -94,6 +94,9 @@ impl SettingsView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if cwd.as_os_str().is_empty() {
+            return;
+        }
         let this = cx.entity().downgrade();
         let resources = self.resources.clone();
         // Unsaved editor text is settled first; the scope request then asks

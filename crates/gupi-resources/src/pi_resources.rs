@@ -393,6 +393,7 @@ pub fn reload_resource(catalog: &mut Catalog, resource: Resource) {
         .retain(|warning| !warning.starts_with(&prefix));
     catalog.resources.retain(|r| r.path != resource.path);
     let previous_len = catalog.resources.len();
+    let project_owned = resource.project_owned;
     discovery::add(
         catalog,
         resource.kind,
@@ -403,7 +404,8 @@ pub fn reload_resource(catalog: &mut Catalog, resource: Resource) {
         resource.editable,
     );
     if catalog.resources.len() > previous_len {
-        let updated = catalog.resources.pop().unwrap();
+        let mut updated = catalog.resources.pop().unwrap();
+        updated.project_owned = project_owned;
         catalog
             .resources
             .insert(index.min(catalog.resources.len()), updated);

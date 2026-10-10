@@ -142,18 +142,21 @@ impl Drop for Lock {
 
 fn touch(dir: &Path) -> io::Result<()> {
     let now = SystemTime::now();
+    directory_file(dir)?.set_times(fs::FileTimes::new().set_modified(now).set_accessed(now))
+}
+
+fn directory_file(dir: &Path) -> io::Result<fs::File> {
     #[cfg(windows)]
-    let file = {
+    {
         use std::os::windows::fs::OpenOptionsExt as _;
         // FILE_WRITE_ATTRIBUTES on a directory handle.
         fs::OpenOptions::new()
             .access_mode(0x100)
             .custom_flags(0x0200_0000)
-            .open(dir)?
-    };
+            .open(dir)
+    }
     #[cfg(not(windows))]
-    let file = fs::File::open(dir)?;
-    file.set_times(fs::FileTimes::new().set_modified(now).set_accessed(now))
+    fs::File::open(dir)
 }
 
 #[cfg(test)]
@@ -162,14 +165,26 @@ pub(crate) fn replace_for_test(file: &Path, keep_mtime: bool) {
     dir.push(".lock");
     let dir = PathBuf::from(dir);
     let modified = fs::metadata(&dir).unwrap().modified().unwrap();
-    fs::remove_dir(&dir).unwrap();
-    fs::create_dir(&dir).unwrap();
+    #[cfg(windows)]
+    let created = fs::metadata(&dir).unwrap().created().unwrap();
+    // Keep the old directory alive while creating its replacement so the
+    // filesystem cannot reuse the original inode.
+    let staging = tempfile::tempdir_in(dir.parent().unwrap()).unwrap();
+    fs::rename(&dir, staging.path().join("old")).unwrap();
+    let replacement = staging.path().join("new");
+    fs::create_dir(&replacement).unwrap();
+    fs::rename(&replacement, &dir).unwrap();
+    let mut times = fs::FileTimes::new();
     if keep_mtime {
-        fs::File::open(&dir)
-            .unwrap()
-            .set_times(fs::FileTimes::new().set_modified(modified))
-            .unwrap();
+        times = times.set_modified(modified);
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileTimesExt as _;
+        // Avoid timestamp granularity and name-tunneling dependence.
+        times = times.set_created(created + Duration::from_secs(1));
+    }
+    directory_file(&dir).unwrap().set_times(times).unwrap();
 }
 
 #[cfg(test)]
@@ -196,14 +211,12 @@ mod tests {
         let path = dir.path().join("settings.json");
         fs::write(&path, "external").unwrap();
         let mut lock = Lock::acquire(&path).unwrap();
-        let original = fs::File::open(&lock.dir).unwrap();
         replace_for_test(&path, true);
         assert_eq!(
             lock.write_atomic(&path, b"replacement").unwrap_err().kind(),
             io::ErrorKind::WouldBlock
         );
         drop(lock);
-        drop(original);
         assert!(dir.path().join("settings.json.lock").is_dir());
         assert_eq!(fs::read_to_string(&path).unwrap(), "external");
     }

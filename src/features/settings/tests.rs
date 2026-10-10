@@ -391,3 +391,48 @@ impl gpui_kit::Render for SettingsPageFixture {
         })
     }
 }
+
+#[gpui_kit::test]
+fn empty_project_entry_keeps_the_current_settings_page(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        crate::app::init_capability_hosts(cx);
+        app_theme::init(cx);
+        gupi_settings::theme::init(cx);
+        gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
+    });
+    let mut settings = None;
+    let (_, cx) = cx.add_window_view(|window, cx| {
+        let form = cx.new(|_| Form::new(AppConfig::default()));
+        let controller = cx.new(|cx| ConfigController::new(&form, cx));
+        let draft = cx.new(|_| PiProbeController::new());
+        let applied = cx.new(|_| PiProbeController::new());
+        let view = cx.new(|cx| {
+            SettingsView::new(
+                form,
+                controller,
+                draft,
+                applied,
+                cx.focus_handle(),
+                window,
+                cx,
+            )
+        });
+        view.update(cx, |view, cx| {
+            view.open_project_pi_settings(std::path::PathBuf::new(), window, cx);
+        });
+        settings = Some(view.clone());
+        Root::new(view, window, cx)
+    });
+    cx.run_until_parked();
+    let settings = settings.unwrap();
+    cx.update(|_, cx| {
+        let view = settings.read(cx);
+        assert_eq!(view.domain, super::layout::Domain::Gupi);
+        assert_eq!(view.navigation.0, 0);
+        assert_eq!(
+            view.pi_config.read(cx).scope(),
+            &gupi_resources::pi_settings::Scope::Global
+        );
+    });
+}

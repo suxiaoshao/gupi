@@ -484,14 +484,6 @@ impl ResourcesView {
                 .border_t_1()
                 .border_color(cx.theme().border);
             for (kind, label, icon) in RESOURCE_KINDS {
-                if kind == Kind::Theme
-                    && !catalog
-                        .resources
-                        .iter()
-                        .any(|r| r.kind == kind && self.in_project(r, cx))
-                {
-                    continue;
-                }
                 let resources: Vec<_> = catalog
                     .resources
                     .iter()

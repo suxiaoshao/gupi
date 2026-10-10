@@ -226,3 +226,40 @@ fn custom_project_paths_are_owned_but_read_only() {
     assert!(catalog.resources[0].is_project_owned());
     assert!(!catalog.resources[0].editable);
 }
+
+#[test]
+fn optimistic_reload_preserves_project_ownership() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("project");
+    let agent = dir.path().join("agent");
+    for root in [project.join(".pi"), agent.clone()] {
+        write(&root.join("skills/x/SKILL.md"), SKILL);
+        write(&root.join("prompts/p.md"), "Before");
+    }
+    for (mut catalog, owned) in [
+        (scan_project(&project).unwrap(), true),
+        (scan(agent, None, &[]).unwrap(), false),
+    ] {
+        let resources = catalog.resources.clone();
+        assert_eq!(resources.len(), 2);
+        for resource in &resources {
+            assert_eq!(resource.is_project_owned(), owned);
+            write(
+                &resource.path,
+                if resource.kind == Kind::Skill {
+                    SKILL
+                } else {
+                    "After"
+                },
+            );
+            reload_resource(&mut catalog, resource.clone());
+        }
+        assert_eq!(catalog.resources.len(), resources.len());
+        for (reloaded, original) in catalog.resources.iter().zip(&resources) {
+            assert_eq!(reloaded.path, original.path);
+            assert_eq!(reloaded.is_project_owned(), owned);
+            assert_eq!(reloaded.editable, original.editable);
+            assert_eq!(reloaded.enabled, original.enabled);
+        }
+    }
+}

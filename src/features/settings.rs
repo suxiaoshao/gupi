@@ -104,6 +104,9 @@ impl SettingsView {
             )
         });
         let pi_config = cx.new(|cx| pi_config::PiConfig::new(applied_pi.clone(), window, cx));
+        resources.update(cx, |resources, cx| {
+            resources.follow_scope(pi_config.clone(), window, cx)
+        });
         let pi_config_sub = cx.observe(&pi_config, |_, _, cx| cx.notify());
         let keys_sub = cx.observe(&keys, |_, _, cx| cx.notify());
         let applied_sub = cx.observe(&applied_pi, |_, _, cx| cx.notify());

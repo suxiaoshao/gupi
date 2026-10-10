@@ -246,12 +246,8 @@ impl PiConfig {
             .into_any_element()
     }
 
-    fn render_header(
-        &mut self,
-        page: Page,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    /// The scope menu and project trust status, shared by every scoped Pi page.
+    pub(in super::super) fn render_scope(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let entity = cx.entity();
         let scope_label = match &self.scope {
             Scope::Global => t(cx, "pi-scope-global"),
@@ -261,9 +257,7 @@ impl PiConfig {
                 .unwrap_or_else(|| cwd.display().to_string()),
         };
         let path = self.agent.as_ref().ok().map(|agent| self.scope.file(agent));
-        let scopes: Vec<Scope> = std::iter::once(Scope::Global)
-            .chain(self.projects.iter().cloned().map(Scope::Project))
-            .collect();
+        let scopes = self.scope_choices();
         let current = self.scope.clone();
         let scope_menu = Button::new("pi-scope")
             .small()
@@ -278,10 +272,10 @@ impl PiConfig {
             .dropdown_menu({
                 let entity = entity.clone();
                 move |menu, _, cx| {
-                    scopes.iter().fold(menu, |menu, scope| {
+                    let menu = scopes.iter().fold(menu, |menu, scope| {
                         let label = match scope {
                             Scope::Global => t(cx, "pi-scope-global"),
-                            Scope::Project(cwd) => cwd.display().to_string(),
+                            Scope::Project(cwd) => project_label(cwd, &scopes),
                         };
                         let entity = entity.clone();
                         let scope = scope.clone();
@@ -292,7 +286,13 @@ impl PiConfig {
                                     request_scope(&entity, scope.clone(), window, cx);
                                 }),
                         )
-                    })
+                    });
+                    let entity = entity.clone();
+                    menu.separator().item(
+                        PopupMenuItem::new(t(cx, "pi-scope-choose-folder")).on_click(
+                            move |_, window, cx| choose_project_folder(&entity, window, cx),
+                        ),
+                    )
                 }
             });
         let trust = match (&self.scope, &self.trust) {
@@ -302,36 +302,6 @@ impl PiConfig {
             (Scope::Project(_), Some(Trust::Unknown(error))) => Some((error.clone(), true)),
             _ => None,
         };
-        let dirty = self.has_page_drafts(page);
-        let saving = self.is_saving();
-        let ready = matches!(self.files, Load::Ready(_)) && self.status(cx).is_none();
-        let more = Button::new("pi-settings-more")
-            .ghost()
-            .small()
-            .icon(IconName::Ellipsis)
-            .accessibility_label(t(cx, "pi-settings-file-actions"))
-            .dropdown_menu({
-                let entity = entity.clone();
-                move |menu, _, cx| {
-                    let open = path.clone();
-                    let reload = entity.clone();
-                    menu.item(
-                        PopupMenuItem::new(t(cx, "pi-settings-open-file"))
-                            .disabled(open.as_ref().is_none_or(|path| !path.exists()))
-                            .on_click(move |_, _, cx| {
-                                if let Some(path) = &open {
-                                    cx.open_with_system(path);
-                                }
-                            }),
-                    )
-                    .item(
-                        PopupMenuItem::new(t(cx, "pi-settings-reload")).on_click(
-                            move |_, _, cx| reload.update(cx, |this, cx| this.reload(cx)),
-                        ),
-                    )
-                }
-            });
-        let _ = window;
         h_flex()
             .gap_2()
             .items_center()
@@ -368,6 +338,52 @@ impl PiConfig {
                     )
                 })
             })
+            .into_any_element()
+    }
+
+    fn render_header(
+        &mut self,
+        page: Page,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let entity = cx.entity();
+        let path = self.agent.as_ref().ok().map(|agent| self.scope.file(agent));
+        let dirty = self.has_page_drafts(page);
+        let saving = self.is_saving();
+        let ready = matches!(self.files, Load::Ready(_)) && self.status(cx).is_none();
+        let more = Button::new("pi-settings-more")
+            .ghost()
+            .small()
+            .icon(IconName::Ellipsis)
+            .accessibility_label(t(cx, "pi-settings-file-actions"))
+            .dropdown_menu({
+                let entity = entity.clone();
+                move |menu, _, cx| {
+                    let open = path.clone();
+                    let reload = entity.clone();
+                    menu.item(
+                        PopupMenuItem::new(t(cx, "pi-settings-open-file"))
+                            .disabled(open.as_ref().is_none_or(|path| !path.exists()))
+                            .on_click(move |_, _, cx| {
+                                if let Some(path) = &open {
+                                    cx.open_with_system(path);
+                                }
+                            }),
+                    )
+                    .item(
+                        PopupMenuItem::new(t(cx, "pi-settings-reload")).on_click(
+                            move |_, _, cx| reload.update(cx, |this, cx| this.reload(cx)),
+                        ),
+                    )
+                }
+            });
+        let _ = window;
+        h_flex()
+            .gap_2()
+            .items_center()
+            .min_w_0()
+            .child(self.render_scope(cx))
             .when(dirty && ready, |this| {
                 this.child(
                     Button::new("pi-settings-discard")
@@ -818,6 +834,7 @@ pub(in super::super) fn request_scope(
     window: &mut Window,
     cx: &mut App,
 ) {
+    let scope = super::canonical_scope(scope);
     if entity.read(cx).scope == scope {
         return;
     }
@@ -828,4 +845,50 @@ pub(in super::super) fn request_scope(
         window,
         cx,
     );
+}
+
+/// A project's folder name, with its location when another project shares it.
+fn project_label(cwd: &std::path::Path, scopes: &[Scope]) -> String {
+    let name = |path: &std::path::Path| {
+        path.file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string())
+    };
+    let label = name(cwd);
+    let shared = scopes
+        .iter()
+        .filter(|scope| matches!(scope, Scope::Project(other) if name(other) == label))
+        .count()
+        > 1;
+    match cwd.parent() {
+        Some(parent) if shared => format!("{label} — {}", parent.display()),
+        _ => label,
+    }
+}
+
+/// Picks any existing folder as the project scope. Choosing a folder neither
+/// creates `.pi` nor trusts the folder.
+fn choose_project_folder(entity: &Entity<PiConfig>, window: &mut Window, cx: &mut App) {
+    let prompt = cx.prompt_for_paths(PathPromptOptions {
+        files: false,
+        directories: true,
+        multiple: false,
+        prompt: Some(t(cx, "pi-scope-choose-folder-action").into()),
+    });
+    let entity = entity.downgrade();
+    window
+        .spawn(cx, async move |cx| {
+            let Ok(Ok(Some(paths))) = prompt.await else {
+                return;
+            };
+            let Some(folder) = paths.into_iter().next().filter(|path| path.is_dir()) else {
+                return;
+            };
+            let _ = cx.update(|window, cx| {
+                if let Some(entity) = entity.upgrade() {
+                    request_scope(&entity, Scope::Project(folder), window, cx);
+                }
+            });
+        })
+        .detach();
 }

@@ -84,8 +84,10 @@ pub(super) struct PiConfig {
     applied_pi: Entity<PiProbeController>,
     agent: Result<PathBuf, String>,
     scope: Scope,
-    /// Projects opened in this session, offered by the scope menu.
+    /// Projects opened or chosen in this session, offered by the scope menu.
     projects: Vec<PathBuf>,
+    /// The project of the conversation shown when settings opened, listed first.
+    active_project: Option<PathBuf>,
     /// Bumped whenever results for an earlier scope or read must be ignored.
     generation: u64,
     files: Load,
@@ -129,6 +131,7 @@ impl PiConfig {
             agent: pi_resources::agent_dir().map_err(|e| e.to_string()),
             scope: Scope::Global,
             projects: Vec::new(),
+            active_project: None,
             generation: 0,
             files: Load::Loading,
             trust: None,
@@ -146,7 +149,7 @@ impl PiConfig {
     }
 
     #[cfg(test)]
-    fn set_agent_for_test(&mut self, agent: PathBuf) {
+    pub(super) fn set_agent_for_test(&mut self, agent: PathBuf) {
         self.agent = Ok(agent);
     }
 
@@ -155,6 +158,41 @@ impl PiConfig {
         if !self.has_unsaved() && !self.is_saving() {
             self.reload(cx);
         }
+    }
+
+    pub(super) fn scope(&self) -> &Scope {
+        &self.scope
+    }
+
+    /// The stored trust decision for the current project scope, if known.
+    pub(super) fn trusted(&self) -> Option<bool> {
+        match (&self.scope, &self.trust) {
+            (Scope::Project(_), Some(Trust::Trusted)) => Some(true),
+            (Scope::Project(_), Some(Trust::Untrusted)) => Some(false),
+            _ => None,
+        }
+    }
+
+    /// Remembers the current conversation's project for the scope menu.
+    pub(super) fn set_active_project(&mut self, cwd: Option<PathBuf>, cx: &mut Context<Self>) {
+        self.active_project = cwd
+            .filter(|cwd| !cwd.as_os_str().is_empty())
+            .map(|cwd| trust::canonical(&cwd));
+        cx.notify();
+    }
+
+    /// Scope menu entries: global, the current conversation's project, then
+    /// other projects from this session.
+    fn scope_choices(&self) -> Vec<Scope> {
+        let mut projects: Vec<PathBuf> = self.active_project.iter().cloned().collect();
+        for project in &self.projects {
+            if !projects.contains(project) {
+                projects.push(project.clone());
+            }
+        }
+        std::iter::once(Scope::Global)
+            .chain(projects.into_iter().map(Scope::Project))
+            .collect()
     }
 
     pub(super) fn has_unsaved(&self) -> bool {
@@ -178,6 +216,7 @@ impl PiConfig {
 
     /// Switches scope, discarding drafts. Callers confirm unsaved changes first.
     pub(super) fn set_scope(&mut self, scope: Scope, cx: &mut Context<Self>) {
+        let scope = canonical_scope(scope);
         if let Scope::Project(cwd) = &scope
             && !self.projects.contains(cwd)
         {
@@ -559,6 +598,15 @@ enum Support {
     Checking,
     Unavailable,
     Unsupported(String),
+}
+
+/// Identifies a project by its canonical folder, so every entry point that
+/// names the same folder selects the same scope.
+pub(super) fn canonical_scope(scope: Scope) -> Scope {
+    match scope {
+        Scope::Project(cwd) => Scope::Project(trust::canonical(&cwd)),
+        global => global,
+    }
 }
 
 fn supports(version: &str) -> bool {

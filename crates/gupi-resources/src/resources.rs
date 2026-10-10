@@ -1,4 +1,5 @@
 use crate::pi_resources as io;
+use crate::pi_resources::Baseline;
 use crate::pi_resources::Catalog;
 use crate::pi_resources::Error;
 use crate::pi_resources::Kind;
@@ -27,8 +28,18 @@ pub enum Change {
         path: PathBuf,
         text: String,
         create: bool,
+        baseline: Baseline,
     },
     Delete(Resource),
+}
+
+/// Whose files a controller manages.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Target {
+    /// The personal agent directory and its packages.
+    Global,
+    /// A project's own `.pi` text resources, identified by its cwd.
+    Project(PathBuf),
 }
 /// A mutation owns its request and task together, so activity cannot outlive the task.
 #[derive(Default)]
@@ -53,6 +64,7 @@ impl Mutation {
 }
 
 pub struct ResourceController {
+    target: Target,
     catalog: refresh::Operation<Catalog, Error, Task<()>>,
     mutation: Mutation,
 }
@@ -79,10 +91,17 @@ impl ResourceController {
         &self.mutation
     }
     pub fn new() -> Self {
+        Self::for_target(Target::Global)
+    }
+    pub fn for_target(target: Target) -> Self {
         Self {
+            target,
             catalog: refresh::Operation::new(),
             mutation: Mutation::Idle,
         }
+    }
+    pub fn target(&self) -> &Target {
+        &self.target
     }
     pub fn busy(&self) -> bool {
         self.catalog.is_running() || self.mutation.is_running()
@@ -100,6 +119,7 @@ impl ResourceController {
         }
         let previous = change.as_ref().and_then(|_| self.catalog.data().cloned());
         let environment = gupi_pi_runtime::environment(cx);
+        let target = self.target.clone();
         let worker = Tokio::spawn(cx, async move {
             if let (Some(change), Some(mut catalog)) = (change, previous) {
                 match change {
@@ -128,6 +148,9 @@ impl ResourceController {
                     }
                     _ => {}
                 }
+            }
+            if let Target::Project(cwd) = target {
+                return smol::unblock(move || io::scan_project(&cwd)).await;
             }
             let snapshot = environment.load(false).await;
             let root = io::agent_dir().map_err(|error| Error(snapshot.explain(error)))?;
@@ -165,6 +188,14 @@ impl ResourceController {
         let Some(root) = self.catalog.data().map(|c| c.root.clone()) else {
             return;
         };
+        // Project scope edits text files only; settings and packages stay global.
+        let project = match &self.target {
+            Target::Global => None,
+            Target::Project(cwd) => Some(cwd.clone()),
+        };
+        if project.is_some() && !matches!(change, Change::Save { .. } | Change::Delete(_)) {
+            return;
+        }
         let target = match &change {
             Change::Package { source, .. } => source.clone(),
             Change::Toggle(resource, _) | Change::Delete(resource) => resource.name.clone(),
@@ -193,20 +224,40 @@ impl ResourceController {
                         .await
                         .map_err(|error| Error(snapshot.explain(error)))
                 }
-                change => tokio::task::spawn_blocking(move || match change {
-                    Change::Toggle(resource, active) => io::set_enabled(&root, &resource, active),
-                    Change::RegisterSkill(path) => io::register_skill(&root, &path),
-                    Change::Save { path, text, create } => io::save_text(&path, &text, create),
-                    Change::Delete(resource) => {
-                        if !resource.editable
-                            || resource.package.is_some()
-                            || !matches!(resource.kind, Kind::Skill | Kind::Prompt)
-                        {
-                            return Err(Error("Resource is read-only".into()));
+                change => tokio::task::spawn_blocking(move || {
+                    // Re-check ownership at write time, not only when listed.
+                    let outside = |path: &std::path::Path| {
+                        project
+                            .as_ref()
+                            .is_some_and(|cwd| !io::project_owns(cwd, path))
+                    };
+                    match change {
+                        Change::Toggle(resource, active) => {
+                            io::set_enabled(&root, &resource, active)
                         }
-                        trash::delete(&resource.path).map_err(|e| Error(e.to_string()))
+                        Change::RegisterSkill(path) => io::register_skill(&root, &path),
+                        Change::Save { path, .. } if outside(&path) => {
+                            Err(Error("File is outside the project's .pi folder".into()))
+                        }
+                        Change::Save {
+                            path,
+                            text,
+                            create,
+                            baseline,
+                        } => io::save_text(&path, &text, create, &baseline),
+                        Change::Delete(resource) => {
+                            if !resource.editable
+                                || resource.package.is_some()
+                                || !matches!(resource.kind, Kind::Skill | Kind::Prompt)
+                                || outside(&resource.path)
+                            {
+                                return Err(Error("Resource is read-only".into()));
+                            }
+                            // Only the listed file: a skill's folder keeps its other files.
+                            trash::delete(&resource.path).map_err(|e| Error(e.to_string()))
+                        }
+                        Change::Package { .. } => unreachable!(),
                     }
-                    Change::Package { .. } => unreachable!(),
                 })
                 .await
                 .map_err(|e| Error(e.to_string()))?,
@@ -247,7 +298,7 @@ impl ResourceController {
 
 #[cfg(test)]
 mod tests {
-    use super::{Change, Error, Mutation, ResourceController};
+    use super::{Change, Error, Mutation, ResourceController, Target};
     use gpui_kit::{AppContext, Task, TestAppContext};
     use gpui_operation::{Complete, Load, Transition};
 
@@ -270,6 +321,20 @@ mod tests {
             owner.change(package("npm:example", "install"), cx);
             assert!(!owner.mutation().is_running());
             assert!(!owner.mutation().package_running("npm:example", "install"));
+        });
+    }
+
+    #[gpui_kit::test]
+    fn project_scope_never_writes_settings_or_packages(cx: &mut TestAppContext) {
+        let owner = cx.new(|_| ResourceController::for_target(Target::Project("/p".into())));
+        owner.update(cx, |owner, cx| {
+            owner.catalog.transition(Load(Task::ready(())));
+            owner
+                .catalog
+                .transition(Complete(Ok(crate::pi_resources::Catalog::default())));
+            owner.change(package("npm:example", "install"), cx);
+            owner.change(Change::RegisterSkill("/p/.pi/skills/a".into()), cx);
+            assert!(!owner.mutation().is_running());
         });
     }
 

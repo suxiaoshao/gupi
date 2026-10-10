@@ -2,6 +2,8 @@
 
 **[Pi 设置与项目级覆盖（Gupi #2）](issue-2/README.md)**：Pi 配置格式与接入研究、首批实施方案，以及 Gupi / Pi 分区下的 Pi 设置页面设计。
 
+**[项目 `.pi/` 文件管理](project-pi-files/README.md)**：共用 Pi 设置页的项目入口与作用域、项目文本资源及包管理分期、文件来源和保存规则（开发方案）。
+
 **[Pi 包发现与设置页面改进（Gupi #3）](issue-3/README.md)**：已确认设计；按设置页面、快捷键、包浏览、目录来源及实现验证拆分，记录采用方案、取舍与待验证问题。
 
 **[Windows / Linux 窗口菜单布局（Gupi #30）](issue-30/README.md)**：已确认的菜单置顶、常驻展开设计，GPUI Kit 组件选择及 Windows 开发交接。

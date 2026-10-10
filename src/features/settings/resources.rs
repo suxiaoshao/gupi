@@ -18,11 +18,14 @@ use gpui_operation::Retry;
 use gpui_operation::Transition;
 use gpui_operation::refresh;
 use gupi_resources::pi_resources as io;
+use gupi_resources::pi_resources::Baseline;
 use gupi_resources::pi_resources::Kind;
 use gupi_resources::pi_resources::Resource;
+use gupi_resources::pi_settings::Scope;
 use gupi_resources::resources::Change;
 use gupi_resources::resources::ResourceController;
 use gupi_resources::resources::ResourceEvent;
+use gupi_resources::resources::Target;
 use std::path::PathBuf;
 
 mod browse;
@@ -37,8 +40,15 @@ struct TextDraft {
 }
 struct Editor {
     path: PathBuf,
+    kind: Kind,
     editable: bool,
     create: bool,
+    /// The controller whose files this editor writes, fixed when opened.
+    owner: Entity<ResourceController>,
+    /// The contents read when opened, checked again before saving.
+    baseline: Baseline,
+    /// The file changed on disk after opening; saving was refused.
+    changed: bool,
     form: Entity<Form<TextDraft>>,
     input: Entity<EditorState>,
     _binding: ControlBinding,
@@ -50,7 +60,22 @@ struct Open {
     kind: Kind,
     editable: bool,
     create: bool,
+    owner: Entity<ResourceController>,
 }
+
+/// How a skill or prompt row appears in the current scope.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Row {
+    /// Global scope: the full personal resource editor.
+    Global,
+    /// Project scope: a file from the project's own `.pi` folder.
+    Own,
+    /// Project scope: a global resource, read-only here.
+    Inherited,
+}
+
+/// Runs once unsaved resource text is saved or discarded.
+type Proceed = Box<dyn FnOnce(&mut Window, &mut App)>;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Section {
     Overview,
@@ -65,7 +90,15 @@ pub(super) enum Navigate {
 }
 
 pub(super) struct ResourcesView {
+    /// Global resources and packages; always loaded.
     pub controller: Entity<ResourceController>,
+    /// The selected project's own text resources, when the Pi scope is a project.
+    project: Option<Entity<ResourceController>>,
+    /// The shared Pi scope; skills and prompts follow it.
+    pi_config: Option<Entity<super::pi_config::PiConfig>>,
+    /// Continues a leave request once the editor's save succeeds.
+    after_save: Option<(PathBuf, Proceed)>,
+    _project_subscriptions: Vec<Subscription>,
     config: Entity<ConfigController>,
     applied_pi: Entity<PiProbeController>,
     source: Entity<InputState>,
@@ -107,18 +140,23 @@ impl ResourcesView {
         cx: &Context<Self>,
     ) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
         let owner = cx.entity().downgrade();
-        let busy = self.controller.read(cx).busy() || self.config.read(cx).busy(cx);
+        let busy = self.busy(cx);
         let opening = self.open.is_running();
         let resource = resource.clone();
+        let row = self.row(&resource, cx);
+        let files = self.owner_of(&resource, cx);
+        let pi_config = self.pi_config.clone();
+        let writable = resource.editable && row != Row::Inherited;
         move |menu, _, cx| {
             let mut menu = menu;
-            if resource.editable {
+            if writable {
                 let owner = owner.clone();
                 let open = Open {
                     path: resource.path.clone(),
                     kind: resource.kind,
                     editable: true,
                     create: false,
+                    owner: files.clone(),
                 };
                 menu = menu.item(
                     PopupMenuItem::new(t(cx, "settings-resource-edit"))
@@ -149,7 +187,18 @@ impl ResourcesView {
                         }),
                 );
             }
-            if resource.editable {
+            if row == Row::Inherited
+                && let Some(pi_config) = pi_config.clone()
+            {
+                menu = menu.item(
+                    PopupMenuItem::new(t(cx, "settings-resource-edit-global"))
+                        .icon(IconName::SquarePen)
+                        .on_click(move |_, window, cx| {
+                            super::pi_config::request_scope(&pi_config, Scope::Global, window, cx)
+                        }),
+                );
+            }
+            if writable {
                 let owner = owner.clone();
                 let remove = resource.clone();
                 menu = menu.separator().item(
@@ -212,6 +261,16 @@ impl ResourcesView {
     }
 
     fn resource_source(&self, resource: &Resource, cx: &App) -> String {
+        if self.row(resource, cx) == Row::Own {
+            return t(
+                cx,
+                if resource.editable {
+                    "settings-source-project"
+                } else {
+                    "settings-source-external"
+                },
+            );
+        }
         resource.package.clone().unwrap_or_else(|| {
             let personal = resource.editable
                 || self
@@ -267,81 +326,21 @@ impl ResourcesView {
         let prompt_search =
             cx.new(|cx| InputState::new(window, cx).placeholder(t(cx, "settings-template-search")));
         let observe = cx.observe(&controller, |_, _, cx| cx.notify());
-        let catalog_changed =
-            cx.subscribe(&controller, |this: &mut Self, controller, event, cx| {
-                if !matches!(event, ResourceEvent::CatalogChanged) {
-                    return;
-                }
-                if let Some(catalog) = controller.read(cx).catalog().data() {
-                    this.expanded_packages.retain(|source| {
-                        catalog
-                            .packages
-                            .iter()
-                            .any(|package| &package.source == source)
-                    });
-                    this.previews.retain(|path, _| {
-                        catalog.resources.iter().any(|r| {
-                            matches!(r.kind, Kind::Skill | Kind::Prompt) && r.path == *path
-                        })
-                    });
-                }
-                cx.notify();
-            });
         let change = cx.subscribe(&search, |_, _, _: &InputEvent, cx| cx.notify());
         let saved = cx.subscribe_in(&controller, window, |this, _, event, window, cx| {
-            let ResourceEvent::Saved(path, text) = event else {
-                if let ResourceEvent::Finished {
-                    target,
-                    result,
-                    change,
-                } = event
-                {
-                    if let Change::Package { source, .. } = change
-                        && let Some(name) = gupi_resources::catalog::installed_name(source)
-                    {
-                        this.package_results.insert(name.to_owned(), result.clone());
-                    }
-                    let mut args = fluent_bundle::FluentArgs::new();
-                    args.set("target", target.clone());
-                    let message = gupi_settings::i18n::t_with_args(
-                        cx,
-                        if result.is_ok() {
-                            "settings-resource-success"
-                        } else {
-                            "settings-resource-failed"
-                        },
-                        &args,
-                    );
-                    window.push_notification(
-                        match result {
-                            Ok(()) => Notification::info(message),
-                            Err(error) => Notification::error(format!("{message}\n{error}")),
-                        },
-                        cx,
-                    );
-                }
-                return;
-            };
-
-            if this.previews.contains_key(path) {
-                this.load_preview(path.clone(), cx);
-            }
-            if this.editor.as_ref().is_some_and(|editor| {
-                &editor.path == path && TextDraft::TEXT.get(&editor.form, cx) == *text
-            }) {
-                this.editor = None;
-                window.close_dialog(cx);
-            }
-            cx.notify();
+            this.on_resource_event(event, window, cx)
         });
         let (browse, browse_query) = browse::Browse::new(window, cx);
-        let mut subscriptions = vec![observe, catalog_changed, change, saved, browse_query];
+        let mut subscriptions = vec![observe, change, saved, browse_query];
         for input in [&source, &names[0], &names[1], &prompt_search] {
             subscriptions.push(cx.subscribe(input, |_, _, _: &InputEvent, cx| cx.notify()));
         }
         Self {
             controller,
-
+            project: None,
+            pi_config: None,
+            after_save: None,
+            _project_subscriptions: Vec::new(),
             config,
             applied_pi,
             source,
@@ -363,12 +362,316 @@ impl ResourcesView {
             _subscriptions: subscriptions,
         }
     }
+    /// Feedback for a finished change, from either the global or project files.
+    fn on_resource_event(
+        &mut self,
+        event: &ResourceEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            ResourceEvent::CatalogChanged => {
+                if let Some(catalog) = self.controller.read(cx).catalog().data() {
+                    let sources: Vec<String> =
+                        catalog.packages.iter().map(|p| p.source.clone()).collect();
+                    self.expanded_packages
+                        .retain(|source| sources.contains(source));
+                }
+                let catalogs: Vec<io::Catalog> = std::iter::once(&self.controller)
+                    .chain(self.project.as_ref())
+                    .filter_map(|c| c.read(cx).catalog().data().cloned())
+                    .collect();
+                self.previews.retain(|path, _| {
+                    catalogs
+                        .iter()
+                        .flat_map(|catalog| &catalog.resources)
+                        .any(|r| matches!(r.kind, Kind::Skill | Kind::Prompt) && r.path == *path)
+                });
+                cx.notify();
+            }
+            ResourceEvent::Finished {
+                target,
+                result,
+                change,
+            } => {
+                if let Change::Package { source, .. } = change
+                    && let Some(name) = gupi_resources::catalog::installed_name(source)
+                {
+                    self.package_results.insert(name.to_owned(), result.clone());
+                }
+                if let (Change::Save { path, .. }, Err(error)) = (change, result) {
+                    if let Some(editor) = self.editor.as_mut()
+                        && &editor.path == path
+                    {
+                        editor.changed = error.is_changed();
+                    }
+                    // A failed save keeps the editor open; leaving waits for the user.
+                    if self.after_save.as_ref().is_some_and(|(p, _)| p == path) {
+                        self.after_save = None;
+                    }
+                }
+                let mut args = fluent_bundle::FluentArgs::new();
+                args.set("target", target.clone());
+                let message = gupi_settings::i18n::t_with_args(
+                    cx,
+                    if result.is_ok() {
+                        "settings-resource-success"
+                    } else {
+                        "settings-resource-failed"
+                    },
+                    &args,
+                );
+                window.push_notification(
+                    match result {
+                        Ok(()) => Notification::info(message),
+                        Err(error) if error.is_changed() => Notification::error(format!(
+                            "{message}\n{}",
+                            t(cx, "settings-editor-changed")
+                        )),
+                        Err(error) => Notification::error(format!("{message}\n{error}")),
+                    },
+                    cx,
+                );
+            }
+            ResourceEvent::Saved(path, text) => {
+                if self.previews.contains_key(path) {
+                    self.load_preview(path.clone(), cx);
+                }
+                if self.editor.as_ref().is_some_and(|editor| {
+                    &editor.path == path && TextDraft::TEXT.get(&editor.form, cx) == *text
+                }) {
+                    self.editor = None;
+                    window.close_dialog(cx);
+                }
+                if self.after_save.as_ref().is_some_and(|(p, _)| p == path)
+                    && let Some((_, proceed)) = self.after_save.take()
+                {
+                    // Continue outside this update: leaving may read this view.
+                    window.defer(cx, proceed);
+                }
+                cx.notify();
+            }
+        }
+    }
+
+    /// Follows the shared Pi scope: a project scope shows that project's files.
+    pub(super) fn follow_scope(
+        &mut self,
+        pi_config: Entity<super::pi_config::PiConfig>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let observe = cx.observe_in(&pi_config, window, |this, _, window, cx| {
+            this.sync_scope(window, cx)
+        });
+        self._subscriptions.push(observe);
+        self.pi_config = Some(pi_config);
+        self.sync_scope(window, cx);
+    }
+
+    fn sync_scope(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let target = match self.pi_config.as_ref().map(|c| c.read(cx).scope().clone()) {
+            Some(Scope::Project(cwd)) => Target::Project(cwd),
+            _ => Target::Global,
+        };
+        let current = self.project.as_ref().map(|c| c.read(cx).target().clone());
+        if current.as_ref().unwrap_or(&Target::Global) == &target {
+            return;
+        }
+        // A new controller per project: results for an earlier project are
+        // dropped with its tasks and never reach the new one.
+        self.creating = None;
+        self.error = None;
+        self._project_subscriptions.clear();
+        self.project = None;
+        if let Target::Project(_) = target {
+            let controller = cx.new(|_| ResourceController::for_target(target));
+            self._project_subscriptions = vec![
+                cx.observe(&controller, |_, _, cx| cx.notify()),
+                cx.subscribe_in(&controller, window, |this, _, event, window, cx| {
+                    this.on_resource_event(event, window, cx)
+                }),
+            ];
+            controller.update(cx, |c, cx| c.refresh(cx));
+            self.project = Some(controller);
+        }
+        cx.notify();
+    }
+
+    pub(super) fn in_project_scope(&self) -> bool {
+        self.project.is_some()
+    }
+
+    /// The controller listing skills and prompts in the current scope.
+    fn active(&self) -> &Entity<ResourceController> {
+        self.project.as_ref().unwrap_or(&self.controller)
+    }
+
+    fn busy(&self, cx: &App) -> bool {
+        self.controller.read(cx).busy()
+            || self.project.as_ref().is_some_and(|c| c.read(cx).busy())
+            || self.config.read(cx).busy(cx)
+    }
+
+    fn in_project(&self, resource: &Resource, cx: &App) -> bool {
+        self.project.as_ref().is_some_and(|project| {
+            project
+                .read(cx)
+                .catalog()
+                .data()
+                .is_some_and(|catalog| catalog.resources.iter().any(|r| r.path == resource.path))
+        })
+    }
+
+    fn row(&self, resource: &Resource, cx: &App) -> Row {
+        match &self.project {
+            None => Row::Global,
+            Some(_) if self.in_project(resource, cx) => Row::Own,
+            Some(_) => Row::Inherited,
+        }
+    }
+
+    /// The controller whose files contain `resource`.
+    fn owner_of(&self, resource: &Resource, cx: &App) -> Entity<ResourceController> {
+        match &self.project {
+            Some(project) if self.in_project(resource, cx) => project.clone(),
+            _ => self.controller.clone(),
+        }
+    }
+
+    /// The configured same-name relation between project and global entries.
+    /// Shown only when Pi would load both: a trusted project, both enabled,
+    /// and names Pi can determine. Never a claim about a running session.
+    fn relation(&self, resource: &Resource, cx: &App) -> Option<String> {
+        let row = self.row(resource, cx);
+        if row == Row::Global {
+            return None;
+        }
+        let trusted = self.pi_config.as_ref().and_then(|c| c.read(cx).trusted());
+        if row == Row::Own && trusted == Some(false) {
+            return Some(t(cx, "settings-resource-not-loaded"));
+        }
+        if trusted != Some(true) || !resource.enabled {
+            return None;
+        }
+        let key = resource.key.as_ref()?;
+        let other = if row == Row::Own {
+            &self.controller
+        } else {
+            self.project.as_ref()?
+        };
+        let shared = other.read(cx).catalog().data().is_some_and(|catalog| {
+            catalog
+                .resources
+                .iter()
+                .any(|r| r.kind == resource.kind && r.enabled && r.key.as_ref() == Some(key))
+        });
+        shared.then(|| {
+            t(
+                cx,
+                if row == Row::Own {
+                    "settings-resource-same-global"
+                } else {
+                    "settings-resource-same-project"
+                },
+            )
+        })
+    }
+
+    /// Whether the resource editor holds text that is not saved.
+    pub(super) fn has_unsaved(&self, cx: &App) -> bool {
+        self.editor
+            .as_ref()
+            .is_some_and(|editor| editor.editable && editor.form.read(cx).is_dirty())
+    }
+
+    /// Runs `proceed` once unsaved editor text is saved or discarded.
+    pub(super) fn confirm_leave(
+        this: &Entity<Self>,
+        proceed: impl FnOnce(&mut Window, &mut App) + 'static,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        if !this.read(cx).has_unsaved(cx) {
+            proceed(window, cx);
+            return;
+        }
+        let file = this
+            .read(cx)
+            .editor
+            .as_ref()
+            .and_then(|editor| editor.path.file_name())
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let this = this.clone();
+        let proceed = std::rc::Rc::new(std::cell::RefCell::new(Some(Box::new(proceed) as Proceed)));
+        window.open_dialog(cx, move |dialog, _, cx| {
+            let discard = (this.clone(), proceed.clone());
+            let save = (this.clone(), proceed.clone());
+            let mut args = fluent_bundle::FluentArgs::new();
+            args.set("file", file.clone());
+            dialog
+                .title(gupi_settings::i18n::t_with_args(
+                    cx,
+                    "settings-editor-unsaved-title",
+                    &args,
+                ))
+                .child(t(cx, "settings-editor-unsaved-body"))
+                .footer(
+                    gpui_kit::component::dialog::DialogFooter::new()
+                        .child(
+                            Button::new("resource-unsaved-cancel")
+                                .label(t(cx, "action-cancel"))
+                                .on_click(|_, window, cx| window.close_dialog(cx)),
+                        )
+                        .child(
+                            Button::new("resource-unsaved-discard")
+                                .label(t(cx, "pi-settings-discard"))
+                                .on_click(move |_, window, cx| {
+                                    // Close this question, then the editor beneath it.
+                                    window.close_dialog(cx);
+                                    discard.0.update(cx, |this, cx| {
+                                        this.editor = None;
+                                        cx.notify();
+                                    });
+                                    window.close_dialog(cx);
+                                    if let Some(proceed) = discard.1.borrow_mut().take() {
+                                        proceed(window, cx);
+                                    }
+                                }),
+                        )
+                        .child(
+                            Button::new("resource-unsaved-save")
+                                .primary()
+                                .label(t(cx, "settings-resource-save"))
+                                .on_click(move |_, window, cx| {
+                                    window.close_dialog(cx);
+                                    let Some(proceed) = save.1.borrow_mut().take() else {
+                                        return;
+                                    };
+                                    save.0.update(cx, |this, cx| this.save_then(proceed, cx));
+                                }),
+                        ),
+                )
+        });
+    }
+
     fn change(&mut self, change: Change, cx: &mut Context<Self>) {
+        let controller = self.controller.clone();
+        self.change_in(&controller, change, cx);
+    }
+
+    fn change_in(
+        &mut self,
+        controller: &Entity<ResourceController>,
+        change: Change,
+        cx: &mut Context<Self>,
+    ) {
         if self.config.read(cx).busy(cx) {
             return;
         }
         self.error = None;
-        self.controller.update(cx, |c, cx| c.change(change, cx));
+        controller.update(cx, |c, cx| c.change(change, cx));
     }
     fn package_available(&self, cx: &App) -> bool {
         let controller = self.controller.read(cx);
@@ -414,13 +717,8 @@ impl ResourcesView {
         &self.names[usize::from(kind == Kind::Prompt)]
     }
     fn new_resource(&mut self, kind: Kind, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(root) = self
-            .controller
-            .read(cx)
-            .catalog()
-            .data()
-            .map(|c| c.root.clone())
-        else {
+        let owner = self.active().clone();
+        let Some(root) = owner.read(cx).catalog().data().map(|c| c.root.clone()) else {
             return;
         };
         match io::create_path(&root, kind, &self.name_input(kind).read(cx).value()) {
@@ -430,6 +728,7 @@ impl ResourcesView {
                     kind,
                     editable: true,
                     create: true,
+                    owner,
                 },
                 window,
                 cx,
@@ -478,6 +777,13 @@ impl ResourcesView {
                     },
                 ))
                 .child(div().font_weight(FontWeight::MEDIUM).child(source.clone()))
+                // The exact file moved to the Trash; a skill's folder stays.
+                .children(resource.as_ref().map(|resource| {
+                    div()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(resource.path.display().to_string())
+                }))
                 .child(t(
                     cx,
                     if resource.is_some() {
@@ -489,11 +795,12 @@ impl ResourcesView {
                 .on_ok(move |_, _, cx| {
                     owner
                         .update(cx, |this, cx| {
-                            if this.controller.read(cx).busy() || this.config.read(cx).busy(cx) {
+                            if this.busy(cx) {
                                 return false;
                             }
                             if let Some(resource) = &resource {
-                                this.change(Change::Delete(resource.clone()), cx);
+                                let files = this.owner_of(resource, cx);
+                                this.change_in(&files, Change::Delete(resource.clone()), cx);
                             } else {
                                 this.package("remove", source.clone(), cx);
                             }
@@ -523,10 +830,19 @@ impl ResourcesView {
                     .small()
                     .icon(IconName::RotateCw)
                     .tooltip(t(cx, "settings-resource-refresh"))
-                    .loading(controller.catalog().is_running())
-                    .disabled(controller.busy() || self.config.read(cx).busy(cx))
+                    .loading(
+                        controller.catalog().is_running()
+                            || self
+                                .project
+                                .as_ref()
+                                .is_some_and(|c| c.read(cx).catalog().is_running()),
+                    )
+                    .disabled(self.busy(cx))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.controller.update(cx, |c, cx| c.refresh(cx));
+                        if let Some(project) = &this.project {
+                            project.update(cx, |c, cx| c.refresh(cx));
+                        }
                         for path in this.previews.keys().cloned().collect::<Vec<_>>() {
                             this.load_preview(path, cx);
                         }
@@ -534,8 +850,17 @@ impl ResourcesView {
             )
             .into_any_element()
     }
+    /// The controller behind a page: packages stay global.
+    fn page_controller(&self, kind: Kind) -> &Entity<ResourceController> {
+        if kind == Kind::Extension {
+            &self.controller
+        } else {
+            self.active()
+        }
+    }
+
     pub fn has_status(&self, kind: Kind, cx: &App) -> bool {
-        let controller = self.controller.read(cx);
+        let controller = self.page_controller(kind).read(cx);
         controller.mutation().is_running()
             || controller.catalog().problem().is_some()
             || self.open.problem().is_some()
@@ -575,8 +900,15 @@ impl ResourcesView {
                 cx.defer(move |cx| probe.update(cx, |probe, cx| probe.request(command, false, cx)));
             }
         }
-        let controller = self.controller.read(cx);
-        let busy = controller.busy() || self.config.read(cx).busy(cx);
+        if kind != Kind::Extension
+            && let Some(project) = &self.project
+            && matches!(project.read(cx).catalog(), refresh::Operation::Idle(_))
+        {
+            let project = project.clone();
+            cx.defer(move |cx| project.update(cx, |c, cx| c.refresh(cx)));
+        }
+        let busy = self.busy(cx);
+        let controller = self.page_controller(kind).read(cx);
         let catalog = controller.catalog().data();
         let mut view = v_flex().gap_3();
         if section == Section::Overview {
@@ -665,7 +997,7 @@ impl ResourcesView {
                         cx.notify();
                     })),
             );
-            if kind == Kind::Skill {
+            if kind == Kind::Skill && self.project.is_none() {
                 toolbar = toolbar.child(
                     Button::new("resource-register")
                         .ghost()
@@ -722,10 +1054,12 @@ impl ResourcesView {
                         .text_color(cx.theme().muted_foreground)
                         .child(t(
                             cx,
-                            if self.search.read(cx).value().trim().is_empty() {
-                                "settings-resource-none"
-                            } else {
+                            if !self.search.read(cx).value().trim().is_empty() {
                                 "settings-resource-empty"
+                            } else if self.project.is_some() {
+                                "settings-resource-none-project"
+                            } else {
+                                "settings-resource-none"
                             },
                         )),
                 );
@@ -739,10 +1073,12 @@ impl ResourcesView {
                     .text_color(cx.theme().muted_foreground)
                     .child(t(
                         cx,
-                        if self.prompt_search.read(cx).value().trim().is_empty() {
-                            "settings-resource-none"
-                        } else {
+                        if !self.prompt_search.read(cx).value().trim().is_empty() {
                             "settings-resource-empty"
+                        } else if self.project.is_some() {
+                            "settings-resource-none-project"
+                        } else {
+                            "settings-resource-none"
                         },
                     )),
             );

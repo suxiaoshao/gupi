@@ -148,6 +148,73 @@ pub fn scan(
     Ok(result)
 }
 
+/// Scans a project's own `.pi` skills and prompts, as Pi discovers them in a
+/// trusted project. Resources resolving outside `.pi` are listed read-only.
+pub fn scan_project(cwd: &Path) -> Result<Catalog, Error> {
+    let missing = |error: &std::io::Error| error.kind() == std::io::ErrorKind::NotFound;
+    match fs::metadata(cwd) {
+        Ok(meta) if meta.is_dir() => {}
+        Ok(_) => return Err(Error(format!("Not a folder: {}", cwd.display()))),
+        Err(error) if missing(&error) => {
+            return Err(Error(format!("Folder not found: {}", cwd.display())));
+        }
+        Err(error) => return Err(Error(format!("{}: {error}", cwd.display()))),
+    }
+    let root = cwd.join(".pi");
+    let mut result = Catalog {
+        root: root.clone(),
+        ..Default::default()
+    };
+    match fs::metadata(&root) {
+        Ok(meta) if meta.is_dir() => {}
+        Ok(_) => return Err(Error(format!("Not a folder: {}", root.display()))),
+        // No `.pi` yet: an empty project, created on the first save.
+        Err(error) if missing(&error) => return Ok(result),
+        Err(error) => return Err(Error(format!("{}: {error}", root.display()))),
+    }
+    let settings = read_json(&root.join("settings.json"))?;
+    if !settings.is_object() {
+        return Err(Error("Pi settings must be an object".into()));
+    }
+    for kind in [Kind::Skill, Kind::Prompt] {
+        let folder = root.join(kind.key());
+        match fs::metadata(&folder) {
+            Ok(meta) if meta.is_dir() => {}
+            Ok(_) => return Err(Error(format!("Not a folder: {}", folder.display()))),
+            Err(error) if missing(&error) => continue,
+            Err(error) => return Err(Error(format!("{}: {error}", folder.display()))),
+        }
+        let overrides: Vec<_> = strings(&settings[kind.key()])
+            .into_iter()
+            .filter(|s| is_override(s))
+            .collect();
+        let mut paths = collect(&folder, kind, &mut result.warnings);
+        if kind == Kind::Prompt {
+            paths.retain(|p| p.parent() == Some(folder.as_path()));
+        }
+        for path in paths {
+            let editable = project_owns(cwd, &path);
+            let active = enabled(&path, &overrides, &root);
+            add(
+                &mut result,
+                kind,
+                path,
+                root.clone(),
+                None,
+                active,
+                editable,
+            );
+        }
+    }
+    result.resources.sort_by(|a, b| {
+        a.name
+            .to_lowercase()
+            .cmp(&b.name.to_lowercase())
+            .then_with(|| a.path.cmp(&b.path))
+    });
+    Ok(result)
+}
+
 pub(super) fn add(
     catalog: &mut Catalog,
     kind: Kind,
@@ -175,6 +242,13 @@ pub(super) fn add(
     .to_string_lossy()
     .into_owned();
     let mut description = String::new();
+    // Pi names prompts by file name and skips skills without a description.
+    let mut key = (kind == Kind::Prompt).then(|| {
+        path.file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned()
+    });
     if matches!(kind, Kind::Skill | Kind::Prompt) {
         match fs::read_to_string(&path) {
             Ok(text) => {
@@ -190,6 +264,21 @@ pub(super) fn add(
                             }
                             if let Some(value) = front["description"].as_str() {
                                 description = value.into();
+                            }
+                            if kind == Kind::Skill
+                                && front["description"]
+                                    .as_str()
+                                    .is_some_and(|d| !d.trim().is_empty())
+                            {
+                                key = front["name"]
+                                    .as_str()
+                                    .filter(|name| !name.is_empty())
+                                    .map(str::to_owned)
+                                    .or_else(|| {
+                                        path.parent()
+                                            .and_then(Path::file_name)
+                                            .map(|name| name.to_string_lossy().into_owned())
+                                    });
                             }
                         }
                         Err(error) => catalog
@@ -214,6 +303,7 @@ pub(super) fn add(
         description,
         enabled,
         editable,
+        key,
     });
 }
 

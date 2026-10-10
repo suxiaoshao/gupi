@@ -278,17 +278,28 @@ impl StartupView {
         // Leaving settings asks about unsaved Pi drafts first.
         if !visible && self.show_settings && self.settings.read(cx).has_unsaved_pi(cx) {
             let this = cx.entity().downgrade();
-            SettingsView::confirm_leave(
-                &self.settings,
-                move |window, cx| {
-                    let _ = this.update(cx, |this, cx| {
-                        this.apply_settings_visible(false, window, cx)
-                    });
-                },
-                window,
-                cx,
-            );
+            let settings = self.settings.clone();
+            // Callers such as the Window menu run inside the window's root
+            // update; the question opens a dialog on that root, so it waits.
+            window.defer(cx, move |window, cx| {
+                SettingsView::confirm_leave(
+                    &settings,
+                    move |window, cx| {
+                        let _ = this.update(cx, |this, cx| {
+                            this.apply_settings_visible(false, window, cx)
+                        });
+                    },
+                    window,
+                    cx,
+                );
+            });
             return;
+        }
+        if visible && !self.show_settings {
+            // Direct entry starts on the global scope; only the contextual
+            // project entry selects a project.
+            self.settings
+                .update(cx, |settings, cx| settings.reset_pi_scope(cx));
         }
         self.apply_settings_visible(visible, window, cx);
     }
@@ -315,6 +326,15 @@ impl StartupView {
         if self.show_settings != visible {
             if let Some(home) = &self.home {
                 home.update(cx, |home, cx| home.close_commands(window, cx));
+            }
+            if visible {
+                // The scope menu offers the shown conversation's project first.
+                let cwd = self.home.as_ref().and_then(|home| {
+                    let state = home.read(cx).state().read(cx);
+                    state.current().map(|session| session.info().cwd.clone())
+                });
+                self.settings
+                    .update(cx, |settings, cx| settings.set_active_project(cwd, cx));
             }
             if self.palette.take().is_some_and(|p| p.read(cx).is_open())
                 && window.has_active_dialog(cx)

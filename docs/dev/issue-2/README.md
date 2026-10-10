@@ -9,6 +9,8 @@
 - [设置清单](settings.md)：字段、类型、默认值、终端专用选项与内部字段。
 - [配置覆盖与缺口统计](coverage.md)：58 个 Schema 顶层键的逐项覆盖、独立文件与资源缺口、后续建议及待确定问题。
 - [MCP 配置盘点](mcp-configuration.md)：内置 MCP 配置字段、覆盖/认证规则、现有缺口及接入待调研项。
+- [下一批讨论与推荐](next-slice.md)：MCP、项目配置、其他全局 Pi 配置三项独立工作的边界与优先级讨论（Draft）。
+- [项目 `.pi/` 文件管理开发方案](../project-pi-files/README.md)：已选定的共用设置页方向及项目文件管理分期，按交互和数据规则拆分。
 - [接入限制与待确定问题](integration.md)：RPC 能力、持久化与运行时生效边界、推荐方案。
 - [设置页面与导航讨论](information-architecture.md)：Gupi / Pi 分区方案的比较与已采用的决定。
 - [图形设置的字段筛选](field-selection.md)：哪些字段常用、适合页内高级、保留文件编辑，或不应提供控件及其源码依据。

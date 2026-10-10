@@ -151,3 +151,78 @@ fn saves_refuse_files_changed_since_opening() {
     );
     assert_eq!(fs::read_to_string(&created).unwrap(), "new");
 }
+
+#[test]
+fn project_scan_lists_standalone_and_explicit_resources_without_writes() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().join("project");
+    let pi = cwd.join(".pi");
+    let external = dir.path().join("external");
+    write(
+        &pi.join("extensions/local.ts"),
+        "throw new Error('must not execute');",
+    );
+    write(&pi.join("themes/local.json"), "{}");
+    write(&pi.join("skills/local/SKILL.md"), SKILL);
+    write(&external.join("custom.md"), "External prompt");
+    write(
+        &external.join("remote.ts"),
+        "throw new Error('must not execute');",
+    );
+    write(&external.join("remote.json"), "{}");
+    write(&external.join("skill/SKILL.md"), SKILL);
+    let settings = serde_json::json!({
+        "unknown": {"preserve": true},
+        "extensions": [external.join("remote.ts"), "-extensions/local.ts"],
+        "themes": [external.join("remote.json")],
+        "prompts": [external.join("custom.md")],
+        "skills": [external.join("skill"), "-skills/local/SKILL.md"]
+    })
+    .to_string();
+    write(&pi.join("settings.json"), &settings);
+    let catalog = scan_project(&cwd).unwrap();
+    assert_eq!(catalog.resources.len(), 7);
+    let extension = catalog
+        .resources
+        .iter()
+        .find(|r| r.path == pi.join("extensions/local.ts"))
+        .unwrap();
+    assert!(!extension.enabled && !extension.editable && extension.is_project_owned());
+    let skill = catalog
+        .resources
+        .iter()
+        .find(|r| r.path == pi.join("skills/local/SKILL.md"))
+        .unwrap();
+    assert!(!skill.enabled && skill.editable);
+    for resource in catalog
+        .resources
+        .iter()
+        .filter(|r| r.path.starts_with(&external))
+    {
+        assert!(!resource.editable && resource.enabled && !resource.is_project_owned());
+    }
+    assert!(
+        catalog.resources.iter().any(|r| r.kind == Kind::Theme
+            && r.path == pi.join("themes/local.json")
+            && !r.editable)
+    );
+    assert_eq!(
+        fs::read_to_string(pi.join("settings.json")).unwrap(),
+        settings
+    );
+}
+
+#[test]
+fn custom_project_paths_are_owned_but_read_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let pi = dir.path().join(".pi");
+    write(&pi.join("custom/review.md"), "Review");
+    write(
+        &pi.join("settings.json"),
+        r#"{"prompts":["custom/review.md"]}"#,
+    );
+    let catalog = scan_project(dir.path()).unwrap();
+    assert_eq!(catalog.resources.len(), 1);
+    assert!(catalog.resources[0].is_project_owned());
+    assert!(!catalog.resources[0].editable);
+}

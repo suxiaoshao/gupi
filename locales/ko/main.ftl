@@ -396,7 +396,7 @@ settings-about-path = 확인된 경로
 settings-about-status = 확인 상태
 settings-about-unavailable = 아직 사용할 수 없음
 settings-editor-discard = 저장하지 않은 텍스트 변경 사항을 버릴까요?
-settings-package-confirm-remove = 개인 Pi 설정에서 이 패키지를 제거할까요? 로컬 패키지 원본 폴더는 유지됩니다.
+settings-package-confirm-remove = 선택한 Pi 범위에서 이 패키지를 제거할까요? 로컬 패키지는 등록만 해제되며 원본 폴더는 유지됩니다.
 settings-package-heading = 설치된 패키지
 settings-extension-heading = 독립 확장
 settings-template-heading = 명령 템플릿
@@ -903,3 +903,15 @@ settings-editor-changed = 파일이 열린 뒤 변경되어 저장하지 않았�
 settings-editor-reload = 다시 읽기
 settings-editor-unsaved-title = { $file }의 변경 사항을 저장할까요?
 settings-editor-unsaved-body = 텍스트 변경 사항이 아직 저장되지 않았습니다.
+
+pi-project-settings-folder = 프로젝트 Pi 설정 — { $folder }
+
+packages-install-project = 프로젝트 { $folder }에 설치
+packages-project-delta = 전역 패키지 필터 · 읽기 전용
+packages-project-filtered = 이 프로젝트에서 필터링됨
+packages-project-replaced = 프로젝트로 대체됨
+packages-project-replaces = 전역 패키지 대체
+
+settings-resource-disabled = 비활성화됨
+settings-theme-heading = 독립 테마
+settings-project-package-empty = 이 프로젝트에는 패키지가 없습니다.

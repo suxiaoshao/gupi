@@ -385,6 +385,14 @@ impl ResourcesView {
                             )
                             .into_any_element()
                     })
+                    .when(row != Row::Global && !resource.enabled, |tags| {
+                        tags.child(
+                            Tag::secondary()
+                                .small()
+                                .outline()
+                                .child(t(cx, "settings-resource-disabled")),
+                        )
+                    })
                     .when(!resource.editable || row == Row::Inherited, |tags| {
                         tags.child(
                             Tag::secondary()

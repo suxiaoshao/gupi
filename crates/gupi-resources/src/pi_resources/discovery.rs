@@ -18,64 +18,7 @@ pub fn scan(
         root: root.clone(),
         ..Default::default()
     };
-    for entry in settings["packages"].as_array().into_iter().flatten() {
-        let Some(source) = entry.as_str().or_else(|| entry["source"].as_str()) else {
-            continue;
-        };
-        let Some(path) = package_path(&root, source, &settings, env) else {
-            result
-                .warnings
-                .push(format!("Package location unavailable: {source}"));
-            continue;
-        };
-        let manifest = match read_json(&path.join("package.json")) {
-            Ok(manifest) => manifest,
-            Err(error) => {
-                result.warnings.push(error.to_string());
-                Value::Null
-            }
-        };
-        if !path.exists() {
-            result
-                .warnings
-                .push(format!("Package not installed: {source}"));
-        }
-        result.packages.push(Package {
-            source: source.into(),
-            path: path.clone(),
-            version: manifest["version"].as_str().map(str::to_owned),
-        });
-        for kind in KINDS {
-            let entries = &manifest["pi"][kind.key()];
-            let filtered = entry.get(kind.key()).is_some() || entry["autoload"] == false;
-            let paths = if entries.is_array() && (!strings(entries).is_empty() || !filtered) {
-                collect_entries(&path, &strings(entries), kind, &mut result.warnings)
-            } else if manifest.get("pi").is_none() || filtered || entry.is_object() {
-                collect(&path.join(kind.key()), kind, &mut result.warnings)
-            } else {
-                vec![]
-            };
-            for file in paths {
-                let enabled = if entry["autoload"] == false {
-                    delta_enabled(&file, &strings(&entry[kind.key()]), &path)
-                } else if entry[kind.key()].is_array() {
-                    let patterns = strings(&entry[kind.key()]);
-                    !patterns.is_empty() && enabled(&file, &patterns, &path)
-                } else {
-                    true
-                };
-                add(
-                    &mut result,
-                    kind,
-                    file,
-                    path.clone(),
-                    Some(source.into()),
-                    enabled,
-                    false,
-                );
-            }
-        }
-    }
+    scan_packages(&root, &settings, env, true, &mut result);
     for kind in KINDS {
         let entries = strings(&settings[kind.key()]);
         let overrides: Vec<_> = entries.iter().filter(|s| is_override(s)).cloned().collect();
@@ -148,7 +91,78 @@ pub fn scan(
     Ok(result)
 }
 
-/// Scans a project's own `.pi` skills and prompts, as Pi discovers them in a
+fn scan_packages(
+    root: &Path,
+    settings: &Value,
+    env: &[(OsString, OsString)],
+    global: bool,
+    result: &mut Catalog,
+) {
+    for entry in settings["packages"].as_array().into_iter().flatten() {
+        let Some(source) = entry.as_str().or_else(|| entry["source"].as_str()) else {
+            continue;
+        };
+        let Some(path) = package_path(root, source, settings, env, global) else {
+            result
+                .warnings
+                .push(format!("Package location unavailable: {source}"));
+            continue;
+        };
+        let manifest = match read_json(&path.join("package.json")) {
+            Ok(manifest) => manifest,
+            Err(error) => {
+                result.warnings.push(error.to_string());
+                Value::Null
+            }
+        };
+        if !path.exists() && (global || entry["autoload"] != false) {
+            result
+                .warnings
+                .push(format!("Package not installed: {source}"));
+        }
+        result.packages.push(Package {
+            source: source.into(),
+            path: path.clone(),
+            version: manifest["version"].as_str().map(str::to_owned),
+            delta: entry["autoload"] == false,
+        });
+        if entry["autoload"] == false && !global {
+            continue;
+        }
+        for kind in KINDS {
+            let entries = &manifest["pi"][kind.key()];
+            let filtered = entry.get(kind.key()).is_some() || entry["autoload"] == false;
+            let paths = if entries.is_array() && (!strings(entries).is_empty() || !filtered) {
+                collect_entries(&path, &strings(entries), kind, &mut result.warnings)
+            } else if manifest.get("pi").is_none() || filtered || entry.is_object() {
+                collect(&path.join(kind.key()), kind, &mut result.warnings)
+            } else {
+                vec![]
+            };
+            for file in paths {
+                let enabled = if entry["autoload"] == false {
+                    delta_enabled(&file, &strings(&entry[kind.key()]), &path)
+                } else if entry[kind.key()].is_array() {
+                    let patterns = strings(&entry[kind.key()]);
+                    !patterns.is_empty() && enabled(&file, &patterns, &path)
+                } else {
+                    true
+                };
+                add(
+                    result,
+                    kind,
+                    file,
+                    path.clone(),
+                    Some(source.into()),
+                    enabled,
+                    false,
+                );
+            }
+        }
+    }
+}
+
+/// Scans project packages, explicit resource paths and `.pi` resources in a
 /// trusted project. Resources resolving outside `.pi` are listed read-only.
 pub fn scan_project(cwd: &Path) -> Result<Catalog, Error> {
     let missing = |error: &std::io::Error| error.kind() == std::io::ErrorKind::NotFound;
@@ -176,7 +190,26 @@ pub fn scan_project(cwd: &Path) -> Result<Catalog, Error> {
     if !settings.is_object() {
         return Err(Error("Pi settings must be an object".into()));
     }
-    for kind in [Kind::Skill, Kind::Prompt] {
+    scan_packages(&root, &settings, &[], false, &mut result);
+    for kind in KINDS {
+        let entries = strings(&settings[kind.key()]);
+        let patterns: Vec<_> = entries.iter().filter(|s| is_pattern(s)).cloned().collect();
+        let plain: Vec<_> = entries.iter().filter(|s| !is_pattern(s)).cloned().collect();
+        for path in collect_entries(&root, &plain, kind, &mut result.warnings) {
+            let editable = matches!(kind, Kind::Skill | Kind::Prompt)
+                && project_owns(cwd, &path)
+                && owned(&path, &root.join(kind.key()));
+            let active = enabled(&path, &patterns, &root);
+            add(
+                &mut result,
+                kind,
+                path,
+                root.clone(),
+                None,
+                active,
+                editable,
+            );
+        }
         let folder = root.join(kind.key());
         match fs::metadata(&folder) {
             Ok(meta) if meta.is_dir() => {}
@@ -189,11 +222,11 @@ pub fn scan_project(cwd: &Path) -> Result<Catalog, Error> {
             .filter(|s| is_override(s))
             .collect();
         let mut paths = collect(&folder, kind, &mut result.warnings);
-        if kind == Kind::Prompt {
+        if matches!(kind, Kind::Prompt | Kind::Theme) {
             paths.retain(|p| p.parent() == Some(folder.as_path()));
         }
         for path in paths {
-            let editable = project_owns(cwd, &path);
+            let editable = matches!(kind, Kind::Skill | Kind::Prompt) && project_owns(cwd, &path);
             let active = enabled(&path, &overrides, &root);
             add(
                 &mut result,
@@ -205,6 +238,9 @@ pub fn scan_project(cwd: &Path) -> Result<Catalog, Error> {
                 editable,
             );
         }
+    }
+    for resource in &mut result.resources {
+        resource.project_owned = project_owns(cwd, &resource.path);
     }
     result.resources.sort_by(|a, b| {
         a.name
@@ -303,6 +339,7 @@ pub(super) fn add(
         description,
         enabled,
         editable,
+        project_owned: false,
         key,
     });
 }
@@ -586,11 +623,12 @@ fn delta_enabled(path: &Path, patterns: &[String], base: &Path) -> bool {
     active
 }
 
-fn package_path(
+pub(super) fn package_path(
     root: &Path,
     source: &str,
     settings: &Value,
     env: &[(OsString, OsString)],
+    global: bool,
 ) -> Option<PathBuf> {
     if let Some(spec) = source.strip_prefix("npm:") {
         let name = spec
@@ -602,7 +640,7 @@ fn package_path(
             return None;
         }
         let managed = root.join("npm/node_modules").join(name);
-        if managed.exists() {
+        if !global || managed.exists() {
             return Some(managed);
         }
         let mut command = strings(&settings["npmCommand"]);
@@ -715,13 +753,13 @@ mod tests {
             "git:user/repo",
         ] {
             assert_eq!(
-                package_path(root, source, &json!({}), &[]),
+                package_path(root, source, &json!({}), &[], false),
                 Some(root.join("git/github.com/user/repo")),
                 "{source}"
             );
         }
         assert_eq!(
-            package_path(root, "./local", &json!({}), &[]),
+            package_path(root, "./local", &json!({}), &[], false),
             Some(root.join("./local"))
         );
     }

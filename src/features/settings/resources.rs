@@ -89,6 +89,11 @@ pub(super) enum Navigate {
     Pi,
 }
 
+struct ProjectResources {
+    controller: Entity<ResourceController>,
+    _subscriptions: Vec<Subscription>,
+}
+
 pub(super) struct ResourcesView {
     /// Global resources and packages; always loaded.
     pub controller: Entity<ResourceController>,
@@ -98,7 +103,7 @@ pub(super) struct ResourcesView {
     pi_config: Option<Entity<super::pi_config::PiConfig>>,
     /// Continues a leave request once the editor's save succeeds.
     after_save: Option<(PathBuf, Proceed)>,
-    _project_subscriptions: Vec<Subscription>,
+    projects: std::collections::BTreeMap<PathBuf, ProjectResources>,
     config: Entity<ConfigController>,
     applied_pi: Entity<PiProbeController>,
     source: Entity<InputState>,
@@ -127,7 +132,7 @@ impl EventEmitter<Navigate> for ResourcesView {}
 impl ResourcesView {
     /// Shows a package on the installed packages page.
     fn reveal_package(&mut self, source: String, cx: &mut Context<Self>) {
-        self.expanded_packages.insert(source);
+        self.expanded_packages.insert(format!("false:{source}"));
         self.browsing = false;
         cx.emit(Navigate::Package);
         cx.notify();
@@ -175,6 +180,16 @@ impl ResourcesView {
                     .icon(IconName::FolderOpen)
                     .on_click(move |_, _, cx| cx.reveal_path(&reveal)),
             );
+            if row != Row::Global {
+                let copy = resource.path.display().to_string();
+                menu = menu.item(
+                    PopupMenuItem::new(t(cx, "files-copy-path"))
+                        .icon(IconName::Copy)
+                        .on_click(move |_, _, cx| {
+                            cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()))
+                        }),
+                );
+            }
             if let Some(source) = resource.package.clone() {
                 let owner = owner.clone();
                 menu = menu.item(
@@ -264,7 +279,7 @@ impl ResourcesView {
         if self.row(resource, cx) == Row::Own {
             return t(
                 cx,
-                if resource.editable {
+                if resource.is_project_owned() {
                     "settings-source-project"
                 } else {
                     "settings-source-external"
@@ -327,8 +342,8 @@ impl ResourcesView {
             cx.new(|cx| InputState::new(window, cx).placeholder(t(cx, "settings-template-search")));
         let observe = cx.observe(&controller, |_, _, cx| cx.notify());
         let change = cx.subscribe(&search, |_, _, _: &InputEvent, cx| cx.notify());
-        let saved = cx.subscribe_in(&controller, window, |this, _, event, window, cx| {
-            this.on_resource_event(event, window, cx)
+        let saved = cx.subscribe_in(&controller, window, |this, origin, event, window, cx| {
+            this.on_resource_event(origin, event, window, cx)
         });
         let (browse, browse_query) = browse::Browse::new(window, cx);
         let mut subscriptions = vec![observe, change, saved, browse_query];
@@ -340,7 +355,7 @@ impl ResourcesView {
             project: None,
             pi_config: None,
             after_save: None,
-            _project_subscriptions: Vec::new(),
+            projects: Default::default(),
             config,
             applied_pi,
             source,
@@ -365,18 +380,13 @@ impl ResourcesView {
     /// Feedback for a finished change, from either the global or project files.
     fn on_resource_event(
         &mut self,
+        origin: &Entity<ResourceController>,
         event: &ResourceEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match event {
             ResourceEvent::CatalogChanged => {
-                if let Some(catalog) = self.controller.read(cx).catalog().data() {
-                    let sources: Vec<String> =
-                        catalog.packages.iter().map(|p| p.source.clone()).collect();
-                    self.expanded_packages
-                        .retain(|source| sources.contains(source));
-                }
                 let catalogs: Vec<io::Catalog> = std::iter::once(&self.controller)
                     .chain(self.project.as_ref())
                     .filter_map(|c| c.read(cx).catalog().data().cloned())
@@ -395,6 +405,7 @@ impl ResourcesView {
                 change,
             } => {
                 if let Change::Package { source, .. } = change
+                    && origin == self.active()
                     && let Some(name) = gupi_resources::catalog::installed_name(source)
                 {
                     self.package_results.insert(name.to_owned(), result.clone());
@@ -411,7 +422,18 @@ impl ResourcesView {
                     }
                 }
                 let mut args = fluent_bundle::FluentArgs::new();
-                args.set("target", target.clone());
+                let target = match origin.read(cx).target() {
+                    Target::Project(cwd) => format!("{} — {target}", cwd.display()),
+                    Target::Global => target.clone(),
+                };
+                args.set("target", target);
+                if matches!(change, Change::Package { .. })
+                    && origin == self.active()
+                    && let Some(config) = &self.pi_config
+                    && !config.read(cx).has_unsaved()
+                {
+                    config.update(cx, |config, cx| config.reload(cx));
+                }
                 let message = gupi_settings::i18n::t_with_args(
                     cx,
                     if result.is_ok() {
@@ -478,20 +500,35 @@ impl ResourcesView {
         if current.as_ref().unwrap_or(&Target::Global) == &target {
             return;
         }
-        // A new controller per project: results for an earlier project are
-        // dropped with its tasks and never reach the new one.
+        // Keep project controllers alive so an in-flight package command owns
+        // its original cwd even when another scope is shown.
         self.creating = None;
+        self.installing = false;
+        self.source
+            .update(cx, |source, cx| source.set_value("", window, cx));
         self.error = None;
-        self._project_subscriptions.clear();
+        self.package_results.clear();
+        self.expanded_packages.clear();
         self.project = None;
-        if let Target::Project(_) = target {
-            let controller = cx.new(|_| ResourceController::for_target(target));
-            self._project_subscriptions = vec![
-                cx.observe(&controller, |_, _, cx| cx.notify()),
-                cx.subscribe_in(&controller, window, |this, _, event, window, cx| {
-                    this.on_resource_event(event, window, cx)
-                }),
-            ];
+        if let Target::Project(cwd) = target {
+            if !self.projects.contains_key(&cwd) {
+                let controller =
+                    cx.new(|_| ResourceController::for_target(Target::Project(cwd.clone())));
+                let subscriptions = vec![
+                    cx.observe(&controller, |_, _, cx| cx.notify()),
+                    cx.subscribe_in(&controller, window, |this, origin, event, window, cx| {
+                        this.on_resource_event(origin, event, window, cx)
+                    }),
+                ];
+                self.projects.insert(
+                    cwd.clone(),
+                    ProjectResources {
+                        controller,
+                        _subscriptions: subscriptions,
+                    },
+                );
+            }
+            let controller = self.projects[&cwd].controller.clone();
             controller.update(cx, |c, cx| c.refresh(cx));
             self.project = Some(controller);
         }
@@ -502,7 +539,14 @@ impl ResourcesView {
         self.project.is_some()
     }
 
-    /// The controller listing skills and prompts in the current scope.
+    pub(super) fn stop(&self, cx: &mut Context<Self>) {
+        self.controller.update(cx, |owner, _| owner.stop());
+        for project in self.projects.values() {
+            project.controller.update(cx, |owner, _| owner.stop());
+        }
+    }
+
+    /// The controller listing resources in the current scope.
     fn active(&self) -> &Entity<ResourceController> {
         self.project.as_ref().unwrap_or(&self.controller)
     }
@@ -519,7 +563,7 @@ impl ResourcesView {
                 .read(cx)
                 .catalog()
                 .data()
-                .is_some_and(|catalog| catalog.resources.iter().any(|r| r.path == resource.path))
+                .is_some_and(|catalog| catalog.resources.iter().any(|r| r == resource))
         })
     }
 
@@ -674,10 +718,13 @@ impl ResourcesView {
         controller.update(cx, |c, cx| c.change(change, cx));
     }
     fn package_available(&self, cx: &App) -> bool {
-        let controller = self.controller.read(cx);
+        let controller = self.active().read(cx);
         let config = self.config.read(cx);
-        !controller.busy()
+        (!self.in_project_scope()
+            || self.pi_config.as_ref().and_then(|c| c.read(cx).trusted()) == Some(true))
+            && !controller.busy()
             && controller.catalog().data().is_some()
+            && controller.catalog().problem().is_none()
             && !config.busy(cx)
             && self
                 .applied_pi
@@ -704,7 +751,22 @@ impl ResourcesView {
         if let Some(name) = gupi_resources::catalog::installed_name(&source) {
             self.package_results.remove(name);
         }
-        self.change(
+        if let Some(cwd) = self
+            .project
+            .as_ref()
+            .and_then(|p| match p.read(cx).target() {
+                Target::Project(cwd) => Some(cwd.clone()),
+                _ => None,
+            })
+            && let Err(error) = io::project_package_allowed(&cwd, action, &source)
+        {
+            self.error = Some((Kind::Extension, error.to_string()));
+            cx.notify();
+            return;
+        }
+        let controller = self.active().clone();
+        self.change_in(
+            &controller,
             Change::Package {
                 command,
                 action,
@@ -763,11 +825,23 @@ impl ResourcesView {
         cx: &mut Context<Self>,
     ) {
         let owner = cx.entity().downgrade();
+        let target = self.active().clone();
         window.open_dialog(cx, move |dialog, _, cx| {
             let owner = owner.clone();
+            let target = target.clone();
             let resource = resource.clone();
             let source = source.clone();
             dialog
+                .footer(super::dialog_buttons(
+                    if resource.is_some() {
+                        "settings-resource-delete"
+                    } else {
+                        "settings-package-remove"
+                    },
+                    false,
+                    false,
+                    cx,
+                ))
                 .title(t(
                     cx,
                     if resource.is_some() {
@@ -795,7 +869,7 @@ impl ResourcesView {
                 .on_ok(move |_, _, cx| {
                     owner
                         .update(cx, |this, cx| {
-                            if this.busy(cx) {
+                            if this.busy(cx) || &target != this.active() {
                                 return false;
                             }
                             if let Some(resource) = &resource {
@@ -850,13 +924,9 @@ impl ResourcesView {
             )
             .into_any_element()
     }
-    /// The controller behind a page: packages stay global.
-    fn page_controller(&self, kind: Kind) -> &Entity<ResourceController> {
-        if kind == Kind::Extension {
-            &self.controller
-        } else {
-            self.active()
-        }
+    /// All resource pages share the selected Pi scope.
+    fn page_controller(&self, _kind: Kind) -> &Entity<ResourceController> {
+        self.active()
     }
 
     pub fn has_status(&self, kind: Kind, cx: &App) -> bool {

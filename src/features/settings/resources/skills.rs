@@ -134,6 +134,14 @@ impl ResourcesView {
                             .child(resource.name.clone()),
                     )
                     .child(self.render_source(resource, cx))
+                    .when(row != Row::Global && !resource.enabled, |header| {
+                        header.child(
+                            Tag::secondary()
+                                .small()
+                                .outline()
+                                .child(t(cx, "settings-resource-disabled")),
+                        )
+                    })
                     .when(!resource.editable || row == Row::Inherited, |header| {
                         header.child(
                             Tag::secondary()

@@ -403,7 +403,7 @@ settings-about-path = Ruta resuelta
 settings-about-status = Estado de la comprobación
 settings-about-unavailable = Todavía no está disponible
 settings-editor-discard = ¿Descartar los cambios de texto sin guardar?
-settings-package-confirm-remove = ¿Quitar este paquete de los ajustes personales de Pi? Se conservan las carpetas de origen de los paquetes locales.
+settings-package-confirm-remove = ¿Quitar este paquete del ámbito de Pi seleccionado? Los paquetes locales solo se desregistran; sus carpetas de origen se conservan.
 settings-package-heading = Paquetes instalados
 settings-extension-heading = Extensiones independientes
 settings-template-heading = Plantillas de comandos
@@ -909,3 +909,15 @@ settings-editor-changed = El archivo cambió después de abrirlo, así que no se
 settings-editor-reload = Volver a leer
 settings-editor-unsaved-title = ¿Guardar los cambios en { $file }?
 settings-editor-unsaved-body = Los cambios de texto aún no se han guardado.
+
+pi-project-settings-folder = Ajustes de Pi del proyecto — { $folder }
+
+packages-install-project = Instalar en el proyecto { $folder }
+packages-project-delta = Filtros del paquete global · solo lectura
+packages-project-filtered = Filtrado en este proyecto
+packages-project-replaced = Reemplazado por el proyecto
+packages-project-replaces = Reemplaza el paquete global
+
+settings-resource-disabled = Desactivado
+settings-theme-heading = Temas independientes
+settings-project-package-empty = No hay paquetes en este proyecto.

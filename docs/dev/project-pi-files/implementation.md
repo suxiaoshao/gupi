@@ -10,9 +10,9 @@
 | 路径归属 | `crates/gupi-resources/src/pi_resources.rs` `project_root`、`project_owns`：按解析后的真实路径判断是否位于规范化 `cwd` 下的 `.pi/` 内；尚不存在的路径按最近的已存在祖先判断 |
 | Pi 冲突名称 | `Resource::key`：模板取文件名；Skill 只有描述非空时才有名称，取 frontmatter `name`，缺省回退到所在目录名 |
 | 保存基线 | `Baseline`、`save_text(path, text, create, baseline)`：保存前重读，内容与打开时不同就拒绝，错误用 `Error::is_changed` 识别 |
-| 控制器目标 | `crates/gupi-resources/src/resources.rs` `Target::{Global, Project(cwd)}`。项目目标只接受 `Save` 和 `Delete`，并在写入线程中重新校验路径归属 |
+| 控制器目标 | `crates/gupi-resources/src/resources.rs` `Target::{Global, Project(cwd)}`。项目文本操作接受 `Save` 和 `Delete`（D2 另加入项目包命令），并在写入线程中重新校验路径归属 |
 | 共享作用域 | `src/features/settings/pi_config.rs`：`scope()`、`trusted()`、`set_active_project`、`canonical_scope`；`pi_config/page.rs`：`render_scope`（作用域菜单与信任状态）、`project_label`、`choose_project_folder` |
-| 资源页面 | `src/features/settings/resources.rs`：`follow_scope` / `sync_scope` 为每个项目新建一个 `ResourceController`；`Row::{Global, Own, Inherited}` 决定行内操作；`relation` 计算同名标签 |
+| 资源页面 | `src/features/settings/resources.rs`：`follow_scope` / `sync_scope` 为每个项目持有一个 `ResourceController`；`Row::{Global, Own, Inherited}` 决定行内操作；`relation` 计算同名标签 |
 | 系统提示词 | `resources/prompts.rs` `render_system_prompt`、`confirm_use_global` |
 | 编辑器 | `resources/editor.rs`：`Editor.owner` 和 `Editor.baseline` 在打开时固定；冲突时显示“重新读取”；`save_then` 在保存成功后继续离开操作 |
 | 离开保护 | `src/features/settings/layout.rs` `confirm_unsaved`：先处理资源编辑器，再处理设置字段草稿。适用于切回 Gupi 区域、离开设置和项目入口 |
@@ -39,7 +39,7 @@
   - “使用全局”把项目文件移入废纸篓。
   - 空白内容可以保存，保存后仍是一个存在的文件。
 - **删除 Skill**：只移入列出的 `SKILL.md`（或单文件 Skill），确认框显示该文件路径。
-- **晚到结果**：切换项目会丢弃旧项目的控制器及其任务，旧的读取或写入结果不会显示在新项目页上。写入线程已经开始时，文件仍会写入原目标，但不再显示反馈。
+- **晚到结果**：D2 起按规范化 cwd 保留项目控制器，切换不取消原任务。旧结果不会写入新作用域页面；包任务完成通知标明原项目路径。退出时停止全部控制器。
 
 ## 与设计的差异与限制
 
@@ -60,7 +60,7 @@ cargo clippy -p gupi --all-targets --locked -- -D warnings
 新增测试：
 
 - `pi_resources::tests`：路径归属、链接、扫描错误、Pi 名称、保存基线；
-- `resources::tests::project_scope_never_writes_settings_or_packages`；
+- `resources::tests::project_scope_never_registers_global_resources`；
 - `features::settings::resources::skills::tests::project_scope_lists_only_the_projects_own_text_resources`。
 
 真实窗口验收场景见[界面设计](interface.md)“UI 验收”。
@@ -77,3 +77,5 @@ cargo clippy -p gupi --all-targets --locked -- -D warnings
 - 本次没有重新验证已有对话的上下文入口、实际 Pi 会话加载、信任后的同名标签或 D2 包操作；这些不计入上述 UI 通过结果。
 
 以上 UI 结果来自隔离配置的真实原生窗口，不代表实际 Pi 会话的资源加载验证。
+
+D3 补充：项目包提供的 Skill/提示词也显示在“本项目”组中，保留包来源且只读；显式资源路径现已扫描，外部/自定义目录资源只读。以 [D3 契约](d3-visibility.md) 为准。

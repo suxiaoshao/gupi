@@ -176,7 +176,7 @@ impl ResourcesView {
 
     /// The installed package for a registry name, matched by Pi's npm identity.
     fn installed_package<'a>(&self, name: &str, cx: &'a App) -> Option<&'a io::Package> {
-        self.controller
+        self.active()
             .read(cx)
             .catalog()
             .data()?
@@ -718,7 +718,7 @@ impl ResourcesView {
             .as_ref()
             .map(|package| package.source.clone())
             .unwrap_or_else(|| catalog::source(name));
-        let mutation = self.controller.read(cx).mutation();
+        let mutation = self.active().read(cx).mutation();
         let updating = mutation.package_running(&source, "update");
         let installing = mutation.package_running(&source, "install");
         let removing = mutation.package_running(&source, "remove");
@@ -759,21 +759,21 @@ impl ResourcesView {
                 .text_color(cx.theme().muted_foreground)
                 .child(t(cx, "packages-trust")),
         );
-        if self.controller.read(cx).catalog().data().is_none() {
+        if self.active().read(cx).catalog().data().is_none() {
             view = view.child(
                 div()
                     .text_sm()
                     .text_color(cx.theme().muted_foreground)
                     .child(t(
                         cx,
-                        if self.controller.read(cx).catalog().is_running() {
+                        if self.active().read(cx).catalog().is_running() {
                             "settings-resource-loading"
                         } else {
                             "packages-local-unavailable"
                         },
                     )),
             );
-            if let Some(error) = self.controller.read(cx).catalog().problem() {
+            if let Some(error) = self.active().read(cx).catalog().problem() {
                 view = view.child(
                     div()
                         .text_sm()
@@ -829,21 +829,26 @@ impl ResourcesView {
             });
         }
         let disabled = !self.package_available(cx);
-        let actions = if installed.is_some() {
+        let delta = installed.as_ref().is_some_and(|package| package.is_delta());
+        let actions = if delta && self.in_project_scope() {
+            h_flex().child(div().text_sm().child(t(cx, "packages-project-delta")))
+        } else if installed.is_some() {
             let update = source.clone();
             let remove = source.clone();
             h_flex()
                 .gap_2()
-                .child(
-                    Button::new("package-detail-update")
-                        .small()
-                        .label(t(cx, "settings-package-update"))
-                        .loading(updating)
-                        .disabled(disabled)
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.package("update", update.clone(), cx)
-                        })),
-                )
+                .when(!self.in_project_scope(), |row| {
+                    row.child(
+                        Button::new("package-detail-update")
+                            .small()
+                            .label(t(cx, "settings-package-update"))
+                            .loading(updating)
+                            .disabled(disabled)
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.package("update", update.clone(), cx)
+                            })),
+                    )
+                })
                 .child(
                     Button::new("package-detail-remove")
                         .small()
@@ -860,7 +865,7 @@ impl ResourcesView {
                 Button::new("package-detail-install")
                     .small()
                     .primary()
-                    .label(t(cx, "packages-install"))
+                    .label(self.package_install_label(cx))
                     .loading(installing)
                     .disabled(disabled)
                     .on_click(cx.listener(move |this, _, _, cx| {

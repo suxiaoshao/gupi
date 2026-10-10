@@ -38,7 +38,7 @@ pub enum Change {
 pub enum Target {
     /// The personal agent directory and its packages.
     Global,
-    /// A project's own `.pi` text resources, identified by its cwd.
+    /// A project's `.pi` resources and package declarations, identified by its cwd.
     Project(PathBuf),
 }
 /// A mutation owns its request and task together, so activity cannot outlive the task.
@@ -188,12 +188,17 @@ impl ResourceController {
         let Some(root) = self.catalog.data().map(|c| c.root.clone()) else {
             return;
         };
-        // Project scope edits text files only; settings and packages stay global.
+        // Project scope accepts file edits and scoped package commands only.
         let project = match &self.target {
             Target::Global => None,
             Target::Project(cwd) => Some(cwd.clone()),
         };
-        if project.is_some() && !matches!(change, Change::Save { .. } | Change::Delete(_)) {
+        if project.is_some()
+            && !matches!(
+                change,
+                Change::Save { .. } | Change::Delete(_) | Change::Package { .. }
+            )
+        {
             return;
         }
         let target = match &change {
@@ -220,9 +225,22 @@ impl ResourceController {
                     source,
                 } => {
                     let snapshot = environment.load(false).await;
-                    io::package_action(command, root, action, source, snapshot.variables())
+                    let result = if let Some(cwd) = project {
+                        let agent = io::agent_dir()?;
+                        io::project_package_action(
+                            command,
+                            agent,
+                            cwd,
+                            action,
+                            source,
+                            snapshot.variables(),
+                        )
                         .await
-                        .map_err(|error| Error(snapshot.explain(error)))
+                    } else {
+                        io::package_action(command, root, action, source, snapshot.variables())
+                            .await
+                    };
+                    result.map_err(|error| Error(snapshot.explain(error)))
                 }
                 change => tokio::task::spawn_blocking(move || {
                     // Re-check ownership at write time, not only when listed.
@@ -325,14 +343,13 @@ mod tests {
     }
 
     #[gpui_kit::test]
-    fn project_scope_never_writes_settings_or_packages(cx: &mut TestAppContext) {
+    fn project_scope_never_registers_global_resources(cx: &mut TestAppContext) {
         let owner = cx.new(|_| ResourceController::for_target(Target::Project("/p".into())));
         owner.update(cx, |owner, cx| {
             owner.catalog.transition(Load(Task::ready(())));
             owner
                 .catalog
                 .transition(Complete(Ok(crate::pi_resources::Catalog::default())));
-            owner.change(package("npm:example", "install"), cx);
             owner.change(Change::RegisterSkill("/p/.pi/skills/a".into()), cx);
             assert!(!owner.mutation().is_running());
         });

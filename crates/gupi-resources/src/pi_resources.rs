@@ -1,5 +1,9 @@
 //! Personal and project Pi resources. Never imports extension code.
 mod discovery;
+mod packages;
+pub use packages::package_identity;
+pub use packages::project_package_action;
+pub use packages::project_package_allowed;
 #[cfg(test)]
 mod tests;
 
@@ -41,11 +45,17 @@ pub struct Resource {
     pub description: String,
     pub enabled: bool,
     pub editable: bool,
+    project_owned: bool,
     /// The name Pi resolves same-name collisions by, when it can be determined:
     /// a prompt's file name, or a loadable skill's frontmatter or folder name.
     pub key: Option<String>,
 }
 impl Resource {
+    /// Resolved file ownership captured by the project scan, independent of editability.
+    pub fn is_project_owned(&self) -> bool {
+        self.project_owned
+    }
+
     pub fn new(kind: Kind, path: PathBuf, base: PathBuf, name: String) -> Self {
         Self {
             kind,
@@ -56,6 +66,7 @@ impl Resource {
             description: String::new(),
             enabled: true,
             editable: false,
+            project_owned: false,
             key: None,
         }
     }
@@ -74,13 +85,19 @@ pub struct Package {
     pub source: String,
     pub path: PathBuf,
     pub version: Option<String>,
+    delta: bool,
 }
 impl Package {
+    pub fn is_delta(&self) -> bool {
+        self.delta
+    }
+
     pub fn new(source: String, path: PathBuf) -> Self {
         Self {
             source,
             path,
             version: None,
+            delta: false,
         }
     }
 }

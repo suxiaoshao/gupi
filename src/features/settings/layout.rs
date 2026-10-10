@@ -414,8 +414,8 @@ impl SettingsView {
                 ])
             };
             let header = resource_view.clone();
-            // Skills and prompts follow the shared Pi scope; packages stay global.
-            let scope = (kind != Kind::Extension).then(|| self.pi_config.clone());
+            // Resource pages follow one shared Pi scope.
+            let scope = self.pi_config.clone();
             let project = kind != Kind::Extension && self.resources.read(cx).in_project_scope();
             let mut page = SettingPage::new(t(cx, key))
                 .resettable(false)
@@ -425,16 +425,7 @@ impl SettingsView {
                     _ => IconName::FileText,
                 })
                 .title_suffix(move |_, cx| {
-                    let scope = match &scope {
-                        Some(pi_config) => {
-                            pi_config.update(cx, |config, cx| config.render_scope(cx))
-                        }
-                        None => div()
-                            .text_sm()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(t(cx, "pi-scope-global"))
-                            .into_any_element(),
-                    };
+                    let scope = scope.update(cx, |config, cx| config.render_scope(cx));
                     h_flex()
                         .gap_2()
                         .items_center()

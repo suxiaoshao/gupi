@@ -396,7 +396,7 @@ settings-about-path = 解決済みのパス
 settings-about-status = 確認状況
 settings-about-unavailable = まだ利用できません
 settings-editor-discard = 保存されていないテキストの変更を破棄しますか？
-settings-package-confirm-remove = 個人用の Pi 設定からこのパッケージを削除しますか？ローカルのパッケージソースフォルダーは保持されます。
+settings-package-confirm-remove = 選択した Pi のスコープからこのパッケージを削除しますか？ローカルパッケージは登録のみ解除され、ソースフォルダーは保持されます。
 settings-package-heading = インストール済みパッケージ
 settings-extension-heading = 単独の拡張機能
 settings-template-heading = コマンドテンプレート
@@ -903,3 +903,15 @@ settings-editor-changed = 開いた後にファイルが変更されたため、
 settings-editor-reload = 再読み込み
 settings-editor-unsaved-title = { $file } の変更を保存しますか？
 settings-editor-unsaved-body = テキストの変更はまだ保存されていません。
+
+pi-project-settings-folder = プロジェクトの Pi 設定 — { $folder }
+
+packages-install-project = プロジェクト { $folder } にインストール
+packages-project-delta = グローバルパッケージのフィルター · 読み取り専用
+packages-project-filtered = このプロジェクトでフィルター済み
+packages-project-replaced = プロジェクトで置換
+packages-project-replaces = グローバルパッケージを置換
+
+settings-resource-disabled = 無効
+settings-theme-heading = 独立したテーマ
+settings-project-package-empty = このプロジェクトにはパッケージがありません。

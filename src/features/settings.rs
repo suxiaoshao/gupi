@@ -336,10 +336,7 @@ impl Render for SettingsView {
 impl SettingsView {
     pub fn stop_resources(&self, cx: &mut Context<Self>) {
         self.resources
-            .read(cx)
-            .controller
-            .clone()
-            .update(cx, |owner, _| owner.stop());
+            .update(cx, |resources, cx| resources.stop(cx));
     }
     fn render_config_actions(
         &self,

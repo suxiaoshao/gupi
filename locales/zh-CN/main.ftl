@@ -403,7 +403,7 @@ settings-about-path = 实际路径
 settings-about-status = 检查状态
 settings-about-unavailable = 尚未取得
 settings-editor-discard = 放弃未保存的正文修改吗？
-settings-package-confirm-remove = 从个人 Pi 中移除此包？本地包只取消注册，保留来源目录。
+settings-package-confirm-remove = 从所选 Pi 作用域中移除此包？本地包只取消注册，保留来源目录。
 settings-package-heading = 已安装包
 settings-extension-heading = 独立扩展
 settings-template-heading = 命令模板
@@ -910,3 +910,15 @@ settings-editor-changed = 文件在打开后已被修改，未保存。可以重
 settings-editor-reload = 重新读取
 settings-editor-unsaved-title = 保存对 { $file } 的修改？
 settings-editor-unsaved-body = 正文修改尚未保存。
+
+pi-project-settings-folder = 项目 Pi 设置 — { $folder }
+
+packages-install-project = 安装到项目 { $folder }
+packages-project-delta = 全局包过滤设置 · 只读
+packages-project-filtered = 在此项目中被过滤
+packages-project-replaced = 被项目替换
+packages-project-replaces = 替换全局包
+
+settings-resource-disabled = 已停用
+settings-theme-heading = 独立主题
+settings-project-package-empty = 此项目没有包。

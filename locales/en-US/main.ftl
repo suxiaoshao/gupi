@@ -403,7 +403,7 @@ settings-about-path = Resolved path
 settings-about-status = Probe status
 settings-about-unavailable = Not available yet
 settings-editor-discard = Discard unsaved text changes?
-settings-package-confirm-remove = Remove this package from personal Pi settings? Local package source directories are retained.
+settings-package-confirm-remove = Remove this package from the selected Pi scope? Local packages are only unregistered; their source folders are kept.
 settings-package-heading = Installed packages
 settings-extension-heading = Standalone extensions
 settings-template-heading = Command templates
@@ -910,3 +910,15 @@ settings-editor-changed = The file changed after it was opened, so it was not sa
 settings-editor-reload = Reload
 settings-editor-unsaved-title = Save changes to { $file }?
 settings-editor-unsaved-body = Your text changes are not saved yet.
+
+pi-project-settings-folder = Project Pi settings — { $folder }
+
+packages-install-project = Install to project { $folder }
+packages-project-delta = Global package filters · read-only
+packages-project-filtered = Filtered in this project
+packages-project-replaced = Replaced by project
+packages-project-replaces = Replaces global package
+
+settings-resource-disabled = Disabled
+settings-theme-heading = Independent themes
+settings-project-package-empty = No packages in this project.

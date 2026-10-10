@@ -373,3 +373,43 @@ fn changing_scope_closes_the_previous_model_query(cx: &mut TestAppContext) {
         assert!(matches!(this.models, super::Models::Idle))
     });
 }
+
+#[gpui_kit::test]
+fn invalid_project_scope_preserves_the_current_scope_and_drafts(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let (config, cx) = setup(cx, agent.path());
+    config.update(cx, |this, cx| {
+        this.set_draft(Field::Steering, Edit::Set(vec![json!("all")]), cx);
+        for path in [
+            agent.path().join("missing"),
+            std::path::PathBuf::from("relative"),
+        ] {
+            this.set_scope(Scope::Project(path), cx);
+            assert_eq!(this.scope, Scope::Global);
+            assert!(this.drafts.contains_key(&Field::Steering));
+            assert!(this.error.is_some());
+        }
+    });
+}
+
+#[gpui_kit::test]
+fn saving_a_deleted_project_keeps_the_draft_without_recreating_the_folder(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let project = agent.path().join("project");
+    fs::create_dir(&project).unwrap();
+    let (config, cx) = setup(cx, agent.path());
+    config.update(cx, |this, cx| {
+        this.set_scope(Scope::Project(project.clone()), cx)
+    });
+    cx.run_until_parked();
+    config.update(cx, |this, cx| {
+        this.set_draft(Field::Steering, Edit::Set(vec![json!("all")]), cx)
+    });
+    fs::remove_dir(&project).unwrap();
+    save(&config, Page::Conversation, cx);
+    assert!(!project.exists());
+    config.read_with(cx, |this, _| {
+        assert!(this.drafts.contains_key(&Field::Steering));
+        assert!(this.error.is_some());
+    });
+}

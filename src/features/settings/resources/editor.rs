@@ -357,6 +357,8 @@ mod tests {
 
     #[gpui_kit::test]
     fn scope_changes_cancel_pending_editors_and_reject_old_results(cx: &mut TestAppContext) {
+        // Project catalog reads use Tokio blocking workers outside the test executor.
+        cx.executor().allow_parking();
         cx.update(|cx| {
             gpui_kit::init(cx);
             gpui_tokio::init(cx);

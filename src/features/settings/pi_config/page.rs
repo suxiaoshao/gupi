@@ -15,6 +15,7 @@ use super::fields::supported_levels;
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::component::Disableable as _;
 use gpui_kit::component::Sizable as _;
+use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::button::Button;
 use gpui_kit::component::button::ButtonVariants as _;
 use gpui_kit::component::checkbox::Checkbox;
@@ -834,7 +835,16 @@ pub(in super::super) fn request_scope(
     window: &mut Window,
     cx: &mut App,
 ) {
-    let scope = super::canonical_scope(scope);
+    let scope = match scope.validated() {
+        Ok(scope) => scope,
+        Err(error) => {
+            window.push_notification(
+                gpui_kit::component::notification::Notification::error(error.to_string()),
+                cx,
+            );
+            return;
+        }
+    };
     if entity.read(cx).scope == scope {
         return;
     }

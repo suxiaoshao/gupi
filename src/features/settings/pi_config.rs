@@ -222,7 +222,14 @@ impl PiConfig {
 
     /// Switches scope, discarding drafts. Callers confirm unsaved changes first.
     pub(super) fn set_scope(&mut self, scope: Scope, cx: &mut Context<Self>) {
-        let scope = canonical_scope(scope);
+        let scope = match scope.validated() {
+            Ok(scope) => scope,
+            Err(error) => {
+                self.error = Some(error.to_string());
+                cx.notify();
+                return;
+            }
+        };
         if let Scope::Project(cwd) = &scope
             && !self.projects.contains(cwd)
         {
@@ -360,10 +367,11 @@ impl PiConfig {
             return;
         }
         let changes = files.changes(&drafts);
-        let path = self.scope.file(agent);
+        let scope = self.scope.clone();
+        let agent = agent.clone();
         let generation = self.generation;
         let saved: Vec<Field> = drafts.keys().copied().collect();
-        let task = cx.background_spawn(async move { pi_settings::commit(&path, &changes) });
+        let task = cx.background_spawn(async move { scope.commit(&agent, &changes) });
         self.error = None;
         self.conflicts.clear();
         self.saving = Some(cx.spawn_in(window, async move |this, cx| {
@@ -613,15 +621,6 @@ enum Support {
     Checking,
     Unavailable,
     Unsupported(String),
-}
-
-/// Identifies a project by its canonical folder, so every entry point that
-/// names the same folder selects the same scope.
-pub(super) fn canonical_scope(scope: Scope) -> Scope {
-    match scope {
-        Scope::Project(cwd) => Scope::Project(trust::canonical(&cwd)),
-        global => global,
-    }
 }
 
 fn supports(version: &str) -> bool {

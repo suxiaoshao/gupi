@@ -164,7 +164,12 @@ fn first_project_save_creates_the_pi_directory() {
     let dir = tempfile::tempdir().unwrap();
     let path = Scope::Project(dir.path().to_owned()).file(Path::new("/unused"));
     assert_eq!(path, dir.path().join(".pi/settings.json"));
-    let document = commit(&path, &[Change::new(STEERING, None, Some(json!("all")))]).unwrap();
+    let document = Scope::Project(dir.path().to_owned())
+        .commit(
+            Path::new("/unused"),
+            &[Change::new(STEERING, None, Some(json!("all")))],
+        )
+        .unwrap();
     assert!(document.exists());
     assert_eq!(
         serde_json::from_str::<Value>(&text(&path)).unwrap(),
@@ -282,4 +287,43 @@ fn trust_requires_an_existing_absolute_folder() {
         );
     }
     assert!(!trust::file(agent.path()).exists(), "nothing was recorded");
+}
+
+#[test]
+fn project_scope_rejects_invalid_folders_without_creating_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("deleted-project");
+    let file = dir.path().join("file");
+    fs::write(&file, "not a directory").unwrap();
+    for cwd in [
+        PathBuf::new(),
+        PathBuf::from("relative-project"),
+        missing.clone(),
+        file,
+    ] {
+        let scope = Scope::Project(cwd);
+        assert!(scope.validated().is_err());
+        assert!(
+            scope
+                .commit(
+                    dir.path(),
+                    &[Change::new(STEERING, None, Some(json!("all")))]
+                )
+                .is_err()
+        );
+    }
+    assert!(!missing.exists());
+    let project = dir.path().join("project");
+    fs::create_dir(&project).unwrap();
+    let scope = Scope::Project(project.clone()).validated().unwrap();
+    fs::remove_dir(&project).unwrap();
+    assert!(
+        scope
+            .commit(
+                dir.path(),
+                &[Change::new(STEERING, None, Some(json!("all")))]
+            )
+            .is_err()
+    );
+    assert!(!project.exists());
 }

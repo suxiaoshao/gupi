@@ -25,6 +25,33 @@ pub enum Scope {
 }
 
 impl Scope {
+    /// Validates project targets without creating anything.
+    pub fn validated(&self) -> Result<Self, Error> {
+        match self {
+            Self::Global => Ok(Self::Global),
+            Self::Project(cwd) => trust::existing_directory(cwd).map(Self::Project),
+        }
+    }
+
+    /// Revalidates the project at write time. Only `.pi` may be created;
+    /// a missing project directory must never be recreated by saving settings.
+    pub fn commit(&self, agent: &Path, changes: &[Change]) -> Result<Document, Error> {
+        let scope = self.validated()?;
+        let path = scope.file(agent);
+        if let Self::Project(cwd) = scope {
+            let parent = cwd.join(".pi");
+            match std::fs::create_dir(&parent) {
+                Ok(()) => {}
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(Error::Write(format!("{}: {e}", parent.display()))),
+            }
+            let lock = Lock::acquire_existing_parent(&path).map_err(|e| lock_error(&path, e))?;
+            commit_locked(&path, changes, lock)
+        } else {
+            commit(&path, changes)
+        }
+    }
+
     pub fn file(&self, agent: &Path) -> PathBuf {
         match self {
             Self::Global => agent.join("settings.json"),
@@ -110,7 +137,11 @@ pub fn load(path: &Path) -> Result<Document, Error> {
 /// Applies `changes` to the latest file. Nothing is written when any leaf
 /// differs from its `base`; the conflicting leaves are returned instead.
 pub fn commit(path: &Path, changes: &[Change]) -> Result<Document, Error> {
-    let mut lock = Lock::acquire(path).map_err(|e| lock_error(path, e))?;
+    let lock = Lock::acquire(path).map_err(|e| lock_error(path, e))?;
+    commit_locked(path, changes, lock)
+}
+
+fn commit_locked(path: &Path, changes: &[Change], mut lock: Lock) -> Result<Document, Error> {
     let mut document = load(path)?;
     let conflicts: Vec<Leaf> = changes
         .iter()

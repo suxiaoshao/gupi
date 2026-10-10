@@ -78,12 +78,16 @@ impl Lock {
     /// Locks `file` by creating `file.lock`. A held lock is reported as
     /// [`io::ErrorKind::WouldBlock`].
     pub(crate) fn acquire(file: &Path) -> io::Result<Self> {
-        let mut dir = file.as_os_str().to_owned();
-        dir.push(".lock");
-        let dir = PathBuf::from(dir);
         if let Some(parent) = file.parent() {
             fs::create_dir_all(parent)?;
         }
+        Self::acquire_existing_parent(file)
+    }
+
+    pub(crate) fn acquire_existing_parent(file: &Path) -> io::Result<Self> {
+        let mut dir = file.as_os_str().to_owned();
+        dir.push(".lock");
+        let dir = PathBuf::from(dir);
         for attempt in 1..=ATTEMPTS {
             match fs::create_dir(&dir) {
                 Ok(()) => {

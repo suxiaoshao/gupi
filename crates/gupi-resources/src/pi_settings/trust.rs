@@ -69,7 +69,7 @@ pub fn trust(agent: &Path, cwd: &Path) -> Result<PathBuf, Error> {
     Ok(dir)
 }
 
-fn existing_directory(cwd: &Path) -> Result<PathBuf, Error> {
+pub(super) fn existing_directory(cwd: &Path) -> Result<PathBuf, Error> {
     let invalid = |reason: &str| Error::Write(format!("{}: {reason}", cwd.display()));
     if !cwd.is_absolute() {
         return Err(invalid("not an absolute path"));

@@ -94,9 +94,18 @@ impl SettingsView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if cwd.as_os_str().is_empty() {
-            return;
-        }
+        let scope = match gupi_resources::pi_settings::Scope::Project(cwd).validated() {
+            Ok(scope) => scope,
+            Err(error) => {
+                window.defer(cx, move |window, cx| {
+                    window.push_notification(
+                        gpui_kit::component::notification::Notification::error(error.to_string()),
+                        cx,
+                    );
+                });
+                return;
+            }
+        };
         let this = cx.entity().downgrade();
         let resources = self.resources.clone();
         // Unsaved editor text is settled first; the scope request then asks
@@ -109,12 +118,7 @@ impl SettingsView {
                         this.open_page(Domain::Pi, CONVERSATION_PAGE, cx);
                         let pi_config = this.pi_config.clone();
                         window.defer(cx, move |window, cx| {
-                            pi_config::request_scope(
-                                &pi_config,
-                                gupi_resources::pi_settings::Scope::Project(cwd),
-                                window,
-                                cx,
-                            )
+                            pi_config::request_scope(&pi_config, scope, window, cx)
                         });
                     });
                 },

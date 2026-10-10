@@ -101,7 +101,9 @@ pub(super) struct PiConfig {
     model_picker: Entity<SelectState<SearchableVec<ModelItem>>>,
     /// The model key last projected into `model_picker`.
     synced_model: Option<Option<(String, String)>>,
-    _tasks: Vec<Task<()>>,
+    file_task: Option<Task<()>>,
+    model_task: Option<Task<()>>,
+    model_instance: Option<gupi_pi_runtime::InstanceId>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -126,6 +128,8 @@ impl PiConfig {
             this.set_draft(Field::Model, Edit::Set(value), cx);
         });
         let applied_sub = cx.observe(&applied_pi, |_, _, cx| cx.notify());
+        cx.on_release(|this, cx| this.cancel_model_query(cx))
+            .detach();
         Self {
             applied_pi,
             agent: pi_resources::agent_dir().map_err(|e| e.to_string()),
@@ -143,7 +147,9 @@ impl PiConfig {
             models: Models::Idle,
             model_picker,
             synced_model: None,
-            _tasks: Vec::new(),
+            file_task: None,
+            model_task: None,
+            model_instance: None,
             _subscriptions: vec![picker_sub, applied_sub],
         }
     }
@@ -225,6 +231,7 @@ impl PiConfig {
         if self.scope == scope {
             return;
         }
+        self.cancel_model_query(cx);
         self.scope = scope;
         self.drafts.clear();
         self.models = Models::Idle;
@@ -256,7 +263,7 @@ impl PiConfig {
             };
             Ok((Files { global, project }, trust))
         });
-        self._tasks = vec![cx.spawn(async move |this, cx| {
+        self.file_task = Some(cx.spawn(async move |this, cx| {
             let result: Result<_, String> = task.await;
             let _ = this.update(cx, |this, cx| {
                 if this.generation != generation {
@@ -271,7 +278,7 @@ impl PiConfig {
                 }
                 cx.notify();
             });
-        })];
+        }));
         cx.notify();
     }
 
@@ -523,6 +530,13 @@ impl PiConfig {
         cx.notify();
     }
 
+    fn cancel_model_query(&mut self, cx: &mut App) {
+        if let Some(id) = self.model_instance.take() {
+            gupi_pi_runtime::global(cx).update(cx, |pi, cx| pi.close(id, cx).detach());
+        }
+        self.model_task = None;
+    }
+
     /// Lists models from a dedicated Pi with no session and no prompt. A
     /// project query runs in that project, so Pi applies its own trust rules.
     fn load_models(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -558,15 +572,16 @@ impl PiConfig {
             }
         };
         self.models = Models::Loading;
-        let generation = self.generation;
-        self._tasks.push(cx.spawn_in(window, async move |this, cx| {
+        self.model_instance = Some(id);
+        self.model_task = Some(cx.spawn_in(window, async move |this, cx| {
             let result = query_models(&pi, id, cx).await;
             pi.update(cx, |pi, cx| pi.close(id, cx).detach());
             drop(scratch);
             let _ = this.update_in(cx, |this, window, cx| {
-                if this.generation != generation {
+                if this.model_instance != Some(id) {
                     return;
                 }
+                this.model_instance = None;
                 this.models = match result {
                     Ok(models) => {
                         let items: Vec<ModelItem> = models

@@ -314,3 +314,62 @@ fn both_pages_render_fields_in_each_scope(cx: &mut TestAppContext) {
         assert!(this.drafts.is_empty(), "rendering never creates drafts");
     });
 }
+
+#[gpui_kit::test]
+async fn reload_keeps_the_model_query_and_its_cleanup(cx: &mut TestAppContext) {
+    cx.executor().allow_parking();
+    cx.update(gpui_tokio::init);
+    cx.update(gupi_pi_runtime::init);
+    let agent = tempfile::tempdir().unwrap();
+    let (config, cx) = setup(cx, agent.path());
+    let id = cx.update(|window, cx| {
+        config.update(cx, |this, cx| {
+            this.load_models(window, cx);
+            let id = this.model_instance.unwrap();
+            this.reload(cx);
+            assert_eq!(this.model_instance, Some(id));
+            assert!(this.model_task.is_some());
+            id
+        })
+    });
+    // The missing executable fails the real query, which must still settle
+    // and remove its temporary runtime instance after the settings reload.
+    cx.condition(&config, |this, _| {
+        matches!(this.models, super::Models::Failed(_))
+    })
+    .await;
+    cx.update(|_, cx| {
+        assert!(config.read(cx).model_instance.is_none());
+        assert!(matches!(
+            gupi_pi_runtime::global(cx).read(cx).client(id),
+            Err(pi_rpc::Error::Closed)
+        ));
+    });
+}
+
+#[gpui_kit::test]
+fn changing_scope_closes_the_previous_model_query(cx: &mut TestAppContext) {
+    cx.update(gpui_tokio::init);
+    cx.update(gupi_pi_runtime::init);
+    let agent = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let (config, cx) = setup(cx, agent.path());
+    cx.update(|window, cx| {
+        config.update(cx, |this, cx| {
+            this.load_models(window, cx);
+            let id = this.model_instance.unwrap();
+            this.set_scope(Scope::Project(project.path().to_owned()), cx);
+            assert!(this.model_instance.is_none());
+            assert!(this.model_task.is_none());
+            assert!(matches!(this.models, super::Models::Idle));
+            assert!(matches!(
+                gupi_pi_runtime::global(cx).read(cx).client(id),
+                Err(pi_rpc::Error::Closed)
+            ));
+        });
+    });
+    cx.run_until_parked();
+    config.read_with(cx, |this, _| {
+        assert!(matches!(this.models, super::Models::Idle))
+    });
+}

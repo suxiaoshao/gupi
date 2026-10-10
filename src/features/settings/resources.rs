@@ -132,6 +132,7 @@ pub(super) struct ResourcesView {
         std::collections::BTreeMap<PreviewKey, refresh::Operation<String, io::Error, Task<()>>>,
     editor: Option<Editor>,
     open: refresh::Operation<(), io::Error, Task<()>>,
+    open_generation: u64,
     creating: Option<Kind>,
     installing: bool,
     expanded_packages: std::collections::BTreeSet<String>,
@@ -404,6 +405,7 @@ impl ResourcesView {
             previews: Default::default(),
             editor: None,
             open: refresh::Operation::new(),
+            open_generation: 0,
             creating: None,
             installing: false,
             expanded_packages: Default::default(),
@@ -546,6 +548,8 @@ impl ResourcesView {
         if current.as_ref().unwrap_or(&Target::Global) == &target {
             return;
         }
+        self.open_generation += 1;
+        self.open = refresh::Operation::new();
         // Keep project controllers alive so an in-flight package command owns
         // its original cwd even when another scope is shown.
         self.creating = None;

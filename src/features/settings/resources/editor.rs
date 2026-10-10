@@ -220,6 +220,8 @@ impl ResourcesView {
         if self.busy(cx) || self.open.is_running() || self.editor.is_some() {
             return;
         }
+        self.open_generation += 1;
+        let generation = self.open_generation;
         self.creating = None;
         self.error = None;
         if next.create {
@@ -261,27 +263,41 @@ impl ResourcesView {
         let task = cx.spawn_in(window, async move |owner, cx| {
             let result = worker.await;
             let _ = owner.update_in(cx, |this, window, cx| {
-                match result {
-                    Ok(baseline) => {
-                        let text = match &baseline {
-                            Baseline::Text(text) => text.clone(),
-                            Baseline::Missing => String::new(),
-                        };
-                        this.editor = Some(Self::editor(next, text, baseline, window, cx));
-                        this.open.transition(Complete(Ok(())));
-                        this.show_editor_dialog(window, cx);
-                    }
-                    Err(error) => {
-                        this.open.transition(Complete(Err(error)));
-                    }
-                }
-                cx.notify();
+                this.finish_open(generation, next, result, window, cx);
             });
         });
         match &self.open {
             refresh::Operation::Idle(_) => self.open.transition(Load(task)),
             refresh::Operation::Unavailable(_) => self.open.transition(Retry(task)),
             _ => self.open.transition(Refresh(task)),
+        }
+        cx.notify();
+    }
+
+    fn finish_open(
+        &mut self,
+        generation: u64,
+        next: Open,
+        result: Result<Baseline, io::Error>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.open_generation != generation {
+            return;
+        }
+        match result {
+            Ok(baseline) => {
+                let text = match &baseline {
+                    Baseline::Text(text) => text.clone(),
+                    Baseline::Missing => String::new(),
+                };
+                self.editor = Some(Self::editor(next, text, baseline, window, cx));
+                self.open.transition(Complete(Ok(())));
+                self.show_editor_dialog(window, cx);
+            }
+            Err(error) => {
+                self.open.transition(Complete(Err(error)));
+            }
         }
         cx.notify();
     }
@@ -329,5 +345,93 @@ impl ResourcesView {
             _binding: binding,
             _subscriptions: vec![input_sub, form_sub],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Baseline, ConfigController, Form, Kind, Open, PiProbeController, Scope};
+    use crate::features::settings::SettingsView;
+    use gpui_kit::component::Root;
+    use gpui_kit::{AppContext as _, TestAppContext};
+
+    #[gpui_kit::test]
+    fn scope_changes_cancel_pending_editors_and_reject_old_results(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            gpui_tokio::init(cx);
+            crate::app::init_capability_hosts(cx);
+            app_theme::init(cx);
+            gupi_settings::theme::init(cx);
+            gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::English, cx);
+        });
+        let agent = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let path = project.path().join(".pi/prompts/example.md");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "Project text").unwrap();
+        let mut settings = None;
+        let (_, cx) = cx.add_window_view(|window, cx| {
+            let form = cx.new(|_| Form::new(gupi_settings::config::AppConfig::default()));
+            let controller = cx.new(|cx| ConfigController::new(&form, cx));
+            let draft = cx.new(|_| PiProbeController::new());
+            let applied = cx.new(|_| PiProbeController::new());
+            let view = cx.new(|cx| {
+                SettingsView::new(
+                    form,
+                    controller,
+                    draft,
+                    applied,
+                    cx.focus_handle(),
+                    window,
+                    cx,
+                )
+            });
+            settings = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let (resources, config) = settings.unwrap().read_with(cx, |view, _| {
+            (view.resources.clone(), view.pi_config.clone())
+        });
+        cx.update(|window, cx| {
+            config.update(cx, |config, _| {
+                config.set_agent_for_test(agent.path().to_owned())
+            });
+            resources.update(cx, |view, cx| {
+                let scope = Scope::Project(project.path().to_owned());
+                config.update(cx, |config, cx| config.set_scope(scope.clone(), cx));
+                view.sync_scope(window, cx);
+                let owner = view.active().clone();
+                view.controller
+                    .update(cx, |controller, _| controller.stop());
+                owner.update(cx, |controller, _| controller.stop());
+                let request = || Open {
+                    path: path.clone(),
+                    kind: Kind::Prompt,
+                    editable: true,
+                    create: false,
+                    owner: owner.clone(),
+                };
+                view.request_open(request(), window, cx);
+                assert!(view.open.is_running());
+                let generation = view.open_generation;
+                config.update(cx, |config, cx| config.set_scope(Scope::Global, cx));
+                view.sync_scope(window, cx);
+                assert!(!view.open.is_running());
+                config.update(cx, |config, cx| config.set_scope(scope, cx));
+                view.sync_scope(window, cx);
+                view.finish_open(
+                    generation,
+                    request(),
+                    Ok(Baseline::Text("Late text".into())),
+                    window,
+                    cx,
+                );
+                assert!(view.editor.is_none());
+                assert!(!view.open.is_running());
+            });
+        });
+        cx.run_until_parked();
+        resources.read_with(cx, |view, _| assert!(view.editor.is_none()));
     }
 }

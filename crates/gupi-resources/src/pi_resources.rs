@@ -160,7 +160,8 @@ pub(super) fn read_json(path: &Path) -> Result<Value, Error> {
     match persistence::read(path)? {
         None => Ok(json!({})),
         Some(bytes) => {
-            serde_json::from_slice(&bytes).map_err(|e| Error(format!("{}: {e}", path.display())))
+            let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes);
+            serde_json::from_slice(bytes).map_err(|e| Error(format!("{}: {e}", path.display())))
         }
     }
 }

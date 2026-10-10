@@ -263,17 +263,13 @@ impl ResourcesView {
         let busy = self.busy(cx);
         let row = self.row(resource, cx);
         let relation = self.relation(resource, cx);
+        let key = self.preview_key(resource, cx);
         let id = |part: &'static str| {
-            ElementId::NamedChild(
-                std::sync::Arc::new(ElementId::from(SharedString::from(
-                    resource.path.to_string_lossy().into_owned(),
-                ))),
-                part.into(),
-            )
+            ElementId::NamedChild(std::sync::Arc::new(key.element_id()), part.into())
         };
-        let preview = self.previews.get(&resource.path);
+        let preview = self.previews.get(&key);
         let expanded = preview.is_some();
-        let toggle_path = resource.path.clone();
+        let toggle_key = key.clone();
         let toggle = resource.clone();
         let preview_label = t(
             cx,
@@ -297,10 +293,7 @@ impl ResourcesView {
                     .accessibility_label(preview_label)
                     .debug_selector(|| "template-preview-toggle".into())
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        if this.previews.remove(&toggle_path).is_none() {
-                            this.load_preview(toggle_path.clone(), cx);
-                        }
-                        cx.notify();
+                        this.toggle_preview(toggle_key.clone(), cx);
                     })),
             )
             // Enabling writes settings, which project scope leaves alone.

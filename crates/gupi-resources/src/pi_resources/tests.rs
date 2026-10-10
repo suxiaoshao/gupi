@@ -263,3 +263,23 @@ fn optimistic_reload_preserves_project_ownership() {
         }
     }
 }
+
+#[test]
+fn catalogs_accept_settings_with_a_utf8_bom() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join(".pi");
+    write(
+        &root.join("settings.json"),
+        "\u{feff}{\"prompts\":[\"custom/p.md\"]}",
+    );
+    write(&root.join("custom/p.md"), "Prompt body");
+    let before = fs::read(root.join("settings.json")).unwrap();
+    for catalog in [
+        scan_project(dir.path()).unwrap(),
+        scan(root.clone(), None, &[]).unwrap(),
+    ] {
+        assert_eq!(catalog.resources.len(), 1);
+        assert_eq!(catalog.resources[0].path, root.join("custom/p.md"));
+    }
+    assert_eq!(fs::read(root.join("settings.json")).unwrap(), before);
+}

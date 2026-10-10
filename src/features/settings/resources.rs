@@ -94,6 +94,24 @@ struct ProjectResources {
     _subscriptions: Vec<Subscription>,
 }
 
+/// A resource can be listed by both the project and global catalogs.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct PreviewKey {
+    root: PathBuf,
+    path: PathBuf,
+}
+
+impl PreviewKey {
+    fn element_id(&self) -> ElementId {
+        ElementId::NamedChild(
+            std::sync::Arc::new(ElementId::from(SharedString::from(
+                self.root.to_string_lossy().into_owned(),
+            ))),
+            SharedString::from(self.path.to_string_lossy().into_owned()),
+        )
+    }
+}
+
 pub(super) struct ResourcesView {
     /// Global resources and packages; always loaded.
     pub controller: Entity<ResourceController>,
@@ -110,7 +128,8 @@ pub(super) struct ResourcesView {
     names: [Entity<InputState>; 2],
     search: Entity<InputState>,
     prompt_search: Entity<InputState>,
-    previews: std::collections::BTreeMap<PathBuf, refresh::Operation<String, io::Error, Task<()>>>,
+    previews:
+        std::collections::BTreeMap<PreviewKey, refresh::Operation<String, io::Error, Task<()>>>,
     editor: Option<Editor>,
     open: refresh::Operation<(), io::Error, Task<()>>,
     creating: Option<Kind>,
@@ -305,12 +324,32 @@ impl ResourcesView {
         })
     }
 
-    pub(super) fn load_preview(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+    fn preview_key(&self, resource: &Resource, cx: &App) -> PreviewKey {
+        let owner = self.owner_of(resource, cx);
+        PreviewKey {
+            root: owner
+                .read(cx)
+                .catalog()
+                .data()
+                .map(|c| c.root.clone())
+                .unwrap_or_else(|| resource.base.clone()),
+            path: resource.path.clone(),
+        }
+    }
+
+    fn toggle_preview(&mut self, key: PreviewKey, cx: &mut Context<Self>) {
+        if self.previews.remove(&key).is_none() {
+            self.load_preview(key, cx);
+        }
+        cx.notify();
+    }
+
+    fn load_preview(&mut self, key: PreviewKey, cx: &mut Context<Self>) {
         let worker = cx.background_spawn({
-            let path = path.clone();
+            let path = key.path.clone();
             async move { std::fs::read_to_string(path).map_err(io::Error::from) }
         });
-        let target = path.clone();
+        let target = key.clone();
         let task = cx.spawn(async move |owner, cx| {
             let result = worker.await;
             let _ = owner.update(cx, |this, cx| {
@@ -322,7 +361,7 @@ impl ResourcesView {
         });
         let mut preview = refresh::Operation::new();
         preview.transition(Load(task));
-        self.previews.insert(path, preview);
+        self.previews.insert(key, preview);
         cx.notify();
     }
 
@@ -391,11 +430,12 @@ impl ResourcesView {
                     .chain(self.project.as_ref())
                     .filter_map(|c| c.read(cx).catalog().data().cloned())
                     .collect();
-                self.previews.retain(|path, _| {
+                self.previews.retain(|key, _| {
                     catalogs
                         .iter()
+                        .filter(|catalog| catalog.root == key.root)
                         .flat_map(|catalog| &catalog.resources)
-                        .any(|r| matches!(r.kind, Kind::Skill | Kind::Prompt) && r.path == *path)
+                        .any(|r| matches!(r.kind, Kind::Skill | Kind::Prompt) && r.path == key.path)
                 });
                 cx.notify();
             }
@@ -456,8 +496,14 @@ impl ResourcesView {
                 );
             }
             ResourceEvent::Saved(path, text) => {
-                if self.previews.contains_key(path) {
-                    self.load_preview(path.clone(), cx);
+                for key in self
+                    .previews
+                    .keys()
+                    .filter(|key| key.path == *path)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                {
+                    self.load_preview(key, cx);
                 }
                 if self.editor.as_ref().is_some_and(|editor| {
                     &editor.path == path && TextDraft::TEXT.get(&editor.form, cx) == *text

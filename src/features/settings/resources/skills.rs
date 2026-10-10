@@ -72,13 +72,12 @@ impl ResourcesView {
         let row = self.row(resource, cx);
         let relation = self.relation(resource, cx);
         let path = resource.path.clone();
-        let id = std::sync::Arc::new(ElementId::from(SharedString::from(
-            path.to_string_lossy().into_owned(),
-        )));
-        let preview = self.previews.get(&path);
+        let key = self.preview_key(resource, cx);
+        let id = std::sync::Arc::new(key.element_id());
+        let preview = self.previews.get(&key);
         let expanded = preview.is_some();
         let toggle = resource.clone();
-        let toggle_path = path.clone();
+        let toggle_key = key.clone();
         let toggle_label = t(
             cx,
             if expanded {
@@ -101,10 +100,7 @@ impl ResourcesView {
                     .label(toggle_label)
                     .debug_selector(|| "skill-preview-toggle".into())
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        if this.previews.remove(&toggle_path).is_none() {
-                            this.load_preview(toggle_path.clone(), cx);
-                        }
-                        cx.notify();
+                        this.toggle_preview(toggle_key.clone(), cx);
                     })),
             )
             .child(div().flex_1())
@@ -314,5 +310,96 @@ mod tests {
         pi_config.update(cx, |config, cx| config.set_scope(Scope::Global, cx));
         cx.run_until_parked();
         resources.read_with(cx, |view, _| assert!(!view.in_project_scope()));
+    }
+    #[gpui_kit::test]
+    async fn duplicate_file_previews_are_independent_per_catalog(cx: &mut TestAppContext) {
+        // The project scan runs on a blocking thread outside the test executor.
+        cx.executor().allow_parking();
+        let agent = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let skill = agent.path().join("skills/review/SKILL.md");
+        let prompt = agent.path().join("prompts/review.md");
+        std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(prompt.parent().unwrap()).unwrap();
+        std::fs::write(
+            &skill,
+            "---\nname: review\ndescription: Reviews\n---\nSkill body",
+        )
+        .unwrap();
+        std::fs::write(&prompt, "Prompt body").unwrap();
+        std::fs::create_dir_all(project.path().join(".pi")).unwrap();
+        std::fs::write(
+            project.path().join(".pi/settings.json"),
+            serde_json::to_vec(&serde_json::json!({"skills": [skill], "prompts": [prompt]}))
+                .unwrap(),
+        )
+        .unwrap();
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            gpui_tokio::init(cx);
+            crate::app::init_capability_hosts(cx);
+            app_theme::init(cx);
+            gupi_settings::theme::init(cx);
+            gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
+        });
+        let mut settings = None;
+        let (_, cx) = cx.add_window_view(|window, cx| {
+            let form = cx.new(|_| Form::new(AppConfig::default()));
+            let controller = cx.new(|cx| ConfigController::new(&form, cx));
+            let draft = cx.new(|_| PiProbeController::new());
+            let applied = cx.new(|_| PiProbeController::new());
+            let view = cx.new(|cx| {
+                SettingsView::new(
+                    form,
+                    controller,
+                    draft,
+                    applied,
+                    cx.focus_handle(),
+                    window,
+                    cx,
+                )
+            });
+            settings = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let settings = settings.unwrap();
+        let (resources, pi_config) = settings.read_with(cx, |view, _| {
+            (view.resources.clone(), view.pi_config.clone())
+        });
+        pi_config.update(cx, |config, cx| {
+            // Never the user's own agent directory.
+            config.set_agent_for_test(agent.path().to_owned());
+            config.set_scope(Scope::Project(project.path().to_owned()), cx);
+        });
+        cx.condition(&resources, |view, cx| !view.filtered_skills(cx).is_empty())
+            .await;
+        let global =
+            gupi_resources::pi_resources::scan(agent.path().to_owned(), None, &[]).unwrap();
+        resources.update(cx, |view, cx| {
+            view.controller.update(cx, |controller, _| {
+                controller.set_catalog_for_test(global.clone())
+            });
+            let project = view.active().read(cx).catalog().data().unwrap().clone();
+            assert_eq!(project.resources.len(), 2);
+            for own in &project.resources {
+                let inherited = global
+                    .resources
+                    .iter()
+                    .find(|r| r.path == own.path)
+                    .unwrap();
+                let own_key = view.preview_key(own, cx);
+                let inherited_key = view.preview_key(inherited, cx);
+                assert_ne!(own_key, inherited_key);
+                assert_ne!(own_key.element_id(), inherited_key.element_id());
+                view.toggle_preview(own_key.clone(), cx);
+                assert!(view.previews.contains_key(&own_key));
+                assert!(!view.previews.contains_key(&inherited_key));
+                view.toggle_preview(inherited_key.clone(), cx);
+                view.toggle_preview(own_key.clone(), cx);
+                assert!(!view.previews.contains_key(&own_key));
+                assert!(view.previews.contains_key(&inherited_key));
+                view.toggle_preview(inherited_key, cx);
+            }
+        });
     }
 }

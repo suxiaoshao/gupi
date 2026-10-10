@@ -413,3 +413,45 @@ fn saving_a_deleted_project_keeps_the_draft_without_recreating_the_folder(cx: &m
         assert!(this.error.is_some());
     });
 }
+
+#[gpui_kit::test]
+fn leaving_and_reloading_during_save_wait_for_the_result(cx: &mut TestAppContext) {
+    for fail in [false, true] {
+        let agent = tempfile::tempdir().unwrap();
+        let (config, cx) = setup(cx, agent.path());
+        let left = std::rc::Rc::new(std::cell::Cell::new(false));
+        cx.update(|window, cx| {
+            config.update(cx, |this, cx| {
+                this.set_draft(Field::Steering, Edit::Set(vec![json!("all")]), cx);
+                if fail {
+                    fs::write(agent.path().join("settings.json"), "invalid JSON").unwrap();
+                }
+                this.save(Some(Page::Conversation), None, window, cx);
+                assert!(this.is_saving());
+                let generation = this.generation;
+                this.reload(cx);
+                this.discard(None, cx);
+                assert_eq!(this.generation, generation);
+                assert!(this.has_unsaved());
+            });
+            let left = left.clone();
+            PiConfig::confirm_leave(&config, move |_, _| left.set(true), window, cx);
+            assert!(config.read(cx).leave_after_save.is_some());
+        });
+        assert!(!left.get());
+        cx.run_until_parked();
+        config.read_with(cx, |this, _| {
+            assert!(!this.is_saving());
+            assert!(this.leave_after_save.is_none());
+            assert_eq!(this.has_unsaved(), fail);
+            assert_eq!(this.error.is_some(), fail);
+        });
+        assert_eq!(left.get(), !fail);
+        if !fail {
+            assert_eq!(
+                read(&agent.path().join("settings.json"))["steeringMode"],
+                "all"
+            );
+        }
+    }
+}

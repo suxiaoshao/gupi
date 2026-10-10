@@ -436,4 +436,96 @@ mod tests {
         cx.run_until_parked();
         resources.read_with(cx, |view, _| assert!(view.editor.is_none()));
     }
+    #[gpui_kit::test]
+    async fn leaving_during_resource_save_waits_for_success_or_keeps_the_editor(
+        cx: &mut TestAppContext,
+    ) {
+        cx.executor().allow_parking();
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            gpui_tokio::init(cx);
+            crate::app::init_capability_hosts(cx);
+            app_theme::init(cx);
+            gupi_settings::theme::init(cx);
+            gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::English, cx);
+        });
+        for fail in [false, true] {
+            let agent = tempfile::tempdir().unwrap();
+            let path = agent.path().join("prompts/new.md");
+            if fail {
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                std::fs::write(&path, "external").unwrap();
+            }
+            let mut settings = None;
+            let (_, cx) = cx.add_window_view(|window, cx| {
+                let form = cx.new(|_| Form::new(gupi_settings::config::AppConfig::default()));
+                let controller = cx.new(|cx| ConfigController::new(&form, cx));
+                let draft = cx.new(|_| PiProbeController::new());
+                let applied = cx.new(|_| PiProbeController::new());
+                let view = cx.new(|cx| {
+                    SettingsView::new(
+                        form,
+                        controller,
+                        draft,
+                        applied,
+                        cx.focus_handle(),
+                        window,
+                        cx,
+                    )
+                });
+                settings = Some(view.clone());
+                Root::new(view, window, cx)
+            });
+            let resources = settings
+                .unwrap()
+                .read_with(cx, |view, _| view.resources.clone());
+            let left = std::rc::Rc::new(std::cell::Cell::new(false));
+            cx.update(|window, cx| {
+                resources.update(cx, |view, cx| {
+                    view.controller.update(cx, |controller, _| {
+                        let mut catalog = gupi_resources::pi_resources::Catalog::default();
+                        catalog.root = agent.path().to_owned();
+                        controller.set_catalog_for_test(catalog);
+                    });
+                    let next = Open {
+                        path: path.clone(),
+                        kind: Kind::Prompt,
+                        editable: true,
+                        create: true,
+                        owner: view.controller.clone(),
+                    };
+                    view.editor = Some(super::ResourcesView::editor(
+                        next,
+                        "saved text".into(),
+                        Baseline::Missing,
+                        window,
+                        cx,
+                    ));
+                    view.save_editor(cx);
+                    assert!(view.controller.read(cx).mutation().is_running());
+                    assert!(view.needs_leave_guard(cx));
+                });
+                let left = left.clone();
+                super::ResourcesView::confirm_leave(
+                    &resources,
+                    move |_, _| left.set(true),
+                    window,
+                    cx,
+                );
+                assert!(resources.read(cx).after_save.is_some());
+            });
+            assert!(!left.get());
+            cx.condition(&resources, |view, cx| {
+                !view.controller.read(cx).mutation().is_running() && view.after_save.is_none()
+            })
+            .await;
+            cx.run_until_parked();
+            assert_eq!(left.get(), !fail);
+            resources.read_with(cx, |view, _| assert_eq!(view.editor.is_some(), fail));
+            assert_eq!(
+                std::fs::read_to_string(&path).unwrap(),
+                if fail { "external" } else { "saved text" }
+            );
+        }
+    }
 }

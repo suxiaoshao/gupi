@@ -96,6 +96,7 @@ pub(super) struct PiConfig {
     conflicts: Vec<Field>,
     error: Option<String>,
     saving: Option<Task<()>>,
+    leave_after_save: Option<AfterSave>,
     trusting: Option<Task<()>>,
     models: Models,
     model_picker: Entity<SelectState<SearchableVec<ModelItem>>>,
@@ -143,6 +144,7 @@ impl PiConfig {
             conflicts: Vec::new(),
             error: None,
             saving: None,
+            leave_after_save: None,
             trusting: None,
             models: Models::Idle,
             model_picker,
@@ -205,6 +207,10 @@ impl PiConfig {
         !self.drafts.is_empty()
     }
 
+    pub(super) fn needs_leave_guard(&self) -> bool {
+        self.has_unsaved() || self.is_saving()
+    }
+
     fn is_saving(&self) -> bool {
         self.saving.is_some()
     }
@@ -248,6 +254,9 @@ impl PiConfig {
     /// Re-reads the files. Drafts are kept so the user can compare and save
     /// again after a conflict.
     pub(super) fn reload(&mut self, cx: &mut Context<Self>) {
+        if self.is_saving() {
+            return;
+        }
         self.generation += 1;
         self.conflicts.clear();
         self.error = None;
@@ -339,6 +348,9 @@ impl PiConfig {
     }
 
     pub(super) fn discard(&mut self, page: Option<Page>, cx: &mut Context<Self>) {
+        if self.is_saving() {
+            return;
+        }
         self.drafts
             .retain(|field, _| page.is_some_and(|page| field.page() != page));
         self.conflicts.clear();
@@ -380,6 +392,7 @@ impl PiConfig {
                 this.saving = None;
                 cx.notify();
                 if this.generation != generation {
+                    this.leave_after_save = None;
                     return None;
                 }
                 match result {
@@ -396,7 +409,7 @@ impl PiConfig {
                                 this.drafts.remove(field);
                             }
                         }
-                        return then;
+                        return this.leave_after_save.take().or(then);
                     }
                     Err(pi_settings::Error::Conflict(leaves)) => {
                         this.conflicts = Field::ALL
@@ -410,6 +423,7 @@ impl PiConfig {
                     }
                     Err(error) => this.error = Some(error.to_string()),
                 }
+                this.leave_after_save = None;
                 None
             });
             // The continuation may update this entity, so it runs afterwards.
@@ -427,6 +441,17 @@ impl PiConfig {
         window: &mut Window,
         cx: &mut App,
     ) {
+        if this.read(cx).is_saving() {
+            let target = this.clone();
+            this.update(cx, |this, _| {
+                if this.leave_after_save.is_none() {
+                    this.leave_after_save = Some(Box::new(move |window, cx| {
+                        Self::confirm_leave(&target, proceed, window, cx);
+                    }));
+                }
+            });
+            return;
+        }
         if !this.read(cx).has_unsaved() {
             proceed(window, cx);
             return;
@@ -452,6 +477,9 @@ impl PiConfig {
                             gpui_kit::component::button::Button::new("pi-unsaved-discard")
                                 .label(t(cx, "pi-settings-discard"))
                                 .on_click(move |_, window, cx| {
+                                    if discard.0.read(cx).is_saving() {
+                                        return;
+                                    }
                                     window.close_dialog(cx);
                                     discard.0.update(cx, |this, cx| this.discard(None, cx));
                                     if let Some(proceed) = discard.1.borrow_mut().take() {

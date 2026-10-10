@@ -33,10 +33,33 @@ pub fn canonical(cwd: &Path) -> PathBuf {
         return cwd.to_owned();
     };
     #[cfg(windows)]
-    if let Some(plain) = path.to_str().and_then(|p| p.strip_prefix(r"\\?\")) {
-        return PathBuf::from(plain);
+    if let Some(path) = path.to_str() {
+        return PathBuf::from(windows_path(path));
     }
     path
+}
+
+#[cfg(any(windows, test))]
+fn windows_path(path: &str) -> String {
+    if let Some(unc) = path.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{unc}")
+    } else {
+        path.strip_prefix(r"\\?\").unwrap_or(path).to_owned()
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn windows_canonical_paths_preserve_network_roots() {
+    assert_eq!(
+        windows_path(r"\\?\UNC\server\share\project"),
+        r"\\server\share\project"
+    );
+    assert_eq!(windows_path(r"\\?\C:\project"), r"C:\project");
+    assert_eq!(
+        windows_path(r"\\server\share\project"),
+        r"\\server\share\project"
+    );
 }
 
 pub fn decision(agent: &Path, cwd: &Path) -> Result<Decision, Error> {

@@ -679,6 +679,14 @@ impl ResourcesView {
             .is_some_and(|editor| editor.editable && editor.form.read(cx).is_dirty())
     }
 
+    pub(super) fn needs_leave_guard(&self, cx: &App) -> bool {
+        self.has_unsaved(cx)
+            || self
+                .editor
+                .as_ref()
+                .is_some_and(|editor| editor.owner.read(cx).mutation().is_running())
+    }
+
     /// Runs `proceed` once unsaved editor text is saved or discarded.
     pub(super) fn confirm_leave(
         this: &Entity<Self>,
@@ -686,6 +694,28 @@ impl ResourcesView {
         window: &mut Window,
         cx: &mut App,
     ) {
+        let saving_path = this.read(cx).editor.as_ref().and_then(|editor| {
+            editor
+                .owner
+                .read(cx)
+                .mutation()
+                .is_running()
+                .then(|| editor.path.clone())
+        });
+        if let Some(path) = saving_path {
+            let target = this.clone();
+            this.update(cx, |this, _| {
+                if this.after_save.is_none() {
+                    this.after_save = Some((
+                        path,
+                        Box::new(move |window, cx| {
+                            Self::confirm_leave(&target, proceed, window, cx);
+                        }),
+                    ));
+                }
+            });
+            return;
+        }
         if !this.read(cx).has_unsaved(cx) {
             proceed(window, cx);
             return;
@@ -722,6 +752,11 @@ impl ResourcesView {
                             Button::new("resource-unsaved-discard")
                                 .label(t(cx, "pi-settings-discard"))
                                 .on_click(move |_, window, cx| {
+                                    if discard.0.read(cx).editor.as_ref().is_some_and(|editor| {
+                                        editor.owner.read(cx).mutation().is_running()
+                                    }) {
+                                        return;
+                                    }
                                     // Close this question, then the editor beneath it.
                                     window.close_dialog(cx);
                                     discard.0.update(cx, |this, cx| {

@@ -373,9 +373,11 @@ impl PiConfig {
                             }),
                     )
                     .item(
-                        PopupMenuItem::new(t(cx, "pi-settings-reload")).on_click(
-                            move |_, _, cx| reload.update(cx, |this, cx| this.reload(cx)),
-                        ),
+                        PopupMenuItem::new(t(cx, "pi-settings-reload"))
+                            .disabled(entity.read(cx).is_saving())
+                            .on_click(move |_, _, cx| {
+                                reload.update(cx, |this, cx| this.reload(cx))
+                            }),
                     )
                 }
             });

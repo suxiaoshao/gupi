@@ -149,9 +149,9 @@ impl SettingsView {
             .update(cx, |config, cx| config.set_active_project(cwd, cx));
     }
 
-    /// Whether any Pi settings field or resource editor holds unsaved changes.
+    /// Whether leaving must settle Pi drafts or an active settings/editor save.
     pub(crate) fn has_unsaved_pi(&self, cx: &App) -> bool {
-        self.pi_config.read(cx).has_unsaved() || self.resources.read(cx).has_unsaved(cx)
+        self.pi_config.read(cx).needs_leave_guard() || self.resources.read(cx).needs_leave_guard(cx)
     }
 
     /// Runs `proceed` once unsaved Pi drafts are saved or discarded.

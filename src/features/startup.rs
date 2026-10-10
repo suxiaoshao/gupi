@@ -275,6 +275,43 @@ impl StartupView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Leaving settings asks about unsaved Pi drafts first.
+        if !visible && self.show_settings && self.settings.read(cx).has_unsaved_pi(cx) {
+            let this = cx.entity().downgrade();
+            SettingsView::confirm_leave(
+                &self.settings,
+                move |window, cx| {
+                    let _ = this.update(cx, |this, cx| {
+                        this.apply_settings_visible(false, window, cx)
+                    });
+                },
+                window,
+                cx,
+            );
+            return;
+        }
+        self.apply_settings_visible(visible, window, cx);
+    }
+
+    /// Opens Pi settings for a project, as requested from a conversation.
+    pub fn open_project_pi_settings(
+        &mut self,
+        cwd: std::path::PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.apply_settings_visible(true, window, cx);
+        self.settings.update(cx, |settings, cx| {
+            settings.open_project_pi_settings(cwd, window, cx)
+        });
+    }
+
+    fn apply_settings_visible(
+        &mut self,
+        visible: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.show_settings != visible {
             if let Some(home) = &self.home {
                 home.update(cx, |home, cx| home.close_commands(window, cx));
@@ -496,7 +533,13 @@ impl Render for StartupView {
                                         })),
                                 ))
                             })
-                            .child(page_title),
+                            .child(page_title)
+                            .when(settings_page, |view| {
+                                view.child(
+                                    self.settings
+                                        .update(cx, |settings, cx| settings.render_domain_tabs(cx)),
+                                )
+                            }),
                     ),
                 )
             })

@@ -169,7 +169,10 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
         gupi_settings::theme::init(cx);
         gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
     });
-    for page in 0..9 {
+    let pages = super::layout::DOMAIN_PAGES
+        .into_iter()
+        .flat_map(|(domain, count)| (0..count).map(move |page| (domain, page)));
+    for (domain, page) in pages {
         let (_, window_cx) = cx.add_window_view(|window, cx| {
             let form = cx.new(|_| Form::new(AppConfig::default()));
             let controller = cx.new(|cx| ConfigController::new(&form, cx));
@@ -221,12 +224,16 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
                     record
                 });
             });
-            let view = cx.new(|_| SettingsPageFixture { settings, page });
+            let view = cx.new(|_| SettingsPageFixture {
+                settings,
+                domain,
+                page,
+            });
             Root::new(view, window, cx)
         });
         window_cx.simulate_resize(gpui_kit::size(gpui_kit::px(760.), gpui_kit::px(640.)));
         window_cx.update(|window, cx| window.draw(cx).clear(cx));
-        if page == 0 {
+        if (domain, page) == (super::layout::Domain::Gupi, 0) {
             for width in [640., 1600.] {
                 window_cx.simulate_resize(gpui_kit::size(gpui_kit::px(width), gpui_kit::px(640.)));
                 window_cx.update(|window, cx| window.draw(cx).clear(cx));
@@ -248,7 +255,7 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
                 }
             }
         }
-        if page == super::layout::KEYBOARD_PAGE {
+        if (domain, page) == (super::layout::Domain::Gupi, super::layout::KEYBOARD_PAGE) {
             for width in [760., 1600.] {
                 window_cx.simulate_resize(gpui_kit::size(gpui_kit::px(width), gpui_kit::px(1200.)));
                 window_cx.update(|window, cx| window.draw(cx).clear(cx));
@@ -267,6 +274,7 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
 }
 struct SettingsPageFixture {
     settings: gpui_kit::Entity<SettingsView>,
+    domain: super::layout::Domain,
     page: usize,
 }
 
@@ -330,7 +338,11 @@ fn native_update_disables_settings_controls_until_closed(cx: &mut TestAppContext
             )
         });
         fixture = Some((form, controller));
-        let view = cx.new(|_| SettingsPageFixture { settings, page: 8 });
+        let view = cx.new(|_| SettingsPageFixture {
+            settings,
+            domain: super::layout::Domain::Gupi,
+            page: 4,
+        });
         Root::new(view, window, cx)
     });
     let (form, controller) = fixture.unwrap();
@@ -367,7 +379,9 @@ impl gpui_kit::Render for SettingsPageFixture {
         _: &mut gpui_kit::Window,
         cx: &mut gpui_kit::Context<Self>,
     ) -> impl gpui_kit::IntoElement {
+        let domain = self.domain;
         self.settings.update(cx, |view, cx| {
+            view.domain = domain;
             view.settings_panel(cx).default_selected_index(
                 gpui_kit::component::setting::SelectIndex {
                     page_ix: self.page,

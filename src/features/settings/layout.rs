@@ -14,18 +14,103 @@ use gpui_kit::component::setting::Settings;
 use gpui_kit::prelude::FluentBuilder;
 use gupi_resources::pi_resources::Kind;
 
-// Page order shared by the panel and in-settings navigation.
+/// Gupi preferences and Pi configuration are separate settings areas.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Domain {
+    Gupi,
+    Pi,
+}
+
+// Page order within each domain, shared by the panel and navigation.
 #[cfg(test)]
 pub(super) const KEYBOARD_PAGE: usize = 3;
-pub(super) const PI_PAGE: usize = 4;
-pub(super) const PACKAGES_PAGE: usize = 5;
+#[cfg(test)]
+pub(super) const DOMAIN_PAGES: [(Domain, usize); 2] = [(Domain::Gupi, 5), (Domain::Pi, 6)];
+pub(super) const PI_PAGE: usize = 0;
+pub(super) const CONVERSATION_PAGE: usize = 1;
+pub(super) const PACKAGES_PAGE: usize = 3;
 
 impl SettingsView {
     /// Settings selection lives in the component's keyed state; a new key
     /// re-creates it with the requested page.
-    pub(super) fn open_page(&mut self, page_ix: usize, cx: &mut Context<Self>) {
+    pub(super) fn open_page(&mut self, domain: Domain, page_ix: usize, cx: &mut Context<Self>) {
+        self.domain = domain;
+        if domain == Domain::Pi {
+            self.pi_config.update(cx, |config, cx| config.activate(cx));
+        }
         self.navigation = (self.navigation.0 + 1, page_ix);
         cx.notify();
+    }
+
+    /// Switches area from the page bar. Leaving Pi asks about unsaved drafts.
+    fn select_domain(&mut self, domain: Domain, window: &mut Window, cx: &mut Context<Self>) {
+        if self.domain == domain {
+            return;
+        }
+        if domain == Domain::Pi || !self.pi_config.read(cx).has_unsaved() {
+            self.open_page(domain, 0, cx);
+            return;
+        }
+        let this = cx.entity().downgrade();
+        pi_config::PiConfig::confirm_leave(
+            &self.pi_config,
+            move |_, cx| {
+                let _ = this.update(cx, |this, cx| this.open_page(domain, 0, cx));
+            },
+            window,
+            cx,
+        );
+    }
+
+    pub(crate) fn render_domain_tabs(&self, cx: &mut Context<Self>) -> AnyElement {
+        use gpui_kit::component::tab::Tab;
+        use gpui_kit::component::tab::TabBar;
+        TabBar::new("settings-domain")
+            .segmented()
+            .small()
+            .selected_index(usize::from(self.domain == Domain::Pi))
+            .child(Tab::new().label(t(cx, "settings-domain-gupi")))
+            .child(Tab::new().label(t(cx, "settings-domain-pi")))
+            .on_click(cx.listener(|this, index: &usize, window, cx| {
+                let domain = if *index == 1 {
+                    Domain::Pi
+                } else {
+                    Domain::Gupi
+                };
+                this.select_domain(domain, window, cx);
+            }))
+            .into_any_element()
+    }
+
+    /// Opens the Pi conversation page scoped to a project directory.
+    pub(crate) fn open_project_pi_settings(
+        &mut self,
+        cwd: std::path::PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_page(Domain::Pi, CONVERSATION_PAGE, cx);
+        pi_config::request_scope(
+            &self.pi_config,
+            gupi_resources::pi_settings::Scope::Project(cwd),
+            window,
+            cx,
+        );
+    }
+
+    pub(crate) fn has_unsaved_pi(&self, cx: &App) -> bool {
+        self.pi_config.read(cx).has_unsaved()
+    }
+
+    /// Runs `proceed` once unsaved Pi drafts are saved or discarded.
+    pub(crate) fn confirm_leave(
+        this: &Entity<Self>,
+        proceed: impl FnOnce(&mut Window, &mut App) + 'static,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let pi_config = this.read(cx).pi_config.clone();
+        pi_config::PiConfig::confirm_leave(&pi_config, proceed, window, cx);
     }
     pub(super) fn settings_panel(&self, cx: &mut Context<Self>) -> Settings {
         let this = cx.entity().downgrade();
@@ -286,9 +371,22 @@ impl SettingsView {
                     _ => IconName::FileText,
                 })
                 .title_suffix(move |_, cx| {
-                    header
-                        .update(cx, |view, cx| view.render_header(kind, cx))
-                        .unwrap_or_else(|_| div().into_any_element())
+                    // Resource editors manage global resources only.
+                    h_flex()
+                        .gap_2()
+                        .items_center()
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(t(cx, "pi-scope-global")),
+                        )
+                        .child(
+                            header
+                                .update(cx, |view, cx| view.render_header(kind, cx))
+                                .unwrap_or_else(|_| div().into_any_element()),
+                        )
+                        .into_any_element()
                 });
             if self.resources.read(cx).has_status(kind, cx) {
                 page = page.group(SettingGroup::new().item(section(
@@ -457,25 +555,41 @@ impl SettingsView {
                                     .small()
                                     .label(t(cx, "settings-open-pi"))
                                     .on_click(move |_, _, cx| {
-                                        this.update(cx, |this, cx| this.open_page(PI_PAGE, cx))
-                                            .ok();
+                                        this.update(cx, |this, cx| {
+                                            this.open_page(Domain::Pi, PI_PAGE, cx)
+                                        })
+                                        .ok();
                                     })
                             }),
                         )
                         .keywords(["about pi settings open 关于 打开 Pi 设置"])
                     }),
             );
-        Settings::new(("gupi-settings", self.navigation.0))
+        let id = match self.domain {
+            Domain::Gupi => "gupi-settings",
+            Domain::Pi => "pi-settings",
+        };
+        let settings = Settings::new((id, self.navigation.0))
             .default_selected_index(SelectIndex {
                 page_ix: self.navigation.1,
                 group_ix: None,
             })
-            .with_group_variant(GroupBoxVariant::Normal)
-            .page(general).page(appearance).page(notifications).page(keyboard).page(pi)
-            .page(resource_page("settings-page-packages",Kind::Extension,"package plugin extension install update remove source version path enable disable browse search npm 插件 扩展 包 安装 更新 移除 启停 浏览 搜索"))
-            .page(resource_page("settings-page-skills",Kind::Skill,"skill name description source path create edit delete enable disable 技能 创建 编辑 删除 启停"))
-            .page(resource_page("settings-page-prompts",Kind::Prompt,"prompt template 创建 编辑 删除 模板"))
-            .page(about)
+            .with_group_variant(GroupBoxVariant::Normal);
+        match self.domain {
+            Domain::Gupi => settings
+                .page(general)
+                .page(appearance)
+                .page(notifications)
+                .page(keyboard)
+                .page(about),
+            Domain::Pi => settings
+                .page(pi.title(t(cx, "settings-page-connection")))
+                .page(pi_config::PiConfig::page(&self.pi_config, pi_config::Page::Conversation, cx))
+                .page(pi_config::PiConfig::page(&self.pi_config, pi_config::Page::Network, cx))
+                .page(resource_page("settings-page-packages",Kind::Extension,"package plugin extension install update remove source version path enable disable browse search npm 插件 扩展 包 安装 更新 移除 启停 浏览 搜索"))
+                .page(resource_page("settings-page-skills",Kind::Skill,"skill name description source path create edit delete enable disable 技能 创建 编辑 删除 启停"))
+                .page(resource_page("settings-page-prompts",Kind::Prompt,"prompt template 创建 编辑 删除 模板")),
+        }
     }
     pub(super) fn render_settings(&self, cx: &mut Context<Self>) -> AnyElement {
         let panel = self.settings_panel(cx);

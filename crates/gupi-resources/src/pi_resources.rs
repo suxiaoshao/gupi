@@ -141,16 +141,26 @@ fn write_settings(
     root: &Path,
     change: impl FnOnce(&mut Value) -> Result<(), Error>,
 ) -> Result<(), Error> {
-    let path = root.join("settings.json");
-    let mut value = read_json(&path)?;
-    if !value.is_object() {
-        return Err(Error("Pi settings must be an object".into()));
+    let path = crate::pi_settings::Scope::Global.file(root);
+    let mut failure = None;
+    // Shares Pi's lock and re-reads the latest file, like the settings pages.
+    let result = crate::pi_settings::update(&path, |object| {
+        let mut value = Value::Object(std::mem::take(object));
+        let outcome = change(&mut value);
+        if let Value::Object(changed) = value {
+            *object = changed;
+        }
+        outcome.map_err(|error| {
+            let message = error.0.clone();
+            failure = Some(error);
+            message
+        })
+    });
+    match (result, failure) {
+        (_, Some(error)) => Err(error),
+        (Ok(()), None) => Ok(()),
+        (Err(error), None) => Err(Error(error.to_string())),
     }
-    change(&mut value)?;
-    let mut bytes = serde_json::to_vec_pretty(&value).map_err(|e| Error(e.to_string()))?;
-    bytes.push(b'\n');
-    persistence::write_atomic(&path, &bytes)?;
-    Ok(())
 }
 pub fn set_enabled(root: &Path, resource: &Resource, enabled: bool) -> Result<(), Error> {
     write_settings(root, |settings| {

@@ -102,6 +102,17 @@ impl Run {
     }
 }
 
+/// Opens Pi settings scoped to a project working directory.
+#[derive(Clone, PartialEq, Deserialize, Action)]
+#[action(namespace = gupi, no_json)]
+#[non_exhaustive]
+pub struct ShowProjectPiSettings(pub std::path::PathBuf);
+impl ShowProjectPiSettings {
+    pub fn new(cwd: std::path::PathBuf) -> Self {
+        Self(cwd)
+    }
+}
+
 actions!(
     gupi,
     [

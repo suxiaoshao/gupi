@@ -1,5 +1,6 @@
 use super::*;
 use gpui_form::FormSchema;
+use gpui_kit::component::ElementExt as _;
 use gpui_kit::component::Sizable;
 use gpui_kit::component::WindowExt;
 use gpui_kit::component::input::Editor as CodeEditor;
@@ -81,6 +82,8 @@ pub(super) struct ResourcesView {
     browsing: bool,
     browse: browse::Browse,
     installed_scroll: ScrollHandle,
+    /// The Packages body's width from the last layout; drives its layout choices.
+    packages_width: Option<Pixels>,
     /// The latest Pi operation result per registry package name, shown in details.
     package_results: std::collections::BTreeMap<String, Result<(), io::Error>>,
     error: Option<(Kind, String)>,
@@ -354,6 +357,7 @@ impl ResourcesView {
             browsing: false,
             browse,
             installed_scroll: ScrollHandle::new(),
+            packages_width: None,
             package_results: Default::default(),
             error: None,
             _subscriptions: subscriptions,
@@ -608,19 +612,30 @@ impl ResourcesView {
             return view.into_any_element();
         }
         if section == Section::Packages {
-            // Settings 0.7.1 mounts pages in its group list, which sizes each
-            // item to content; `Mount::Bounded` needs a page-filling slot.
-            // Layout decisions follow the body's own width, not the window's.
+            // Settings 0.7.1 mounts pages in its group list, which measures each
+            // item at its content height, so the body must keep its natural
+            // height for the page list to scroll. A container query cannot be
+            // used here: its contents never contribute to its size. Layout
+            // decisions follow the body's own width, measured after layout.
+            // Until the first layout reports a width, assume a typical page.
+            let width = self.packages_width.unwrap_or(px(640.));
             let owner = cx.entity().downgrade();
-            return container_query(move |size, _, cx| {
-                owner
-                    .update(cx, |this, cx| {
-                        this.render_packages(size.width, packages::Mount::Content, cx)
-                    })
-                    .unwrap_or_else(|_| div().into_any_element())
-            })
-            .size_full()
-            .into_any_element();
+            let measured = self.packages_width;
+            return div()
+                .relative()
+                .w_full()
+                .min_w_0()
+                .child(self.render_packages(width, packages::Mount::Content, cx))
+                .on_prepaint(move |bounds, _, cx| {
+                    let width = bounds.size.width;
+                    if measured.is_none_or(|last| (last - width).abs() >= px(0.5)) {
+                        let _ = owner.update(cx, |this, cx| {
+                            this.packages_width = Some(width);
+                            cx.notify();
+                        });
+                    }
+                })
+                .into_any_element();
         }
         if catalog.is_none() {
             return view.into_any_element();

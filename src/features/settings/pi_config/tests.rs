@@ -25,6 +25,23 @@ use serde_json::json;
 use std::fs;
 use std::path::Path;
 
+impl crate::features::settings::SettingsView {
+    pub(crate) fn seed_quit_draft_for_test(&self, saving: bool, cx: &mut gpui_kit::App) {
+        self.pi_config.update(cx, |config, _| {
+            config
+                .drafts
+                .insert(Field::Steering, Edit::Set(vec![json!("all")]));
+            if saving {
+                config.saving = Some(gpui_kit::Task::ready(()));
+            }
+        });
+    }
+
+    pub(crate) fn quit_waits_for_save_for_test(&self, cx: &gpui_kit::App) -> bool {
+        self.pi_config.read(cx).leave_after_save.is_some()
+    }
+}
+
 #[test]
 fn version_gate_accepts_1_1_and_later() {
     for version in ["1.1.0", "v1.1.3", "1.2.0-beta.1", "2.0.0"] {

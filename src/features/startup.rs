@@ -212,6 +212,32 @@ impl StartupView {
             cx.quit();
             return;
         }
+        let this = cx.entity().downgrade();
+        let settings = self.settings.clone();
+        // Quit can run while the window Root is leased (menu/window-close
+        // actions). Open the leave dialog only after that update has ended.
+        window.defer(cx, move |window, cx| {
+            SettingsView::confirm_leave(
+                &settings,
+                move |window, cx| {
+                    let _ = this.update(cx, |this, cx| {
+                        this.begin_quit(window, cx, finish);
+                    });
+                },
+                window,
+                cx,
+            );
+        });
+    }
+    fn begin_quit(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        finish: impl FnOnce(&mut App) + 'static,
+    ) {
+        if self.is_quitting() {
+            return;
+        }
         tracing::info!("managed quit started");
         crate::app::shortcuts::shutdown(cx);
         self.config.update(cx, |owner, _| owner.begin_shutdown());

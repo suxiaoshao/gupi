@@ -40,21 +40,79 @@ impl PiConfig {
         rows(files.resolve(Field::ModelScope, draft).values[0].as_ref())
     }
 
-    pub(super) fn edit_model_scope(
+    /// Row identities for `len` shown patterns. Reset when the list changed
+    /// outside the editor, such as a reload or a discarded draft.
+    pub(super) fn model_scope_ids(&mut self, len: usize) -> Vec<u64> {
+        if self.scope_rows.len() != len {
+            self.scope_rows = (0..len).map(|_| self.next_model_scope_id()).collect();
+        }
+        self.scope_rows.clone()
+    }
+
+    fn next_model_scope_id(&mut self) -> u64 {
+        self.next_scope_row += 1;
+        self.next_scope_row
+    }
+
+    /// Edits the rows with their identities; `change` draws new identities
+    /// from the counter it is given.
+    fn edit_model_rows(
         &mut self,
-        change: impl FnOnce(&mut Vec<String>),
+        change: impl FnOnce(&mut Vec<(u64, String)>, &mut u64),
         cx: &mut Context<Self>,
     ) {
         if self.is_saving() {
             return;
         }
-        let Some(mut rows) = self.model_scope_rows() else {
+        let Some(rows) = self.model_scope_rows() else {
             return;
         };
-        change(&mut rows);
+        let ids = self.model_scope_ids(rows.len());
+        let mut pairs: Vec<_> = ids.into_iter().zip(rows).collect();
+        change(&mut pairs, &mut self.next_scope_row);
+        let (ids, rows) = pairs.into_iter().unzip();
+        self.scope_rows = ids;
         self.set_draft(
             Field::ModelScope,
             edit(rows, matches!(self.scope, Scope::Project(_))),
+            cx,
+        );
+    }
+
+    /// Edits the patterns by position; rows past the old length get new
+    /// identities.
+    pub(super) fn edit_model_scope(
+        &mut self,
+        change: impl FnOnce(&mut Vec<String>),
+        cx: &mut Context<Self>,
+    ) {
+        self.edit_model_rows(
+            |pairs, next| {
+                let (ids, mut rows): (Vec<_>, Vec<_>) = pairs.drain(..).unzip();
+                change(&mut rows);
+                let fresh = std::iter::repeat_with(|| {
+                    *next += 1;
+                    *next
+                });
+                pairs.extend(ids.into_iter().chain(fresh).zip(rows));
+            },
+            cx,
+        );
+    }
+
+    /// Applies `change` at the current position of row `id`.
+    pub(super) fn edit_model_row(
+        &mut self,
+        id: u64,
+        change: impl FnOnce(&mut Vec<(u64, String)>, usize),
+        cx: &mut Context<Self>,
+    ) {
+        self.edit_model_rows(
+            |pairs, _| {
+                if let Some(index) = pairs.iter().position(|(row, _)| *row == id) {
+                    change(pairs, index);
+                }
+            },
             cx,
         );
     }
@@ -128,9 +186,10 @@ impl PiConfig {
                     .text_color(cx.theme().muted_foreground)
                     .child(t(cx, "pi-model-scope-help")),
             );
-        for (index, text) in rows.iter().enumerate() {
+        let ids = self.model_scope_ids(count);
+        for (index, (row, text)) in ids.into_iter().zip(&rows).enumerate() {
             let entity = cx.entity().downgrade();
-            let id = format!("pi-model-pattern-{}-{index}", self.generation);
+            let id = format!("pi-model-pattern-{}-{row}", self.generation);
             let shown = text.clone();
             let state = window.use_keyed_state(SharedString::from(id), cx, move |window, cx| {
                 let input = cx.new(|cx| InputState::new(window, cx).default_value(shown));
@@ -138,14 +197,7 @@ impl PiConfig {
                     if matches!(event, InputEvent::Change) {
                         let text = input.read(cx).value().to_string();
                         let _ = entity.update(cx, |this, cx| {
-                            this.edit_model_scope(
-                                |rows| {
-                                    if let Some(row) = rows.get_mut(index) {
-                                        *row = text;
-                                    }
-                                },
-                                cx,
-                            )
+                            this.edit_model_row(row, |rows, index| rows[index].1 = text, cx)
                         });
                     }
                 });
@@ -166,7 +218,7 @@ impl PiConfig {
                             .child(Input::new(&input).small().disabled(saving)),
                     )
                     .child(
-                        Button::new(("model-scope-up", index))
+                        Button::new(("model-scope-up", row as usize))
                             .small()
                             .ghost()
                             .icon(IconName::ChevronUp)
@@ -174,9 +226,10 @@ impl PiConfig {
                             .tooltip(t(cx, "pi-model-scope-up"))
                             .disabled(saving || index == 0)
                             .on_click(cx.listener(move |this, _, _, cx| {
-                                this.edit_model_scope(
-                                    |rows| {
-                                        if index > 0 && index < rows.len() {
+                                this.edit_model_row(
+                                    row,
+                                    |rows, index| {
+                                        if index > 0 {
                                             rows.swap(index, index - 1);
                                         }
                                     },
@@ -185,7 +238,7 @@ impl PiConfig {
                             })),
                     )
                     .child(
-                        Button::new(("model-scope-down", index))
+                        Button::new(("model-scope-down", row as usize))
                             .small()
                             .ghost()
                             .icon(IconName::ChevronDown)
@@ -193,8 +246,9 @@ impl PiConfig {
                             .tooltip(t(cx, "pi-model-scope-down"))
                             .disabled(saving || index + 1 == count)
                             .on_click(cx.listener(move |this, _, _, cx| {
-                                this.edit_model_scope(
-                                    |rows| {
+                                this.edit_model_row(
+                                    row,
+                                    |rows, index| {
                                         if index + 1 < rows.len() {
                                             rows.swap(index, index + 1);
                                         }
@@ -204,7 +258,7 @@ impl PiConfig {
                             })),
                     )
                     .child(
-                        Button::new(("model-scope-delete", index))
+                        Button::new(("model-scope-delete", row as usize))
                             .small()
                             .ghost()
                             .icon(IconName::Trash)
@@ -212,11 +266,10 @@ impl PiConfig {
                             .tooltip(t(cx, "pi-model-scope-delete"))
                             .disabled(saving)
                             .on_click(cx.listener(move |this, _, _, cx| {
-                                this.edit_model_scope(
-                                    |rows| {
-                                        if index < rows.len() {
-                                            rows.remove(index);
-                                        }
+                                this.edit_model_row(
+                                    row,
+                                    |rows, index| {
+                                        rows.remove(index);
                                     },
                                     cx,
                                 )

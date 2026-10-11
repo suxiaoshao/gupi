@@ -102,6 +102,9 @@ pub(super) struct PiConfig {
     models: Models,
     model_picker: Entity<SelectState<SearchableVec<ModelItem>>>,
     scope_picker: Entity<SelectState<SearchableVec<ModelItem>>>,
+    /// Stable identities of the model scope rows, parallel to the shown patterns.
+    scope_rows: Vec<u64>,
+    next_scope_row: u64,
     /// The model key last projected into `model_picker`.
     synced_model: Option<Option<(String, String)>>,
     file_task: Option<Task<()>>,
@@ -163,6 +166,8 @@ impl PiConfig {
             models: Models::Idle,
             model_picker,
             scope_picker,
+            scope_rows: Vec::new(),
+            next_scope_row: 0,
             synced_model: None,
             file_task: None,
             model_task: None,

@@ -568,3 +568,22 @@ fn malformed_model_scope_is_not_overwritten(cx: &mut TestAppContext) {
     assert!(!config.read_with(cx, |this, _| this.has_unsaved()));
     assert_eq!(read(&path)["enabledModels"], json!([4]));
 }
+
+#[gpui_kit::test]
+fn model_scope_row_actions_follow_the_row(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let path = agent.path().join("settings.json");
+    fs::write(&path, r#"{"enabledModels":["p/a","p/b","p/c"]}"#).unwrap();
+    let (config, cx) = setup(cx, agent.path());
+    let a = config.update(cx, |this, _| this.model_scope_ids(3)[0]);
+    for _ in 0..2 {
+        config.update(cx, |this, cx| {
+            this.edit_model_row(a, |rows, index| rows.swap(index, index + 1), cx)
+        });
+    }
+    config.update(cx, |this, cx| {
+        this.edit_model_row(a, |rows, index| rows[index].1 = "p/x".into(), cx)
+    });
+    save(&config, Page::Conversation, cx);
+    assert_eq!(read(&path)["enabledModels"], json!(["p/b", "p/c", "p/x"]));
+}

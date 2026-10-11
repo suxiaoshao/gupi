@@ -41,7 +41,10 @@ use serde_json::Value;
 
 /// Groups per page, in order: title key and fields.
 const CONVERSATION: &[(&str, &[Field])] = &[
-    ("pi-group-model", &[Field::Model, Field::Thinking]),
+    (
+        "pi-group-model",
+        &[Field::Model, Field::Thinking, Field::ModelScope],
+    ),
     (
         "pi-group-context",
         &[
@@ -71,6 +74,7 @@ impl Field {
         match self {
             Self::Model => "pi-field-model",
             Self::Thinking => "pi-field-thinking",
+            Self::ModelScope => "pi-model-scope",
             Self::Compaction => "pi-field-compaction",
             Self::ReserveTokens => "pi-field-reserve",
             Self::KeepRecentTokens => "pi-field-keep",
@@ -172,6 +176,13 @@ impl PiConfig {
             let items = fields.iter().map(|field| {
                 let field = *field;
                 let weak = weak.clone();
+                if field == Field::ModelScope {
+                    return SettingItem::render(move |_, window, cx| {
+                        weak.update(cx, |this, cx| this.render_model_scope(window, cx))
+                            .unwrap_or_else(|_| div().into_any_element())
+                    })
+                    .keywords(["enabledModels".to_owned(), t(cx, field.label())]);
+                }
                 let mut item = SettingItem::new(
                     t(cx, field.label()),
                     SettingField::render(move |_, window, cx| {
@@ -446,6 +457,7 @@ impl PiConfig {
             Kind::Count | Kind::Text => {
                 self.render_input(field, &id, &resolved.values, draft.as_ref(), window, cx)
             }
+            Kind::ModelScope => self.render_model_scope(window, cx),
             Kind::Model => self.render_model(&resolved.values, saving, window, cx),
         };
         let mut lane = match resolved.source {
@@ -495,7 +507,7 @@ impl PiConfig {
             .into_any_element()
     }
 
-    fn render_field_menu(
+    pub(super) fn render_field_menu(
         &self,
         field: Field,
         overridden: bool,

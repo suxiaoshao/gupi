@@ -21,7 +21,7 @@
 | `defaultProvider` + `defaultModel` | 常用：模型 | 选择默认模型；一个模型选择器同时写 provider 和 id，避免不匹配组合 |
 | `defaultThinkingLevel` | 常用：模型 | 调整默认思考强度；区别于会话工具栏当前值 |
 | `modelThinkingLevels` | 页内高级候选：模型 | 为不同模型保存不同强度；需要可添加/删除的覆盖行，首批是否纳入待确认 |
-| `enabledModels` | 文件编辑，后续可评估模型范围编辑器 | 是启动/轮换范围，不是模型授权白名单；Gupi 可用模型查询不按此字段过滤，不能直接叫“允许的模型” |
+| `enabledModels` | 已实现：对话 / 默认模型（见[模型范围](model-scope.md)） | 是启动/轮换范围，不是模型授权白名单；Gupi 可用模型查询不按此字段过滤，不能直接叫“允许的模型” |
 | `thinkingBudgets` | 文件编辑 | 模型/供应商适用范围复杂，通用 token 输入容易误导；等级选择已覆盖常见任务 |
 | `cacheWarming` | 页内高级候选：模型，全局 | 有性能与用量权衡；三选一并给简短费用含义，不默认创建单独页面 |
 | `compaction.enabled` | 常用：会话 | 控制上下文自动压缩 |

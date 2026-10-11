@@ -4,6 +4,7 @@
 //! saved; each save re-reads the file inside Pi's lock and writes only the
 //! changed leaves.
 mod fields;
+mod model_scope;
 mod page;
 
 pub(super) use fields::Page;
@@ -100,6 +101,7 @@ pub(super) struct PiConfig {
     trusting: Option<Task<()>>,
     models: Models,
     model_picker: Entity<SelectState<SearchableVec<ModelItem>>>,
+    scope_picker: Entity<SelectState<SearchableVec<ModelItem>>>,
     /// The model key last projected into `model_picker`.
     synced_model: Option<Option<(String, String)>>,
     file_task: Option<Task<()>>,
@@ -128,6 +130,18 @@ impl PiConfig {
             ];
             this.set_draft(Field::Model, Edit::Set(value), cx);
         });
+        let scope_picker = cx.new(|cx| {
+            SelectState::new(SearchableVec::new(vec![]), None, window, cx).searchable(true)
+        });
+        let scope_sub =
+            cx.subscribe_in(&scope_picker, window, |this, picker, event, window, cx| {
+                if let SelectEvent::<SearchableVec<ModelItem>>::Confirm(Some((provider, model))) =
+                    event
+                {
+                    this.edit_model_scope(|rows| rows.push(format!("{provider}/{model}")), cx);
+                    picker.update(cx, |picker, cx| picker.set_selected_index(None, window, cx));
+                }
+            });
         let applied_sub = cx.observe(&applied_pi, |_, _, cx| cx.notify());
         cx.on_release(|this, cx| this.cancel_model_query(cx))
             .detach();
@@ -148,11 +162,12 @@ impl PiConfig {
             trusting: None,
             models: Models::Idle,
             model_picker,
+            scope_picker,
             synced_model: None,
             file_task: None,
             model_task: None,
             model_instance: None,
-            _subscriptions: vec![picker_sub, applied_sub],
+            _subscriptions: vec![picker_sub, scope_sub, applied_sub],
         }
     }
 
@@ -328,7 +343,10 @@ impl PiConfig {
         let Load::Ready(files) = &self.files else {
             return;
         };
-        let resolved = files.resolve(field, self.drafts.get(&field));
+        let mut resolved = files.resolve(field, self.drafts.get(&field));
+        if field == Field::ModelScope && resolved.values == vec![None] {
+            resolved.values = vec![Some(serde_json::json!([]))];
+        }
         if let Some(values) = resolved.values.into_iter().collect::<Option<Vec<_>>>() {
             self.drafts.insert(field, Edit::Set(values));
             cx.notify();
@@ -628,6 +646,9 @@ impl PiConfig {
                             })
                             .collect();
                         this.model_picker.update(cx, |picker, cx| {
+                            picker.set_items(SearchableVec::new(items.clone()), window, cx)
+                        });
+                        this.scope_picker.update(cx, |picker, cx| {
                             picker.set_items(SearchableVec::new(items), window, cx)
                         });
                         Models::Ready(models)

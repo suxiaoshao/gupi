@@ -58,7 +58,7 @@ Pi `settings.schema.json` 有 **58 个顶层键**，其中嵌套对象算一个�
 | `enableSkillCommands` | 终端/交互专用 | — |
 | `terminal` | 终端/交互专用 | — |
 | `images` | 已覆盖 | autoResize、blockImages 均已做 |
-| `enabledModels` | 尚无专用 UI | — |
+| `enabledModels` | 对话页有序模型范围列表，全局/项目可编辑 | 已实现；验证与原生验收限制见[模型范围](model-scope.md) |
 | `defaultTools` | 尚无专用 UI | — |
 | `doubleEscapeAction` | 终端/交互专用 | — |
 | `treeFilterMode` | 终端/交互专用 | — |
@@ -100,15 +100,9 @@ Pi `settings.schema.json` 有 **58 个顶层键**，其中嵌套对象算一个�
 | 环境变量／启动参数 | Pi 可执行路径已有配置 | 没有通用环境变量/CLI 编辑器；需逐项区分路径、代理、遥测、认证和运行覆盖 |
 | 扩展自有文件与 settings 未知键 | 保存时保留未知内容 | 无统一字段全集；需按扩展及版本独立盘点，不能把某扩展的设置当作 Pi 核心契约 |
 
-## 剩余工作与推荐
+## 剩余工作
 
-三项工作保持独立，不把完成项目 D1/D2/D3 视为整个 Pi 设置完成：
-
-- **项目 `.pi/` 管理**：当前实现见[项目索引](../project-pi-files/README.md)。剩余资源路径数组编辑、启停/过滤写入、delta 编辑、扩展/主题编辑深度；项目包更新待验证仅项目更新契约。
-- **其他全局 Pi 设置**：Provider/API Key/OAuth、自定义模型、模型范围及按模型覆盖、工具、Shell/npm、缓存预热、高级网络、Provider 重试和遥测等尚未接入完整 UI。
-- **MCP**：全局/项目服务配置与认证均未接入；保存与连接、内置/替代扩展识别、写入竞争等契约仍需独立设计。
-
-推荐先依据使用需求选择资源过滤或供应商/认证等下一批能力；这不是后续实施授权。AGENTS/祖先目录指令、全局信任记录管理不属于用户定义的项目 `.pi/` 工作；终端专用 UI 设置不直接照搬。
+#2 以[第二批：模型范围](model-scope.md)收尾；其余缺口已拆为独立 Issue：项目资源编辑 [#47](https://github.com/suxiaoshao/gupi/issues/47)、供应商/模型/认证 [#48](https://github.com/suxiaoshao/gupi/issues/48)、工具与环境 [#49](https://github.com/suxiaoshao/gupi/issues/49)、按模型覆盖与高级运行 [#50](https://github.com/suxiaoshao/gupi/issues/50)、MCP [#51](https://github.com/suxiaoshao/gupi/issues/51)、项目包更新调研 [#52](https://github.com/suxiaoshao/gupi/issues/52)。AGENTS/祖先目录指令、全局信任记录管理与终端专用设置不在这些 Issue 内。
 
 ## 依据与验证范围
 

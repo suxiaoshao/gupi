@@ -46,6 +46,30 @@ fn links_leaving_the_project_are_not_owned() {
 }
 
 #[test]
+fn project_ownership_uses_the_filesystems_directory_spelling() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().join("project");
+    write(&cwd.join(".PI/prompts/a.md"), "a");
+    // Exercise case-insensitive volumes without changing case-sensitive ones'
+    // semantics: `.PI` is not the project's `.pi` on those volumes.
+    if cwd.join(".pi").exists() {
+        assert!(project_owns(&cwd, &cwd.join(".pi/prompts/a.md")));
+        assert!(project_owns(&cwd, &cwd.join(".PI/prompts/a.md")));
+        assert!(project_owns(&cwd, &cwd.join(".pi/prompts/new.md")));
+        let catalog = scan_project(&cwd).unwrap();
+        let resource = catalog
+            .resources
+            .iter()
+            .find(|r| r.kind == Kind::Prompt)
+            .unwrap();
+        assert!(resource.is_project_owned());
+        assert!(resource.editable);
+    } else {
+        assert!(!project_owns(&cwd, &cwd.join(".PI/prompts/a.md")));
+    }
+}
+
+#[test]
 fn project_scan_reports_missing_and_invalid_folders() {
     let dir = tempfile::tempdir().unwrap();
     assert!(scan_project(&dir.path().join("gone")).is_err());

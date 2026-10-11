@@ -356,6 +356,13 @@ pub fn project_root(cwd: &Path) -> PathBuf {
 /// ancestor. A `.pi` that is itself a link elsewhere owns nothing.
 pub fn project_owns(cwd: &Path, path: &Path) -> bool {
     let root = project_root(cwd);
+    // Keep linked configuration directories read-only in the resource editor.
+    // Resolve ordinary directories like Pi does, so the root and resource use
+    // the filesystem's spelling (for example `.PI` on Windows).
+    if std::fs::symlink_metadata(&root).is_ok_and(|meta| meta.file_type().is_symlink()) {
+        return false;
+    }
+    let root = crate::pi_settings::trust::canonical(&root);
     let mut existing = path;
     let mut missing = Vec::new();
     loop {

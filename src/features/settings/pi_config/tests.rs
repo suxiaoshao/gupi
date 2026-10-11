@@ -575,7 +575,8 @@ fn model_scope_row_actions_follow_the_row(cx: &mut TestAppContext) {
     let path = agent.path().join("settings.json");
     fs::write(&path, r#"{"enabledModels":["p/a","p/b","p/c"]}"#).unwrap();
     let (config, cx) = setup(cx, agent.path());
-    let a = config.update(cx, |this, _| this.model_scope_ids(3)[0]);
+    let rows = ["p/a", "p/b", "p/c"].map(String::from);
+    let a = config.update(cx, |this, _| this.model_scope_ids(&rows)[0]);
     for _ in 0..2 {
         config.update(cx, |this, cx| {
             this.edit_model_row(a, |rows, index| rows.swap(index, index + 1), cx)
@@ -586,4 +587,23 @@ fn model_scope_row_actions_follow_the_row(cx: &mut TestAppContext) {
     });
     save(&config, Page::Conversation, cx);
     assert_eq!(read(&path)["enabledModels"], json!(["p/b", "p/c", "p/x"]));
+}
+
+#[gpui_kit::test]
+fn reverting_a_reorder_gives_rows_new_identities(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    fs::write(
+        agent.path().join("settings.json"),
+        r#"{"enabledModels":["p/a","p/b"]}"#,
+    )
+    .unwrap();
+    let (config, cx) = setup(cx, agent.path());
+    let rows = ["p/a", "p/b"].map(String::from);
+    let before = config.update(cx, |this, _| this.model_scope_ids(&rows));
+    config.update(cx, |this, cx| {
+        this.edit_model_row(before[0], |rows, index| rows.swap(index, index + 1), cx);
+        this.discard(None, cx);
+    });
+    let after = config.update(cx, |this, _| this.model_scope_ids(&rows));
+    assert!(after.iter().all(|id| !before.contains(id)));
 }

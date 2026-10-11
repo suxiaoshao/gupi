@@ -67,7 +67,7 @@
 
 - `pi_config/model_scope.rs` 实现有序模式列表，复用 `PiConfig` 的作用域、草稿、字段菜单和按页保存；模型选择器复用默认模型查询结果，没有新增 Pi 查询进程。
 - `fields.rs` 添加 `enabledModels` 单叶字段；九种语言同步模型范围与默认模型说明。
-- `cargo test -p gupi --locked`：80 个测试通过。新增数组读写、项目空数组/继承、异常类型、空白行、未知字段保留和冲突测试；补充带模式列表的 480/1200px 渲染检查；行的输入框与上移/下移/删除按钮以稳定行标识为键，操作按行当前位置执行。这是自动化渲染检查，不代表原生视觉验收。
+- `cargo test -p gupi --locked`：81 个测试通过。新增数组读写、项目空数组/继承、异常类型、空白行、未知字段保留和冲突测试；补充带模式列表的 480/1200px 渲染检查；行的输入框与上移/下移/删除按钮以稳定行标识为键，操作按行当前位置执行；显示的列表在编辑器之外改变（放弃、撤销、重读、外部修改）时重新分配全部行标识。页面草稿未使用 gpui-form，行标识为临时手写实现，迁移见 [#54](https://github.com/suxiaoshao/gupi/issues/54)。这是自动化渲染检查，不代表原生视觉验收。
 - `cargo build -p gupi --locked`、Clippy（`-D warnings`）、格式检查通过。
 - 已安装 Pi 1.1.0 使用隔离的 agent/project/HOME、自定义离线模型进行 RPC `get_state` 实测，没有发送模型请求：默认模型不在范围时选 beta/high；默认模型在第二项时仍选 alpha/medium；项目 `[]` 恢复 alpha/low；加载含一条消息的会话文件并按 Gupi 重连参数传入 alpha/low 后，仍为 alpha/low。
 - 原生界面：当前构建已通过 `script/gupi-ui-gallery --no-build --keep` 启动。Computer Use 绑定测试 app 时两次失败，报 `Sky Computer Use native pipe startup failed`（含重置后重试）。未完成实际添加/编辑/排序/删除、离开保护、窄宽度和中英文视觉检查，不能记为通过。
@@ -84,5 +84,6 @@
 | [#50](https://github.com/suxiaoshao/gupi/issues/50) | 按模型覆盖（含 `modelThinkingLevels`）与高级运行/网络参数 |
 | [#51](https://github.com/suxiaoshao/gupi/issues/51) | MCP 全局与项目配置、认证 |
 | [#52](https://github.com/suxiaoshao/gupi/issues/52) | 仅更新项目包的契约调研 |
+| [#54](https://github.com/suxiaoshao/gupi/issues/54) | Pi 配置页迁移到 gpui-form；#47、#50 在其后开始 |
 
 扩展/主题代码编辑不单独立项，所需深度另行讨论。Pi 终端主题、终端快捷键与其他终端专用字段不复制到 Gupi。

@@ -40,13 +40,17 @@ impl PiConfig {
         rows(files.resolve(Field::ModelScope, draft).values[0].as_ref())
     }
 
-    /// Row identities for `len` shown patterns. Reset when the list changed
-    /// outside the editor, such as a reload or a discarded draft.
-    pub(super) fn model_scope_ids(&mut self, len: usize) -> Vec<u64> {
-        if self.scope_rows.len() != len {
-            self.scope_rows = (0..len).map(|_| self.next_model_scope_id()).collect();
+    /// Row identities for the shown patterns. Any change made outside the
+    /// editor, such as a reload or a discarded draft, assigns new identities so
+    /// retained row state never pairs with another pattern.
+    pub(super) fn model_scope_ids(&mut self, rows: &[String]) -> Vec<u64> {
+        if !self.scope_rows.iter().map(|(_, text)| text).eq(rows) {
+            self.scope_rows = rows
+                .iter()
+                .map(|text| (self.next_model_scope_id(), text.clone()))
+                .collect();
         }
-        self.scope_rows.clone()
+        self.scope_rows.iter().map(|(id, _)| *id).collect()
     }
 
     fn next_model_scope_id(&mut self) -> u64 {
@@ -67,11 +71,11 @@ impl PiConfig {
         let Some(rows) = self.model_scope_rows() else {
             return;
         };
-        let ids = self.model_scope_ids(rows.len());
+        let ids = self.model_scope_ids(&rows);
         let mut pairs: Vec<_> = ids.into_iter().zip(rows).collect();
         change(&mut pairs, &mut self.next_scope_row);
-        let (ids, rows) = pairs.into_iter().unzip();
-        self.scope_rows = ids;
+        let rows = pairs.iter().map(|(_, text)| text.clone()).collect();
+        self.scope_rows = pairs;
         self.set_draft(
             Field::ModelScope,
             edit(rows, matches!(self.scope, Scope::Project(_))),
@@ -186,7 +190,7 @@ impl PiConfig {
                     .text_color(cx.theme().muted_foreground)
                     .child(t(cx, "pi-model-scope-help")),
             );
-        let ids = self.model_scope_ids(count);
+        let ids = self.model_scope_ids(&rows);
         for (index, (row, text)) in ids.into_iter().zip(&rows).enumerate() {
             let entity = cx.entity().downgrade();
             let id = format!("pi-model-pattern-{}-{row}", self.generation);

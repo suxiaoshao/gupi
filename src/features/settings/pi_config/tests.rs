@@ -293,7 +293,7 @@ fn both_pages_render_fields_in_each_scope(cx: &mut TestAppContext) {
     let project = tempfile::tempdir().unwrap();
     fs::write(
         agent.path().join("settings.json"),
-        r#"{"defaultProvider":"p","defaultModel":"m","defaultThinkingLevel":"xhigh","httpProxy":"http://p"}"#,
+        r#"{"defaultProvider":"p","defaultModel":"m","defaultThinkingLevel":"xhigh","httpProxy":"http://p","enabledModels":["p/m","*sonnet*:high"]}"#,
     )
     .unwrap();
     let (config, _) = setup(cx, agent.path());
@@ -325,6 +325,28 @@ fn both_pages_render_fields_in_each_scope(cx: &mut TestAppContext) {
                 window.run_until_parked();
             }
         }
+        host.update(window, |host, cx| {
+            host.1 = Page::Conversation;
+            cx.notify();
+        });
+        config.update(window, |this, cx| {
+            this.edit_model_scope(|rows| rows.reverse(), cx);
+        });
+        window.run_until_parked();
+        config.update(window, |this, cx| {
+            assert_eq!(
+                this.drafts.get(&Field::ModelScope),
+                Some(&Edit::Set(vec![json!(["*sonnet*:high", "p/m"])]))
+            );
+            this.discard(None, cx);
+        });
+        window.run_until_parked();
+        config.update(window, |this, _| {
+            assert!(
+                this.drafts.is_empty(),
+                "input synchronization must not pin inherited values"
+            );
+        });
     }
     config.update(cx, |this, _| {
         assert!(matches!(this.files, Load::Ready(_)));
@@ -471,4 +493,117 @@ fn leaving_and_reloading_during_save_wait_for_the_result(cx: &mut TestAppContext
             );
         }
     }
+}
+
+#[gpui_kit::test]
+fn model_scope_round_trips_and_preserves_scope_and_conflict_rules(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let path = agent.path().join("settings.json");
+    fs::write(
+        &path,
+        r#"{"enabledModels":["p/a"],"unknown":{"keep":true}}"#,
+    )
+    .unwrap();
+    let (config, cx) = setup(cx, agent.path());
+    config.update(cx, |this, cx| {
+        this.edit_model_scope(|rows| rows.push(" p/*:high ".into()), cx)
+    });
+    save(&config, Page::Conversation, cx);
+    assert_eq!(read(&path)["enabledModels"], json!(["p/a", " p/*:high "]));
+    assert_eq!(read(&path)["unknown"], json!({"keep":true}));
+    config.update(cx, |this, cx| {
+        this.edit_model_scope(|rows| rows.push(" ".into()), cx)
+    });
+    save(&config, Page::Conversation, cx);
+    assert_eq!(read(&path)["enabledModels"], json!(["p/a", " p/*:high "]));
+    config.update(cx, |this, cx| this.discard(None, cx));
+    config.update(cx, |this, cx| {
+        this.set_scope(Scope::Project(project.path().to_owned()), cx)
+    });
+    cx.run_until_parked();
+    config.update(cx, |this, cx| this.edit_model_scope(Vec::clear, cx));
+    save(&config, Page::Conversation, cx);
+    assert_eq!(
+        read(&project.path().join(".pi/settings.json"))["enabledModels"],
+        json!([])
+    );
+    config.update(cx, |this, cx| {
+        this.set_draft(Field::ModelScope, Edit::Remove, cx)
+    });
+    save(&config, Page::Conversation, cx);
+    assert!(
+        read(&project.path().join(".pi/settings.json"))
+            .get("enabledModels")
+            .is_none()
+    );
+    config.update(cx, |this, cx| this.set_scope(Scope::Global, cx));
+    cx.run_until_parked();
+    config.update(cx, |this, cx| {
+        this.edit_model_scope(|rows| rows.push("p/b".into()), cx)
+    });
+    fs::write(&path, r#"{"enabledModels":["external"]}"#).unwrap();
+    save(&config, Page::Conversation, cx);
+    assert_eq!(read(&path)["enabledModels"], json!(["external"]));
+    assert!(config.read_with(cx, |this, _| this.conflicts.contains(&Field::ModelScope)));
+    config.update(cx, |this, cx| {
+        this.discard(None, cx);
+        this.reload(cx);
+    });
+    cx.run_until_parked();
+    config.update(cx, |this, cx| this.edit_model_scope(Vec::clear, cx));
+    save(&config, Page::Conversation, cx);
+    assert!(read(&path).get("enabledModels").is_none());
+}
+
+#[gpui_kit::test]
+fn malformed_model_scope_is_not_overwritten(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let path = agent.path().join("settings.json");
+    fs::write(&path, r#"{"enabledModels":[4]}"#).unwrap();
+    let (config, cx) = setup(cx, agent.path());
+    config.update(cx, |this, cx| {
+        this.edit_model_scope(|rows| rows.push("p/a".into()), cx)
+    });
+    assert!(!config.read_with(cx, |this, _| this.has_unsaved()));
+    assert_eq!(read(&path)["enabledModels"], json!([4]));
+}
+
+#[gpui_kit::test]
+fn model_scope_row_actions_follow_the_row(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let path = agent.path().join("settings.json");
+    fs::write(&path, r#"{"enabledModels":["p/a","p/b","p/c"]}"#).unwrap();
+    let (config, cx) = setup(cx, agent.path());
+    let rows = ["p/a", "p/b", "p/c"].map(String::from);
+    let a = config.update(cx, |this, _| this.model_scope_ids(&rows)[0]);
+    for _ in 0..2 {
+        config.update(cx, |this, cx| {
+            this.edit_model_row(a, |rows, index| rows.swap(index, index + 1), cx)
+        });
+    }
+    config.update(cx, |this, cx| {
+        this.edit_model_row(a, |rows, index| rows[index].1 = "p/x".into(), cx)
+    });
+    save(&config, Page::Conversation, cx);
+    assert_eq!(read(&path)["enabledModels"], json!(["p/b", "p/c", "p/x"]));
+}
+
+#[gpui_kit::test]
+fn reverting_a_reorder_gives_rows_new_identities(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    fs::write(
+        agent.path().join("settings.json"),
+        r#"{"enabledModels":["p/a","p/b"]}"#,
+    )
+    .unwrap();
+    let (config, cx) = setup(cx, agent.path());
+    let rows = ["p/a", "p/b"].map(String::from);
+    let before = config.update(cx, |this, _| this.model_scope_ids(&rows));
+    config.update(cx, |this, cx| {
+        this.edit_model_row(before[0], |rows, index| rows.swap(index, index + 1), cx);
+        this.discard(None, cx);
+    });
+    let after = config.update(cx, |this, _| this.model_scope_ids(&rows));
+    assert!(after.iter().all(|id| !before.contains(id)));
 }

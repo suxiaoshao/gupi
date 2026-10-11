@@ -16,6 +16,7 @@ pub(in super::super) enum Page {
 pub(super) enum Field {
     Model,
     Thinking,
+    ModelScope,
     Compaction,
     ReserveTokens,
     KeepRecentTokens,
@@ -34,6 +35,7 @@ pub(super) enum Field {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Kind {
     Model,
+    ModelScope,
     Choice(&'static [&'static str]),
     Bool,
     /// A non-negative integer.
@@ -47,9 +49,10 @@ pub(super) const THINKING_LEVELS: &[&str] =
 pub(super) const DELIVERY: &[&str] = &["one-at-a-time", "all"];
 
 impl Field {
-    pub(super) const ALL: [Self; 14] = [
+    pub(super) const ALL: [Self; 15] = [
         Self::Model,
         Self::Thinking,
+        Self::ModelScope,
         Self::Compaction,
         Self::ReserveTokens,
         Self::KeepRecentTokens,
@@ -69,6 +72,7 @@ impl Field {
         match self {
             Self::Model => &[&["defaultProvider"], &["defaultModel"]],
             Self::Thinking => &[&["defaultThinkingLevel"]],
+            Self::ModelScope => &[&["enabledModels"]],
             Self::Compaction => &[&["compaction", "enabled"]],
             Self::ReserveTokens => &[&["compaction", "reserveTokens"]],
             Self::KeepRecentTokens => &[&["compaction", "keepRecentTokens"]],
@@ -96,6 +100,7 @@ impl Field {
     pub(super) fn kind(self) -> Kind {
         match self {
             Self::Model => Kind::Model,
+            Self::ModelScope => Kind::ModelScope,
             Self::Thinking => Kind::Choice(THINKING_LEVELS),
             Self::Steering | Self::FollowUp => Kind::Choice(DELIVERY),
             Self::Compaction | Self::AutoResize | Self::BlockImages | Self::Retry => Kind::Bool,
@@ -116,7 +121,7 @@ impl Field {
     /// Pi 1.1.0 defaults, per leaf. `None` means unset (automatic).
     fn default(self) -> Option<Value> {
         Some(match self {
-            Self::Model | Self::Proxy => return None,
+            Self::Model | Self::Proxy | Self::ModelScope => return None,
             Self::Thinking => json!("medium"),
             Self::Compaction | Self::AutoResize | Self::Retry => json!(true),
             Self::BlockImages => json!(false),

@@ -1,6 +1,6 @@
 # Pi 设置与项目级覆盖
 
-为 [Gupi #2](https://github.com/suxiaoshao/gupi/issues/2) 整理的上游配置契约与实施设计。用户已确认首批推荐范围、按页保存、手动重连及明确的“信任项目…”操作，指定设计师开发。当前开发以 [首批实施方案](implementation.md) 为准；研究中的高级字段和备选不属于本期授权范围。
+为 [Gupi #2](https://github.com/suxiaoshao/gupi/issues/2) 整理的上游配置契约与实施设计。用户已确认首批推荐范围、按页保存、手动重连及明确的“信任项目…”操作，指定设计师开发。首批以 [首批实施方案](implementation.md) 为准，#2 收尾的第二批以 [模型范围](model-scope.md) 为准；研究中的高级字段和备选不属于本期授权范围。
 
 ## 文档导航
 
@@ -9,7 +9,7 @@
 - [设置清单](settings.md)：字段、类型、默认值、终端专用选项与内部字段。
 - [配置覆盖与缺口统计](coverage.md)：58 个 Schema 顶层键的逐项覆盖、独立文件与资源缺口、后续建议及待确定问题。
 - [MCP 配置盘点](mcp-configuration.md)：内置 MCP 配置字段、覆盖/认证规则、现有缺口及接入待调研项。
-- [下一批讨论与推荐](next-slice.md)：MCP、项目配置、其他全局 Pi 配置三项独立工作的边界与优先级讨论（Draft）。
+- [第二批：模型范围](model-scope.md)：#2 最后一批 `enabledModels` 的契约、界面、验证，以及拆出的后续 Issue（#47–#52）。
 - [项目 `.pi/` 文件管理开发方案](../project-pi-files/README.md)：已选定的共用设置页方向及项目文件管理分期，按交互和数据规则拆分。
 - [接入限制与待确定问题](integration.md)：RPC 能力、持久化与运行时生效边界、推荐方案。
 - [设置页面与导航讨论](information-architecture.md)：Gupi / Pi 分区方案的比较与已采用的决定。

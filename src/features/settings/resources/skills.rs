@@ -15,6 +15,7 @@ impl ResourcesView {
     }
 
     fn skills_in(&self, controller: &Entity<ResourceController>, cx: &App) -> Vec<Resource> {
+        let row = self.row(controller == &self.controller);
         let query = self.search.read(cx).value().trim().to_lowercase();
         controller
             .read(cx)
@@ -29,7 +30,7 @@ impl ResourcesView {
                     resource.name,
                     resource.description,
                     resource.path.display(),
-                    self.resource_source(resource, cx)
+                    self.resource_source(resource, row, cx)
                 )
                 .to_lowercase()
                 .contains(&query)
@@ -42,6 +43,7 @@ impl ResourcesView {
     /// read-only beneath a project's own.
     pub(crate) fn skill_items(owner: &Entity<Self>, inherited: bool, cx: &App) -> Vec<SettingItem> {
         let view = owner.read(cx);
+        let row = view.row(inherited);
         let resources = if inherited {
             view.skills_in(&view.controller, cx)
         } else {
@@ -59,7 +61,7 @@ impl ResourcesView {
                 ];
                 SettingItem::render(move |_, _, cx| {
                     owner
-                        .update(cx, |this, cx| this.render_skill(&resource, cx))
+                        .update(cx, |this, cx| this.render_skill(&resource, row, cx))
                         .unwrap_or_else(|_| div().into_any_element())
                 })
                 .keywords(keywords)
@@ -67,12 +69,11 @@ impl ResourcesView {
             .collect()
     }
 
-    fn render_skill(&self, resource: &Resource, cx: &Context<Self>) -> AnyElement {
+    fn render_skill(&self, resource: &Resource, row: Row, cx: &Context<Self>) -> AnyElement {
         let busy = self.busy(cx);
-        let row = self.row(resource, cx);
-        let relation = self.relation(resource, cx);
+        let relation = self.relation(resource, row, cx);
         let path = resource.path.clone();
-        let key = self.preview_key(resource, cx);
+        let key = self.preview_key(resource, row, cx);
         let id = std::sync::Arc::new(key.element_id());
         let preview = self.previews.get(&key);
         let expanded = preview.is_some();
@@ -112,7 +113,10 @@ impl ResourcesView {
                     .tooltip(t(cx, "settings-resource-actions"))
                     .accessibility_label(t(cx, "settings-resource-actions"))
                     .debug_selector(|| "skill-actions".into())
-                    .dropdown_menu_with_anchor(Anchor::TopRight, self.resource_menu(resource, cx)),
+                    .dropdown_menu_with_anchor(
+                        Anchor::TopRight,
+                        self.resource_menu(resource, row, cx),
+                    ),
             );
 
         let mut card = Collapsible::new()
@@ -129,7 +133,7 @@ impl ResourcesView {
                             .truncate()
                             .child(resource.name.clone()),
                     )
-                    .child(self.render_source(resource, cx))
+                    .child(self.render_source(resource, row, cx))
                     .when(row != Row::Global && !resource.enabled, |header| {
                         header.child(
                             Tag::secondary()
@@ -214,13 +218,14 @@ impl ResourcesView {
                     .content_style(StyleRefinement::default().p_3().bg(cx.theme().background))
                     .child(card),
             )
-            .context_menu(self.resource_menu(resource, cx))
+            .context_menu(self.resource_menu(resource, row, cx))
             .into_any_element()
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::Row;
     use super::preview_body;
     use crate::features::settings::AppConfig;
     use crate::features::settings::AppLanguage;
@@ -312,13 +317,17 @@ mod tests {
         resources.read_with(cx, |view, _| assert!(!view.in_project_scope()));
     }
     #[gpui_kit::test]
-    async fn duplicate_file_previews_are_independent_per_catalog(cx: &mut TestAppContext) {
+    async fn identical_package_resources_keep_catalog_previews_and_navigation_separate(
+        cx: &mut TestAppContext,
+    ) {
         // The project scan runs on a blocking thread outside the test executor.
         cx.executor().allow_parking();
         let agent = tempfile::tempdir().unwrap();
         let project = tempfile::tempdir().unwrap();
-        let skill = agent.path().join("skills/review/SKILL.md");
-        let prompt = agent.path().join("prompts/review.md");
+        let package = tempfile::tempdir().unwrap();
+        let source = package.path().to_string_lossy().into_owned();
+        let skill = package.path().join("skills/review/SKILL.md");
+        let prompt = package.path().join("prompts/review.md");
         std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
         std::fs::create_dir_all(prompt.parent().unwrap()).unwrap();
         std::fs::write(
@@ -330,10 +339,15 @@ mod tests {
         std::fs::create_dir_all(project.path().join(".pi")).unwrap();
         std::fs::write(
             project.path().join(".pi/settings.json"),
-            serde_json::to_vec(&serde_json::json!({"skills": [skill], "prompts": [prompt]}))
-                .unwrap(),
+            serde_json::to_vec(&serde_json::json!({"packages": [source]})).unwrap(),
         )
         .unwrap();
+        std::fs::write(
+            agent.path().join("settings.json"),
+            serde_json::to_vec(&serde_json::json!({"packages": [source]})).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(package.path().join("package.json"), "{}").unwrap();
         cx.update(|cx| {
             gpui_kit::init(cx);
             gpui_tokio::init(cx);
@@ -387,8 +401,13 @@ mod tests {
                     .iter()
                     .find(|r| r.path == own.path)
                     .unwrap();
-                let own_key = view.preview_key(own, cx);
-                let inherited_key = view.preview_key(inherited, cx);
+                assert_eq!(
+                    own, inherited,
+                    "the same local package yields identical values"
+                );
+                assert_ne!(view.owner_of(Row::Own), view.owner_of(Row::Inherited));
+                let own_key = view.preview_key(own, Row::Own, cx);
+                let inherited_key = view.preview_key(inherited, Row::Inherited, cx);
                 assert_ne!(own_key, inherited_key);
                 assert_ne!(own_key.element_id(), inherited_key.element_id());
                 view.toggle_preview(own_key.clone(), cx);
@@ -399,6 +418,14 @@ mod tests {
                 assert!(!view.previews.contains_key(&own_key));
                 assert!(view.previews.contains_key(&inherited_key));
                 view.toggle_preview(inherited_key, cx);
+                view.expanded_packages.clear();
+                view.reveal_package(source.clone(), Row::Inherited, cx);
+                assert!(view.expanded_packages.contains(&format!("true:{source}")));
+                assert!(!view.expanded_packages.contains(&format!("false:{source}")));
+                view.expanded_packages.clear();
+                view.reveal_package(source.clone(), Row::Own, cx);
+                assert!(view.expanded_packages.contains(&format!("false:{source}")));
+                assert!(!view.expanded_packages.contains(&format!("true:{source}")));
             }
         });
     }

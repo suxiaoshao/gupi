@@ -17,6 +17,7 @@ impl ResourcesView {
     }
 
     fn prompts_in(&self, controller: &Entity<ResourceController>, cx: &App) -> Vec<Resource> {
+        let row = self.row(controller == &self.controller);
         let query = self.prompt_search.read(cx).value().trim().to_lowercase();
         controller
             .read(cx)
@@ -30,7 +31,7 @@ impl ResourcesView {
                     "/{} {} {}",
                     resource.name,
                     resource.description,
-                    self.resource_source(resource, cx)
+                    self.resource_source(resource, row, cx)
                 )
                 .to_lowercase()
                 .contains(&query)
@@ -47,6 +48,7 @@ impl ResourcesView {
         cx: &App,
     ) -> Vec<SettingItem> {
         let view = owner.read(cx);
+        let row = view.row(inherited);
         let resources = if inherited {
             view.prompts_in(&view.controller, cx)
         } else {
@@ -63,7 +65,7 @@ impl ResourcesView {
                 ];
                 SettingItem::render(move |_, _, cx| {
                     owner
-                        .update(cx, |this, cx| this.render_prompt(&resource, cx))
+                        .update(cx, |this, cx| this.render_prompt(&resource, row, cx))
                         .unwrap_or_else(|_| div().into_any_element())
                 })
                 .keywords(keywords)
@@ -259,11 +261,10 @@ impl ResourcesView {
         });
     }
 
-    fn render_prompt(&self, resource: &Resource, cx: &Context<Self>) -> AnyElement {
+    fn render_prompt(&self, resource: &Resource, row: Row, cx: &Context<Self>) -> AnyElement {
         let busy = self.busy(cx);
-        let row = self.row(resource, cx);
-        let relation = self.relation(resource, cx);
-        let key = self.preview_key(resource, cx);
+        let relation = self.relation(resource, row, cx);
+        let key = self.preview_key(resource, row, cx);
         let id = |part: &'static str| {
             ElementId::NamedChild(std::sync::Arc::new(key.element_id()), part.into())
         };
@@ -315,9 +316,12 @@ impl ResourcesView {
                     .tooltip(t(cx, "settings-resource-actions"))
                     .accessibility_label(t(cx, "settings-resource-actions"))
                     .debug_selector(|| "template-actions-menu".into())
-                    .dropdown_menu_with_anchor(Anchor::TopRight, self.resource_menu(resource, cx)),
+                    .dropdown_menu_with_anchor(
+                        Anchor::TopRight,
+                        self.resource_menu(resource, row, cx),
+                    ),
             );
-        let source = self.resource_source(resource, cx);
+        let source = self.resource_source(resource, row, cx);
         let path_help = resource.path.display().to_string();
         let mut card = Collapsible::new()
             .open(expanded)
@@ -358,7 +362,7 @@ impl ResourcesView {
                 h_flex()
                     .gap_2()
                     .child(if resource.package.is_some() {
-                        self.render_source(resource, cx)
+                        self.render_source(resource, row, cx)
                     } else {
                         Tag::secondary()
                             .small()
@@ -433,7 +437,7 @@ impl ResourcesView {
                     .content_style(StyleRefinement::default().p_3().bg(cx.theme().background))
                     .child(card),
             )
-            .context_menu(self.resource_menu(resource, cx))
+            .context_menu(self.resource_menu(resource, row, cx))
             .into_any_element()
     }
 }

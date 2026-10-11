@@ -219,7 +219,7 @@ impl ResourcesView {
         for package in &catalog.packages {
             view = view.child(self.render_package(package, catalog, busy, false, cx));
         }
-        view = view.child(self.render_independent_resources(catalog, busy, cx));
+        view = view.child(self.render_independent_resources(catalog, self.row(false), busy, cx));
         if self.in_project_scope()
             && let Some(global) = self.controller.read(cx).catalog().data()
         {
@@ -234,7 +234,7 @@ impl ResourcesView {
             for package in &global.packages {
                 view = view.child(self.render_package(package, global, busy, true, cx));
             }
-            view = view.child(self.render_independent_resources(global, busy, cx));
+            view = view.child(self.render_independent_resources(global, Row::Inherited, busy, cx));
         }
 
         // Content mounts use the Settings page scroller; bounded mounts own scrolling.
@@ -502,7 +502,14 @@ impl ResourcesView {
                                 .child(t(cx, label)),
                         )
                         .children(resources.into_iter().map(|resource| {
-                            self.render_package_resource(resource, icon, false, busy, cx)
+                            self.render_package_resource(
+                                resource,
+                                self.row(inherited),
+                                icon,
+                                false,
+                                busy,
+                                cx,
+                            )
                         })),
                 );
             }
@@ -518,6 +525,7 @@ impl ResourcesView {
     fn render_independent_resources(
         &self,
         catalog: &io::Catalog,
+        row: Row,
         busy: bool,
         cx: &Context<Self>,
     ) -> AnyElement {
@@ -530,13 +538,7 @@ impl ResourcesView {
             ),
             (Kind::Theme, IconName::Palette, "settings-theme-heading"),
         ] {
-            if kind == Kind::Theme
-                && !self
-                    .project
-                    .as_ref()
-                    .and_then(|c| c.read(cx).catalog().data())
-                    .is_some_and(|active| active.root == catalog.root)
-            {
+            if kind == Kind::Theme && row != Row::Own {
                 continue;
             }
             let resources: Vec<_> = catalog
@@ -559,7 +561,7 @@ impl ResourcesView {
                     GroupBox::new()
                         .outline()
                         .content_style(StyleRefinement::default().p_3().bg(cx.theme().background))
-                        .child(self.render_package_resource(resource, icon, true, busy, cx)),
+                        .child(self.render_package_resource(resource, row, icon, true, busy, cx)),
                 );
             }
         }
@@ -569,6 +571,7 @@ impl ResourcesView {
     fn render_package_resource(
         &self,
         resource: &Resource,
+        row: Row,
         icon: IconName,
         independent: bool,
         busy: bool,
@@ -578,7 +581,8 @@ impl ResourcesView {
         let id = |part: &str| {
             ElementId::NamedChild(
                 std::sync::Arc::new(ElementId::from(SharedString::from(format!(
-                    "{}:{}",
+                    "{:?}:{}:{}",
+                    row,
                     resource.base.display(),
                     resource.path.display()
                 )))),
@@ -617,7 +621,7 @@ impl ResourcesView {
                             .gap_1()
                             .flex_wrap()
                             .when(
-                                self.in_project(resource, cx)
+                                row == Row::Own
                                     && self.pi_config.as_ref().and_then(|c| c.read(cx).trusted())
                                         == Some(false),
                                 |row| {
@@ -637,12 +641,12 @@ impl ResourcesView {
                                         .child(t(cx, "settings-resource-disabled")),
                                 )
                             })
-                            .when(self.in_project_scope() && independent, |row| {
-                                row.child(
+                            .when(self.in_project_scope() && independent, |tags| {
+                                tags.child(
                                     Tag::secondary()
                                         .small()
                                         .outline()
-                                        .child(self.resource_source(resource, cx)),
+                                        .child(self.resource_source(resource, row, cx)),
                                 )
                                 .child(
                                     Tag::secondary()

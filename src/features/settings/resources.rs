@@ -64,7 +64,7 @@ struct Open {
 }
 
 /// How a skill or prompt row appears in the current scope.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Row {
     /// Global scope: the full personal resource editor.
     Global,
@@ -151,8 +151,10 @@ impl EventEmitter<Navigate> for ResourcesView {}
 
 impl ResourcesView {
     /// Shows a package on the installed packages page.
-    fn reveal_package(&mut self, source: String, cx: &mut Context<Self>) {
-        self.expanded_packages.insert(format!("false:{source}"));
+    fn reveal_package(&mut self, source: String, row: Row, cx: &mut Context<Self>) {
+        let inherited = row == Row::Inherited;
+        self.expanded_packages
+            .insert(format!("{inherited}:{source}"));
         self.browsing = false;
         cx.emit(Navigate::Package);
         cx.notify();
@@ -162,14 +164,14 @@ impl ResourcesView {
     fn resource_menu(
         &self,
         resource: &Resource,
+        row: Row,
         cx: &Context<Self>,
     ) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
         let owner = cx.entity().downgrade();
         let busy = self.busy(cx);
         let opening = self.open.is_running();
         let resource = resource.clone();
-        let row = self.row(&resource, cx);
-        let files = self.owner_of(&resource, cx);
+        let files = self.owner_of(row);
         let pi_config = self.pi_config.clone();
         let writable = resource.editable && row != Row::Inherited;
         move |menu, _, cx| {
@@ -217,7 +219,7 @@ impl ResourcesView {
                         .icon(IconName::Package)
                         .on_click(move |_, _, cx| {
                             owner
-                                .update(cx, |this, cx| this.reveal_package(source.clone(), cx))
+                                .update(cx, |this, cx| this.reveal_package(source.clone(), row, cx))
                                 .ok();
                         }),
                 );
@@ -259,8 +261,8 @@ impl ResourcesView {
     }
 
     /// The source label: a button to the owning package, otherwise a plain tag.
-    fn render_source(&self, resource: &Resource, cx: &Context<Self>) -> AnyElement {
-        let source = self.resource_source(resource, cx);
+    fn render_source(&self, resource: &Resource, row: Row, cx: &Context<Self>) -> AnyElement {
+        let source = self.resource_source(resource, row, cx);
         let Some(package) = resource.package.clone() else {
             return Tag::secondary()
                 .small()
@@ -269,7 +271,7 @@ impl ResourcesView {
                 .into_any_element();
         };
         let name = self
-            .controller
+            .owner_of(row)
             .read(cx)
             .catalog()
             .data()
@@ -291,12 +293,12 @@ impl ResourcesView {
             &args,
         ))
         .tooltip(source)
-        .on_click(cx.listener(move |this, _, _, cx| this.reveal_package(package.clone(), cx)))
+        .on_click(cx.listener(move |this, _, _, cx| this.reveal_package(package.clone(), row, cx)))
         .into_any_element()
     }
 
-    fn resource_source(&self, resource: &Resource, cx: &App) -> String {
-        if self.row(resource, cx) == Row::Own {
+    fn resource_source(&self, resource: &Resource, row: Row, cx: &App) -> String {
+        if row == Row::Own {
             return t(
                 cx,
                 if resource.is_project_owned() {
@@ -325,8 +327,8 @@ impl ResourcesView {
         })
     }
 
-    fn preview_key(&self, resource: &Resource, cx: &App) -> PreviewKey {
-        let owner = self.owner_of(resource, cx);
+    fn preview_key(&self, resource: &Resource, row: Row, cx: &App) -> PreviewKey {
+        let owner = self.owner_of(row);
         PreviewKey {
             root: owner
                 .read(cx)
@@ -607,37 +609,29 @@ impl ResourcesView {
             || self.config.read(cx).busy(cx)
     }
 
-    fn in_project(&self, resource: &Resource, cx: &App) -> bool {
-        self.project.as_ref().is_some_and(|project| {
-            project
-                .read(cx)
-                .catalog()
-                .data()
-                .is_some_and(|catalog| catalog.resources.iter().any(|r| r == resource))
-        })
-    }
-
-    fn row(&self, resource: &Resource, cx: &App) -> Row {
-        match &self.project {
-            None => Row::Global,
-            Some(_) if self.in_project(resource, cx) => Row::Own,
-            Some(_) => Row::Inherited,
+    /// Provenance comes from the catalog being rendered, never resource equality.
+    fn row(&self, inherited: bool) -> Row {
+        if !self.in_project_scope() {
+            Row::Global
+        } else if inherited {
+            Row::Inherited
+        } else {
+            Row::Own
         }
     }
 
-    /// The controller whose files contain `resource`.
-    fn owner_of(&self, resource: &Resource, cx: &App) -> Entity<ResourceController> {
-        match &self.project {
-            Some(project) if self.in_project(resource, cx) => project.clone(),
-            _ => self.controller.clone(),
+    fn owner_of(&self, row: Row) -> Entity<ResourceController> {
+        if row == Row::Own {
+            self.active().clone()
+        } else {
+            self.controller.clone()
         }
     }
 
     /// The configured same-name relation between project and global entries.
     /// Shown only when Pi would load both: a trusted project, both enabled,
     /// and names Pi can determine. Never a claim about a running session.
-    fn relation(&self, resource: &Resource, cx: &App) -> Option<String> {
-        let row = self.row(resource, cx);
+    fn relation(&self, resource: &Resource, row: Row, cx: &App) -> Option<String> {
         if row == Row::Global {
             return None;
         }
@@ -958,8 +952,7 @@ impl ResourcesView {
                                 return false;
                             }
                             if let Some(resource) = &resource {
-                                let files = this.owner_of(resource, cx);
-                                this.change_in(&files, Change::Delete(resource.clone()), cx);
+                                this.change_in(&target, Change::Delete(resource.clone()), cx);
                             } else {
                                 this.package("remove", source.clone(), cx);
                             }

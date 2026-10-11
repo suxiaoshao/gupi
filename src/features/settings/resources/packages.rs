@@ -84,8 +84,25 @@ impl ResourcesView {
             .into_any_element()
     }
 
+    pub(super) fn package_install_label(&self, cx: &App) -> String {
+        if let Some(project) = &self.project
+            && let Target::Project(cwd) = project.read(cx).target()
+        {
+            let mut args = fluent_bundle::FluentArgs::new();
+            args.set(
+                "folder",
+                cwd.file_name()
+                    .unwrap_or(cwd.as_os_str())
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+            return gupi_settings::i18n::t_with_args(cx, "packages-install-project", &args);
+        }
+        t(cx, "packages-install")
+    }
+
     fn render_installed(&self, mount: Mount, cx: &Context<Self>) -> AnyElement {
-        let controller = self.controller.read(cx);
+        let controller = self.active().read(cx);
         let Some(catalog) = controller.catalog().data() else {
             return div().into_any_element();
         };
@@ -102,6 +119,9 @@ impl ResourcesView {
                 .gap_2()
                 .child(
                     div()
+                        .text_sm()
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(cx.theme().muted_foreground)
                         .debug_selector(|| "package-heading".into())
                         .child(t(cx, "settings-package-heading")),
                 )
@@ -141,7 +161,7 @@ impl ResourcesView {
                         .child(
                             Button::new("package-install")
                                 .primary()
-                                .label(t(cx, "settings-package-install"))
+                                .label(self.package_install_label(cx))
                                 .disabled(
                                     !self.package_available(cx)
                                         || self.source.read(cx).value().trim().is_empty(),
@@ -167,40 +187,57 @@ impl ResourcesView {
                 );
         }
         let mut view = v_flex().gap_3();
-        if catalog.packages.is_empty() {
+        if self.in_project_scope() {
+            view = view.child(
+                div()
+                    .text_sm()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(cx.theme().muted_foreground)
+                    .child(t(cx, "settings-source-project")),
+            );
+        }
+        if catalog.packages.is_empty()
+            && !(self.in_project_scope()
+                && catalog.resources.iter().any(|r| {
+                    r.package.is_none() && matches!(r.kind, Kind::Extension | Kind::Theme)
+                }))
+        {
             view = view.child(
                 div()
                     .text_sm()
                     .text_color(cx.theme().muted_foreground)
-                    .child(t(cx, "settings-package-empty")),
+                    .child(t(
+                        cx,
+                        if self.in_project_scope() {
+                            "settings-project-package-empty"
+                        } else {
+                            "settings-package-empty"
+                        },
+                    )),
             );
         }
         for package in &catalog.packages {
-            view = view.child(self.render_package(package, catalog, busy, cx));
+            view = view.child(self.render_package(package, catalog, busy, false, cx));
         }
-        let independent: Vec<_> = catalog
-            .resources
-            .iter()
-            .filter(|resource| resource.kind == Kind::Extension && resource.package.is_none())
-            .collect();
-        if !independent.is_empty() {
-            view = view.child(div().mt_2().child(t(cx, "settings-extension-heading")));
-            for resource in independent {
-                view = view.child(
-                    GroupBox::new()
-                        .outline()
-                        .content_style(StyleRefinement::default().p_3().bg(cx.theme().background))
-                        .child(self.render_package_resource(
-                            resource,
-                            IconName::Puzzle,
-                            true,
-                            busy,
-                            cx,
-                        )),
-                );
+        view = view.child(self.render_independent_resources(catalog, busy, cx));
+        if self.in_project_scope()
+            && let Some(global) = self.controller.read(cx).catalog().data()
+        {
+            view = view.child(
+                div()
+                    .mt_2()
+                    .text_sm()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(cx.theme().muted_foreground)
+                    .child(t(cx, "settings-resource-group-inherited")),
+            );
+            for package in &global.packages {
+                view = view.child(self.render_package(package, global, busy, true, cx));
             }
+            view = view.child(self.render_independent_resources(global, busy, cx));
         }
-        // The toolbar stays put; the installed list owns its scrolling.
+
+        // Content mounts use the Settings page scroller; bounded mounts own scrolling.
         v_flex()
             .size_full()
             .min_h_0()
@@ -215,17 +252,19 @@ impl ResourcesView {
         package: &io::Package,
         catalog: &io::Catalog,
         busy: bool,
+        inherited: bool,
         cx: &Context<Self>,
     ) -> AnyElement {
         let source = package.source.clone();
-        let expanded = self.expanded_packages.contains(&source);
+        let key = format!("{inherited}:{source}");
+        let expanded = self.expanded_packages.contains(&key);
         let id = |part: &str| {
             ElementId::NamedChild(
-                std::sync::Arc::new(ElementId::from(SharedString::from(source.clone()))),
+                std::sync::Arc::new(ElementId::from(SharedString::from(key.clone()))),
                 part.to_owned().into(),
             )
         };
-        let toggle = source.clone();
+        let toggle = key.clone();
         let reveal = package.path.clone();
         let update = source.clone();
         let remove = source.clone();
@@ -252,7 +291,49 @@ impl ResourcesView {
                         .child(version)
                 })),
         );
-        if !package.path.exists() {
+        if self.in_project_scope() {
+            let other = if inherited {
+                self.active()
+            } else {
+                &self.controller
+            };
+            let related = other.read(cx).catalog().data().and_then(|other| {
+                let identity = io::package_identity(&catalog.root, &source)?;
+                other.packages.iter().find(|p| {
+                    io::package_identity(&other.root, &p.source).as_ref() == Some(&identity)
+                })
+            });
+            let label = if package.is_delta() {
+                "packages-project-delta"
+            } else if inherited && related.is_some_and(|p| p.is_delta()) {
+                "packages-project-filtered"
+            } else if inherited && related.is_some() {
+                "packages-project-replaced"
+            } else if inherited {
+                "settings-resource-group-inherited"
+            } else if related.is_some() {
+                "packages-project-replaces"
+            } else {
+                "settings-source-project"
+            };
+            if !inherited || related.is_some() {
+                heading = heading
+                    .child(h_flex().child(Tag::secondary().small().outline().child(t(cx, label))));
+            }
+            if !inherited
+                && self.pi_config.as_ref().and_then(|c| c.read(cx).trusted()) == Some(false)
+            {
+                heading = heading.child(
+                    h_flex().child(
+                        Tag::secondary()
+                            .small()
+                            .outline()
+                            .child(t(cx, "settings-resource-not-loaded")),
+                    ),
+                );
+            }
+        }
+        if !package.is_delta() && !package.path.exists() {
             heading = heading.child(
                 h_flex().child(
                     Tag::danger()
@@ -305,8 +386,11 @@ impl ResourcesView {
                 cx.notify();
             }));
         let package_disabled = !self.package_available(cx);
+        let mutable = !inherited && !(self.in_project_scope() && package.is_delta());
+        let update_visible = !self.in_project_scope();
+        let pi_config = self.pi_config.clone();
         let pending = self
-            .controller
+            .active()
             .read(cx)
             .mutation()
             .package_running(&source, "update");
@@ -332,35 +416,55 @@ impl ResourcesView {
                             cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()))
                         }),
                 )
-                .separator()
-                .item(
-                    PopupMenuItem::new(t(cx, "settings-package-remove-ellipsis"))
-                        .icon(IconName::Trash)
-                        .disabled(package_disabled)
-                        .on_click(move |_, window, cx| {
-                            owner
-                                .update(cx, |this, cx| {
-                                    this.confirm_remove(None, remove.clone(), window, cx)
-                                })
-                                .ok();
-                        }),
-                )
+                .when(mutable, |menu| {
+                    menu.separator().item(
+                        PopupMenuItem::new(t(cx, "settings-package-remove-ellipsis"))
+                            .icon(IconName::Trash)
+                            .disabled(package_disabled)
+                            .on_click(move |_, window, cx| {
+                                owner
+                                    .update(cx, |this, cx| {
+                                        this.confirm_remove(None, remove.clone(), window, cx)
+                                    })
+                                    .ok();
+                            }),
+                    )
+                })
+                .when(inherited, |menu| {
+                    let pi_config = pi_config.clone();
+                    menu.item(
+                        PopupMenuItem::new(t(cx, "settings-resource-edit-global"))
+                            .icon(IconName::SquarePen)
+                            .on_click(move |_, window, cx| {
+                                if let Some(config) = &pi_config {
+                                    super::super::pi_config::request_scope(
+                                        config,
+                                        Scope::Global,
+                                        window,
+                                        cx,
+                                    );
+                                }
+                            }),
+                    )
+                })
             };
         let mut card = Collapsible::new().open(expanded).gap_3().child(
             h_flex().gap_2().child(heading).child(
                 h_flex()
                     .flex_shrink_0()
                     .gap_1()
-                    .child(
-                        Button::new(id("update"))
-                            .small()
-                            .label(t(cx, "settings-package-update"))
-                            .loading(pending)
-                            .disabled(!self.package_available(cx))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.package("update", update.clone(), cx);
-                            })),
-                    )
+                    .when(update_visible, |row| {
+                        row.child(
+                            Button::new(id("update"))
+                                .small()
+                                .label(t(cx, "settings-package-update"))
+                                .loading(pending)
+                                .disabled(!self.package_available(cx))
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.package("update", update.clone(), cx);
+                                })),
+                        )
+                    })
                     .child(
                         Button::new(id("more"))
                             .ghost()
@@ -411,6 +515,57 @@ impl ResourcesView {
             .into_any_element()
     }
 
+    fn render_independent_resources(
+        &self,
+        catalog: &io::Catalog,
+        busy: bool,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let mut groups = v_flex().gap_3();
+        for (kind, icon, title) in [
+            (
+                Kind::Extension,
+                IconName::Puzzle,
+                "settings-extension-heading",
+            ),
+            (Kind::Theme, IconName::Palette, "settings-theme-heading"),
+        ] {
+            if kind == Kind::Theme
+                && !self
+                    .project
+                    .as_ref()
+                    .and_then(|c| c.read(cx).catalog().data())
+                    .is_some_and(|active| active.root == catalog.root)
+            {
+                continue;
+            }
+            let resources: Vec<_> = catalog
+                .resources
+                .iter()
+                .filter(|r| r.kind == kind && r.package.is_none())
+                .collect();
+            if resources.is_empty() {
+                continue;
+            }
+            groups = groups.child(
+                div()
+                    .mt_2()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(t(cx, title)),
+            );
+            for resource in resources {
+                groups = groups.child(
+                    GroupBox::new()
+                        .outline()
+                        .content_style(StyleRefinement::default().p_3().bg(cx.theme().background))
+                        .child(self.render_package_resource(resource, icon, true, busy, cx)),
+                );
+            }
+        }
+        groups.into_any_element()
+    }
+
     fn render_package_resource(
         &self,
         resource: &Resource,
@@ -422,13 +577,16 @@ impl ResourcesView {
         let path = resource.path.clone();
         let id = |part: &str| {
             ElementId::NamedChild(
-                std::sync::Arc::new(ElementId::from(SharedString::from(
-                    resource.path.to_string_lossy().into_owned(),
-                ))),
+                std::sync::Arc::new(ElementId::from(SharedString::from(format!(
+                    "{}:{}",
+                    resource.base.display(),
+                    resource.path.display()
+                )))),
                 part.to_owned().into(),
             )
         };
         let toggle = resource.clone();
+        let copy_path = path.clone();
         h_flex()
             .gap_2()
             .debug_selector({
@@ -454,6 +612,46 @@ impl ResourcesView {
                                 }
                             }),
                     )
+                    .child(
+                        h_flex()
+                            .gap_1()
+                            .flex_wrap()
+                            .when(
+                                self.in_project(resource, cx)
+                                    && self.pi_config.as_ref().and_then(|c| c.read(cx).trusted())
+                                        == Some(false),
+                                |row| {
+                                    row.child(
+                                        Tag::secondary()
+                                            .small()
+                                            .outline()
+                                            .child(t(cx, "settings-resource-not-loaded")),
+                                    )
+                                },
+                            )
+                            .when(self.in_project_scope() && !resource.enabled, |row| {
+                                row.child(
+                                    Tag::secondary()
+                                        .small()
+                                        .outline()
+                                        .child(t(cx, "settings-resource-disabled")),
+                                )
+                            })
+                            .when(self.in_project_scope() && independent, |row| {
+                                row.child(
+                                    Tag::secondary()
+                                        .small()
+                                        .outline()
+                                        .child(self.resource_source(resource, cx)),
+                                )
+                                .child(
+                                    Tag::secondary()
+                                        .small()
+                                        .outline()
+                                        .child(t(cx, "settings-resource-readonly-badge")),
+                                )
+                            }),
+                    )
                     .when(independent, |row| {
                         row.child(
                             div()
@@ -475,14 +673,31 @@ impl ResourcesView {
                         .on_click(move |_, _, cx| cx.reveal_path(&path)),
                 )
             })
-            .child(
-                Switch::new(id("enabled"))
-                    .checked(resource.enabled)
-                    .disabled(busy)
-                    .on_click(cx.listener(move |this, enabled, _, cx| {
-                        this.change(Change::Toggle(toggle.clone(), *enabled), cx);
-                    })),
-            )
+            .when(self.in_project_scope() && independent, |row| {
+                row.child(
+                    Button::new(id("copy"))
+                        .ghost()
+                        .small()
+                        .icon(IconName::Copy)
+                        .tooltip(t(cx, "files-copy-path"))
+                        .accessibility_label(t(cx, "files-copy-path"))
+                        .on_click(move |_, _, cx| {
+                            cx.write_to_clipboard(ClipboardItem::new_string(
+                                copy_path.display().to_string(),
+                            ))
+                        }),
+                )
+            })
+            .when(!self.in_project_scope(), |row| {
+                row.child(
+                    Switch::new(id("enabled"))
+                        .checked(resource.enabled)
+                        .disabled(busy)
+                        .on_click(cx.listener(move |this, enabled, _, cx| {
+                            this.change(Change::Toggle(toggle.clone(), *enabled), cx);
+                        })),
+                )
+            })
             .into_any_element()
     }
 }

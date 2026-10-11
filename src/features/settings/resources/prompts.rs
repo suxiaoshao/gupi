@@ -13,8 +13,12 @@ use gpui_kit::component::tooltip::Tooltip;
 
 impl ResourcesView {
     pub(super) fn filtered_prompts(&self, cx: &App) -> Vec<Resource> {
+        self.prompts_in(self.active(), cx)
+    }
+
+    fn prompts_in(&self, controller: &Entity<ResourceController>, cx: &App) -> Vec<Resource> {
         let query = self.prompt_search.read(cx).value().trim().to_lowercase();
-        self.controller
+        controller
             .read(cx)
             .catalog()
             .data()
@@ -35,10 +39,20 @@ impl ResourcesView {
             .collect()
     }
 
-    pub(crate) fn prompt_items(owner: &Entity<Self>, cx: &App) -> Vec<SettingItem> {
-        owner
-            .read(cx)
-            .filtered_prompts(cx)
+    /// Rows for the current scope, or with `inherited`, the global rows shown
+    /// read-only beneath a project's own.
+    pub(crate) fn prompt_items(
+        owner: &Entity<Self>,
+        inherited: bool,
+        cx: &App,
+    ) -> Vec<SettingItem> {
+        let view = owner.read(cx);
+        let resources = if inherited {
+            view.prompts_in(&view.controller, cx)
+        } else {
+            view.filtered_prompts(cx)
+        };
+        resources
             .into_iter()
             .map(|resource| {
                 let owner = owner.downgrade();
@@ -97,19 +111,28 @@ impl ResourcesView {
         help: &str,
         cx: &Context<Self>,
     ) -> AnyElement {
-        let controller = self.controller.read(cx);
-        let Some(catalog) = controller.catalog().data() else {
+        let owner = self.active().clone();
+        let Some(catalog) = owner.read(cx).catalog().data() else {
             return div().into_any_element();
         };
-        let busy = controller.busy() || self.config.read(cx).busy(cx) || self.open.is_running();
+        let busy = self.busy(cx) || self.open.is_running();
         let path = catalog.root.join(file);
         let tooltip = path.display().to_string();
+        let project = match owner.read(cx).target() {
+            Target::Project(cwd) => Some(cwd.clone()),
+            Target::Global => None,
+        };
+        // In a project, a missing file means Pi falls back to the global one.
+        // An existing file, even an empty one, replaces it.
+        let present = project.is_some() && path.exists();
         let open = Open {
-            path,
+            path: path.clone(),
             kind: Kind::Prompt,
             editable: true,
             create: false,
+            owner: owner.clone(),
         };
+        let fallback = (project.clone(), path.clone(), owner.clone());
         GroupBox::new()
             .outline()
             .content_style(StyleRefinement::default().p_3().bg(cx.theme().background))
@@ -136,6 +159,31 @@ impl ResourcesView {
                                     .child(t(cx, help)),
                             ),
                     )
+                    .when(project.is_some(), |row| {
+                        row.child(Tag::secondary().small().outline().child(t(
+                            cx,
+                            if present {
+                                "settings-system-project-file"
+                            } else {
+                                "settings-system-uses-global"
+                            },
+                        )))
+                    })
+                    .when(present, |row| {
+                        row.child(
+                            Button::new(SharedString::from(format!("{file}-use-global")))
+                                .small()
+                                .ghost()
+                                .label(t(cx, "settings-system-use-global"))
+                                .disabled(busy)
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    let (Some(cwd), path, owner) = fallback.clone() else {
+                                        return;
+                                    };
+                                    this.confirm_use_global(cwd, path, owner, window, cx)
+                                })),
+                        )
+                    })
                     .child(
                         Button::new(SharedString::from(format!("{file}-edit")))
                             .small()
@@ -144,26 +192,84 @@ impl ResourcesView {
                             .accessibility_label(t(cx, "settings-resource-edit"))
                             .disabled(busy)
                             .on_click(cx.listener(move |this, _, window, cx| {
-                                this.request_open(open.clone(), window, cx)
+                                let mut open = open.clone();
+                                // A link out of the project's `.pi` opens read-only.
+                                if let Some(cwd) = &project {
+                                    open.editable = io::project_owns(cwd, &open.path);
+                                }
+                                this.request_open(open, window, cx)
                             })),
                     ),
             )
             .into_any_element()
     }
 
+    /// Removes the project's SYSTEM or APPEND_SYSTEM file so Pi falls back to
+    /// the global one. Saving an empty file would not.
+    fn confirm_use_global(
+        &mut self,
+        cwd: PathBuf,
+        path: PathBuf,
+        owner: Entity<ResourceController>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        let mut resource = Resource::new(
+            Kind::Prompt,
+            path.clone(),
+            io::project_root(&cwd),
+            name.clone(),
+        );
+        resource.editable = io::project_owns(&cwd, &path);
+        let view = cx.entity().downgrade();
+        window.open_dialog(cx, move |dialog, _, cx| {
+            let view = view.clone();
+            let resource = resource.clone();
+            let owner = owner.clone();
+            let mut args = fluent_bundle::FluentArgs::new();
+            args.set("file", name.clone());
+            dialog
+                .title(gupi_settings::i18n::t_with_args(
+                    cx,
+                    "settings-system-use-global-title",
+                    &args,
+                ))
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(resource.path.display().to_string()),
+                )
+                .child(t(cx, "settings-system-use-global-body"))
+                .on_ok(move |_, _, cx| {
+                    view.update(cx, |this, cx| {
+                        if this.busy(cx) {
+                            return false;
+                        }
+                        this.change_in(&owner, Change::Delete(resource.clone()), cx);
+                        true
+                    })
+                    .unwrap_or(false)
+                })
+        });
+    }
+
     fn render_prompt(&self, resource: &Resource, cx: &Context<Self>) -> AnyElement {
-        let busy = self.controller.read(cx).busy() || self.config.read(cx).busy(cx);
+        let busy = self.busy(cx);
+        let row = self.row(resource, cx);
+        let relation = self.relation(resource, cx);
+        let key = self.preview_key(resource, cx);
         let id = |part: &'static str| {
-            ElementId::NamedChild(
-                std::sync::Arc::new(ElementId::from(SharedString::from(
-                    resource.path.to_string_lossy().into_owned(),
-                ))),
-                part.into(),
-            )
+            ElementId::NamedChild(std::sync::Arc::new(key.element_id()), part.into())
         };
-        let preview = self.previews.get(&resource.path);
+        let preview = self.previews.get(&key);
         let expanded = preview.is_some();
-        let toggle_path = resource.path.clone();
+        let toggle_key = key.clone();
         let toggle = resource.clone();
         let preview_label = t(
             cx,
@@ -187,20 +293,20 @@ impl ResourcesView {
                     .accessibility_label(preview_label)
                     .debug_selector(|| "template-preview-toggle".into())
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        if this.previews.remove(&toggle_path).is_none() {
-                            this.load_preview(toggle_path.clone(), cx);
-                        }
-                        cx.notify();
+                        this.toggle_preview(toggle_key.clone(), cx);
                     })),
             )
-            .child(
-                Switch::new(id("enabled"))
-                    .checked(resource.enabled)
-                    .disabled(busy)
-                    .on_click(cx.listener(move |this, active, _, cx| {
-                        this.change(Change::Toggle(toggle.clone(), *active), cx)
-                    })),
-            )
+            // Enabling writes settings, which project scope leaves alone.
+            .when(row == Row::Global, |actions| {
+                actions.child(
+                    Switch::new(id("enabled"))
+                        .checked(resource.enabled)
+                        .disabled(busy)
+                        .on_click(cx.listener(move |this, active, _, cx| {
+                            this.change(Change::Toggle(toggle.clone(), *active), cx)
+                        })),
+                )
+            })
             .child(
                 Button::new(id("actions"))
                     .ghost()
@@ -272,13 +378,24 @@ impl ResourcesView {
                             )
                             .into_any_element()
                     })
-                    .when(!resource.editable, |row| {
-                        row.child(
+                    .when(row != Row::Global && !resource.enabled, |tags| {
+                        tags.child(
+                            Tag::secondary()
+                                .small()
+                                .outline()
+                                .child(t(cx, "settings-resource-disabled")),
+                        )
+                    })
+                    .when(!resource.editable || row == Row::Inherited, |tags| {
+                        tags.child(
                             Tag::secondary()
                                 .small()
                                 .outline()
                                 .child(t(cx, "settings-resource-readonly-badge")),
                         )
+                    })
+                    .when_some(relation, |tags, relation| {
+                        tags.child(Tag::secondary().small().outline().child(relation))
                     }),
             );
         if let Some(preview) = preview {

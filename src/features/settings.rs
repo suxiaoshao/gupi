@@ -2,6 +2,7 @@ mod global_keys;
 mod keys;
 mod layout;
 mod onboarding;
+mod pi_config;
 mod preferences;
 mod resources;
 #[cfg(test)]
@@ -60,8 +61,10 @@ pub(crate) struct SettingsView {
     transition: Option<onboarding::PageTransition>,
     transition_serial: u64,
     page_scroll: [ScrollHandle; 4],
-    /// Settings navigation serial and requested page index.
+    /// Settings navigation serial and requested page index in `domain`.
     navigation: (usize, usize),
+    domain: layout::Domain,
+    pi_config: Entity<pi_config::PiConfig>,
     language: Entity<ComboboxState<SearchableVec<LanguageItem>>>,
     updates: Entity<super::updates::UpdatesView>,
 }
@@ -92,6 +95,7 @@ impl SettingsView {
         let resources_sub = cx.observe(&resources, |_, _, cx| cx.notify());
         let package_sub = cx.subscribe(&resources, |this, _, event: &resources::Navigate, cx| {
             this.open_page(
+                layout::Domain::Pi,
                 match event {
                     resources::Navigate::Package => layout::PACKAGES_PAGE,
                     resources::Navigate::Pi => layout::PI_PAGE,
@@ -99,6 +103,11 @@ impl SettingsView {
                 cx,
             )
         });
+        let pi_config = cx.new(|cx| pi_config::PiConfig::new(applied_pi.clone(), window, cx));
+        resources.update(cx, |resources, cx| {
+            resources.follow_scope(pi_config.clone(), window, cx)
+        });
+        let pi_config_sub = cx.observe(&pi_config, |_, _, cx| cx.notify());
         let keys_sub = cx.observe(&keys, |_, _, cx| cx.notify());
         let applied_sub = cx.observe(&applied_pi, |_, _, cx| cx.notify());
         let input = cx.new(|cx| {
@@ -214,6 +223,7 @@ impl SettingsView {
             _binding: binding,
             _pi_binding: pi_binding,
             _subscriptions: vec![
+                pi_config_sub,
                 temporary_sub,
                 resources_sub,
                 package_sub,
@@ -240,6 +250,8 @@ impl SettingsView {
             transition_serial: 0,
             page_scroll: std::array::from_fn(|_| ScrollHandle::new()),
             navigation: (0, 0),
+            domain: layout::Domain::Gupi,
+            pi_config,
             language,
             error: None,
             confirmation: None,
@@ -324,10 +336,7 @@ impl Render for SettingsView {
 impl SettingsView {
     pub fn stop_resources(&self, cx: &mut Context<Self>) {
         self.resources
-            .read(cx)
-            .controller
-            .clone()
-            .update(cx, |owner, _| owner.stop());
+            .update(cx, |resources, cx| resources.stop(cx));
     }
     fn render_config_actions(
         &self,

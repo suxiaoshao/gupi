@@ -105,6 +105,56 @@ fn init(cx: &mut TestAppContext) {
     });
 }
 
+#[gpui_kit::test]
+fn quit_checks_pi_drafts_before_teardown_even_inside_a_root_update(cx: &mut TestAppContext) {
+    use gpui_kit::component::WindowExt as _;
+    for saving in [false, true] {
+        init(cx);
+        let mut startup = None;
+        let (root, visual) = cx.add_window_view(|window, cx| {
+            // Recovery construction avoids reading any personal config. Clear
+            // the error afterwards to exercise the normal managed quit route.
+            let view = cx.new(|cx| {
+                StartupView::new(
+                    Err(std::io::ErrorKind::PermissionDenied.into()),
+                    false,
+                    window,
+                    cx,
+                )
+            });
+            view.update(cx, |view, cx| {
+                view.instance_error = None;
+                view.settings.update(cx, |settings, cx| {
+                    settings.seed_quit_draft_for_test(saving, cx);
+                });
+            });
+            startup = Some(view);
+            Root::new(cx.new(|_| ProbeTestHost), window, cx)
+        });
+        let startup = startup.unwrap();
+        root.update_in(visual, |_, window, cx| {
+            startup.update(cx, |view, cx| {
+                view.quit_then(window, cx, |_| panic!("quit must remain blocked"));
+                assert!(!view.is_quitting());
+            });
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert_eq!(window.has_active_dialog(cx), !saving);
+            assert!(!startup.read(cx).is_quitting());
+            let settings = startup.read(cx).settings.clone();
+            assert!(settings.read(cx).has_unsaved_pi(cx));
+            assert_eq!(settings.read(cx).quit_waits_for_save_for_test(cx), saving);
+            if !saving {
+                // Cancel closes the prompt without starting teardown.
+                window.close_dialog(cx);
+                assert!(!startup.read(cx).is_quitting());
+                assert!(settings.read(cx).has_unsaved_pi(cx));
+            }
+        });
+    }
+}
+
 struct ProbeTestHost;
 impl gpui_kit::Render for ProbeTestHost {
     fn render(

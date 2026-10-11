@@ -308,10 +308,21 @@ impl SidebarItem for ProjectItem {
             let cwd = context_path.clone();
             let reveal = cwd.clone();
             let copy = cwd.clone();
+            let settings = cwd.clone();
             menu.item(
                 PopupMenuItem::new(t(cx, "conversation-new")).on_click(move |_, _, cx| {
                     state.update(cx, |s, cx| s.new_or_reuse(Some(cwd.clone()), cx))
                 }),
+            )
+            .item(
+                PopupMenuItem::new(t(cx, "pi-project-settings"))
+                    .disabled(settings.as_os_str().is_empty())
+                    .on_click(move |_, window, cx| {
+                        window.dispatch_action(
+                            Box::new(menus::ShowProjectPiSettings::new(settings.clone())),
+                            cx,
+                        )
+                    }),
             )
             .separator()
             .item(
@@ -486,6 +497,19 @@ pub fn session_menu(
     let clone_state = state.clone();
     let info_owner = owner.clone();
     let info_key = key.clone();
+    let cwd = current
+        .map(|s| s.info().cwd.clone())
+        .or_else(|| {
+            state
+                .read(cx)
+                .catalog()
+                .data()
+                .into_iter()
+                .flat_map(|catalog| &catalog.sessions)
+                .find(|i| i.key() == key)
+                .map(|i| i.cwd.clone())
+        })
+        .filter(|cwd| !cwd.as_os_str().is_empty());
     let mut menu = menu
         .item(
             PopupMenuItem::new(t(cx, "conversation-session-info-command")).on_click(
@@ -495,6 +519,18 @@ pub fn session_menu(
                     });
                 },
             ),
+        )
+        .item(
+            PopupMenuItem::new(t(cx, "pi-project-settings"))
+                .disabled(cwd.is_none())
+                .on_click(move |_, window, cx| {
+                    if let Some(cwd) = &cwd {
+                        window.dispatch_action(
+                            Box::new(menus::ShowProjectPiSettings::new(cwd.clone())),
+                            cx,
+                        )
+                    }
+                }),
         )
         .separator()
         .item(

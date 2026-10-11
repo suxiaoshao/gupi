@@ -1,5 +1,11 @@
-//! Personal Pi resources. Never imports extension code or reads project settings.
+//! Personal and project Pi resources. Never imports extension code.
 mod discovery;
+mod packages;
+pub use packages::package_identity;
+pub use packages::project_package_action;
+pub use packages::project_package_allowed;
+#[cfg(test)]
+mod tests;
 
 use crate::persistence;
 use serde_json::Value;
@@ -9,6 +15,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 pub use discovery::scan;
+pub use discovery::scan_project;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -38,8 +45,17 @@ pub struct Resource {
     pub description: String,
     pub enabled: bool,
     pub editable: bool,
+    project_owned: bool,
+    /// The name Pi resolves same-name collisions by, when it can be determined:
+    /// a prompt's file name, or a loadable skill's frontmatter or folder name.
+    pub key: Option<String>,
 }
 impl Resource {
+    /// Resolved file ownership captured by the project scan, independent of editability.
+    pub fn is_project_owned(&self) -> bool {
+        self.project_owned
+    }
+
     pub fn new(kind: Kind, path: PathBuf, base: PathBuf, name: String) -> Self {
         Self {
             kind,
@@ -50,8 +66,17 @@ impl Resource {
             description: String::new(),
             enabled: true,
             editable: false,
+            project_owned: false,
+            key: None,
         }
     }
+}
+
+/// The file contents an editor was opened with, checked again before saving.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Baseline {
+    Missing,
+    Text(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -60,13 +85,19 @@ pub struct Package {
     pub source: String,
     pub path: PathBuf,
     pub version: Option<String>,
+    delta: bool,
 }
 impl Package {
+    pub fn is_delta(&self) -> bool {
+        self.delta
+    }
+
     pub fn new(source: String, path: PathBuf) -> Self {
         Self {
             source,
             path,
             version: None,
+            delta: false,
         }
     }
 }
@@ -87,7 +118,12 @@ impl Error {
     pub fn new(value: String) -> Self {
         Self(value)
     }
+    /// Whether a save stopped because the file changed after it was opened.
+    pub fn is_changed(&self) -> bool {
+        self.0 == CHANGED
+    }
 }
+const CHANGED: &str = "The file changed after it was opened";
 
 impl From<std::io::Error> for Error {
     fn from(error: std::io::Error) -> Self {
@@ -124,7 +160,8 @@ pub(super) fn read_json(path: &Path) -> Result<Value, Error> {
     match persistence::read(path)? {
         None => Ok(json!({})),
         Some(bytes) => {
-            serde_json::from_slice(&bytes).map_err(|e| Error(format!("{}: {e}", path.display())))
+            let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes);
+            serde_json::from_slice(bytes).map_err(|e| Error(format!("{}: {e}", path.display())))
         }
     }
 }
@@ -141,16 +178,26 @@ fn write_settings(
     root: &Path,
     change: impl FnOnce(&mut Value) -> Result<(), Error>,
 ) -> Result<(), Error> {
-    let path = root.join("settings.json");
-    let mut value = read_json(&path)?;
-    if !value.is_object() {
-        return Err(Error("Pi settings must be an object".into()));
+    let path = crate::pi_settings::Scope::Global.file(root);
+    let mut failure = None;
+    // Shares Pi's lock and re-reads the latest file, like the settings pages.
+    let result = crate::pi_settings::update(&path, |object| {
+        let mut value = Value::Object(std::mem::take(object));
+        let outcome = change(&mut value);
+        if let Value::Object(changed) = value {
+            *object = changed;
+        }
+        outcome.map_err(|error| {
+            let message = error.0.clone();
+            failure = Some(error);
+            message
+        })
+    });
+    match (result, failure) {
+        (_, Some(error)) => Err(error),
+        (Ok(()), None) => Ok(()),
+        (Err(error), None) => Err(Error(error.to_string())),
     }
-    change(&mut value)?;
-    let mut bytes = serde_json::to_vec_pretty(&value).map_err(|e| Error(e.to_string()))?;
-    bytes.push(b'\n');
-    persistence::write_atomic(&path, &bytes)?;
-    Ok(())
 }
 pub fn set_enabled(root: &Path, resource: &Resource, enabled: bool) -> Result<(), Error> {
     write_settings(root, |settings| {
@@ -228,7 +275,18 @@ pub fn create_path(root: &Path, kind: Kind, name: &str) -> Result<PathBuf, Error
         _ => return Err(Error("Resource type is not editable".into())),
     })
 }
-pub fn save_text(path: &Path, text: &str, create: bool) -> Result<(), Error> {
+/// Saves an editor's text unless the file no longer matches `baseline`.
+/// The check detects changes made since opening; it cannot exclude a writer
+/// racing between the check and the replace.
+pub fn save_text(path: &Path, text: &str, create: bool, baseline: &Baseline) -> Result<(), Error> {
+    let current = persistence::read(path)?;
+    let unchanged = match baseline {
+        Baseline::Missing => current.is_none(),
+        Baseline::Text(expected) => current.as_deref() == Some(expected.as_bytes()),
+    };
+    if !unchanged {
+        return Err(Error(CHANGED.into()));
+    }
     if create {
         use std::io::Write;
         let parent = path
@@ -288,6 +346,48 @@ pub async fn package_action(
     }
 }
 
+/// The project configuration folder, `<cwd>/.pi`, under the canonical cwd.
+pub fn project_root(cwd: &Path) -> PathBuf {
+    crate::pi_settings::trust::canonical(cwd).join(".pi")
+}
+
+/// Whether `path` resolves inside the project's own `.pi` folder, following
+/// symlinks. A path still to be created is judged by its nearest existing
+/// ancestor. A `.pi` that is itself a link elsewhere owns nothing.
+pub fn project_owns(cwd: &Path, path: &Path) -> bool {
+    let root = project_root(cwd);
+    // Keep linked configuration directories read-only in the resource editor.
+    // Resolve ordinary directories like Pi does, so the root and resource use
+    // the filesystem's spelling (for example `.PI` on Windows).
+    if std::fs::symlink_metadata(&root).is_ok_and(|meta| meta.file_type().is_symlink()) {
+        return false;
+    }
+    let root = crate::pi_settings::trust::canonical(&root);
+    let mut existing = path;
+    let mut missing = Vec::new();
+    loop {
+        match existing.canonicalize() {
+            Ok(real) => {
+                let mut real = crate::pi_settings::trust::canonical(&real);
+                for part in missing.iter().rev() {
+                    real.push(part);
+                }
+                return real.starts_with(&root) && real != root;
+            }
+            Err(_) => {
+                let (Some(name), Some(parent)) = (existing.file_name(), existing.parent()) else {
+                    return false;
+                };
+                if name == ".." {
+                    return false;
+                }
+                missing.push(name.to_owned());
+                existing = parent;
+            }
+        }
+    }
+}
+
 /// Reuse the discovery parser for one edited file, preserving catalog order.
 pub fn reload_resource(catalog: &mut Catalog, resource: Resource) {
     let index = catalog
@@ -301,6 +401,7 @@ pub fn reload_resource(catalog: &mut Catalog, resource: Resource) {
         .retain(|warning| !warning.starts_with(&prefix));
     catalog.resources.retain(|r| r.path != resource.path);
     let previous_len = catalog.resources.len();
+    let project_owned = resource.project_owned;
     discovery::add(
         catalog,
         resource.kind,
@@ -311,7 +412,8 @@ pub fn reload_resource(catalog: &mut Catalog, resource: Resource) {
         resource.editable,
     );
     if catalog.resources.len() > previous_len {
-        let updated = catalog.resources.pop().unwrap();
+        let mut updated = catalog.resources.pop().unwrap();
+        updated.project_owned = project_owned;
         catalog
             .resources
             .insert(index.min(catalog.resources.len()), updated);

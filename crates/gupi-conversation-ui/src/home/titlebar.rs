@@ -40,6 +40,10 @@ impl HomeView {
         let can_refresh = key.as_ref().is_some_and(|key| state.can_reconnect(key, cx));
         let can_export = key.as_ref().is_some_and(|key| state.can_export(key, cx));
         let exporting = current.is_some_and(|session| session.is_exporting());
+        let project = current
+            .filter(|_| !temporary)
+            .map(|session| session.info().cwd.clone())
+            .filter(|cwd| !cwd.as_os_str().is_empty());
         let leading = chrome::leading_space(window);
         let target_width = if self.show_sidebar {
             px(self.pane_layout.left)
@@ -196,6 +200,33 @@ impl HomeView {
                                 this.state.update(cx, |state, cx| state.reconnect(key, cx));
                             }
                         })),
+                ))
+            })
+            .when_some(project, |row, cwd| {
+                let mut args = fluent_bundle::FluentArgs::new();
+                args.set(
+                    "folder",
+                    cwd.file_name()
+                        .unwrap_or(cwd.as_os_str())
+                        .to_string_lossy()
+                        .into_owned(),
+                );
+                let label =
+                    gupi_settings::i18n::t_with_args(cx, "pi-project-settings-folder", &args);
+                row.child(chrome::control(
+                    "project-settings-control",
+                    chrome::button("project-settings")
+                        .icon(IconName::FolderCog)
+                        .tooltip(label.clone())
+                        .accessibility_label(label)
+                        .on_click(move |_, window, cx| {
+                            window.dispatch_action(
+                                Box::new(gupi_settings::commands::ShowProjectPiSettings::new(
+                                    cwd.clone(),
+                                )),
+                                cx,
+                            );
+                        }),
                 ))
             })
             .child(chrome::control(

@@ -212,6 +212,32 @@ impl StartupView {
             cx.quit();
             return;
         }
+        let this = cx.entity().downgrade();
+        let settings = self.settings.clone();
+        // Quit can run while the window Root is leased (menu/window-close
+        // actions). Open the leave dialog only after that update has ended.
+        window.defer(cx, move |window, cx| {
+            SettingsView::confirm_leave(
+                &settings,
+                move |window, cx| {
+                    let _ = this.update(cx, |this, cx| {
+                        this.begin_quit(window, cx, finish);
+                    });
+                },
+                window,
+                cx,
+            );
+        });
+    }
+    fn begin_quit(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        finish: impl FnOnce(&mut App) + 'static,
+    ) {
+        if self.is_quitting() {
+            return;
+        }
         tracing::info!("managed quit started");
         crate::app::shortcuts::shutdown(cx);
         self.config.update(cx, |owner, _| owner.begin_shutdown());
@@ -275,9 +301,66 @@ impl StartupView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Leaving settings asks about unsaved Pi drafts first.
+        if !visible && self.show_settings && self.settings.read(cx).has_unsaved_pi(cx) {
+            let this = cx.entity().downgrade();
+            let settings = self.settings.clone();
+            // Callers such as the Window menu run inside the window's root
+            // update; the question opens a dialog on that root, so it waits.
+            window.defer(cx, move |window, cx| {
+                SettingsView::confirm_leave(
+                    &settings,
+                    move |window, cx| {
+                        let _ = this.update(cx, |this, cx| {
+                            this.apply_settings_visible(false, window, cx)
+                        });
+                    },
+                    window,
+                    cx,
+                );
+            });
+            return;
+        }
+        if visible && !self.show_settings {
+            // Direct entry starts on the global scope; only the contextual
+            // project entry selects a project.
+            self.settings
+                .update(cx, |settings, cx| settings.reset_pi_scope(cx));
+        }
+        self.apply_settings_visible(visible, window, cx);
+    }
+
+    /// Opens Pi settings for a project, as requested from a conversation.
+    pub fn open_project_pi_settings(
+        &mut self,
+        cwd: std::path::PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.apply_settings_visible(true, window, cx);
+        self.settings.update(cx, |settings, cx| {
+            settings.open_project_pi_settings(cwd, window, cx)
+        });
+    }
+
+    fn apply_settings_visible(
+        &mut self,
+        visible: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.show_settings != visible {
             if let Some(home) = &self.home {
                 home.update(cx, |home, cx| home.close_commands(window, cx));
+            }
+            if visible {
+                // The scope menu offers the shown conversation's project first.
+                let cwd = self.home.as_ref().and_then(|home| {
+                    let state = home.read(cx).state().read(cx);
+                    state.current().map(|session| session.info().cwd.clone())
+                });
+                self.settings
+                    .update(cx, |settings, cx| settings.set_active_project(cwd, cx));
             }
             if self.palette.take().is_some_and(|p| p.read(cx).is_open())
                 && window.has_active_dialog(cx)
@@ -496,7 +579,13 @@ impl Render for StartupView {
                                         })),
                                 ))
                             })
-                            .child(page_title),
+                            .child(page_title)
+                            .when(settings_page, |view| {
+                                view.child(
+                                    self.settings
+                                        .update(cx, |settings, cx| settings.render_domain_tabs(cx)),
+                                )
+                            }),
                     ),
                 )
             })

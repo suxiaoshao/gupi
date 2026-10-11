@@ -113,6 +113,10 @@ pub(crate) fn run() {
         });
         cx.on_action(|_: &menus::ShowSettings, cx| cx.defer(|cx| show(Some(true), cx)));
         cx.on_action(|_: &menus::ShowMainWindow, cx| cx.defer(|cx| show(Some(false), cx)));
+        cx.on_action(|action: &menus::ShowProjectPiSettings, cx| {
+            let cwd = action.0.clone();
+            cx.defer(move |cx| show_project_pi_settings(cwd, cx))
+        });
         cx.on_action(|_: &menus::Quit, cx| cx.defer(quit));
         let log_warning = instance.is_ok() && instance_ready(cx);
         let layout = paths::config_dir()
@@ -279,6 +283,25 @@ fn show(settings: Option<bool>, cx: &mut App) {
                 }
             });
         }
+    }
+}
+
+fn show_project_pi_settings(cwd: std::path::PathBuf, cx: &mut App) {
+    show(None, cx);
+    let Some((window, view)) = cx
+        .try_global::<MainWindow>()
+        .map(|m| (m.window, m.view.clone()))
+    else {
+        return;
+    };
+    if let Err(error) = window.update(cx, |_, window, cx| {
+        view.update(cx, |view, cx| {
+            if !view.is_quitting() {
+                view.open_project_pi_settings(cwd, window, cx);
+            }
+        })
+    }) {
+        tracing::error!(%error, "update main window failed");
     }
 }
 

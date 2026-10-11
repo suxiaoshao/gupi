@@ -254,15 +254,17 @@ impl ResourceController {
                             io::set_enabled(&root, &resource, active)
                         }
                         Change::RegisterSkill(path) => io::register_skill(&root, &path),
-                        Change::Save { path, .. } if outside(&path) => {
-                            Err(Error("File is outside the project's .pi folder".into()))
-                        }
                         Change::Save {
                             path,
                             text,
                             create,
                             baseline,
-                        } => io::save_text(&path, &text, create, &baseline),
+                        } => match &project {
+                            Some(cwd) => {
+                                io::save_project_text(cwd, &path, &text, create, &baseline)
+                            }
+                            None => io::save_text(&path, &text, create, &baseline),
+                        },
                         Change::Delete(resource) => {
                             if !resource.editable
                                 || resource.package.is_some()

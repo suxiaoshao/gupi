@@ -262,6 +262,10 @@ impl ResourcesView {
     }
 
     fn render_prompt(&self, resource: &Resource, row: Row, cx: &Context<Self>) -> AnyElement {
+        let mut displayed = resource.clone();
+        displayed.enabled = self.resource_enabled(resource, row, cx);
+        let resource = &displayed;
+
         let busy = self.busy(cx);
         let relation = self.relation(resource, row, cx);
         let key = self.preview_key(resource, row, cx);

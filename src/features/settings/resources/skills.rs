@@ -70,6 +70,10 @@ impl ResourcesView {
     }
 
     fn render_skill(&self, resource: &Resource, row: Row, cx: &Context<Self>) -> AnyElement {
+        let mut displayed = resource.clone();
+        displayed.enabled = self.resource_enabled(resource, row, cx);
+        let resource = &displayed;
+
         let busy = self.busy(cx);
         let relation = self.relation(resource, row, cx);
         let path = resource.path.clone();
@@ -426,6 +430,55 @@ mod tests {
                 view.reveal_package(source.clone(), Row::Own, cx);
                 assert!(view.expanded_packages.contains(&format!("false:{source}")));
                 assert!(!view.expanded_packages.contains(&format!("true:{source}")));
+            }
+        });
+        // A project delta changes the inherited display only after trust, and
+        // never mutates the global catalog or invents a same-name relation.
+        std::fs::write(
+            project.path().join(".pi/settings.json"),
+            serde_json::to_vec(
+                &serde_json::json!({"packages":[{"source":source,"autoload":false,
+                "skills":["!skills/**"],"prompts":["!prompts/**"]}]}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let delta = gupi_resources::pi_resources::scan_project(project.path()).unwrap();
+        resources.update(cx, |view, cx| {
+            view.project = Some(cx.new(|_| {
+                let mut controller = gupi_resources::resources::ResourceController::for_target(
+                    gupi_resources::resources::Target::Project(project.path().to_owned()),
+                );
+                controller.set_catalog_for_test(delta);
+                controller
+            }));
+            for resource in &global.resources {
+                assert!(view.resource_enabled(resource, Row::Inherited, cx));
+            }
+        });
+        trust::trust(agent.path(), project.path()).unwrap();
+        pi_config.update(cx, |config, cx| config.reload(cx));
+        cx.condition(&pi_config, |config, _| config.trusted() == Some(true))
+            .await;
+        resources.update(cx, |view, cx| {
+            // Install a fresh controller for the updated catalog: Load does
+            // not replace an already loaded operation in this test fixture.
+            let delta = gupi_resources::pi_resources::scan_project(project.path()).unwrap();
+            view.project = Some(cx.new(|_| {
+                let mut controller = gupi_resources::resources::ResourceController::for_target(
+                    gupi_resources::resources::Target::Project(project.path().to_owned()),
+                );
+                controller.set_catalog_for_test(delta);
+                controller
+            }));
+            view.controller.update(cx, |controller, _| {
+                controller.set_catalog_for_test(global.clone())
+            });
+            for resource in &global.resources {
+                assert!(!view.resource_enabled(resource, Row::Inherited, cx));
+                assert!(view.relation(resource, Row::Inherited, cx).is_none());
+                assert!(view.resource_enabled(resource, Row::Global, cx));
+                assert!(resource.enabled);
             }
         });
     }

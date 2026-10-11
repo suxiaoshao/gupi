@@ -125,6 +125,7 @@ fn scan_packages(
             path: path.clone(),
             version: manifest["version"].as_str().map(str::to_owned),
             delta: entry["autoload"] == false,
+            filters: entry.clone(),
         });
         if entry["autoload"] == false && !global {
             continue;
@@ -609,7 +610,10 @@ fn enabled(path: &Path, patterns: &[String], base: &Path) -> bool {
     active
 }
 fn delta_enabled(path: &Path, patterns: &[String], base: &Path) -> bool {
-    let mut active = false;
+    delta_override(path, patterns, base).unwrap_or(false)
+}
+pub(super) fn delta_override(path: &Path, patterns: &[String], base: &Path) -> Option<bool> {
+    let mut active = None;
     for p in patterns {
         let target = p.strip_prefix(['!', '+', '-']).unwrap_or(p);
         if if p.starts_with(['+', '-']) {
@@ -617,7 +621,7 @@ fn delta_enabled(path: &Path, patterns: &[String], base: &Path) -> bool {
         } else {
             matches(path, target, base)
         } {
-            active = !p.starts_with(['!', '-']);
+            active = Some(!p.starts_with(['!', '-']));
         }
     }
     active

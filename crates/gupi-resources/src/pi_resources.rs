@@ -86,6 +86,7 @@ pub struct Package {
     pub path: PathBuf,
     pub version: Option<String>,
     delta: bool,
+    filters: Value,
 }
 impl Package {
     pub fn is_delta(&self) -> bool {
@@ -98,6 +99,7 @@ impl Package {
             path,
             version: None,
             delta: false,
+            filters: Value::Null,
         }
     }
 }
@@ -110,6 +112,28 @@ pub struct Catalog {
     pub resources: Vec<Resource>,
     pub warnings: Vec<String>,
 }
+impl Catalog {
+    /// Apply only matched project delta rules; unmatched resources retain their
+    /// global state. Callers apply this view only for trusted projects.
+    pub fn inherited_enabled(&self, global_root: &Path, resource: &Resource) -> bool {
+        let Some(source) = resource.package.as_deref() else {
+            return resource.enabled;
+        };
+        let Some(identity) = package_identity(global_root, source) else {
+            return resource.enabled;
+        };
+        let Some(delta) = self.packages.iter().find(|package| {
+            package.is_delta()
+                && package_identity(&self.root, &package.source).as_ref() == Some(&identity)
+        }) else {
+            return resource.enabled;
+        };
+        let patterns = strings(&delta.filters[resource.kind.key()]);
+        discovery::delta_override(&resource.path, &patterns, &resource.base)
+            .unwrap_or(resource.enabled)
+    }
+}
+
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("{0}")]
 #[non_exhaustive]
@@ -275,6 +299,21 @@ pub fn create_path(root: &Path, kind: Kind, name: &str) -> Result<PathBuf, Error
         _ => return Err(Error("Resource type is not editable".into())),
     })
 }
+/// Save a project resource only while the selected project still exists.
+pub fn save_project_text(
+    cwd: &Path,
+    path: &Path,
+    text: &str,
+    create: bool,
+    baseline: &Baseline,
+) -> Result<(), Error> {
+    crate::pi_settings::trust::existing_directory(cwd).map_err(|error| Error(error.to_string()))?;
+    if !project_owns(cwd, path) {
+        return Err(Error("File is outside the project's .pi folder".into()));
+    }
+    save_text(path, text, create, baseline)
+}
+
 /// Saves an editor's text unless the file no longer matches `baseline`.
 /// The check detects changes made since opening; it cannot exclude a writer
 /// racing between the check and the replace.

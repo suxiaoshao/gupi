@@ -307,3 +307,70 @@ fn catalogs_accept_settings_with_a_utf8_bom() {
     }
     assert_eq!(fs::read(root.join("settings.json")).unwrap(), before);
 }
+
+#[test]
+fn project_resource_save_does_not_recreate_a_missing_project() {
+    let dir = tempfile::tempdir().unwrap();
+    for (relative, create) in [
+        ("skills/new/SKILL.md", true),
+        ("prompts/new.md", true),
+        ("SYSTEM.md", false),
+    ] {
+        let cwd = dir.path().join("project");
+        fs::create_dir(&cwd).unwrap();
+        let path = cwd.join(".pi").join(relative);
+        fs::remove_dir(&cwd).unwrap();
+        assert!(save_project_text(&cwd, &path, "draft", create, &Baseline::Missing).is_err());
+        assert!(!cwd.exists());
+        // A real project without .pi still supports its first resource save.
+        fs::create_dir(&cwd).unwrap();
+        save_project_text(&cwd, &path, "draft", create, &Baseline::Missing).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "draft");
+        fs::remove_dir_all(&cwd).unwrap();
+    }
+}
+
+#[test]
+fn project_package_deltas_only_override_matching_inherited_resources() {
+    let dir = tempfile::tempdir().unwrap();
+    let agent = dir.path().join("agent");
+    let cwd = dir.path().join("project");
+    let package = dir.path().join("shared");
+    for (path, text) in [
+        ("skills/a/SKILL.md", SKILL),
+        ("prompts/a.md", "A"),
+        ("prompts/b.md", "B"),
+        ("extensions/a.ts", ""),
+        ("themes/a.json", "{}"),
+    ] {
+        write(&package.join(path), text);
+    }
+    write(&package.join("package.json"), "{}");
+    write(
+        &agent.join("settings.json"),
+        &json!({"packages":[package]}).to_string(),
+    );
+    write(&cwd.join(".pi/settings.json"), &json!({"packages":[{"source":package,"autoload":false,
+        "skills":["!skills/**"], "prompts":["!prompts/*", "+prompts/b.md"], "extensions":["-extensions/a.ts"]}]}).to_string());
+    let global = scan(agent, None, &[]).unwrap();
+    let project = scan_project(&cwd).unwrap();
+    assert_eq!(global.resources.len(), 5);
+    assert!(project.resources.is_empty());
+    for resource in &global.resources {
+        let enabled = project.inherited_enabled(&global.root, resource);
+        assert_eq!(
+            enabled,
+            resource.kind == Kind::Theme || resource.path.ends_with("prompts/b.md")
+        );
+        assert!(resource.enabled, "global catalog remains unchanged");
+    }
+    // Empty and unmatched rules preserve disabled global entries too.
+    let mut theme = global
+        .resources
+        .iter()
+        .find(|r| r.kind == Kind::Theme)
+        .unwrap()
+        .clone();
+    theme.enabled = false;
+    assert!(!project.inherited_enabled(&global.root, &theme));
+}

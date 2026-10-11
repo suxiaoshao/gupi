@@ -628,6 +628,24 @@ impl ResourcesView {
         }
     }
 
+    fn resource_enabled(&self, resource: &Resource, row: Row, cx: &App) -> bool {
+        if row == Row::Inherited
+            && self
+                .pi_config
+                .as_ref()
+                .and_then(|config| config.read(cx).trusted())
+                == Some(true)
+            && let Some(project) = self
+                .project
+                .as_ref()
+                .and_then(|owner| owner.read(cx).catalog().data())
+            && let Some(global) = self.controller.read(cx).catalog().data()
+        {
+            return project.inherited_enabled(&global.root, resource);
+        }
+        resource.enabled
+    }
+
     /// The configured same-name relation between project and global entries.
     /// Shown only when Pi would load both: a trusted project, both enabled,
     /// and names Pi can determine. Never a claim about a running session.
@@ -639,7 +657,7 @@ impl ResourcesView {
         if row == Row::Own && trusted == Some(false) {
             return Some(t(cx, "settings-resource-not-loaded"));
         }
-        if trusted != Some(true) || !resource.enabled {
+        if trusted != Some(true) || !self.resource_enabled(resource, row, cx) {
             return None;
         }
         let key = resource.key.as_ref()?;
@@ -649,10 +667,19 @@ impl ResourcesView {
             self.project.as_ref()?
         };
         let shared = other.read(cx).catalog().data().is_some_and(|catalog| {
-            catalog
-                .resources
-                .iter()
-                .any(|r| r.kind == resource.kind && r.enabled && r.key.as_ref() == Some(key))
+            catalog.resources.iter().any(|r| {
+                r.kind == resource.kind
+                    && self.resource_enabled(
+                        r,
+                        if row == Row::Own {
+                            Row::Inherited
+                        } else {
+                            Row::Own
+                        },
+                        cx,
+                    )
+                    && r.key.as_ref() == Some(key)
+            })
         });
         shared.then(|| {
             t(

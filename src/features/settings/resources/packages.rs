@@ -577,6 +577,10 @@ impl ResourcesView {
         busy: bool,
         cx: &Context<Self>,
     ) -> AnyElement {
+        let mut displayed = resource.clone();
+        displayed.enabled = self.resource_enabled(resource, row, cx);
+        let resource = &displayed;
+
         let path = resource.path.clone();
         let id = |part: &str| {
             ElementId::NamedChild(

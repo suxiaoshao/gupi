@@ -242,6 +242,8 @@ For screenshot input on macOS and Windows, Gupi freezes the display under the po
 
 ### Pi settings: global and project scopes
 
+![Project-scoped Pi conversation settings and ordered model patterns, with values inherited from Global](docs/screenshots/pi-settings-en.jpg)
+
 These settings require **Pi 1.1.0 or later**. Check `pi --version` and update Pi using its installation instructions if needed.
 
 Open **Settings → Pi** for connection, conversation, network and resource settings. Use the scope menu to choose **Global** or a project folder. The conversation's **Project Pi settings…** action opens its working directory directly; selecting a folder does not grant trust or create configuration files.
@@ -259,6 +261,8 @@ Under **Pi → Conversation**, **Model scope** is an ordered list. Add a model f
 New conversations use the default model if it matches the scope; otherwise they use the first matching model. This does not filter the in-conversation model picker or change an existing conversation's model on reconnect. A project list replaces the global list: an explicit empty list means **Unrestricted (overrides global)**, while restoring inheritance uses the global scope.
 
 ### Packages, skills, and prompts
+
+![Search npm packages and inspect published details before installing into the selected project](docs/screenshots/packages-en.jpg)
 
 The **Packages**, **Skills**, and **Prompts** pages share the selected global/project scope:
 

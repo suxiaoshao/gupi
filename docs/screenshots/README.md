@@ -10,8 +10,12 @@ These are captures of Gupi's actual macOS UI. Sample answers illustrate the inte
 | `history-en.jpg`, `history-zh-CN.jpg` | History tree and branch preview / 历史树与分支预览 |
 | `files-en.jpg`, `files-zh-CN.jpg` | Project file tree and read-only source workspace / 项目文件树与只读源码工作区 |
 | `settings-en.jpg`, `settings-zh-CN.jpg` | Historical appearance captures; not used in the current README / 历史外观截图，当前 README 不使用 |
+| `pi-settings-en.jpg`, `pi-settings-zh-CN.jpg` | Project-scoped conversation settings, Global sources and ordered model patterns / 项目作用域对话设置、全局来源与有序模型范围 |
+| `packages-en.jpg`, `packages-zh-CN.jpg` | npm search results and published package details before installation / npm 搜索结果与安装前的包发布详情 |
 
 Workspace/history and historical appearance baseline: Gupi 0.1.0, source commit `3efcdca`, Pi 0.99.1, macOS arm64, 2026-09-30; sample project and authored demonstration sessions. File-workspace baseline: Gupi 0.1.4 development build, macOS arm64, 2026-10-07; the public Gupi source project, normal configuration, and no model requests. Each English/Chinese pair uses the same build and matching content.
+
+Pi settings/package baseline: public Gupi 0.1.5 arm64 ZIP, source commit `16fc415`, Pi 1.1.0, macOS, 2026-10-12; the Gupi source project and normal configuration, at 2216 × 1482 pixels. Package captures show the live npm search `pi-mcp` and `pi-mcp-adapter` 5.2.0 details. No package was installed, no Pi settings were saved and no model request was sent. The interface language was restored to Follow system after capture. The JPEG bytes returned by the capture tool are stored directly with `.jpg` extensions.
 
 When refreshing the screenshots:
 

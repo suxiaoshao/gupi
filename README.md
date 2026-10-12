@@ -261,9 +261,9 @@ New conversations use the default model if it matches the scope; otherwise they 
 The **Packages**, **Skills**, and **Prompts** pages share the selected global/project scope:
 
 - Under **Packages → Browse**, search npm packages tagged `pi-package`, select one to inspect its published details and declared resources, then install it into the chosen scope. You can also install from a known source. These operations run through Pi; inspecting a package does not install it.
-- Manage installed packages offline. Global packages support updates; project packages currently support installation/removal. Inherited global packages and project filtering deltas are read-only in the project view.
+- View installed packages without registry access. Global packages support updates; project packages currently support installation/removal. Inherited global packages and project filtering deltas are read-only in the project view.
 - Create or edit your own Skills, prompt templates, `SYSTEM.md` and `APPEND_SYSTEM.md` in the selected scope. Project files live under `.pi/`; personal resources come from `PI_CODING_AGENT_DIR` (normally `~/.pi/agent`) and personal `~/.agents/skills`.
-- Inspect resource origins, disabled states and project/global groups. Package-owned and external files are read-only; project extensions, themes and explicit resource paths are displayed without executing them. Global resource toggles remain available; editing project path/filter rules is not yet supported.
+- Inspect resource origins, disabled states and project/global groups. Package-owned and external files are read-only; project extensions, themes and explicit resource paths are displayed without executing them. Switch to Global to enable/disable personal resources; editing project path/filter rules is not yet supported.
 
 Browsing contacts the npm registry. At narrow widths, package details replace the list and provide a Back action; at wider widths, drag the divider to adjust the detail area. After external changes, refresh the page and reconnect conversations that need to load the changes. Provider/authentication management and MCP configuration remain outside these settings pages.
 

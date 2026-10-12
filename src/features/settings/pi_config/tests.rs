@@ -5,7 +5,7 @@ use super::PiConfig;
 use super::Support;
 use super::Trust;
 use super::fields;
-use super::fields::Edit;
+use super::forms::Slot;
 use super::supports;
 use gpui_kit::AppContext as _;
 use gpui_kit::Context;
@@ -27,10 +27,12 @@ use std::path::Path;
 
 impl crate::features::settings::SettingsView {
     pub(crate) fn seed_quit_draft_for_test(&self, saving: bool, cx: &mut gpui_kit::App) {
-        self.pi_config.update(cx, |config, _| {
-            config
-                .drafts
-                .insert(Field::Steering, Edit::Set(vec![json!("all")]));
+        self.pi_config.update(cx, |config, cx| {
+            super::forms::ConversationDraft::STEERING.set(
+                &config.conversation,
+                Slot::Set("all".into()),
+                cx,
+            );
             if saving {
                 config.saving = Some(gpui_kit::Task::ready(()));
             }
@@ -108,6 +110,42 @@ fn save(config: &Entity<PiConfig>, page: Page, window: &mut gpui_kit::VisualTest
     window.run_until_parked();
 }
 
+fn input_text(
+    config: &Entity<PiConfig>,
+    field: Field,
+    text: &str,
+    visual: &mut gpui_kit::VisualTestContext,
+) {
+    visual.update(|window, cx| {
+        let input = config.update(cx, |this, cx| this.input(field, window, cx));
+        input.update(cx, |input, cx| {
+            input.set_value(text.to_owned(), window, cx);
+            cx.emit(gpui_kit::component::input::InputEvent::Change);
+        });
+    });
+    visual.run_until_parked();
+}
+
+fn append(config: &Entity<PiConfig>, text: &str, visual: &mut gpui_kit::VisualTestContext) {
+    visual.update(|window, cx| {
+        config.update(cx, |this, cx| {
+            this.append_pattern(text.to_owned(), window, cx)
+        })
+    });
+    visual.run_until_parked();
+}
+
+fn remove_all(config: &Entity<PiConfig>, visual: &mut gpui_kit::VisualTestContext) {
+    visual.update(|window, cx| {
+        config.update(cx, |this, cx| {
+            while let Some(key) = this.row_keys(cx).into_iter().next() {
+                this.remove_pattern(&key, window, cx);
+            }
+        })
+    });
+    visual.run_until_parked();
+}
+
 #[gpui_kit::test]
 fn page_save_writes_only_that_page_and_keeps_other_drafts(cx: &mut TestAppContext) {
     let agent = tempfile::tempdir().unwrap();
@@ -120,17 +158,20 @@ fn page_save_writes_only_that_page_and_keeps_other_drafts(cx: &mut TestAppContex
     let (config, window) = setup(cx, agent.path());
     config.update(window, |this, cx| {
         assert_eq!(this.support(cx), Support::Ready);
-        this.set_draft(Field::Compaction, Edit::Set(vec![json!(false)]), cx);
-        this.set_draft(Field::MaxRetries, Edit::Set(vec![json!(5)]), cx);
+        this.set_values(Field::Compaction, vec![Slot::Set(json!(false))], cx);
+        this.set_values(Field::MaxRetries, vec![Slot::Set(json!(5))], cx);
     });
     save(&config, Page::Conversation, window);
     assert_eq!(
         read(&global),
         json!({"theme":"dark","compaction":{"enabled":false,"custom":1}})
     );
-    config.update(window, |this, _| {
+    config.update(window, |this, cx| {
         assert_eq!(
-            this.drafts.keys().copied().collect::<Vec<_>>(),
+            Field::ALL
+                .into_iter()
+                .filter(|f| this.pending(*f, cx))
+                .collect::<Vec<_>>(),
             [Field::MaxRetries]
         );
         assert!(this.error.is_none());
@@ -145,22 +186,24 @@ fn invalid_drafts_block_saving_and_writing_back_the_stored_value_clears_a_draft(
     let global = agent.path().join("settings.json");
     fs::write(&global, r#"{"retry":{"maxRetries":2}}"#).unwrap();
     let (config, window) = setup(cx, agent.path());
+    input_text(&config, Field::MaxRetries, "-1", window);
     config.update(window, |this, cx| {
-        this.on_text(Field::MaxRetries, "-1".into(), cx);
         assert!(matches!(
-            this.drafts.get(&Field::MaxRetries),
-            Some(Edit::Invalid(_))
+            this.snapshot(cx).value(Field::MaxRetries).first(),
+            Some(Slot::Invalid(_))
         ));
     });
     save(&config, Page::Network, window);
-    config.update(window, |this, cx| {
+    config.update(window, |this, _| {
         assert!(
             this.error.is_some(),
             "invalid text is reported, not written"
         );
-        this.on_text(Field::MaxRetries, "2".into(), cx);
+    });
+    input_text(&config, Field::MaxRetries, "2", window);
+    config.update(window, |this, cx| {
         assert!(
-            this.drafts.is_empty(),
+            !this.has_unsaved(cx),
             "typing the stored value is no change"
         );
     });
@@ -174,7 +217,7 @@ fn same_field_external_change_is_a_conflict_that_keeps_the_draft(cx: &mut TestAp
     fs::write(&global, r#"{"steeringMode":"all"}"#).unwrap();
     let (config, window) = setup(cx, agent.path());
     config.update(window, |this, cx| {
-        this.set_draft(Field::Steering, Edit::Set(vec![json!("one-at-a-time")]), cx);
+        this.set_values(Field::Steering, vec![Slot::Set(json!("one-at-a-time"))], cx);
     });
     fs::write(&global, r#"{"steeringMode":"all","followUpMode":"all"}"#).unwrap();
     // A different leaf changed: the save still succeeds and keeps it.
@@ -185,7 +228,7 @@ fn same_field_external_change_is_a_conflict_that_keeps_the_draft(cx: &mut TestAp
     );
 
     config.update(window, |this, cx| {
-        this.set_draft(Field::Steering, Edit::Set(vec![json!("all")]), cx);
+        this.set_values(Field::Steering, vec![Slot::Set(json!("all"))], cx);
     });
     fs::write(&global, r#"{"followUpMode":"all"}"#).unwrap();
     save(&config, Page::Conversation, window);
@@ -194,12 +237,9 @@ fn same_field_external_change_is_a_conflict_that_keeps_the_draft(cx: &mut TestAp
         json!({"followUpMode":"all"}),
         "nothing overwritten"
     );
-    config.update(window, |this, _| {
+    config.update(window, |this, cx| {
         assert_eq!(this.conflicts, [Field::Steering]);
-        assert!(
-            this.drafts.contains_key(&Field::Steering),
-            "the draft survives"
-        );
+        assert!(this.pending(Field::Steering, cx), "the draft survives");
     });
 }
 
@@ -260,15 +300,18 @@ fn discarding_restores_the_files_as_read(cx: &mut TestAppContext) {
     let agent = tempfile::tempdir().unwrap();
     let (config, window) = setup(cx, agent.path());
     config.update(window, |this, cx| {
-        this.set_draft(Field::Proxy, Edit::Set(vec![json!("http://x")]), cx);
-        this.set_draft(Field::Compaction, Edit::Set(vec![json!(false)]), cx);
+        this.set_values(Field::Proxy, vec![Slot::Set(json!("http://x"))], cx);
+        this.set_values(Field::Compaction, vec![Slot::Set(json!(false))], cx);
         this.discard(Some(Page::Network), cx);
         assert_eq!(
-            this.drafts.keys().copied().collect::<Vec<_>>(),
+            Field::ALL
+                .into_iter()
+                .filter(|f| this.pending(*f, cx))
+                .collect::<Vec<_>>(),
             [Field::Compaction]
         );
         this.discard(None, cx);
-        assert!(!this.has_unsaved());
+        assert!(!this.has_unsaved(cx));
     });
     assert!(!agent.path().join("settings.json").exists());
 }
@@ -329,28 +372,31 @@ fn both_pages_render_fields_in_each_scope(cx: &mut TestAppContext) {
             host.1 = Page::Conversation;
             cx.notify();
         });
-        config.update(window, |this, cx| {
-            this.edit_model_scope(|rows| rows.reverse(), cx);
+        window.update(|window, cx| {
+            config.update(cx, |this, cx| {
+                let key = this.row_keys(cx)[1].clone();
+                this.move_pattern(&key, false, window, cx);
+            })
         });
         window.run_until_parked();
         config.update(window, |this, cx| {
             assert_eq!(
-                this.drafts.get(&Field::ModelScope),
-                Some(&Edit::Set(vec![json!(["*sonnet*:high", "p/m"])]))
+                this.snapshot(cx).value(Field::ModelScope),
+                vec![Slot::Set(json!(["*sonnet*:high", "p/m"]))]
             );
             this.discard(None, cx);
         });
         window.run_until_parked();
-        config.update(window, |this, _| {
+        config.update(window, |this, cx| {
             assert!(
-                this.drafts.is_empty(),
+                !this.has_unsaved(cx),
                 "input synchronization must not pin inherited values"
             );
         });
     }
-    config.update(cx, |this, _| {
+    config.update(cx, |this, cx| {
         assert!(matches!(this.files, Load::Ready(_)));
-        assert!(this.drafts.is_empty(), "rendering never creates drafts");
+        assert!(!this.has_unsaved(cx), "rendering never creates drafts");
     });
 }
 
@@ -418,14 +464,14 @@ fn invalid_project_scope_preserves_the_current_scope_and_drafts(cx: &mut TestApp
     let agent = tempfile::tempdir().unwrap();
     let (config, cx) = setup(cx, agent.path());
     config.update(cx, |this, cx| {
-        this.set_draft(Field::Steering, Edit::Set(vec![json!("all")]), cx);
+        this.set_values(Field::Steering, vec![Slot::Set(json!("all"))], cx);
         for path in [
             agent.path().join("missing"),
             std::path::PathBuf::from("relative"),
         ] {
             this.set_scope(Scope::Project(path), cx);
             assert_eq!(this.scope, Scope::Global);
-            assert!(this.drafts.contains_key(&Field::Steering));
+            assert!(this.pending(Field::Steering, cx));
             assert!(this.error.is_some());
         }
     });
@@ -442,13 +488,13 @@ fn saving_a_deleted_project_keeps_the_draft_without_recreating_the_folder(cx: &m
     });
     cx.run_until_parked();
     config.update(cx, |this, cx| {
-        this.set_draft(Field::Steering, Edit::Set(vec![json!("all")]), cx)
+        this.set_values(Field::Steering, vec![Slot::Set(json!("all"))], cx)
     });
     fs::remove_dir(&project).unwrap();
     save(&config, Page::Conversation, cx);
     assert!(!project.exists());
-    config.read_with(cx, |this, _| {
-        assert!(this.drafts.contains_key(&Field::Steering));
+    config.read_with(cx, |this, cx| {
+        assert!(this.pending(Field::Steering, cx));
         assert!(this.error.is_some());
     });
 }
@@ -461,7 +507,7 @@ fn leaving_and_reloading_during_save_wait_for_the_result(cx: &mut TestAppContext
         let left = std::rc::Rc::new(std::cell::Cell::new(false));
         cx.update(|window, cx| {
             config.update(cx, |this, cx| {
-                this.set_draft(Field::Steering, Edit::Set(vec![json!("all")]), cx);
+                this.set_values(Field::Steering, vec![Slot::Set(json!("all"))], cx);
                 if fail {
                     fs::write(agent.path().join("settings.json"), "invalid JSON").unwrap();
                 }
@@ -471,7 +517,7 @@ fn leaving_and_reloading_during_save_wait_for_the_result(cx: &mut TestAppContext
                 this.reload(cx);
                 this.discard(None, cx);
                 assert_eq!(this.generation, generation);
-                assert!(this.has_unsaved());
+                assert!(this.has_unsaved(cx));
             });
             let left = left.clone();
             PiConfig::confirm_leave(&config, move |_, _| left.set(true), window, cx);
@@ -479,10 +525,10 @@ fn leaving_and_reloading_during_save_wait_for_the_result(cx: &mut TestAppContext
         });
         assert!(!left.get());
         cx.run_until_parked();
-        config.read_with(cx, |this, _| {
+        config.read_with(cx, |this, cx| {
             assert!(!this.is_saving());
             assert!(this.leave_after_save.is_none());
-            assert_eq!(this.has_unsaved(), fail);
+            assert_eq!(this.has_unsaved(cx), fail);
             assert_eq!(this.error.is_some(), fail);
         });
         assert_eq!(left.get(), !fail);
@@ -506,15 +552,11 @@ fn model_scope_round_trips_and_preserves_scope_and_conflict_rules(cx: &mut TestA
     )
     .unwrap();
     let (config, cx) = setup(cx, agent.path());
-    config.update(cx, |this, cx| {
-        this.edit_model_scope(|rows| rows.push(" p/*:high ".into()), cx)
-    });
+    append(&config, " p/*:high ", cx);
     save(&config, Page::Conversation, cx);
     assert_eq!(read(&path)["enabledModels"], json!(["p/a", " p/*:high "]));
     assert_eq!(read(&path)["unknown"], json!({"keep":true}));
-    config.update(cx, |this, cx| {
-        this.edit_model_scope(|rows| rows.push(" ".into()), cx)
-    });
+    append(&config, " ", cx);
     save(&config, Page::Conversation, cx);
     assert_eq!(read(&path)["enabledModels"], json!(["p/a", " p/*:high "]));
     config.update(cx, |this, cx| this.discard(None, cx));
@@ -522,14 +564,14 @@ fn model_scope_round_trips_and_preserves_scope_and_conflict_rules(cx: &mut TestA
         this.set_scope(Scope::Project(project.path().to_owned()), cx)
     });
     cx.run_until_parked();
-    config.update(cx, |this, cx| this.edit_model_scope(Vec::clear, cx));
+    remove_all(&config, cx);
     save(&config, Page::Conversation, cx);
     assert_eq!(
         read(&project.path().join(".pi/settings.json"))["enabledModels"],
         json!([])
     );
     config.update(cx, |this, cx| {
-        this.set_draft(Field::ModelScope, Edit::Remove, cx)
+        this.set_values(Field::ModelScope, vec![Slot::Unset], cx)
     });
     save(&config, Page::Conversation, cx);
     assert!(
@@ -539,9 +581,7 @@ fn model_scope_round_trips_and_preserves_scope_and_conflict_rules(cx: &mut TestA
     );
     config.update(cx, |this, cx| this.set_scope(Scope::Global, cx));
     cx.run_until_parked();
-    config.update(cx, |this, cx| {
-        this.edit_model_scope(|rows| rows.push("p/b".into()), cx)
-    });
+    append(&config, "p/b", cx);
     fs::write(&path, r#"{"enabledModels":["external"]}"#).unwrap();
     save(&config, Page::Conversation, cx);
     assert_eq!(read(&path)["enabledModels"], json!(["external"]));
@@ -551,7 +591,7 @@ fn model_scope_round_trips_and_preserves_scope_and_conflict_rules(cx: &mut TestA
         this.reload(cx);
     });
     cx.run_until_parked();
-    config.update(cx, |this, cx| this.edit_model_scope(Vec::clear, cx));
+    remove_all(&config, cx);
     save(&config, Page::Conversation, cx);
     assert!(read(&path).get("enabledModels").is_none());
 }
@@ -562,10 +602,8 @@ fn malformed_model_scope_is_not_overwritten(cx: &mut TestAppContext) {
     let path = agent.path().join("settings.json");
     fs::write(&path, r#"{"enabledModels":[4]}"#).unwrap();
     let (config, cx) = setup(cx, agent.path());
-    config.update(cx, |this, cx| {
-        this.edit_model_scope(|rows| rows.push("p/a".into()), cx)
-    });
-    assert!(!config.read_with(cx, |this, _| this.has_unsaved()));
+    append(&config, "p/a", cx);
+    assert!(!config.read_with(cx, |this, cx| this.has_unsaved(cx)));
     assert_eq!(read(&path)["enabledModels"], json!([4]));
 }
 
@@ -575,22 +613,27 @@ fn model_scope_row_actions_follow_the_row(cx: &mut TestAppContext) {
     let path = agent.path().join("settings.json");
     fs::write(&path, r#"{"enabledModels":["p/a","p/b","p/c"]}"#).unwrap();
     let (config, cx) = setup(cx, agent.path());
-    let rows = ["p/a", "p/b", "p/c"].map(String::from);
-    let a = config.update(cx, |this, _| this.model_scope_ids(&rows)[0]);
+    let a = config.read_with(cx, |this, cx| this.row_keys(cx)[0].clone());
     for _ in 0..2 {
-        config.update(cx, |this, cx| {
-            this.edit_model_row(a, |rows, index| rows.swap(index, index + 1), cx)
+        cx.update(|window, cx| {
+            config.update(cx, |this, cx| this.move_pattern(&a, true, window, cx))
         });
     }
-    config.update(cx, |this, cx| {
-        this.edit_model_row(a, |rows, index| rows[index].1 = "p/x".into(), cx)
+    let input =
+        cx.update(|window, cx| config.update(cx, |this, cx| this.row_input(&a, "p/a", window, cx)));
+    cx.update(|window, cx| {
+        input.update(cx, |input, cx| {
+            input.set_value("p/x", window, cx);
+            cx.emit(gpui_kit::component::input::InputEvent::Change);
+        })
     });
+    cx.run_until_parked();
     save(&config, Page::Conversation, cx);
     assert_eq!(read(&path)["enabledModels"], json!(["p/b", "p/c", "p/x"]));
 }
 
 #[gpui_kit::test]
-fn reverting_a_reorder_gives_rows_new_identities(cx: &mut TestAppContext) {
+fn discarded_row_paths_stay_retired(cx: &mut TestAppContext) {
     let agent = tempfile::tempdir().unwrap();
     fs::write(
         agent.path().join("settings.json"),
@@ -598,12 +641,255 @@ fn reverting_a_reorder_gives_rows_new_identities(cx: &mut TestAppContext) {
     )
     .unwrap();
     let (config, cx) = setup(cx, agent.path());
-    let rows = ["p/a", "p/b"].map(String::from);
-    let before = config.update(cx, |this, _| this.model_scope_ids(&rows));
-    config.update(cx, |this, cx| {
-        this.edit_model_row(before[0], |rows, index| rows.swap(index, index + 1), cx);
-        this.discard(None, cx);
+    let before = config.read_with(cx, |this, cx| this.row_keys(cx));
+    cx.update(|window, cx| {
+        config.update(cx, |this, cx| {
+            this.move_pattern(&before[0], true, window, cx);
+            this.discard(None, cx);
+        })
     });
-    let after = config.update(cx, |this, _| this.model_scope_ids(&rows));
-    assert!(after.iter().all(|id| !before.contains(id)));
+    let after = config.read_with(cx, |this, cx| this.row_keys(cx));
+    assert!(after.iter().all(|key| !before.contains(key)));
+    cx.update(|window, cx| {
+        config.update(cx, |this, cx| this.remove_pattern(&before[0], window, cx))
+    });
+    assert_eq!(
+        config.read_with(cx, |this, cx| this.model_scope_rows(cx)),
+        Some(vec!["p/a".into(), "p/b".into()])
+    );
+}
+
+#[gpui_kit::test]
+fn page_save_reconciles_both_forms_using_the_newly_read_file(cx: &mut TestAppContext) {
+    for dirty in [false, true] {
+        let agent = tempfile::tempdir().unwrap();
+        let path = agent.path().join("settings.json");
+        fs::write(&path, r#"{"retry":{"maxRetries":1}}"#).unwrap();
+        let (config, window) = setup(cx, agent.path());
+        config.update(window, |this, cx| {
+            this.set_values(Field::Compaction, vec![Slot::Set(json!(false))], cx);
+            if dirty {
+                this.set_values(Field::MaxRetries, vec![Slot::Set(json!(3))], cx);
+            }
+        });
+        fs::write(&path, r#"{"retry":{"maxRetries":4},"unknown":true}"#).unwrap();
+        save(&config, Page::Conversation, window);
+        config.read_with(window, |this, cx| {
+            assert_eq!(
+                this.snapshot(cx).value(Field::MaxRetries),
+                vec![Slot::Set(json!(if dirty { 3 } else { 4 }))]
+            );
+            assert_eq!(this.has_page_drafts(Page::Network, cx), dirty);
+        });
+        save(&config, Page::Network, window);
+        assert_eq!(
+            read(&path)["retry"]["maxRetries"],
+            if dirty { 3 } else { 4 }
+        );
+        assert_eq!(read(&path)["unknown"], true);
+    }
+}
+
+#[gpui_kit::test]
+fn bound_invalid_input_survives_reload_and_other_page_save_and_reverts(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let path = agent.path().join("settings.json");
+    fs::write(&path, r#"{"retry":{"maxRetries":1}}"#).unwrap();
+    let (config, window) = setup(cx, agent.path());
+    let input = window.update(|window, cx| {
+        config.update(cx, |this, cx| this.input(Field::MaxRetries, window, cx))
+    });
+    window.update(|window, cx| {
+        input.update(cx, |input, cx| {
+            input.set_value("-", window, cx);
+            cx.emit(gpui_kit::component::input::InputEvent::Change);
+            input.set_value("1", window, cx);
+            cx.emit(gpui_kit::component::input::InputEvent::Change);
+        });
+    });
+    window.run_until_parked();
+    assert!(
+        !config.read_with(window, |this, cx| this.has_unsaved(cx)),
+        "a newer native edit back to the loaded value supersedes queued invalid text"
+    );
+    window.update(|window, cx| {
+        input.update(cx, |input, cx| {
+            input.set_value("-", window, cx);
+            cx.emit(gpui_kit::component::input::InputEvent::Change);
+        })
+    });
+    window.run_until_parked();
+    config.read_with(window, |this, cx| {
+        assert!(this.needs_leave_guard(cx));
+        assert!(this.invalid(Field::MaxRetries, cx));
+    });
+    config.update(window, |this, cx| {
+        this.set_values(Field::Compaction, vec![Slot::Set(json!(false))], cx)
+    });
+    save(&config, Page::Conversation, window);
+    assert_eq!(read(&path)["compaction"]["enabled"], false);
+    assert_eq!(input.read_with(window, |input, _| input.value()), "-");
+    fs::write(
+        &path,
+        r#"{"retry":{"maxRetries":4},"compaction":{"enabled":false}}"#,
+    )
+    .unwrap();
+    config.update(window, |this, cx| this.reload(cx));
+    window.run_until_parked();
+    assert_eq!(input.read_with(window, |input, _| input.value()), "-");
+    save(&config, Page::Network, window);
+    assert_eq!(read(&path)["retry"]["maxRetries"], 4);
+    config.update(window, |this, cx| this.clear_draft(Field::MaxRetries, cx));
+    window.run_until_parked();
+    assert_eq!(input.read_with(window, |input, _| input.value()), "4");
+    assert!(!config.read_with(window, |this, cx| this.needs_leave_guard(cx)));
+}
+
+#[gpui_kit::test]
+fn inherited_rows_transfer_inputs_and_reject_old_callbacks_after_reload(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    fs::write(
+        agent.path().join("settings.json"),
+        r#"{"enabledModels":["p/a","p/b"]}"#,
+    )
+    .unwrap();
+    let (config, window) = setup(cx, agent.path());
+    config.update(window, |this, cx| {
+        this.set_scope(Scope::Project(project.path().to_owned()), cx)
+    });
+    window.run_until_parked();
+    let key = config.read_with(window, |this, cx| this.row_keys(cx)[1].clone());
+    let input = window
+        .update(|window, cx| config.update(cx, |this, cx| this.row_input(&key, "p/b", window, cx)));
+    // Discard can reconstruct inherited rows without advancing the file-read generation.
+    // A queued callback from the old native entity must not target its replacement.
+    window.update(|window, cx| {
+        input.update(cx, |input, cx| {
+            input.set_value("abandoned", window, cx);
+            cx.emit(gpui_kit::component::input::InputEvent::Change);
+        });
+        config.update(cx, |this, cx| {
+            this.discard(Some(Page::Conversation), cx);
+            this.row_input(&key, "p/b", window, cx);
+        });
+    });
+    window.run_until_parked();
+    let input = window
+        .update(|window, cx| config.update(cx, |this, cx| this.row_input(&key, "p/b", window, cx)));
+    assert!(!config.read_with(window, |this, cx| this.has_unsaved(cx)));
+    window.update(|window, cx| {
+        input.update(cx, |input, cx| {
+            input.set_value("p/b'", window, cx);
+            cx.emit(gpui_kit::component::input::InputEvent::Change);
+            // Consecutive native input before the deferred handoff must keep the newest text.
+            input.set_value("p/b''", window, cx);
+            cx.emit(gpui_kit::component::input::InputEvent::Change);
+        })
+    });
+    window.run_until_parked();
+    config.read_with(window, |this, cx| {
+        let new_key = &this.row_keys(cx)[1];
+        assert_eq!(this.rows[new_key].input, input);
+        assert_eq!(
+            this.model_scope_rows(cx),
+            Some(vec!["p/a".into(), "p/b''".into()])
+        );
+    });
+    window.update(|window, cx| config.update(cx, |this, cx| this.remove_pattern(&key, window, cx)));
+    assert_eq!(
+        config.read_with(window, |this, cx| this.model_scope_rows(cx)),
+        Some(vec!["p/a".into(), "p/b''".into()]),
+        "a retired inherited button target cannot address the materialized list by index"
+    );
+    save(&config, Page::Conversation, window);
+    assert_eq!(
+        read(&project.path().join(".pi/settings.json"))["enabledModels"],
+        json!(["p/a", "p/b''"])
+    );
+    config.update(window, |this, cx| {
+        this.set_values(Field::ModelScope, vec![Slot::Unset], cx)
+    });
+    window.run_until_parked();
+    let key = config.read_with(window, |this, cx| this.row_keys(cx)[1].clone());
+    let input = window
+        .update(|window, cx| config.update(cx, |this, cx| this.row_input(&key, "p/b", window, cx)));
+    window.update(|window, cx| {
+        input.update(cx, |input, cx| {
+            input.set_value("stale", window, cx);
+            cx.emit(gpui_kit::component::input::InputEvent::Change);
+        });
+        config.update(cx, |this, cx| this.reload(cx));
+    });
+    window.run_until_parked();
+    assert_eq!(
+        config.read_with(window, |this, cx| this
+            .snapshot(cx)
+            .value(Field::ModelScope)),
+        vec![Slot::Unset]
+    );
+}
+
+#[gpui_kit::test]
+fn correcting_a_bound_number_restores_its_baseline_slot(cx: &mut TestAppContext) {
+    for (project_scope, malformed) in [(false, false), (true, false), (false, true)] {
+        let agent = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let path = agent.path().join("settings.json");
+        let text = if malformed { "bad" } else { "16384" };
+        let original = if malformed {
+            json!({"compaction":{"reserveTokens":"bad"},"unknown":true})
+        } else if project_scope {
+            json!({"compaction":{"reserveTokens":16384},"unknown":true})
+        } else {
+            json!({"unknown":true})
+        };
+        fs::write(&path, original.to_string()).unwrap();
+        let (config, visual) = setup(cx, agent.path());
+        if project_scope {
+            config.update(visual, |this, cx| {
+                this.set_scope(Scope::Project(project.path().to_owned()), cx)
+            });
+            visual.run_until_parked();
+        }
+        let baseline =
+            config.read_with(visual, |this, _| this.baseline.value(Field::ReserveTokens));
+        input_text(&config, Field::ReserveTokens, &format!("{text}x"), visual);
+        assert!(config.read_with(visual, |this, cx| this.invalid(Field::ReserveTokens, cx)));
+        // This correction occurs AFTER the invalid edit has drained.
+        input_text(&config, Field::ReserveTokens, text, visual);
+        config.read_with(visual, |this, cx| {
+            assert_eq!(this.snapshot(cx).value(Field::ReserveTokens), baseline);
+            assert!(!this.has_unsaved(cx));
+        });
+        save(&config, Page::Conversation, visual);
+        assert_eq!(read(&path), original);
+        if project_scope {
+            assert!(
+                !project.path().join(".pi/settings.json").exists(),
+                "correcting inherited text must not create a settings file"
+            );
+        }
+    }
+}
+
+#[gpui_kit::test]
+fn reloading_an_unchanged_conversation_keeps_local_input_entities(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    fs::write(
+        agent.path().join("settings.json"),
+        r#"{"enabledModels":["p/a","p/b"]}"#,
+    )
+    .unwrap();
+    let (config, visual) = setup(cx, agent.path());
+    let key = config.read_with(visual, |this, cx| this.row_keys(cx)[0].clone());
+    let input = visual
+        .update(|window, cx| config.update(cx, |this, cx| this.row_input(&key, "p/a", window, cx)));
+    config.update(visual, |this, cx| this.reload(cx));
+    visual.run_until_parked();
+    config.read_with(visual, |this, cx| {
+        assert_eq!(this.row_keys(cx)[0], key);
+        assert_eq!(this.rows[&key].input, input);
+        assert!(!this.has_unsaved(cx));
+    });
 }

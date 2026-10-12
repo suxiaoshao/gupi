@@ -4,14 +4,13 @@ use super::Models;
 use super::PiConfig;
 use super::Support;
 use super::Trust;
-use super::fields::Edit;
 use super::fields::Field;
 use super::fields::Kind;
 use super::fields::Page;
 use super::fields::Source;
 use super::fields::display;
-use super::fields::parse_count;
 use super::fields::supported_levels;
+use super::forms::Slot;
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::component::Disableable as _;
 use gpui_kit::component::Sizable as _;
@@ -21,8 +20,6 @@ use gpui_kit::component::button::ButtonVariants as _;
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::h_flex;
 use gpui_kit::component::input::Input;
-use gpui_kit::component::input::InputEvent;
-use gpui_kit::component::input::InputState;
 use gpui_kit::component::menu::DropdownMenu as _;
 use gpui_kit::component::menu::PopupMenuItem;
 use gpui_kit::component::select::Select;
@@ -361,7 +358,7 @@ impl PiConfig {
     ) -> AnyElement {
         let entity = cx.entity();
         let path = self.agent.as_ref().ok().map(|agent| self.scope.file(agent));
-        let dirty = self.has_page_drafts(page);
+        let dirty = self.has_page_drafts(page, cx);
         let saving = self.is_saving();
         let ready = matches!(self.files, Load::Ready(_)) && self.status(cx).is_none();
         let more = Button::new("pi-settings-more")
@@ -428,15 +425,15 @@ impl PiConfig {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let Load::Ready(files) = &self.files else {
+        let Load::Ready(_) = &self.files else {
             return div().into_any_element();
         };
         let project = matches!(self.scope, Scope::Project(_));
         if project && field.is_global_only() {
             return self.render_global_only(field, cx);
         }
-        let draft = self.drafts.get(&field).cloned();
-        let resolved = files.resolve(field, draft.as_ref());
+        let pending = self.pending(field, cx);
+        let resolved = self.resolved(field, cx);
         let saving = self.is_saving();
         let id = format!("pi-{}-{}", self.generation, field.id());
         let control = match field.kind() {
@@ -447,16 +444,14 @@ impl PiConfig {
                     .disabled(saving)
                     .accessibility_label(t(cx, field.label()))
                     .on_click(cx.listener(move |this, checked: &bool, _, cx| {
-                        this.set_draft(field, Edit::Set(vec![Value::Bool(*checked)]), cx)
+                        this.set_values(field, vec![Slot::Set(Value::Bool(*checked))], cx)
                     }))
                     .into_any_element()
             }
             Kind::Choice(options) => {
                 self.render_choice(field, options, &resolved.values, saving, cx)
             }
-            Kind::Count | Kind::Text => {
-                self.render_input(field, &id, &resolved.values, draft.as_ref(), window, cx)
-            }
+            Kind::Count | Kind::Text => self.render_input(field, window, cx),
             Kind::ModelScope => self.render_model_scope(window, cx),
             Kind::Model => self.render_model(&resolved.values, saving, window, cx),
         };
@@ -465,11 +460,11 @@ impl PiConfig {
             Source::Global => t(cx, "pi-source-global"),
             Source::Project => t(cx, "pi-source-project"),
         };
-        if draft.is_some() {
+        if pending {
             lane = format!("{lane} · {}", t(cx, "pi-unsaved"));
         }
         let conflict = self.conflicts.contains(&field);
-        let invalid = matches!(draft, Some(Edit::Invalid(_)));
+        let invalid = self.invalid(field, cx);
         v_flex()
             .gap_1()
             .items_end()
@@ -486,13 +481,7 @@ impl PiConfig {
                             .truncate()
                             .child(lane),
                     )
-                    .child(self.render_field_menu(
-                        field,
-                        resolved.overridden,
-                        draft.as_ref(),
-                        saving,
-                        cx,
-                    )),
+                    .child(self.render_field_menu(field, pending, saving, cx)),
             )
             .when(conflict || invalid, |this| {
                 this.child(div().text_xs().text_color(cx.theme().danger).child(t(
@@ -510,20 +499,19 @@ impl PiConfig {
     pub(super) fn render_field_menu(
         &self,
         field: Field,
-        overridden: bool,
-        draft: Option<&Edit>,
+        pending: bool,
         saving: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let entity = cx.entity();
         let project = matches!(self.scope, Scope::Project(_));
-        let has_draft = draft.is_some();
+        let has_draft = pending;
         // After saving, would the edited scope hold a value?
-        let set_here = match draft {
-            Some(Edit::Set(_) | Edit::Invalid(_)) => true,
-            Some(Edit::Remove) => false,
-            None => overridden,
-        };
+        let set_here = self
+            .snapshot(cx)
+            .value(field)
+            .iter()
+            .any(|value| !matches!(value, Slot::Unset));
         Button::new(SharedString::from(format!("pi-menu-{}", field.id())))
             .ghost()
             .xsmall()
@@ -565,7 +553,9 @@ impl PiConfig {
                             },
                         ))
                         .on_click(move |_, _, cx| {
-                            entity.update(cx, |this, cx| this.set_draft(field, Edit::Remove, cx))
+                            entity.update(cx, |this, cx| {
+                                this.set_values(field, vec![Slot::Unset; field.leaves().len()], cx)
+                            })
                         }),
                     );
                 }
@@ -587,7 +577,7 @@ impl PiConfig {
             .and_then(Value::as_str)
             .map(str::to_owned);
         let mut choices: Vec<String> = if field == Field::Thinking {
-            match self.selected_model_levels() {
+            match self.selected_model_levels(cx) {
                 Some(levels) => levels.into_iter().map(str::to_owned).collect(),
                 None => options.iter().map(|o| (*o).to_owned()).collect(),
             }
@@ -635,9 +625,9 @@ impl PiConfig {
                             .checked(current.as_deref() == Some(value.as_str()))
                             .on_click(move |_, _, cx| {
                                 entity.update(cx, |this, cx| {
-                                    this.set_draft(
+                                    this.set_values(
                                         field,
-                                        Edit::Set(vec![Value::from(next.clone())]),
+                                        vec![Slot::Set(Value::from(next.clone()))],
                                         cx,
                                     )
                                 })
@@ -649,11 +639,11 @@ impl PiConfig {
     }
 
     /// Levels for the effective default model, when its metadata is known.
-    fn selected_model_levels(&self) -> Option<Vec<&'static str>> {
-        let (Load::Ready(files), Models::Ready(models)) = (&self.files, &self.models) else {
+    fn selected_model_levels(&self, cx: &App) -> Option<Vec<&'static str>> {
+        let (Load::Ready(_), Models::Ready(models)) = (&self.files, &self.models) else {
             return None;
         };
-        let resolved = files.resolve(Field::Model, self.drafts.get(&Field::Model));
+        let resolved = self.resolved(Field::Model, cx);
         let [Some(Value::String(provider)), Some(Value::String(id))] = resolved.values.as_slice()
         else {
             return None;
@@ -665,65 +655,18 @@ impl PiConfig {
     }
 
     fn render_input(
-        &self,
+        &mut self,
         field: Field,
-        id: &str,
-        values: &[Option<Value>],
-        draft: Option<&Edit>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let shown = display(values[0].as_ref());
-        let entity = cx.entity().downgrade();
-        let state = window.use_keyed_state(SharedString::from(format!("{id}-input")), cx, {
-            let shown = shown.clone();
-            move |window, cx| {
-                let input = cx.new(|cx| InputState::new(window, cx).default_value(shown));
-                let subscription = cx.subscribe(&input, move |_, input, event: &InputEvent, cx| {
-                    if !matches!(event, InputEvent::Change) {
-                        return;
-                    }
-                    let text = input.read(cx).value().to_string();
-                    let _ = entity.update(cx, |this, cx| this.on_text(field, text, cx));
-                });
-                (input, subscription)
-            }
-        });
-        let input = state.read(cx).0.clone();
-        // Show external changes (load, discard, menu actions) unless the user
-        // is still correcting invalid text.
-        if !matches!(draft, Some(Edit::Invalid(_))) && input.read(cx).value().as_ref() != shown {
-            input.update(cx, |input, cx| input.set_value(shown, window, cx));
-        }
+        let input = self.input(field, window, cx);
         Input::new(&input)
+            .id(SharedString::from(format!("pi-input-{}", field.id())))
             .small()
             .w_40()
             .disabled(self.is_saving())
             .into_any_element()
-    }
-
-    /// Text typed into a number or text field.
-    pub(super) fn on_text(&mut self, field: Field, text: String, cx: &mut Context<Self>) {
-        let Load::Ready(files) = &self.files else {
-            return;
-        };
-        let current = files.resolve(field, self.drafts.get(&field));
-        // Programmatic updates echo the value already shown.
-        if display(current.values[0].as_ref()) == text {
-            if matches!(self.drafts.get(&field), Some(Edit::Invalid(_))) {
-                self.clear_draft(field, cx);
-            }
-            return;
-        }
-        let edit = match field.kind() {
-            Kind::Count => match parse_count(&text) {
-                Some(value) => Edit::Set(vec![value]),
-                None => Edit::Invalid(text),
-            },
-            _ if text.trim().is_empty() => Edit::Remove,
-            _ => Edit::Set(vec![Value::from(text.trim().to_owned())]),
-        };
-        self.set_draft(field, edit, cx);
     }
 
     fn render_model(

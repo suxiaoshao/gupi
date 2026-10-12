@@ -151,7 +151,8 @@ impl SettingsView {
 
     /// Whether leaving must settle Pi drafts or an active settings/editor save.
     pub(crate) fn has_unsaved_pi(&self, cx: &App) -> bool {
-        self.pi_config.read(cx).needs_leave_guard() || self.resources.read(cx).needs_leave_guard(cx)
+        self.pi_config.read(cx).needs_leave_guard(cx)
+            || self.resources.read(cx).needs_leave_guard(cx)
     }
 
     /// Runs `proceed` once unsaved Pi drafts are saved or discarded.

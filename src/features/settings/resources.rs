@@ -490,7 +490,7 @@ impl ResourcesView {
                 if matches!(change, Change::Package { .. })
                     && origin == self.active()
                     && let Some(config) = &self.pi_config
-                    && !config.read(cx).has_unsaved()
+                    && !config.read(cx).has_unsaved(cx)
                 {
                     config.update(cx, |config, cx| config.reload(cx));
                 }

@@ -389,6 +389,22 @@ impl ResourcesView {
         });
         let (browse, browse_query) = browse::Browse::new(window, cx);
         let mut subscriptions = vec![observe, change, saved, browse_query];
+        subscriptions.push(cx.observe_global_in::<gupi_settings::i18n::I18n>(
+            window,
+            |this, window, cx| {
+                this.browse.refresh_language(window, cx);
+                for (input, key) in [
+                    (&this.search, "settings-skill-search"),
+                    (&this.prompt_search, "settings-template-search"),
+                ] {
+                    let placeholder = t(cx, key);
+                    input.update(cx, |input, cx| {
+                        input.set_placeholder(placeholder, window, cx);
+                    });
+                }
+                cx.notify();
+            },
+        ));
         for input in [&source, &names[0], &names[1], &prompt_search] {
             subscriptions.push(cx.subscribe(input, |_, _, _: &InputEvent, cx| cx.notify()));
         }

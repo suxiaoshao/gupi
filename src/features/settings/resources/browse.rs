@@ -54,6 +54,13 @@ pub(super) struct Browse {
     detail_scroll: ScrollHandle,
 }
 impl Browse {
+    pub(super) fn refresh_language(&self, window: &mut Window, cx: &mut Context<ResourcesView>) {
+        let placeholder = t(cx, "packages-search");
+        self.query.update(cx, |input, cx| {
+            input.set_placeholder(placeholder, window, cx);
+        });
+    }
+
     pub fn new(window: &mut Window, cx: &mut Context<ResourcesView>) -> (Self, Subscription) {
         let query = cx.new(|cx| InputState::new(window, cx).placeholder(t(cx, "packages-search")));
         let subscription = cx.subscribe(&query, |this: &mut ResourcesView, _, event, cx| {
@@ -994,6 +1001,86 @@ mod tests {
                     result.as_ref().map_err(ToString::to_string)
                 );
                 assert!(!view.package_results.contains_key(source));
+            });
+        }
+    }
+
+    #[gpui_kit::test]
+    fn language_changes_preserve_resource_searches_and_results(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            crate::app::init_capability_hosts(cx);
+            app_theme::init(cx);
+            gupi_settings::theme::init(cx);
+            gupi_settings::i18n::apply(AppLanguage::English, cx);
+        });
+        let mut resources = None;
+        let (_, visual) = cx.add_window_view(|window, cx| {
+            let form = cx.new(|_| Form::new(AppConfig::default()));
+            let config = cx.new(|cx| ConfigController::new(&form, cx));
+            let probe = cx.new(|_| PiProbeController::new());
+            let view = cx.new(|cx| ResourcesView::new(config, probe, window, cx));
+            view.update(cx, |view, cx| {
+                for (input, value) in [
+                    (&view.browse.query, "pi-mcp"),
+                    (&view.search, "review"),
+                    (&view.prompt_search, "explain"),
+                ] {
+                    input.update(cx, |input, cx| input.set_value(value, window, cx));
+                }
+                view.browse.page = Some(super::catalog::parse_search(
+                    br#"{"objects":[{"package":{"name":"pi-mcp-adapter","version":"5.2.0","keywords":["pi-package"]}}],"total":1}"#,
+                    0,
+                ).unwrap());
+                view.browse.selected = Some("pi-mcp-adapter".into());
+                view.browse.details.insert(
+                    "pi-mcp-adapter".into(),
+                    super::DetailState::Failed(Problem::Network),
+                );
+                let mut catalog = gupi_resources::pi_resources::Catalog::default();
+                catalog.resources = [
+                    (gupi_resources::pi_resources::Kind::Skill, "review"),
+                    (gupi_resources::pi_resources::Kind::Prompt, "explain"),
+                ].into_iter().map(|(kind, name)| {
+                    gupi_resources::pi_resources::Resource::new(
+                        kind, name.into(), "".into(), name.into(),
+                    )
+                }).collect();
+                view.controller.update(cx, |controller, _| controller.set_catalog_for_test(catalog));
+            });
+            resources = Some(view);
+            EmptyView
+        });
+        let resources = resources.unwrap();
+        visual.run_until_parked();
+        for language in [AppLanguage::Chinese, AppLanguage::English] {
+            visual.update(|_, cx| gupi_settings::i18n::apply(language, cx));
+            visual.run_until_parked();
+            visual.update(|_, cx| {
+                let view = resources.read(cx);
+                for (input, value, key) in [
+                    (&view.browse.query, "pi-mcp", "packages-search"),
+                    (&view.search, "review", "settings-skill-search"),
+                    (&view.prompt_search, "explain", "settings-template-search"),
+                ] {
+                    let input = input.read(cx);
+                    assert_eq!(input.value().as_ref(), value);
+                    assert_eq!(
+                        input.presentation().placeholder(),
+                        &gupi_settings::i18n::t(cx, key)
+                    );
+                }
+                assert_eq!(
+                    view.browse.page.as_ref().unwrap().entries[0].name,
+                    "pi-mcp-adapter"
+                );
+                assert_eq!(view.browse.selected.as_deref(), Some("pi-mcp-adapter"));
+                assert!(view.browse.details.contains_key("pi-mcp-adapter"));
+                assert_eq!(view.browse.serial, 0);
+                assert!(view.browse.debounce.is_none());
+                assert!(view.browse.searching.is_none());
+                assert_eq!(view.filtered_skills(cx)[0].name, "review");
+                assert_eq!(view.filtered_prompts(cx)[0].name, "explain");
             });
         }
     }

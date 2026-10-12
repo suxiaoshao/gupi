@@ -57,17 +57,17 @@ fn drafts_show_the_pending_value_or_the_inherited_one() {
         json!({"retry":{"maxRetries":5}}),
         json!({"retry":{"maxRetries":1}}),
     );
-    let set = files.resolve(Field::MaxRetries, Some(&Edit::Set(vec![json!(5)])));
+    let set = files.resolve(Field::MaxRetries, Some(&[Slot::Set(json!(5))]));
     assert_eq!(
         (set.values, set.source),
         (vec![Some(json!(5))], Source::Project)
     );
-    let removed = files.resolve(Field::MaxRetries, Some(&Edit::Remove));
+    let removed = files.resolve(Field::MaxRetries, Some(&[Slot::Unset]));
     assert_eq!(
         (removed.values, removed.source),
         (vec![Some(json!(5))], Source::Global)
     );
-    let invalid = files.resolve(Field::MaxRetries, Some(&Edit::Invalid("x".into())));
+    let invalid = files.resolve(Field::MaxRetries, Some(&[Slot::Invalid("x".into())]));
     assert_eq!(invalid.values, vec![Some(json!(1))]);
 }
 
@@ -84,10 +84,19 @@ fn a_partial_model_override_is_kept_as_read() {
     );
     assert_eq!(model.source, Source::Project);
     // Nothing is written unless the user edits the pair.
-    assert!(files.changes(&BTreeMap::new()).is_empty());
+    assert!(
+        files
+            .changes(
+                &Snapshot::project(files.edited()),
+                &Snapshot::project(files.edited()),
+                None
+            )
+            .is_empty()
+    );
 
-    let removal = BTreeMap::from([(Field::Model, Edit::Remove)]);
-    let changes = files.changes(&removal);
+    let mut removal = Snapshot::project(files.edited());
+    removal.set(Field::Model, vec![Slot::Unset, Slot::Unset]);
+    let changes = files.changes(&removal, &Snapshot::project(files.edited()), None);
     assert_eq!(changes.len(), 1, "only the leaf present in the project");
     assert_eq!(changes[0].leaf(), &["defaultModel"][..]);
 }
@@ -98,14 +107,13 @@ fn changes_carry_their_base_and_skip_no_ops_and_invalid_text() {
         json!({}),
         json!({"steeringMode":"all","compaction":{"enabled":true}}),
     );
-    let drafts = BTreeMap::from([
-        (Field::Steering, Edit::Set(vec![json!("all")])),
-        (Field::Compaction, Edit::Set(vec![json!(false)])),
-        (Field::Retry, Edit::Set(vec![json!(true)])),
-        (Field::MaxRetries, Edit::Invalid("-1".into())),
-        (Field::FollowUp, Edit::Remove),
-    ]);
-    let changes = files.changes(&drafts);
+    let mut current = Snapshot::project(files.edited());
+    current.set(Field::Steering, vec![Slot::Set(json!("all"))]);
+    current.set(Field::Compaction, vec![Slot::Set(json!(false))]);
+    current.set(Field::Retry, vec![Slot::Set(json!(true))]);
+    current.set(Field::MaxRetries, vec![Slot::Invalid("-1".into())]);
+    current.set(Field::FollowUp, vec![Slot::Unset]);
+    let changes = files.changes(&current, &Snapshot::project(files.edited()), None);
     assert_eq!(
         changes,
         vec![
@@ -189,5 +197,55 @@ fn supported_levels_match_pi_1_1_catalog_entries() {
     assert_eq!(
         supported_levels(&model(false, json!({"off": null, "xhigh": "xhigh"}))),
         ["off"]
+    );
+}
+
+#[test]
+fn typed_projection_preserves_unreadable_and_only_validates_pending_fields() {
+    let files = project(
+        json!({}),
+        json!({"enabledModels":[" "],"retry":{"maxRetries":"bad"},"unknown":[1]}),
+    );
+    let baseline = Snapshot::project(files.edited());
+    assert_eq!(
+        baseline.value(Field::MaxRetries),
+        vec![Slot::Unreadable(json!("bad"))]
+    );
+    assert!(files.changes(&baseline, &baseline, None).is_empty());
+    assert!(!baseline.invalid(Field::ModelScope, &baseline));
+    let mut current = baseline.clone();
+    current.set(Field::Compaction, vec![Slot::Set(json!(false))]);
+    assert!(!current.invalid(Field::ModelScope, &baseline));
+    assert_eq!(
+        files
+            .changes(&current, &Snapshot::project(files.edited()), None)
+            .len(),
+        1
+    );
+    current.set(Field::MaxRetries, vec![Slot::Invalid("-".into())]);
+    assert!(current.invalid(Field::MaxRetries, &baseline));
+    current.set(Field::ModelScope, vec![Slot::Set(json!(["a", " "]))]);
+    assert!(current.invalid(Field::ModelScope, &baseline));
+}
+
+#[test]
+fn snapshot_merge_preserves_newer_edits_and_adopts_unedited_disk_values() {
+    let old = Snapshot::project(&document(json!({"retry":{"maxRetries":1,"baseDelayMs":2}})));
+    let next = Snapshot::project(&document(json!({"retry":{"maxRetries":4,"baseDelayMs":6}})));
+    let mut current = old.clone();
+    current.set(Field::MaxRetries, vec![Slot::Invalid("-".into())]);
+    let merged = Snapshot::merge(&current, &next, &old);
+    assert_eq!(
+        merged.value(Field::MaxRetries),
+        vec![Slot::Invalid("-".into())]
+    );
+    assert_eq!(merged.value(Field::BaseDelay), vec![Slot::Set(json!(6))]);
+    // A save reply uses the prepared value, preserving even a newer revert to the original value.
+    let mut prepared = old.clone();
+    prepared.set(Field::MaxRetries, vec![Slot::Set(json!(3))]);
+    let merged = Snapshot::merge(&old, &prepared, &prepared);
+    assert_eq!(
+        merged.value(Field::MaxRetries),
+        old.value(Field::MaxRetries)
     );
 }

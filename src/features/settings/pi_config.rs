@@ -4,15 +4,18 @@
 //! saved; each save re-reads the file inside Pi's lock and writes only the
 //! changed leaves.
 mod fields;
+mod forms;
+mod inputs;
 mod model_scope;
 mod page;
 
 pub(super) use fields::Page;
 pub(super) use page::request_scope;
 
-use fields::Edit;
 use fields::Field;
 use fields::Files;
+use forms::{ConversationDraft, NetworkDraft, Slot, Snapshot};
+use gpui_form::Form;
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::searchable_list::SearchableListItem;
 use gpui_kit::component::searchable_list::SearchableVec;
@@ -93,7 +96,11 @@ pub(super) struct PiConfig {
     generation: u64,
     files: Load,
     trust: Option<Trust>,
-    drafts: BTreeMap<Field, Edit>,
+    conversation: Entity<Form<ConversationDraft>>,
+    network: Entity<Form<NetworkDraft>>,
+    /// Projection of the loaded file, also the baseline of both forms.
+    baseline: Snapshot,
+    inputs: BTreeMap<Field, inputs::Adapter>,
     conflicts: Vec<Field>,
     error: Option<String>,
     saving: Option<Task<()>>,
@@ -102,9 +109,7 @@ pub(super) struct PiConfig {
     models: Models,
     model_picker: Entity<SelectState<SearchableVec<ModelItem>>>,
     scope_picker: Entity<SelectState<SearchableVec<ModelItem>>>,
-    /// Model scope rows with the pattern each identity was last paired with.
-    scope_rows: Vec<(u64, String)>,
-    next_scope_row: u64,
+    rows: std::collections::HashMap<model_scope::RowKey, model_scope::Adapter>,
     /// The model key last projected into `model_picker`.
     synced_model: Option<Option<(String, String)>>,
     file_task: Option<Task<()>>,
@@ -131,7 +136,7 @@ impl PiConfig {
                 Value::String(provider.clone()),
                 Value::String(model.clone()),
             ];
-            this.set_draft(Field::Model, Edit::Set(value), cx);
+            this.set_values(Field::Model, value.into_iter().map(Slot::Set).collect(), cx);
         });
         let scope_picker = cx.new(|cx| {
             SelectState::new(SearchableVec::new(vec![]), None, window, cx).searchable(true)
@@ -141,10 +146,14 @@ impl PiConfig {
                 if let SelectEvent::<SearchableVec<ModelItem>>::Confirm(Some((provider, model))) =
                     event
                 {
-                    this.edit_model_scope(|rows| rows.push(format!("{provider}/{model}")), cx);
+                    this.append_pattern(format!("{provider}/{model}"), window, cx);
                     picker.update(cx, |picker, cx| picker.set_selected_index(None, window, cx));
                 }
             });
+        let conversation = cx.new(|_| Form::new(ConversationDraft::default()));
+        let network = cx.new(|_| Form::new(NetworkDraft::default()));
+        let conversation_sub = cx.observe(&conversation, |_, _, cx| cx.notify());
+        let network_sub = cx.observe(&network, |_, _, cx| cx.notify());
         let applied_sub = cx.observe(&applied_pi, |_, _, cx| cx.notify());
         cx.on_release(|this, cx| this.cancel_model_query(cx))
             .detach();
@@ -157,7 +166,10 @@ impl PiConfig {
             generation: 0,
             files: Load::Loading,
             trust: None,
-            drafts: BTreeMap::new(),
+            conversation,
+            network,
+            baseline: Snapshot::default(),
+            inputs: BTreeMap::new(),
             conflicts: Vec::new(),
             error: None,
             saving: None,
@@ -166,13 +178,18 @@ impl PiConfig {
             models: Models::Idle,
             model_picker,
             scope_picker,
-            scope_rows: Vec::new(),
-            next_scope_row: 0,
+            rows: std::collections::HashMap::new(),
             synced_model: None,
             file_task: None,
             model_task: None,
             model_instance: None,
-            _subscriptions: vec![picker_sub, scope_sub, applied_sub],
+            _subscriptions: vec![
+                picker_sub,
+                scope_sub,
+                applied_sub,
+                conversation_sub,
+                network_sub,
+            ],
         }
     }
 
@@ -183,7 +200,7 @@ impl PiConfig {
 
     /// Re-reads the files when the Pi area is shown, unless drafts are open.
     pub(super) fn activate(&mut self, cx: &mut Context<Self>) {
-        if !self.has_unsaved() && !self.is_saving() {
+        if !self.has_unsaved(cx) && !self.is_saving() {
             self.reload(cx);
         }
     }
@@ -223,12 +240,12 @@ impl PiConfig {
             .collect()
     }
 
-    pub(super) fn has_unsaved(&self) -> bool {
-        !self.drafts.is_empty()
+    pub(super) fn has_unsaved(&self, cx: &App) -> bool {
+        self.conversation.read(cx).is_dirty() || self.network.read(cx).is_dirty()
     }
 
-    pub(super) fn needs_leave_guard(&self) -> bool {
-        self.has_unsaved() || self.is_saving()
+    pub(super) fn needs_leave_guard(&self, cx: &App) -> bool {
+        self.has_unsaved(cx) || self.is_saving()
     }
 
     fn is_saving(&self) -> bool {
@@ -266,7 +283,12 @@ impl PiConfig {
         }
         self.cancel_model_query(cx);
         self.scope = scope;
-        self.drafts.clear();
+        self.conversation
+            .update(cx, |form, cx| form.rebase(ConversationDraft::default(), cx));
+        self.network
+            .update(cx, |form, cx| form.rebase(NetworkDraft::default(), cx));
+        self.baseline = Snapshot::default();
+        self.rows.clear();
         self.models = Models::Idle;
         self.reload(cx);
     }
@@ -307,8 +329,12 @@ impl PiConfig {
                 }
                 match result {
                     Ok((files, trust)) => {
+                        let next = Snapshot::project(files.edited());
+                        let since = this.baseline.clone();
+                        this.reconcile(next, &since, cx);
                         this.files = Load::Ready(files);
                         this.trust = trust;
+                        this.refresh_inputs(cx);
                     }
                     Err(error) => this.files = Load::Failed(error),
                 }
@@ -318,67 +344,99 @@ impl PiConfig {
         cx.notify();
     }
 
-    fn set_draft(&mut self, field: Field, edit: Edit, cx: &mut Context<Self>) {
-        let Load::Ready(files) = &self.files else {
+    fn snapshot(&self, cx: &App) -> Snapshot {
+        Snapshot::read(&self.conversation, &self.network, cx)
+    }
+
+    fn set_values(&mut self, field: Field, values: Vec<Slot<Value>>, cx: &mut Context<Self>) {
+        if !matches!(self.files, Load::Ready(_)) {
             return;
-        };
-        // An edit back to the stored value is no change at all.
-        let stored = files.resolve(field, None);
-        let unchanged = match &edit {
-            Edit::Set(values) => stored.overridden && stored.values == wrap(values),
-            Edit::Remove => !stored.overridden,
-            Edit::Invalid(_) => false,
-        };
-        if unchanged {
-            self.drafts.remove(&field);
-        } else {
-            self.drafts.insert(field, edit);
         }
+        let mut snapshot = self.snapshot(cx);
+        snapshot.set(field, values);
+        snapshot.install_field(field, &self.conversation, &self.network, cx);
         self.error = None;
         cx.notify();
     }
 
     fn clear_draft(&mut self, field: Field, cx: &mut Context<Self>) {
-        self.drafts.remove(&field);
+        self.baseline
+            .install_field(field, &self.conversation, &self.network, cx);
         cx.notify();
+    }
+
+    fn pending(&self, field: Field, cx: &App) -> bool {
+        self.snapshot(cx).pending(field, &self.baseline)
+    }
+
+    fn invalid(&self, field: Field, cx: &App) -> bool {
+        self.snapshot(cx).invalid(field, &self.baseline)
+    }
+
+    fn resolved(&self, field: Field, cx: &App) -> fields::Resolved {
+        let Load::Ready(files) = &self.files else {
+            unreachable!("resolve loaded settings")
+        };
+        files.resolve(field, Some(&self.snapshot(cx).value(field)))
     }
 
     /// Fixes the current effective value in the edited scope.
     fn pin(&mut self, field: Field, cx: &mut Context<Self>) {
-        let Load::Ready(files) = &self.files else {
+        if !matches!(self.files, Load::Ready(_)) {
             return;
-        };
-        let mut resolved = files.resolve(field, self.drafts.get(&field));
-        if field == Field::ModelScope && resolved.values == vec![None] {
-            resolved.values = vec![Some(serde_json::json!([]))];
         }
-        if let Some(values) = resolved.values.into_iter().collect::<Option<Vec<_>>>() {
-            self.drafts.insert(field, Edit::Set(values));
-            cx.notify();
+        let mut values = self.resolved(field, cx).values;
+        if field == Field::ModelScope && values == vec![None] {
+            values = vec![Some(serde_json::json!([]))];
+        }
+        if let Some(values) = values.into_iter().collect::<Option<Vec<_>>>() {
+            self.set_values(field, values.into_iter().map(Slot::Set).collect(), cx);
         }
     }
 
-    fn page_drafts(&self, page: Option<Page>) -> BTreeMap<Field, Edit> {
-        self.drafts
-            .iter()
-            .filter(|(field, _)| page.is_none_or(|page| field.page() == page))
-            .map(|(field, edit)| (*field, edit.clone()))
-            .collect()
-    }
-
-    fn has_page_drafts(&self, page: Page) -> bool {
-        self.drafts.keys().any(|field| field.page() == page)
+    fn has_page_drafts(&self, page: Page, cx: &App) -> bool {
+        match page {
+            Page::Conversation => self.conversation.read(cx).is_dirty(),
+            Page::Network => self.network.read(cx).is_dirty(),
+        }
     }
 
     pub(super) fn discard(&mut self, page: Option<Page>, cx: &mut Context<Self>) {
         if self.is_saving() {
             return;
         }
-        self.drafts
-            .retain(|field, _| page.is_some_and(|page| field.page() != page));
+        if page.is_none_or(|p| p == Page::Conversation) {
+            self.conversation.update(cx, |f, cx| f.reset(cx));
+            self.rows.clear();
+        }
+        if page.is_none_or(|p| p == Page::Network) {
+            self.network.update(cx, |f, cx| f.reset(cx));
+        }
         self.conflicts.clear();
         self.error = None;
         cx.notify();
+    }
+
+    fn reconcile(&mut self, next: Snapshot, since: &Snapshot, cx: &mut Context<Self>) {
+        let merged = Snapshot::merge(&self.snapshot(cx), &next, since);
+        if self.baseline.conversation != next.conversation {
+            self.rows.clear();
+            self.conversation.update(cx, |form, cx| {
+                form.rebase(next.conversation.clone(), cx);
+                if merged.conversation != next.conversation {
+                    form.replace(merged.conversation, cx);
+                }
+            });
+        }
+        if self.baseline.network != next.network {
+            self.network.update(cx, |form, cx| {
+                form.rebase(next.network.clone(), cx);
+                if merged.network != next.network {
+                    form.replace(merged.network, cx);
+                }
+            });
+        }
+        self.baseline = next;
     }
 
     /// Saves one page, or every page. `then` runs after a successful save.
@@ -395,17 +453,42 @@ impl PiConfig {
         if self.is_saving() {
             return;
         }
-        let drafts = self.page_drafts(page);
-        if drafts.values().any(|edit| matches!(edit, Edit::Invalid(_))) {
+        let mut prepared = self.snapshot(cx);
+        if Field::ALL.into_iter().any(|field| {
+            page.is_none_or(|p| field.page() == p) && prepared.invalid(field, &self.baseline)
+        }) {
             self.error = Some(t(cx, "pi-settings-invalid"));
             cx.notify();
             return;
         }
-        let changes = files.changes(&drafts);
+        if page.is_none_or(|p| p == Page::Conversation) {
+            let result = self.conversation.update(cx, |form, cx| form.prepare(cx));
+            let Ok(snapshot) = result else {
+                self.error = Some(t(cx, "pi-settings-invalid"));
+                cx.notify();
+                return;
+            };
+            prepared.conversation = snapshot.into_parts().1;
+        }
+        if page.is_none_or(|p| p == Page::Network) {
+            let result = self.network.update(cx, |form, cx| form.prepare(cx));
+            let Ok(snapshot) = result else {
+                self.error = Some(t(cx, "pi-settings-invalid"));
+                cx.notify();
+                return;
+            };
+            prepared.network = snapshot.into_parts().1;
+        }
+        let changes = files.changes(&prepared, &self.baseline, page);
+        let mut since = self.baseline.clone();
+        for field in Field::ALL {
+            if page.is_none_or(|p| field.page() == p) {
+                since.set(field, prepared.value(field));
+            }
+        }
         let scope = self.scope.clone();
         let agent = agent.clone();
         let generation = self.generation;
-        let saved: Vec<Field> = drafts.keys().copied().collect();
         let task = cx.background_spawn(async move { scope.commit(&agent, &changes) });
         self.error = None;
         self.conflicts.clear();
@@ -420,16 +503,12 @@ impl PiConfig {
                 }
                 match result {
                     Ok(document) => {
+                        let next = Snapshot::project(&document);
+                        this.reconcile(next, &since, cx);
                         if let Load::Ready(files) = &mut this.files {
                             match &mut files.project {
                                 Some(project) => *project = document,
                                 None => files.global = document,
-                            }
-                        }
-                        // Drafts typed while saving are newer than what was written.
-                        for field in &saved {
-                            if this.drafts.get(field) == drafts.get(field) {
-                                this.drafts.remove(field);
                             }
                         }
                         return this.leave_after_save.take().or(then);
@@ -475,7 +554,7 @@ impl PiConfig {
             });
             return;
         }
-        if !this.read(cx).has_unsaved() {
+        if !this.read(cx).has_unsaved(cx) {
             proceed(window, cx);
             return;
         }
@@ -687,10 +766,6 @@ fn supports(version: &str) -> bool {
         (Some(Ok(major)), Some(Ok(minor))) => (major, minor) >= MINIMUM_PI,
         _ => false,
     }
-}
-
-fn wrap(values: &[Value]) -> Vec<Option<Value>> {
-    values.iter().cloned().map(Some).collect()
 }
 
 fn read_trust(agent: &Path, cwd: &Path, global: &pi_settings::Document) -> Trust {

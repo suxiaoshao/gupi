@@ -1,124 +1,307 @@
-//! Ordered Pi model patterns. Preserve syntax and ordering; Pi resolves matches.
+//! Ordered model patterns use form-owned occurrence paths.
 use super::*;
 use fields::Source;
+use forms::{ModelScope, ModelScopeSlot, Pattern};
+use gpui_form::{ControlBinding, ControlProjection, DynamicItemsPath, ItemPath, PathKey};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::select::Select;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, h_flex, v_flex};
 use gupi_settings::assets::IconName;
 
-fn rows(value: Option<&Value>) -> Option<Vec<String>> {
-    match value {
-        None => Some(vec![]),
-        Some(Value::Array(values)) => values
-            .iter()
-            .map(|v| v.as_str().map(str::to_owned))
-            .collect(),
-        _ => None,
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(super) enum RowKey {
+    Local(PathKey),
+    Inherited(u64, usize),
+}
+impl RowKey {
+    fn element_id(&self) -> ElementId {
+        match self {
+            Self::Local(key) => key.into(),
+            Self::Inherited(generation, index) => {
+                SharedString::from(format!("inherited-pattern-{generation}-{index}")).into()
+            }
+        }
     }
 }
-
-fn edit(rows: Vec<String>, project: bool) -> Edit {
-    if rows.iter().any(|s| s.trim().is_empty()) {
-        Edit::Invalid(serde_json::to_string(&rows).expect("strings serialize"))
-    } else if rows.is_empty() && !project {
-        Edit::Remove
-    } else {
-        Edit::Set(vec![serde_json::json!(rows)])
-    }
+pub(super) struct Adapter {
+    pub(super) input: Entity<InputState>,
+    _binding: Option<ControlBinding>,
+    _subscription: Subscription,
 }
 
 impl PiConfig {
-    fn model_scope_rows(&self) -> Option<Vec<String>> {
-        let Load::Ready(files) = &self.files else {
+    pub(super) fn model_scope_rows(&self, cx: &App) -> Option<Vec<String>> {
+        if !matches!(self.files, Load::Ready(_)) {
             return None;
-        };
-        let draft = self.drafts.get(&Field::ModelScope);
-        if let Some(Edit::Invalid(text)) = draft {
-            return serde_json::from_str(text).ok();
         }
-        rows(files.resolve(Field::ModelScope, draft).values[0].as_ref())
-    }
-
-    /// Row identities for the shown patterns. Any change made outside the
-    /// editor, such as a reload or a discarded draft, assigns new identities so
-    /// retained row state never pairs with another pattern.
-    pub(super) fn model_scope_ids(&mut self, rows: &[String]) -> Vec<u64> {
-        if !self.scope_rows.iter().map(|(_, text)| text).eq(rows) {
-            self.scope_rows = rows
-                .iter()
-                .map(|text| (self.next_model_scope_id(), text.clone()))
-                .collect();
+        match self.resolved(Field::ModelScope, cx).values[0].as_ref() {
+            None => Some(vec![]),
+            Some(value) => serde_json::from_value(value.clone()).ok(),
         }
-        self.scope_rows.iter().map(|(id, _)| *id).collect()
     }
 
-    fn next_model_scope_id(&mut self) -> u64 {
-        self.next_scope_row += 1;
-        self.next_scope_row
+    fn patterns(&self, cx: &App) -> Option<DynamicItemsPath<ConversationDraft, Pattern>> {
+        ConversationDraft::ENABLED_MODELS
+            .case(ModelScopeSlot::SET)
+            .resolve(&self.conversation, cx)
+            .ok()
+            .flatten()
+            .map(|scope| scope.then(ModelScope::PATTERNS))
     }
 
-    /// Edits the rows with their identities; `change` draws new identities
-    /// from the counter it is given.
-    fn edit_model_rows(
+    pub(super) fn row_keys(&self, cx: &App) -> Vec<RowKey> {
+        if let Some(patterns) = self.patterns(cx) {
+            patterns
+                .try_items(&self.conversation, cx)
+                .expect("active collection")
+                .into_iter()
+                .map(|p| RowKey::Local(p.key()))
+                .collect()
+        } else {
+            (0..self.model_scope_rows(cx).map_or(0, |rows| rows.len()))
+                .map(|index| RowKey::Inherited(self.generation, index))
+                .collect()
+        }
+    }
+
+    fn bind_row(
+        &self,
+        input: Entity<InputState>,
+        path: ItemPath<ConversationDraft, Pattern>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Adapter {
+        let text = path.then(Pattern::TEXT);
+        let (binding, writer) = text
+            .try_bind_control_in(
+                &self.conversation,
+                &input,
+                |input, projection, window, cx| {
+                    if let ControlProjection::Value(value) = projection
+                        && input.value().as_ref() != value
+                    {
+                        input.set_value(value, window, cx);
+                    }
+                },
+                window,
+                cx,
+            )
+            .expect("active row path");
+        let subscription = cx.subscribe_in(&input, window, move |_, input, event, window, cx| {
+            if matches!(event, InputEvent::Change) {
+                writer.defer_set(input.read(cx).value().to_string(), window, cx);
+            }
+        });
+        Adapter {
+            input,
+            _binding: Some(binding),
+            _subscription: subscription,
+        }
+    }
+
+    pub(super) fn row_input(
         &mut self,
-        change: impl FnOnce(&mut Vec<(u64, String)>, &mut u64),
+        key: &RowKey,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<InputState> {
+        if let Some(adapter) = self.rows.get(key) {
+            return adapter.input.clone();
+        }
+        let input = cx.new(|cx| InputState::new(window, cx).default_value(text.to_owned()));
+        let adapter = match key {
+            RowKey::Local(key) => {
+                let path = self
+                    .patterns(cx)
+                    .unwrap()
+                    .try_items(&self.conversation, cx)
+                    .expect("active collection")
+                    .into_iter()
+                    .find(|path| &path.key() == key)
+                    .expect("active row");
+                self.bind_row(input.clone(), path, window, cx)
+            }
+            RowKey::Inherited(generation, index) => {
+                let generation = *generation;
+                let index = *index;
+                let key = key.clone();
+                let subscription =
+                    cx.subscribe_in(&input, window, move |_, input, event, window, cx| {
+                        if !matches!(event, InputEvent::Change) {
+                            return;
+                        }
+                        let input = input.clone();
+                        let key = key.clone();
+                        cx.defer_in(window, move |this, window, cx| {
+                            if this.generation != generation
+                                || this.is_saving()
+                                || this
+                                    .rows
+                                    .get(&key)
+                                    .is_none_or(|adapter| adapter.input != input)
+                            {
+                                return;
+                            }
+                            let text = input.read(cx).value().to_string();
+                            if this
+                                .model_scope_rows(cx)
+                                .and_then(|rows| rows.get(index).cloned())
+                                .as_deref()
+                                == Some(&text)
+                            {
+                                return;
+                            }
+                            if let Some(path) = this
+                                .materialize(window, cx)
+                                .and_then(|paths| paths.get(index).cloned())
+                            {
+                                let _ =
+                                    path.then(Pattern::TEXT)
+                                        .try_set(&this.conversation, text, cx);
+                            }
+                        });
+                    });
+                Adapter {
+                    input: input.clone(),
+                    _binding: None,
+                    _subscription: subscription,
+                }
+            }
+        };
+        self.rows.insert(key.clone(), adapter);
+        input
+    }
+
+    /// Pin inherited rows only for a real edit, transferring their native entities.
+    fn materialize(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<Vec<ItemPath<ConversationDraft, Pattern>>> {
+        if self.is_saving() {
+            return None;
+        }
+        if self.patterns(cx).is_none() {
+            let rows = self.model_scope_rows(cx)?;
+            ConversationDraft::ENABLED_MODELS.set(
+                &self.conversation,
+                ModelScopeSlot::Set(ModelScope {
+                    patterns: rows.into_iter().map(|text| Pattern { text }).collect(),
+                }),
+                cx,
+            );
+            let paths = self
+                .patterns(cx)?
+                .try_items(&self.conversation, cx)
+                .expect("active collection");
+            for (index, path) in paths.iter().enumerate() {
+                if let Some(adapter) = self.rows.remove(&RowKey::Inherited(self.generation, index))
+                {
+                    let input = adapter.input.clone();
+                    drop(adapter);
+                    let adapter = self.bind_row(input, path.clone(), window, cx);
+                    self.rows.insert(RowKey::Local(path.key()), adapter);
+                }
+            }
+        }
+        Some(
+            self.patterns(cx)?
+                .try_items(&self.conversation, cx)
+                .expect("active collection"),
+        )
+    }
+
+    fn path_for(
+        &mut self,
+        key: &RowKey,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<ItemPath<ConversationDraft, Pattern>> {
+        match key {
+            RowKey::Local(key) => self
+                .patterns(cx)?
+                .try_items(&self.conversation, cx)
+                .expect("active collection")
+                .into_iter()
+                .find(|path| &path.key() == key),
+            RowKey::Inherited(generation, index)
+                if *generation == self.generation && self.patterns(cx).is_none() =>
+            {
+                self.materialize(window, cx)?.get(*index).cloned()
+            }
+            _ => None,
+        }
+    }
+
+    pub(super) fn append_pattern(
+        &mut self,
+        text: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.materialize(window, cx).is_some() {
+            let _ = self
+                .patterns(cx)
+                .unwrap()
+                .append(&self.conversation, Pattern { text }, cx);
+            cx.notify();
+        }
+    }
+
+    pub(super) fn move_pattern(
+        &mut self,
+        key: &RowKey,
+        down: bool,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if self.is_saving() {
             return;
         }
-        let Some(rows) = self.model_scope_rows() else {
+        let Some(path) = self.path_for(key, window, cx) else {
             return;
         };
-        let ids = self.model_scope_ids(&rows);
-        let mut pairs: Vec<_> = ids.into_iter().zip(rows).collect();
-        change(&mut pairs, &mut self.next_scope_row);
-        let rows = pairs.iter().map(|(_, text)| text.clone()).collect();
-        self.scope_rows = pairs;
-        self.set_draft(
-            Field::ModelScope,
-            edit(rows, matches!(self.scope, Scope::Project(_))),
-            cx,
-        );
+        let patterns = self.patterns(cx).unwrap();
+        let paths = patterns
+            .try_items(&self.conversation, cx)
+            .expect("active collection");
+        let Some(index) = paths.iter().position(|p| p.key() == path.key()) else {
+            return;
+        };
+        if down && index + 1 < paths.len() {
+            let _ = patterns.move_before(&self.conversation, &paths[index + 1], &path, cx);
+        } else if !down && index > 0 {
+            let _ = patterns.move_before(&self.conversation, &path, &paths[index - 1], cx);
+        }
+        cx.notify();
     }
 
-    /// Edits the patterns by position; rows past the old length get new
-    /// identities.
-    pub(super) fn edit_model_scope(
+    pub(super) fn remove_pattern(
         &mut self,
-        change: impl FnOnce(&mut Vec<String>),
+        key: &RowKey,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.edit_model_rows(
-            |pairs, next| {
-                let (ids, mut rows): (Vec<_>, Vec<_>) = pairs.drain(..).unzip();
-                change(&mut rows);
-                let fresh = std::iter::repeat_with(|| {
-                    *next += 1;
-                    *next
-                });
-                pairs.extend(ids.into_iter().chain(fresh).zip(rows));
-            },
-            cx,
-        );
-    }
-
-    /// Applies `change` at the current position of row `id`.
-    pub(super) fn edit_model_row(
-        &mut self,
-        id: u64,
-        change: impl FnOnce(&mut Vec<(u64, String)>, usize),
-        cx: &mut Context<Self>,
-    ) {
-        self.edit_model_rows(
-            |pairs, _| {
-                if let Some(index) = pairs.iter().position(|(row, _)| *row == id) {
-                    change(pairs, index);
-                }
-            },
-            cx,
-        );
+        if self.is_saving() {
+            return;
+        }
+        let Some(path) = self.path_for(key, window, cx) else {
+            return;
+        };
+        let patterns = self.patterns(cx).unwrap();
+        self.rows.remove(&RowKey::Local(path.key()));
+        let _ = patterns.remove(&self.conversation, path, cx);
+        if patterns
+            .try_items(&self.conversation, cx)
+            .expect("active collection")
+            .is_empty()
+            && matches!(self.scope, Scope::Global)
+        {
+            ConversationDraft::ENABLED_MODELS.set(&self.conversation, ModelScopeSlot::Unset, cx);
+        }
+        cx.notify();
     }
 
     pub(super) fn render_model_scope(
@@ -126,13 +309,13 @@ impl PiConfig {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let Load::Ready(files) = &self.files else {
+        let Load::Ready(_) = &self.files else {
             return div().into_any_element();
         };
         let field = Field::ModelScope;
-        let draft = self.drafts.get(&field).cloned();
-        let resolved = files.resolve(field, draft.as_ref());
-        let Some(rows) = self.model_scope_rows() else {
+        let pending = self.pending(field, cx);
+        let resolved = self.resolved(field, cx);
+        let Some(rows) = self.model_scope_rows(cx) else {
             return v_flex()
                 .gap_1()
                 .child(t(cx, "pi-model-scope"))
@@ -159,7 +342,7 @@ impl PiConfig {
                 Source::Project => "pi-source-project",
             },
         );
-        if draft.is_some() {
+        if pending {
             source = format!("{source} · {}", t(cx, "pi-unsaved"));
         }
         let mut list = v_flex()
@@ -176,13 +359,7 @@ impl PiConfig {
                             .text_color(cx.theme().muted_foreground)
                             .child(source),
                     )
-                    .child(self.render_field_menu(
-                        field,
-                        resolved.overridden,
-                        draft.as_ref(),
-                        saving,
-                        cx,
-                    )),
+                    .child(self.render_field_menu(field, pending, saving, cx)),
             )
             .child(
                 div()
@@ -190,29 +367,16 @@ impl PiConfig {
                     .text_color(cx.theme().muted_foreground)
                     .child(t(cx, "pi-model-scope-help")),
             );
-        let ids = self.model_scope_ids(&rows);
-        for (index, (row, text)) in ids.into_iter().zip(&rows).enumerate() {
-            let entity = cx.entity().downgrade();
-            let id = format!("pi-model-pattern-{}-{row}", self.generation);
-            let shown = text.clone();
-            let state = window.use_keyed_state(SharedString::from(id), cx, move |window, cx| {
-                let input = cx.new(|cx| InputState::new(window, cx).default_value(shown));
-                let sub = cx.subscribe(&input, move |_, input, event: &InputEvent, cx| {
-                    if matches!(event, InputEvent::Change) {
-                        let text = input.read(cx).value().to_string();
-                        let _ = entity.update(cx, |this, cx| {
-                            this.edit_model_row(row, |rows, index| rows[index].1 = text, cx)
-                        });
-                    }
-                });
-                (input, sub)
-            });
-            let input = state.read(cx).0.clone();
-            if input.read(cx).value().as_ref() != text {
-                input.update(cx, |input, cx| input.set_value(text.clone(), window, cx));
-            }
+        let keys = self.row_keys(cx);
+        self.rows.retain(|key, _| keys.contains(key));
+        for (index, (row, text)) in keys.into_iter().zip(&rows).enumerate() {
+            let input = self.row_input(&row, text, window, cx);
+            let up = row.clone();
+            let down = row.clone();
+            let delete = row.clone();
             list = list.child(
                 h_flex()
+                    .id(row.element_id())
                     .gap_1()
                     .min_w_0()
                     .child(
@@ -222,61 +386,39 @@ impl PiConfig {
                             .child(Input::new(&input).small().disabled(saving)),
                     )
                     .child(
-                        Button::new(("model-scope-up", row as usize))
+                        Button::new("model-scope-up")
                             .small()
                             .ghost()
                             .icon(IconName::ChevronUp)
                             .accessibility_label(t(cx, "pi-model-scope-up"))
                             .tooltip(t(cx, "pi-model-scope-up"))
                             .disabled(saving || index == 0)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.edit_model_row(
-                                    row,
-                                    |rows, index| {
-                                        if index > 0 {
-                                            rows.swap(index, index - 1);
-                                        }
-                                    },
-                                    cx,
-                                )
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.move_pattern(&up, false, window, cx);
                             })),
                     )
                     .child(
-                        Button::new(("model-scope-down", row as usize))
+                        Button::new("model-scope-down")
                             .small()
                             .ghost()
                             .icon(IconName::ChevronDown)
                             .accessibility_label(t(cx, "pi-model-scope-down"))
                             .tooltip(t(cx, "pi-model-scope-down"))
                             .disabled(saving || index + 1 == count)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.edit_model_row(
-                                    row,
-                                    |rows, index| {
-                                        if index + 1 < rows.len() {
-                                            rows.swap(index, index + 1);
-                                        }
-                                    },
-                                    cx,
-                                )
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.move_pattern(&down, true, window, cx);
                             })),
                     )
                     .child(
-                        Button::new(("model-scope-delete", row as usize))
+                        Button::new("model-scope-delete")
                             .small()
                             .ghost()
                             .icon(IconName::Trash)
                             .accessibility_label(t(cx, "pi-model-scope-delete"))
                             .tooltip(t(cx, "pi-model-scope-delete"))
                             .disabled(saving)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.edit_model_row(
-                                    row,
-                                    |rows, index| {
-                                        rows.remove(index);
-                                    },
-                                    cx,
-                                )
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.remove_pattern(&delete, window, cx);
                             })),
                     ),
             );
@@ -314,12 +456,12 @@ impl PiConfig {
                         .small()
                         .label(t(cx, "pi-model-scope-add-pattern"))
                         .disabled(saving)
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.edit_model_scope(|rows| rows.push(String::new()), cx)
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.append_pattern(String::new(), window, cx)
                         })),
                 ),
         );
-        if matches!(draft, Some(Edit::Invalid(_))) || self.conflicts.contains(&field) {
+        if self.invalid(field, cx) || self.conflicts.contains(&field) {
             list = list.child(div().text_sm().text_color(cx.theme().danger).child(t(
                 cx,
                 if self.conflicts.contains(&field) {
@@ -330,31 +472,5 @@ impl PiConfig {
             )));
         }
         list.into_any_element()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{Edit, edit, rows};
-    #[test]
-    fn ordered_patterns_and_empty_scope_are_preserved() {
-        let patterns = vec![
-            "provider/model:exacto".into(),
-            " *sonnet*:high ".into(),
-            "provider/model:exacto".into(),
-        ];
-        assert_eq!(
-            rows(Some(&serde_json::json!(patterns))),
-            Some(patterns.clone())
-        );
-        assert_eq!(
-            edit(patterns.clone(), false),
-            Edit::Set(vec![serde_json::json!(patterns)])
-        );
-        assert_eq!(edit(vec![], false), Edit::Remove);
-        assert_eq!(edit(vec![], true), Edit::Set(vec![serde_json::json!([])]));
-        assert!(matches!(edit(vec!["  ".into()], true), Edit::Invalid(_)));
-        assert_eq!(rows(Some(&serde_json::json!([42]))), None);
-        assert_eq!(rows(Some(&serde_json::json!("broken"))), None);
     }
 }

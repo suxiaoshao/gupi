@@ -1,10 +1,10 @@
 //! The Pi settings shown in Gupi and how scoped values resolve.
+use super::forms::{Slot, Snapshot};
 use gupi_resources::pi_settings::Change;
 use gupi_resources::pi_settings::Document;
 use gupi_resources::pi_settings::Leaf;
 use serde_json::Value;
 use serde_json::json;
-use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(in super::super) enum Page {
@@ -135,17 +135,6 @@ impl Field {
     }
 }
 
-/// A pending edit to one field.
-#[derive(Clone, Debug, PartialEq)]
-pub(super) enum Edit {
-    /// Values for each leaf, written to the edited scope.
-    Set(Vec<Value>),
-    /// Remove the field from the edited scope so it inherits again.
-    Remove,
-    /// Text that is not a valid value yet; blocks saving.
-    Invalid(String),
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Source {
     Default,
@@ -195,21 +184,25 @@ impl Files {
         (field.default(), Source::Default)
     }
 
-    pub(super) fn resolve(&self, field: Field, draft: Option<&Edit>) -> Resolved {
+    pub(super) fn resolve(&self, field: Field, draft: Option<&[Slot<Value>]>) -> Resolved {
         let edited = self.edited();
         let overridden = field.leaves().iter().any(|leaf| edited.get(leaf).is_some());
         let (values, sources): (Vec<_>, Vec<_>) = field
             .leaves()
             .iter()
             .enumerate()
-            .map(|(index, leaf)| match draft {
-                Some(Edit::Set(values)) => (values.get(index).cloned(), self.scope_source()),
-                Some(Edit::Remove) => self.inherited(field, leaf),
-                Some(Edit::Invalid(_)) | None => match edited.get(leaf) {
-                    Some(value) => (Some(value.clone()), self.scope_source()),
-                    None => self.inherited(field, leaf),
+            .map(
+                |(index, leaf)| match draft.and_then(|values| values.get(index)) {
+                    Some(Slot::Set(value) | Slot::Unreadable(value)) => {
+                        (Some(value.clone()), self.scope_source())
+                    }
+                    Some(Slot::Unset) => self.inherited(field, leaf),
+                    Some(Slot::Invalid(_)) | None => match edited.get(leaf) {
+                        Some(value) => (Some(value.clone()), self.scope_source()),
+                        None => self.inherited(field, leaf),
+                    },
                 },
-            })
+            )
             .unzip();
         // A partially overridden provider/model pair reports the nearest source.
         let source = [Source::Project, Source::Global]
@@ -223,19 +216,25 @@ impl Files {
         }
     }
 
-    /// Leaf changes for the given drafts, relative to the files as read.
-    /// Invalid drafts and edits that would not change the file are skipped.
-    pub(super) fn changes(&self, drafts: &BTreeMap<Field, Edit>) -> Vec<Change> {
+    /// Changes compare typed scope values, but retain raw file values as the conflict base.
+    pub(super) fn changes(
+        &self,
+        current: &Snapshot,
+        baseline: &Snapshot,
+        page: Option<Page>,
+    ) -> Vec<Change> {
         let edited = self.edited();
         let mut changes = Vec::new();
-        for (field, edit) in drafts {
-            for (index, leaf) in field.leaves().iter().enumerate() {
+        for field in Field::ALL {
+            if page.is_some_and(|page| field.page() != page) || !current.pending(field, baseline) {
+                continue;
+            }
+            for (leaf, value) in field.leaves().iter().zip(current.value(field)) {
+                if matches!(value, Slot::Invalid(_)) {
+                    continue;
+                }
                 let base = edited.get(leaf).cloned();
-                let next = match edit {
-                    Edit::Set(values) => values.get(index).cloned(),
-                    Edit::Remove => None,
-                    Edit::Invalid(_) => continue,
-                };
+                let next = value.raw();
                 if base != next {
                     changes.push(Change::new(leaf, base, next));
                 }

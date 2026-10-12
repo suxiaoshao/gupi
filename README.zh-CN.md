@@ -33,7 +33,7 @@ pi --version
 pi
 ```
 
-在 Pi 中使用 `/login` 登录支持的订阅，或按[提供方配置说明](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md)配置 API 凭据，再用 `/model` 选择模型。当前 Gupi 的接入基线为 **Pi 0.99.1**。
+在 Pi 中使用 `/login` 登录支持的订阅，或按[提供方配置说明](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md)配置 API 凭据，再用 `/model` 选择模型。下述分作用域设置与模型范围功能需要 **Pi 1.1.0 或更高版本**。
 
 Windows 用户还需按 Pi 的 [Windows 说明](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/windows.md)配置命令环境。通过版本管理器安装 Node.js 时，请确保启动 Gupi 的进程也能找到 Pi 和 Node.js。
 
@@ -241,6 +241,8 @@ macOS 和 Windows 的截图来源会先冻结鼠标所在屏幕的画面，再�
 **临时对话不保存会话历史**，目前也不能转存为普通会话。其工作目录可能保留工具生成的文件，不再需要时，可以使用会话的废纸篓操作，或通用设置中的清理入口。
 
 ### Pi 设置：全局与项目作用域
+
+这些设置需要 **Pi 1.1.0 或更高版本**。请用 `pi --version` 检查，必要时按 Pi 安装说明更新。
 
 打开**设置 → Pi**，管理连接、对话、网络和资源设置。通过作用域菜单选择**全局**或项目文件夹。会话中的**项目 Pi 设置…**入口可直接打开当前工作目录；选择文件夹本身不会授予信任或创建配置文件。
 

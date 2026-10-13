@@ -3,22 +3,24 @@ use gpui::{Bounds, DisplayId, Pixels, Window};
 #[cfg(target_os = "macos")]
 use objc2::{MainThreadMarker, rc::Retained};
 #[cfg(target_os = "macos")]
-use objc2_app_kit::{NSApplication, NSScreen, NSView, NSWindow};
+use objc2_app_kit::{NSApplication, NSCursor, NSScreen, NSView, NSWindow, NSWindowStyleMask};
 use raw_window_handle::HasRawWindowHandle;
 #[cfg(not(target_os = "macos"))]
 use raw_window_handle::RawWindowHandle;
 #[cfg(target_os = "windows")]
 use windows::{
     Win32::{
-        Foundation::{HWND, LPARAM, RECT},
+        Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
         Graphics::Gdi::{
             EnumDisplayMonitors, HDC, HMONITOR, MONITOR_DEFAULTTONEAREST, MonitorFromWindow,
         },
         UI::{
             HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI},
+            Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
             WindowsAndMessaging::{
-                IsWindow, SW_HIDE, SW_SHOW, SWP_NOZORDER, SetWindowPos, ShowWindow,
-                USER_DEFAULT_SCREEN_DPI,
+                HTCLIENT, IDC_ARROW, IDC_CROSS, IsWindow, LoadCursorW, SW_HIDE, SW_SHOW,
+                SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOZORDER, SetCursor, SetWindowPos,
+                ShowWindow, USER_DEFAULT_SCREEN_DPI, WM_NCDESTROY, WM_SETCURSOR,
             },
         },
     },
@@ -29,6 +31,8 @@ use windows::{
 pub(super) struct Native {
     #[cfg(target_os = "macos")]
     window: Retained<NSWindow>,
+    #[cfg(target_os = "macos")]
+    view: Retained<NSView>,
     #[cfg(not(target_os = "macos"))]
     raw: RawWindowHandle,
 }
@@ -48,6 +52,7 @@ impl Native {
                 .ok_or(WindowExtError::FailedToGetNSView)?;
             Ok(Self {
                 window: view.window().ok_or(WindowExtError::FailedToGetNSWindow)?,
+                view,
             })
         }
         #[cfg(not(target_os = "macos"))]
@@ -65,6 +70,79 @@ impl Native {
             return Err(WindowExtError::WindowClosed);
         }
         Ok(hwnd)
+    }
+    pub(super) fn configure_capture(
+        &self,
+        bounds: Bounds<Pixels>,
+        display: DisplayId,
+    ) -> Result<(), WindowExtError> {
+        #[cfg(target_os = "macos")]
+        {
+            let style = self.window.styleMask();
+            self.window.setStyleMask(
+                style & !(NSWindowStyleMask::Titled | NSWindowStyleMask::FullSizeContentView),
+            );
+            self.window.disableCursorRects();
+            self.window
+                .setLevel(macos_window_level_value(WindowLevel::PopUpMenu) as _);
+        }
+        #[cfg(target_os = "windows")]
+        unsafe {
+            if !SetWindowSubclass(self.hwnd()?, Some(capture_subclass), CAPTURE_SUBCLASS_ID, 0)
+                .as_bool()
+            {
+                return Err(WindowExtError::CaptureWindow(
+                    "SetWindowSubclass failed".into(),
+                ));
+            }
+        }
+        self.place(bounds, Some(display), true)
+    }
+    pub(super) fn show_capture(&self, activate: bool) -> Result<(), WindowExtError> {
+        if activate {
+            self.show()?;
+            #[cfg(target_os = "macos")]
+            if !self.window.makeFirstResponder(Some(&self.view)) {
+                return Err(WindowExtError::CaptureWindow(
+                    "Could not restore first responder".into(),
+                ));
+            }
+        } else {
+            #[cfg(target_os = "macos")]
+            self.window.orderFront(None);
+            #[cfg(target_os = "windows")]
+            unsafe {
+                let _ = ShowWindow(self.hwnd()?, SW_SHOWNOACTIVATE);
+            }
+        }
+        Ok(())
+    }
+    pub(super) fn set_capture_cursor(&self) -> Result<(), WindowExtError> {
+        #[cfg(target_os = "macos")]
+        NSCursor::crosshairCursor().set();
+        #[cfg(target_os = "windows")]
+        unsafe {
+            SetCursor(Some(
+                LoadCursorW(None, IDC_CROSS)
+                    .map_err(|e| WindowExtError::CaptureWindow(e.to_string()))?,
+            ));
+        }
+        Ok(())
+    }
+    pub(super) fn restore_capture_cursor(&self) -> Result<(), WindowExtError> {
+        #[cfg(target_os = "macos")]
+        {
+            self.window.enableCursorRects();
+            NSCursor::arrowCursor().set();
+        }
+        #[cfg(target_os = "windows")]
+        unsafe {
+            SetCursor(Some(
+                LoadCursorW(None, IDC_ARROW)
+                    .map_err(|e| WindowExtError::CaptureWindow(e.to_string()))?,
+            ));
+        }
+        Ok(())
     }
     pub(super) fn hide(&self) -> Result<(), WindowExtError> {
         #[cfg(target_os = "macos")]
@@ -100,6 +178,16 @@ impl Native {
         bounds: Bounds<Pixels>,
         display: Option<DisplayId>,
     ) -> Result<(), WindowExtError> {
+        self.place(bounds, display, false)
+    }
+    fn place(
+        &self,
+        bounds: Bounds<Pixels>,
+        display: Option<DisplayId>,
+        preserve_activation: bool,
+    ) -> Result<(), WindowExtError> {
+        #[cfg(not(target_os = "windows"))]
+        let _ = preserve_activation;
         #[cfg(target_os = "macos")]
         {
             let screen = resolve_screen_frame(&self.window, display)?;
@@ -132,8 +220,22 @@ impl Native {
                 get_scale_factor_for_monitor,
             )?;
             let (x, y, width, height) = logical_bounds_to_device_rect(bounds, scale);
-            unsafe { SetWindowPos(hwnd, None, x, y, width, height, SWP_NOZORDER) }
-                .map_err(|_| WindowExtError::FailedSetBounds)?;
+            unsafe {
+                SetWindowPos(
+                    hwnd,
+                    None,
+                    x,
+                    y,
+                    width,
+                    height,
+                    if preserve_activation {
+                        SWP_NOZORDER | SWP_NOACTIVATE
+                    } else {
+                        SWP_NOZORDER
+                    },
+                )
+            }
+            .map_err(|_| WindowExtError::FailedSetBounds)?;
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         let _ = (bounds, display, self.raw);
@@ -278,5 +380,31 @@ mod tests {
                 (expected, 180, 1200, 900)
             );
         }
+    }
+}
+
+#[cfg(target_os = "windows")]
+const CAPTURE_SUBCLASS_ID: usize = 0x47555049;
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn capture_subclass(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    id: usize,
+    _: usize,
+) -> LRESULT {
+    unsafe {
+        if message == WM_SETCURSOR
+            && (lparam.0 as u16) == HTCLIENT as u16
+            && let Ok(cursor) = LoadCursorW(None, IDC_CROSS)
+        {
+            SetCursor(Some(cursor));
+            return LRESULT(1);
+        }
+        if message == WM_NCDESTROY {
+            let _ = RemoveWindowSubclass(hwnd, Some(capture_subclass), id);
+        }
+        DefSubclassProc(hwnd, message, wparam, lparam)
     }
 }

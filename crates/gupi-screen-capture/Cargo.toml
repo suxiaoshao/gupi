@@ -17,7 +17,7 @@ platform-ext.workspace = true
 window-ext.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["CGWindow"] }
+objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["CGWindow", "CGDirectDisplay"] }
 
 [dev-dependencies]
 gpui-kit = { workspace = true, features = ["test-support"] }

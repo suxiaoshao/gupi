@@ -1,15 +1,10 @@
-use crate::{Error, capture, selection};
-use gpui_kit::component::ActiveTheme;
+use crate::{capture, selection};
 use gpui_kit::*;
-use image::RgbaImage;
 use std::sync::Arc;
 
 pub(crate) struct Overlay {
-    frame: Option<RgbaImage>,
     preview: Arc<RenderImage>,
     generation: u64,
-    display_id: DisplayId,
-    display_bounds: Bounds<Pixels>,
     start: Option<Point<Pixels>>,
     end: Option<Point<Pixels>>,
     focus: FocusHandle,
@@ -17,27 +12,21 @@ pub(crate) struct Overlay {
 }
 impl Overlay {
     pub(crate) fn new(
-        frame: RgbaImage,
         preview: Arc<RenderImage>,
-        display: (DisplayId, Bounds<Pixels>),
         generation: u64,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let (display_id, display_bounds) = display;
         let focus = cx.focus_handle();
         focus.focus(window, cx);
         let activation = cx.observe_window_activation(window, |this, window, cx| {
-            if !window.is_window_active() && this.frame.is_some() {
-                capture::finish_request(this.generation, Ok(None), cx);
+            if !window.is_window_active() {
+                capture::activation_changed(this.generation, cx);
             }
         });
         Self {
-            frame: Some(frame),
             preview,
             generation,
-            display_id,
-            display_bounds,
             start: None,
             end: None,
             focus,
@@ -48,28 +37,24 @@ impl Overlay {
         if event.button != MouseButton::Left {
             return;
         }
-        let Some(frame) = self.frame.take() else {
-            return;
-        };
-        if !cx
-            .displays()
-            .iter()
-            .any(|d| d.id() == self.display_id && d.bounds() == self.display_bounds)
-        {
-            capture::finish_request(self.generation, Err(Error::DisplayChanged), cx);
+        if !capture::is_selecting(self.generation, cx) {
             return;
         }
-        let rect = self
-            .start
-            .and_then(|start| selection::bounds(start, event.position, window.viewport_size()));
-        let Some(rect) = rect else {
+        let Some(start) = self.start.take() else {
+            return;
+        };
+        let Some(rect) = selection::bounds(start, event.position, window.viewport_size()) else {
             capture::finish_request(self.generation, Ok(None), cx);
             return;
         };
-        let rect =
-            selection::crop_rect(rect, window.viewport_size(), frame.width(), frame.height());
-        window.remove_window();
-        capture::encode(self.generation, frame, rect, cx);
+        let size = self.preview.size(0);
+        let rect = selection::crop_rect(
+            rect,
+            window.viewport_size(),
+            size.width.0 as u32,
+            size.height.0 as u32,
+        );
+        capture::submit(self.generation, self.preview.clone(), rect, cx);
     }
 }
 impl Render for Overlay {
@@ -106,6 +91,9 @@ impl Render for Overlay {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, event: &MouseDownEvent, _, cx| {
+                    if !capture::is_selecting(this.generation, cx) {
+                        return;
+                    }
                     this.start = Some(event.position);
                     this.end = Some(event.position);
                     cx.notify();
@@ -120,7 +108,7 @@ impl Render for Overlay {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::finish));
         // Raster-relative geometry must not scale with application typography.
         let rect = selection.unwrap_or(Bounds::new(Point::default(), Size::default()));
-        let mask = cx.theme().background.opacity(0.6);
+        let mask = black().opacity(0.45);
         for bounds in [
             Bounds::new(Point::default(), size(viewport.width, rect.origin.y)),
             Bounds::new(
@@ -155,7 +143,37 @@ impl Render for Overlay {
                     .w(rect.size.width)
                     .h(rect.size.height)
                     .border_1()
-                    .border_color(cx.theme().primary),
+                    .border_color(white())
+                    .child(
+                        div()
+                            .absolute()
+                            .left(px(-1.))
+                            .top(px(-1.))
+                            .w(rect.size.width + px(2.))
+                            .h(rect.size.height + px(2.))
+                            .border_1()
+                            .border_color(black()),
+                    ),
+            );
+        }
+        if selection.is_some() {
+            let image = self.preview.size(0);
+            let (_, _, width, height) =
+                selection::crop_rect(rect, viewport, image.width.0 as u32, image.height.0 as u32);
+            let label = selection::label_bounds(rect, viewport);
+            root = root.child(
+                div()
+                    .absolute()
+                    .left(label.origin.x)
+                    .top(label.origin.y)
+                    .w(label.size.width)
+                    .h(label.size.height)
+                    .text_size(px(12.))
+                    .line_height(px(24.))
+                    .text_color(white())
+                    .bg(black().opacity(0.85))
+                    .text_center()
+                    .child(format!("{width} × {height}")),
             );
         }
         root

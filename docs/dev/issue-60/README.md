@@ -1,17 +1,17 @@
 # 截图选区覆盖范围、遮罩、十字光标与多屏冻结（[Gupi #60](https://github.com/suxiaoshao/gupi/issues/60)）
 
-状态：计划已确认，待实现。截图整体设计见 [Gupi #18](../issue-18/README.md)，本文只记录本次改动。
+状态：已实现。自动检查与原生试用的实际范围见文末。截图整体设计见 [Gupi #18](../issue-18/README.md)，本文只记录本次改动。
 
 ## 目标与范围
 
-一次性交付（一个 PR），按以下两部分实施：
+一次性交付，不分阶段，包含以下两部分：
 
 1. **选区窗口与外观**：选区窗口完整覆盖目标显示器（含 macOS 菜单栏与 Dock），冻结画面按显示器像素对齐；遮罩改为与主题无关的压暗；选区边框更醒目并显示宽 × 高；选区窗口出现后立即显示十字光标。
 2. **多屏冻结**：按下快捷键时冻结所有显示器，每块显示器一个选区窗口，在哪块显示器按下鼠标就截取该屏。
 
 不改：先冻结再选区的时序、单显示器内的矩形选区（不跨屏拼接）、Escape/右键/离开取消、输出与发送流程。不加提示文字、放大镜、标注、原生全屏或实时画面选区。
 
-## 依据
+## 原实现依据
 
 - 选区窗口为 GPUI `WindowKind::PopUp`。`gpui-pre-macos` 即使没有标题栏也为窗口设置 `NSTitledWindowMask | NSFullSizeContentViewWindowMask`，PopUp 另加非激活面板位，类为 `GPUIPanel`（`canBecomeKeyWindow` 为 YES）。带标题样式的窗口被 AppKit 限制在菜单栏下方，窗口顶边下移一个菜单栏高度，冻结画面随之下移，底部超出屏幕。层级 `PopUpMenu`（101）已高于菜单栏与 Dock。
 - GPUI 自身只在简易全屏切换时改样式，并注明改样式会让窗口失去键盘窗口与第一响应者，随后用 `makeKeyAndOrderFront` 与 `makeFirstResponder(native_view)` 恢复（`window.rs` 约 649–655 行）。GPUI 视图是 `contentView` 的子视图，即原始窗口句柄中的 `ns_view`。
@@ -82,6 +82,19 @@
 - 自动测试：
   - 选区窗口与外观：尺寸标签的像素值与 `crop_rect` 一致；现有选区与裁剪测试保持通过。
   - 多屏冻结（经由正式的请求所有权与动作）：部分窗口打开或配置失败时关闭全部已登记窗口；冻结进行中取消后迟到结果被忽略；提交后关闭窗口不取消编码中的请求；激活在选区窗口之间转移及初始化期间不取消请求；带 `first_mouse` 的真实按下 → 拖动 → 松开事件完成选区；快照在缩放比例或显示模式像素尺寸变化时判定为变化、枚举重排时不判定（含逻辑尺寸、模式像素尺寸与实际捕获尺寸各不相同的 Retina 夹具）；BGRA 裁剪经 PNG 解码后像素正确（R/B 互不相同、含透明度、非零行偏移）。
-- 检查：`cargo fmt --all -- --check`；`gupi-screen-capture`、`window-ext`、`gupi` 的 `cargo check`/`test`/`clippy --all-targets -- -D warnings`（`--locked`）；推送后以 `workflow_dispatch` 运行 CI 取得 Windows 编译结果。
+- 检查：`cargo fmt --all -- --check`；`gupi-screen-capture`、`window-ext`、`gupi` 的 `cargo check`/`test`/`clippy --all-targets -- -D warnings`（`--locked`）；Windows 编译由原生 CI 或 Windows 机器验证。
 - macOS 原生（协调者使用 Computer Use；全局快捷键无法由工具触发时由用户试用）：选区窗口覆盖菜单栏与 Dock、画面不偏移、可框选这两处；出现后不点击直接按 Escape 能取消；遮罩压暗；出现即为十字光标（鼠标静止），移动后仍为十字，移入未激活的选区窗口（不点击）也是十字，结束后恢复；尺寸标签；跨屏点击选区与各种取消。
 - Windows（用户）：选区窗口是否盖住任务栏；鼠标静止时和移动后分别检查十字光标；多屏与混合缩放。
+
+## 实现与实际验证
+
+- `window-ext` 保留 macOS 的 GPUI 视图句柄，提供隐藏覆盖层配置、恢复第一响应者、不激活显示、十字光标安装与恢复。每个 macOS 覆盖层都停用光标矩形；Windows 使用仅属于覆盖层的 `WM_SETCURSOR` 子类回调，在 `WM_NCDESTROY` 中移除。不激活定位仅用于覆盖层，原有窗口定位调用保持原行为。
+- 截图请求拥有全部覆盖层，区分打开、选区和结束阶段。失活检查通过下一轮调度中的 16 ms 定时器合并；逐个读取请求窗口的激活状态。提交先进入结束阶段，再清理全部窗口；清理完成前请求保持忙碌，避免重复触发捕获旧覆盖层。结果在窗口移除和光标恢复后交回。
+- 全部显示器并行冻结后才创建覆盖层；每屏只保留一份共享 BGRA 缓冲。裁剪只转换所选区域为 RGBA。快照记录完整身份、逻辑边界、缩放、模式像素尺寸和旋转；macOS 模式像素尺寸来自 Core Graphics。遮罩、黑白边框和物理像素尺寸标签按已确认设计实现。
+- 句柄获取有一处实现调整：xcap 的 Windows `Monitor` 包含不可跨线程发送的原生句柄，后台任务因此只传完整显示器 ID，各捕获线程内重新枚举并检查该 ID 唯一匹配，完成后按完整快照复核。快照仍一次枚举建立对应；没有添加不安全的 `Send` 实现，也不凭尺寸猜测目标。
+- 自动检查通过：`cargo fmt --all -- --check`；对 `gupi-screen-capture`、`window-ext`、`gupi` 的 `cargo check --locked`、`cargo test --locked` 和 `cargo clippy --all-targets --locked -- -D warnings`。测试分别为截图包 10 项、window-ext 5 项、Gupi 89 项，全部通过；`cargo build -p gupi --locked` 通过。
+- 截图测试覆盖 BGRA 通道、透明度与非零行偏移的 PNG 输出，Retina 模式与捕获尺寸区分，快照缩放/模式/旋转变化及枚举重排，标识歧义，尺寸标签边界，部分窗口失败后的全部清理，取消后的迟到捕获结果，编码期间关闭窗口，初始化和激活转移，以及真实 `first_mouse` 按下、拖动、松开到 PNG 输出。GPUI 事件测试只替换测试平台无法提供的原生显示器元数据，使用正式请求、绑定和编码路径。
+- macOS Computer Use：当前构建在独立 `gupi-ui-gallery` 环境正常启动；设置页确认截图任务启用、来源为截图，截图与临时窗口快捷键已加载。工具发送两个全局快捷键后均未观察到响应，无法完成覆盖层试用。菜单栏/Dock 覆盖与对齐、即时 Escape、静止与移动十字光标、尺寸标签、跨屏选区及取消均未取得原生验证结论，留给用户试用；不能用自动测试替代这些结论。
+- Windows 配置代码已实现，本次 macOS 检查不证明 Windows 编译或运行。任务栏覆盖、光标、多屏和混合缩放仍需 Windows 验证。
+
+功能范围没有偏离已确认计划；捕获线程内重新获取原生句柄的原因见上文。原生覆盖层验证因工具无法观察到全局快捷键响应而未完成。

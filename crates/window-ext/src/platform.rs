@@ -12,7 +12,7 @@ use windows::{
     Win32::{
         Foundation::{HWND, LPARAM, RECT},
         Graphics::Gdi::{
-            EnumDisplayMonitors, HDC, HMONITOR, MONITOR_DEFAULTTONULL, MonitorFromWindow,
+            EnumDisplayMonitors, HDC, HMONITOR, MONITOR_DEFAULTTONEAREST, MonitorFromWindow,
         },
         UI::{
             HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI},
@@ -123,7 +123,7 @@ impl Native {
             let monitors = available_monitors();
             let target = match display {
                 Some(display) => u64::from(display),
-                None => unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONULL) }.0 as u64,
+                None => unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) }.0 as u64,
             };
             let scale = select_display_scale(
                 target,

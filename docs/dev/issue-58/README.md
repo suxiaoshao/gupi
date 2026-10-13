@@ -81,12 +81,11 @@ Windows 的句柄不再记录创建时的缩放比例；未指定目标屏幕时
 - macOS 原生快速试用（协调者使用 Computer Use，`script/gupi-ui-gallery` 隔离环境）：主窗口关闭/重新打开、临时窗口显示/隐藏/粘贴、截图快捷键（含临时窗口可见时）、保存资源文本后立即退出且改动写入。
 - Windows：由用户检查主窗口与临时窗口显示/隐藏、截图；有不同缩放比例的多屏时检查临时窗口与截图覆盖窗口在副屏上的位置和大小。
 
-
 ## 实现与验证结果
 
 - `ResourceController::shutdown` 取消目录读取、拒绝新请求并保留运行中的变更任务，成功或失败结束后不再刷新目录。根包的退出等待覆盖全局和所有已保留的非活动控制器；等待循环提取为正式的 `wait_for_operations`，测试与退出执行共用。
 - `window-ext::lifetime` 使用 App 全局注册表和主线程 `Rc<Cell<bool>>`；正常窗口移除、同步退出回调及注册表销毁都会让共享标记失效。macOS 句柄持有 `Retained<NSWindow>`，不再保存稍后解引用的 NSView；Windows 先检查 GPUI 标记，再以 `IsWindow` 防御。原生方法改为借用非 Copy 句柄，调用的 defer/spawn 边界保持不变。
-- Windows 通过完整 `HMONITOR` 标识选择显示器，目标缺失和 DPI 查询失败分别返回错误；未指定目标时查询当前屏幕。macOS 指定屏幕不存在时也明确失败。截图以立即位置设置的结果注册覆盖窗口，失败走现有 `finish`，返回 `DisplayChanged` 并移除窗口；临时窗口仍在定位失败时警告并显示。
+- Windows 通过完整 `HMONITOR` 标识选择显示器，目标缺失和 DPI 查询失败分别返回错误；未指定目标时查询窗口当前所在（或最近）的屏幕。macOS 指定屏幕不存在时也明确失败。截图以立即位置设置的结果注册覆盖窗口，失败走现有 `finish`，返回 `DisplayChanged` 并移除窗口；临时窗口仍在定位失败时警告并显示。
 - `cargo check -p gupi -p gupi-resources -p window-ext -p gupi-screen-capture --locked`、相同四包的 `cargo clippy --all-targets --locked -- -D warnings`、`cargo fmt --all -- --check`、`cargo build -p gupi --locked` 通过。
 - 测试通过：gupi 89 项、gupi-resources 44 项、gupi-screen-capture 3 项、window-ext 5 项，共 141 项。新增回归覆盖真实假 Pi 子进程在 shutdown 后继续运行并成功/失败结束、读取取消和新请求拒绝、非活动控制器的退出等待、真实窗口移除/App shutdown/注册表销毁的存活标记、显示器不透明标识/重排/缺失/DPI 错误，以及截图定位失败后的结果与清理。假 Pi 测试仅在 Unix 执行，不联网、不安装真实包；窗口 gate 测试使用 GPUI 测试平台，未伪造可解引用的原生指针。
 - 已尝试 `cargo check -p window-ext --target x86_64-pc-windows-msvc --locked`。本机仅有 Darwin target，检查因找不到 Windows `core/std`（E0463）停止，尚不能宣称 Windows cfg 代码已编译通过；Windows 原生运行仍由用户验证。

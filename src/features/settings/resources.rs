@@ -1322,7 +1322,8 @@ fn preview_body(text: &str) -> &str {
     text
 }
 
-#[cfg(test)]
+// Only the Unix fake-Pi quit regression uses this fixture.
+#[cfg(all(test, unix))]
 impl super::SettingsView {
     pub(crate) fn retain_inactive_controller_for_test(
         &self,

@@ -322,6 +322,32 @@ fn resolve_screen_frame(
         .frame())
 }
 
+#[cfg(target_os = "windows")]
+const CAPTURE_SUBCLASS_ID: usize = 0x47555049;
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn capture_subclass(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    id: usize,
+    _: usize,
+) -> LRESULT {
+    unsafe {
+        if message == WM_SETCURSOR
+            && (lparam.0 as u16) == HTCLIENT as u16
+            && let Ok(cursor) = LoadCursorW(None, IDC_CROSS)
+        {
+            SetCursor(Some(cursor));
+            return LRESULT(1);
+        }
+        if message == WM_NCDESTROY {
+            let _ = RemoveWindowSubclass(hwnd, Some(capture_subclass), id);
+        }
+        DefSubclassProc(hwnd, message, wparam, lparam)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{logical_bounds_to_device_rect, macos_window_level_value, select_display_scale};
@@ -378,31 +404,5 @@ mod tests {
                 (expected, 180, 1200, 900)
             );
         }
-    }
-}
-
-#[cfg(target_os = "windows")]
-const CAPTURE_SUBCLASS_ID: usize = 0x47555049;
-#[cfg(target_os = "windows")]
-unsafe extern "system" fn capture_subclass(
-    hwnd: HWND,
-    message: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-    id: usize,
-    _: usize,
-) -> LRESULT {
-    unsafe {
-        if message == WM_SETCURSOR
-            && (lparam.0 as u16) == HTCLIENT as u16
-            && let Ok(cursor) = LoadCursorW(None, IDC_CROSS)
-        {
-            SetCursor(Some(cursor));
-            return LRESULT(1);
-        }
-        if message == WM_NCDESTROY {
-            let _ = RemoveWindowSubclass(hwnd, Some(capture_subclass), id);
-        }
-        DefSubclassProc(hwnd, message, wparam, lparam)
     }
 }

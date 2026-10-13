@@ -1,40 +1,15 @@
 #![allow(deprecated)]
+mod lifetime;
 mod platform;
 
-use gpui::{Bounds, DisplayId, Pixels, Window};
-#[cfg(target_os = "macos")]
-use objc2::{MainThreadMarker, rc::Id};
-#[cfg(target_os = "macos")]
-use objc2_app_kit::{NSApplication, NSScreen, NSView, NSWindow};
-use platform::*;
-#[cfg(target_os = "macos")]
-use raw_window_handle::AppKitWindowHandle;
-use raw_window_handle::{HandleError, HasRawWindowHandle, RawWindowHandle};
+use gpui::{App, Bounds, DisplayId, Pixels, Window};
+use lifetime::Lifetime;
+use raw_window_handle::HandleError;
 use thiserror::Error;
-#[cfg(target_os = "windows")]
-use windows::Win32::{
-    Foundation::{HWND, LPARAM, RECT},
-    Graphics::Gdi::{EnumDisplayMonitors, HDC, HMONITOR},
-    UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI},
-    UI::WindowsAndMessaging::{
-        SW_HIDE, SW_SHOW, SWP_NOZORDER, SetWindowPos, ShowWindow, USER_DEFAULT_SCREEN_DPI,
-    },
-};
-#[cfg(target_os = "windows")]
-use windows::core::BOOL;
-
-#[cfg(any(target_os = "macos", test))]
-const NORMAL_WINDOW_LEVEL: i32 = 0;
-#[cfg(any(target_os = "macos", test))]
-const FLOATING_WINDOW_LEVEL: i32 = 3;
-#[cfg(any(target_os = "macos", test))]
-const MODAL_PANEL_WINDOW_LEVEL: i32 = 8;
-#[cfg(any(target_os = "macos", test))]
-const POP_UP_MENU_WINDOW_LEVEL: i32 = 101;
 
 #[derive(Error, Debug)]
 pub enum WindowExtError {
-    #[error("Failed to get NSWindow, {}",.0)]
+    #[error("Failed to get native window: {0}")]
     FailedToGetHandle(HandleError),
     #[error("Failed to get NSView")]
     FailedToGetNSView,
@@ -44,6 +19,12 @@ pub enum WindowExtError {
     FailedToGetNSApplication,
     #[error("Failed to set window bounds")]
     FailedSetBounds,
+    #[error("Window is closed")]
+    WindowClosed,
+    #[error("Target display was not found")]
+    DisplayNotFound,
+    #[error("Failed to query display DPI: {0}")]
+    DisplayDpi(String),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -55,227 +36,62 @@ pub enum WindowLevel {
     Custom(i32),
 }
 
-#[derive(Clone, Copy, Debug)]
+/// A main-thread handle whose lifetime gate follows the original GPUI window.
+/// Native operations must remain outside any re-entrant window/App borrow.
+#[derive(Clone, Debug)]
 pub struct NativeWindowHandle {
-    raw_window: RawWindowHandle,
-    #[cfg(target_os = "windows")]
-    scale_factor: f32,
+    lifetime: Lifetime,
+    native: platform::Native,
 }
-
 impl NativeWindowHandle {
-    pub fn hide(self) -> Result<(), WindowExtError> {
-        match self.raw_window {
-            #[allow(unused_variables)]
-            RawWindowHandle::AppKit(handle) => {
-                #[cfg(target_os = "macos")]
-                {
-                    let ns_window = get_ns_window(handle)?;
-                    ns_window.orderOut(None);
-                }
-            }
-            #[allow(unused_variables)]
-            RawWindowHandle::Win32(handle) => {
-                #[cfg(target_os = "windows")]
-                {
-                    let hwnd = HWND(handle.hwnd.get() as _);
-                    unsafe {
-                        let _ = ShowWindow(hwnd, SW_HIDE);
-                    };
-                }
-            }
-            _ => {}
-        }
-        Ok(())
+    pub fn hide(&self) -> Result<(), WindowExtError> {
+        self.lifetime.check()?;
+        self.native.hide()
     }
-
-    pub fn show(self) -> Result<(), WindowExtError> {
-        match self.raw_window {
-            #[allow(unused_variables)]
-            RawWindowHandle::AppKit(handle) => {
-                #[cfg(target_os = "macos")]
-                {
-                    let ns_window = get_ns_window(handle)?;
-                    ns_window.makeKeyAndOrderFront(None);
-                    let ns_app = NSApplication::sharedApplication(
-                        MainThreadMarker::new().ok_or(WindowExtError::FailedToGetNSApplication)?,
-                    );
-                    ns_app.activate();
-                }
-            }
-            #[allow(unused_variables)]
-            RawWindowHandle::Win32(handle) => {
-                #[cfg(target_os = "windows")]
-                {
-                    let hwnd = HWND(handle.hwnd.get() as _);
-                    unsafe {
-                        let _ = ShowWindow(hwnd, SW_SHOW);
-                    };
-                }
-            }
-            _ => {}
-        }
-        Ok(())
+    pub fn show(&self) -> Result<(), WindowExtError> {
+        self.lifetime.check()?;
+        self.native.show()
     }
-
-    pub fn set_window_level(self, level: WindowLevel) -> Result<(), WindowExtError> {
-        #[cfg(target_os = "macos")]
-        {
-            if let RawWindowHandle::AppKit(handle) = self.raw_window {
-                let ns_window = get_ns_window(handle)?;
-                ns_window.setLevel(macos_window_level_value(level) as _);
-            }
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            let _ = level;
-        }
-
-        Ok(())
+    pub fn set_window_level(&self, level: WindowLevel) -> Result<(), WindowExtError> {
+        self.lifetime.check()?;
+        self.native.set_window_level(level)
     }
-
     pub fn move_and_resize(
-        self,
+        &self,
         bounds: Bounds<Pixels>,
-        display_id: Option<DisplayId>,
+        display: Option<DisplayId>,
     ) -> Result<(), WindowExtError> {
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        let _ = (bounds, display_id);
-
-        match self.raw_window {
-            #[allow(unused_variables)]
-            RawWindowHandle::AppKit(handle) => {
-                #[cfg(target_os = "macos")]
-                {
-                    let ns_window = get_ns_window(handle)?;
-                    let screen_frame = resolve_screen_frame(&ns_window, display_id)?;
-                    let frame = objc2_foundation::NSRect::new(
-                        objc2_foundation::NSPoint::new(
-                            screen_frame.origin.x + f64::from(f32::from(bounds.origin.x)),
-                            screen_frame.origin.y + screen_frame.size.height
-                                - f64::from(f32::from(bounds.origin.y))
-                                - f64::from(f32::from(bounds.size.height)),
-                        ),
-                        objc2_foundation::NSSize::new(
-                            f64::from(f32::from(bounds.size.width)),
-                            f64::from(f32::from(bounds.size.height)),
-                        ),
-                    );
-                    ns_window.setFrame_display(frame, true);
-                }
-            }
-            #[allow(unused_variables)]
-            RawWindowHandle::Win32(handle) => {
-                #[cfg(target_os = "windows")]
-                {
-                    let hwnd = HWND(handle.hwnd.get() as _);
-                    let scale_factor = resolve_target_scale_factor(
-                        self.scale_factor,
-                        display_id.and_then(scale_factor_for_display),
-                    );
-                    let (x, y, width, height) = logical_bounds_to_device_rect(bounds, scale_factor);
-                    unsafe {
-                        SetWindowPos(hwnd, None, x, y, width, height, SWP_NOZORDER)
-                            .map_err(|_| WindowExtError::FailedSetBounds)?;
-                    }
-                }
-            }
-            _ => {}
-        }
-        Ok(())
+        self.lifetime.check()?;
+        self.native.move_and_resize(bounds, display)
     }
 }
 
 pub trait WindowExt {
-    fn native_window_handle(&self) -> Result<NativeWindowHandle, WindowExtError>;
+    fn native_window_handle(&self, cx: &mut App) -> Result<NativeWindowHandle, WindowExtError>;
     fn set_window_level(&self, level: WindowLevel) -> Result<(), WindowExtError>;
+    /// Immediate placement for callers already holding a live Window.
+    fn move_and_resize(
+        &self,
+        bounds: Bounds<Pixels>,
+        display: Option<DisplayId>,
+    ) -> Result<(), WindowExtError>;
 }
-
 impl WindowExt for Window {
-    fn native_window_handle(&self) -> Result<NativeWindowHandle, WindowExtError> {
+    fn native_window_handle(&self, cx: &mut App) -> Result<NativeWindowHandle, WindowExtError> {
+        let lifetime = Lifetime::for_window(self.window_handle().window_id(), cx)?;
         Ok(NativeWindowHandle {
-            raw_window: get_raw_window(self)?,
-            #[cfg(target_os = "windows")]
-            scale_factor: self.scale_factor(),
+            lifetime,
+            native: platform::Native::for_window(self)?,
         })
     }
-
     fn set_window_level(&self, level: WindowLevel) -> Result<(), WindowExtError> {
-        #[cfg(target_os = "macos")]
-        {
-            let raw_window = get_raw_window(self)?;
-            if let RawWindowHandle::AppKit(handle) = raw_window {
-                let ns_window = get_ns_window(handle)?;
-                ns_window.setLevel(macos_window_level_value(level) as _);
-            }
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            let _ = level;
-        }
-
-        Ok(())
+        platform::Native::for_window(self)?.set_window_level(level)
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{
-        FLOATING_WINDOW_LEVEL, MODAL_PANEL_WINDOW_LEVEL, NORMAL_WINDOW_LEVEL,
-        POP_UP_MENU_WINDOW_LEVEL, WindowLevel, logical_bounds_to_device_rect,
-        macos_window_level_value, resolve_target_scale_factor,
-    };
-    use gpui::{bounds, point, px, size};
-
-    #[test]
-    fn window_level_named_variants_match_macos_values() {
-        assert_eq!(
-            macos_window_level_value(WindowLevel::Normal),
-            NORMAL_WINDOW_LEVEL
-        );
-        assert_eq!(
-            macos_window_level_value(WindowLevel::Floating),
-            FLOATING_WINDOW_LEVEL
-        );
-        assert_eq!(
-            macos_window_level_value(WindowLevel::ModalPanel),
-            MODAL_PANEL_WINDOW_LEVEL
-        );
-        assert_eq!(
-            macos_window_level_value(WindowLevel::PopUpMenu),
-            POP_UP_MENU_WINDOW_LEVEL
-        );
-    }
-
-    #[test]
-    fn window_level_custom_preserves_value() {
-        assert_eq!(macos_window_level_value(WindowLevel::Custom(9)), 9);
-    }
-
-    #[test]
-    fn logical_bounds_to_device_rect_scales_coordinates_and_size() {
-        let result = logical_bounds_to_device_rect(
-            bounds(point(px(10.0), px(20.0)), size(px(300.0), px(200.0))),
-            1.5,
-        );
-
-        assert_eq!(result, (15, 30, 450, 300));
-    }
-
-    #[test]
-    fn logical_bounds_to_device_rect_keeps_offset_display_origin_absolute() {
-        let result = logical_bounds_to_device_rect(
-            bounds(point(px(1280.0), px(120.0)), size(px(800.0), px(600.0))),
-            1.5,
-        );
-
-        assert_eq!(result, (1920, 180, 1200, 900));
-    }
-
-    #[test]
-    fn resolve_target_scale_factor_prefers_target_display_scale() {
-        assert_eq!(resolve_target_scale_factor(1.0, Some(1.5)), 1.5);
-        assert_eq!(resolve_target_scale_factor(1.0, None), 1.0);
+    fn move_and_resize(
+        &self,
+        bounds: Bounds<Pixels>,
+        display: Option<DisplayId>,
+    ) -> Result<(), WindowExtError> {
+        platform::Native::for_window(self)?.move_and_resize(bounds, display)
     }
 }

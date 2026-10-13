@@ -51,6 +51,8 @@ host 必须显式安装。独立模型/UI 测试使用 headless 实现；应用�
 
 Pi 实例 ID 不透明，探测与资源操作只提供只读查询和操作方法。Session 和 ConversationState 的字段私有，UI 通过只读投影与语义动作访问；附件任务与快捷任务准备结果由模型安装。配置通过 ConfigReader 提供只读操作投影，更新准入查询由应用注入。跨边界回归所需的消息回放和夹具构造放在 `test-support` feature 下，不为测试公开 transcript 内部类型。
 
+退出协调由根包等待配置、探测、会话持久化、Pi 关闭及资源变更。资源控制器的 shutdown 取消读取、拒绝新请求，但保留已经开始的文件/包变更直到结束。原生窗口句柄由 `window-ext` 的 App 级生命周期标记保护，关闭与退出时同步失效；原生调用仍保持各调用方既有的借用边界。实现和验证范围见[退出与原生窗口](../issue-58/README.md)。
+
 ## 版本、资源与验证入口
 
 根产品及本次新增的五个能力包使用 `[workspace.package].version`，确保更新比较、请求 User-Agent 和 Windows updater 取得产品版本。`xtask` 支持读取根 manifest 的继承版本。`bundled` 转发到 settings/updates；`performance` 转发到 runtime/conversation/conversation-ui，应用仍持有 trace writer，UI crate 仅记录渲染区段。

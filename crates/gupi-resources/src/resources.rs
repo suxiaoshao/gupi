@@ -67,6 +67,7 @@ pub struct ResourceController {
     target: Target,
     catalog: refresh::Operation<Catalog, Error, Task<()>>,
     mutation: Mutation,
+    shutting_down: bool,
 }
 pub enum ResourceEvent {
     CatalogChanged,
@@ -98,6 +99,7 @@ impl ResourceController {
             target,
             catalog: refresh::Operation::new(),
             mutation: Mutation::Idle,
+            shutting_down: false,
         }
     }
     pub fn target(&self) -> &Target {
@@ -106,15 +108,16 @@ impl ResourceController {
     pub fn busy(&self) -> bool {
         self.catalog.is_running() || self.mutation.is_running()
     }
-    pub fn stop(&mut self) {
+    /// Stop reads and new requests while retaining mutations until they settle.
+    pub fn shutdown(&mut self) {
+        self.shutting_down = true;
         self.catalog.transition(Cancel);
-        self.mutation = Mutation::Idle;
     }
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
         self.refresh_after(None, cx);
     }
     fn refresh_after(&mut self, change: Option<Change>, cx: &mut Context<Self>) {
-        if self.busy() {
+        if self.shutting_down || self.busy() {
             return;
         }
         let previous = change.as_ref().and_then(|_| self.catalog.data().cloned());
@@ -182,7 +185,7 @@ impl ResourceController {
         cx.notify();
     }
     pub fn change(&mut self, change: Change, cx: &mut Context<Self>) {
-        if self.busy() {
+        if self.shutting_down || self.busy() {
             return;
         }
         let Some(root) = self.catalog.data().map(|c| c.root.clone()) else {
@@ -298,6 +301,7 @@ impl ResourceController {
                 }
                 // A CLI failure may still have changed files. Always reread the actual state.
                 owner.refresh_after(success.then_some(updated), cx);
+                cx.notify();
             });
         });
         self.mutation = Mutation::Running {
@@ -308,7 +312,7 @@ impl ResourceController {
     }
 }
 
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 impl ResourceController {
     pub fn set_catalog_for_test(&mut self, catalog: Catalog) {
         self.catalog.transition(Load(Task::ready(())));
@@ -358,7 +362,7 @@ mod tests {
     }
 
     #[test]
-    fn package_loading_matches_the_running_request_and_clears_on_stop() {
+    fn package_loading_matches_the_request_and_survives_shutdown() {
         let mut owner = ResourceController::new();
         for action in ["install", "update", "remove"] {
             owner.mutation = Mutation::Running {
@@ -373,9 +377,111 @@ mod tests {
                     action == other
                 );
             }
-            owner.stop();
-            assert!(!owner.mutation().is_running());
-            assert!(!owner.mutation().package_running("npm:example", action));
+            owner.shutdown();
+            assert!(owner.mutation().is_running());
+            assert!(owner.mutation().package_running("npm:example", action));
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod shutdown_tests {
+    use super::{Change, ResourceController, ResourceEvent, Target};
+    use gpui_kit::{AppContext, TestAppContext};
+    use gpui_tokio::Tokio;
+    use std::{cell::RefCell, os::unix::fs::PermissionsExt, rc::Rc};
+
+    #[gpui_kit::test]
+    async fn shutdown_retains_real_package_commands_until_success_or_failure(
+        cx: &mut TestAppContext,
+    ) {
+        cx.executor().allow_parking();
+        cx.update(gpui_tokio::init);
+        for fail in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let command = root.path().join("fake-pi");
+            std::fs::write(&command, "#!/bin/sh\nroot=$PI_CODING_AGENT_DIR\n: > \"$root/started\"\nwhile [ ! -f \"$root/release\" ]; do /bin/sleep 0.01; done\n: > \"$root/finished\"\nif [ -f \"$root/fail\" ]; then exit 9; fi\n").unwrap();
+            std::fs::set_permissions(&command, std::fs::Permissions::from_mode(0o700)).unwrap();
+            if fail {
+                std::fs::write(root.path().join("fail"), "").unwrap();
+            }
+            let owner = cx.new(|_| ResourceController::new());
+            let results = Rc::new(RefCell::new(vec![]));
+            let reported = results.clone();
+            let _subscription = cx.update(|cx| {
+                cx.subscribe(&owner, move |_, event, _| {
+                    if let ResourceEvent::Finished { result, .. } = event {
+                        reported.borrow_mut().push(result.is_ok());
+                    }
+                })
+            });
+            owner.update(cx, |owner, cx| {
+                owner.set_catalog_for_test(crate::pi_resources::Catalog {
+                    root: root.path().to_owned(),
+                    ..Default::default()
+                });
+                owner.change(
+                    Change::Package {
+                        command: command.clone(),
+                        action: "install",
+                        source: "npm:fixture".into(),
+                    },
+                    cx,
+                );
+            });
+            let started = root.path().join("started");
+            let wait = cx.update(|cx| {
+                Tokio::spawn(cx, async move {
+                    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                        while !started.exists() {
+                            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                        }
+                    })
+                    .await
+                    .unwrap();
+                })
+            });
+            wait.await.unwrap();
+            owner.update(cx, |owner, cx| {
+                owner.shutdown();
+                assert!(owner.mutation().is_running());
+                assert!(!owner.catalog().is_running());
+                owner.refresh(cx);
+                owner.change(Change::RegisterSkill(root.path().join("not-started")), cx);
+                assert!(owner.mutation().package_running("npm:fixture", "install"));
+            });
+            std::fs::write(root.path().join("release"), "").unwrap();
+            cx.condition(&owner, |owner, _| !owner.mutation().is_running())
+                .await;
+            assert!(root.path().join("finished").exists());
+            assert_eq!(*results.borrow(), vec![!fail]);
+            owner.update(cx, |owner, cx| {
+                assert!(
+                    !owner.catalog().is_running(),
+                    "completion must not refresh during shutdown"
+                );
+                owner.refresh(cx);
+                owner.change(
+                    Change::Package {
+                        command: command.clone(),
+                        action: "remove",
+                        source: "npm:fixture".into(),
+                    },
+                    cx,
+                );
+                assert!(!owner.busy());
+            });
+        }
+        let root = tempfile::tempdir().unwrap();
+        let reading =
+            cx.new(|_| ResourceController::for_target(Target::Project(root.path().to_owned())));
+        reading.update(cx, |owner, cx| {
+            owner.refresh(cx);
+            assert!(owner.catalog().is_running());
+            owner.shutdown();
+            assert!(!owner.catalog().is_running());
+            owner.refresh(cx);
+            assert!(!owner.catalog().is_running());
+        });
     }
 }

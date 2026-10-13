@@ -334,9 +334,12 @@ impl Render for SettingsView {
     }
 }
 impl SettingsView {
-    pub fn stop_resources(&self, cx: &mut Context<Self>) {
+    pub fn shutdown_resources(&self, cx: &mut Context<Self>) {
         self.resources
-            .update(cx, |resources, cx| resources.stop(cx));
+            .update(cx, |resources, cx| resources.shutdown(cx));
+    }
+    pub fn resource_mutations_running(&self, cx: &App) -> bool {
+        self.resources.read(cx).mutations_running(cx)
     }
     fn render_config_actions(
         &self,

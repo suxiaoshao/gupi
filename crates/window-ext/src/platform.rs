@@ -1,49 +1,176 @@
-use super::*;
+use crate::{WindowExtError, WindowLevel};
+use gpui::{Bounds, DisplayId, Pixels, Window};
+#[cfg(target_os = "macos")]
+use objc2::{MainThreadMarker, rc::Retained};
+#[cfg(target_os = "macos")]
+use objc2_app_kit::{NSApplication, NSScreen, NSView, NSWindow};
+use raw_window_handle::HasRawWindowHandle;
+#[cfg(not(target_os = "macos"))]
+use raw_window_handle::RawWindowHandle;
+#[cfg(target_os = "windows")]
+use windows::{
+    Win32::{
+        Foundation::{HWND, LPARAM, RECT},
+        Graphics::Gdi::{
+            EnumDisplayMonitors, HDC, HMONITOR, MONITOR_DEFAULTTONEAREST, MonitorFromWindow,
+        },
+        UI::{
+            HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI},
+            WindowsAndMessaging::{
+                IsWindow, SW_HIDE, SW_SHOW, SWP_NOZORDER, SetWindowPos, ShowWindow,
+                USER_DEFAULT_SCREEN_DPI,
+            },
+        },
+    },
+    core::BOOL,
+};
 
-#[cfg(any(target_os = "macos", test))]
-pub(super) fn macos_window_level_value(level: WindowLevel) -> i32 {
-    match level {
-        WindowLevel::Normal => NORMAL_WINDOW_LEVEL,
-        WindowLevel::Floating => FLOATING_WINDOW_LEVEL,
-        WindowLevel::ModalPanel => MODAL_PANEL_WINDOW_LEVEL,
-        WindowLevel::PopUpMenu => POP_UP_MENU_WINDOW_LEVEL,
-        WindowLevel::Custom(value) => value,
+#[derive(Clone, Debug)]
+pub(super) struct Native {
+    #[cfg(target_os = "macos")]
+    window: Retained<NSWindow>,
+    #[cfg(not(target_os = "macos"))]
+    raw: RawWindowHandle,
+}
+impl Native {
+    pub(super) fn for_window(window: &Window) -> Result<Self, WindowExtError> {
+        let raw = window
+            .raw_window_handle()
+            .map_err(WindowExtError::FailedToGetHandle)?;
+        #[cfg(target_os = "macos")]
+        {
+            let raw_window_handle::RawWindowHandle::AppKit(handle) = raw else {
+                return Err(WindowExtError::FailedToGetNSWindow);
+            };
+            // Window proves that the view is live. Retain the NSWindow now, never
+            // dereference this raw NSView again after releasing the Window borrow.
+            let view = unsafe { Retained::<NSView>::retain(handle.ns_view.as_ptr().cast()) }
+                .ok_or(WindowExtError::FailedToGetNSView)?;
+            Ok(Self {
+                window: view.window().ok_or(WindowExtError::FailedToGetNSWindow)?,
+            })
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            Ok(Self { raw })
+        }
+    }
+    #[cfg(target_os = "windows")]
+    fn hwnd(&self) -> Result<HWND, WindowExtError> {
+        let RawWindowHandle::Win32(handle) = self.raw else {
+            return Err(WindowExtError::WindowClosed);
+        };
+        let hwnd = HWND(handle.hwnd.get() as _);
+        if !unsafe { IsWindow(Some(hwnd)) }.as_bool() {
+            return Err(WindowExtError::WindowClosed);
+        }
+        Ok(hwnd)
+    }
+    pub(super) fn hide(&self) -> Result<(), WindowExtError> {
+        #[cfg(target_os = "macos")]
+        self.window.orderOut(None);
+        #[cfg(target_os = "windows")]
+        unsafe {
+            let _ = ShowWindow(self.hwnd()?, SW_HIDE);
+        }
+        Ok(())
+    }
+    pub(super) fn show(&self) -> Result<(), WindowExtError> {
+        #[cfg(target_os = "macos")]
+        {
+            let mtm = MainThreadMarker::new().ok_or(WindowExtError::FailedToGetNSApplication)?;
+            self.window.makeKeyAndOrderFront(None);
+            NSApplication::sharedApplication(mtm).activate();
+        }
+        #[cfg(target_os = "windows")]
+        unsafe {
+            let _ = ShowWindow(self.hwnd()?, SW_SHOW);
+        }
+        Ok(())
+    }
+    pub(super) fn set_window_level(&self, level: WindowLevel) -> Result<(), WindowExtError> {
+        #[cfg(target_os = "macos")]
+        self.window.setLevel(macos_window_level_value(level) as _);
+        #[cfg(not(target_os = "macos"))]
+        let _ = level;
+        Ok(())
+    }
+    pub(super) fn move_and_resize(
+        &self,
+        bounds: Bounds<Pixels>,
+        display: Option<DisplayId>,
+    ) -> Result<(), WindowExtError> {
+        #[cfg(target_os = "macos")]
+        {
+            let screen = resolve_screen_frame(&self.window, display)?;
+            let frame = objc2_foundation::NSRect::new(
+                objc2_foundation::NSPoint::new(
+                    screen.origin.x + f64::from(f32::from(bounds.origin.x)),
+                    screen.origin.y + screen.size.height
+                        - f64::from(f32::from(bounds.origin.y))
+                        - f64::from(f32::from(bounds.size.height)),
+                ),
+                objc2_foundation::NSSize::new(
+                    f64::from(f32::from(bounds.size.width)),
+                    f64::from(f32::from(bounds.size.height)),
+                ),
+            );
+            self.window.setFrame_display(frame, true);
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let hwnd = self.hwnd()?;
+            let monitors = available_monitors();
+            let target = match display {
+                Some(display) => u64::from(display),
+                None => unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) }.0 as u64,
+            };
+            let scale = select_display_scale(
+                target,
+                &monitors,
+                |m| m.0 as u64,
+                get_scale_factor_for_monitor,
+            )?;
+            let (x, y, width, height) = logical_bounds_to_device_rect(bounds, scale);
+            unsafe { SetWindowPos(hwnd, None, x, y, width, height, SWP_NOZORDER) }
+                .map_err(|_| WindowExtError::FailedSetBounds)?;
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        let _ = (bounds, display, self.raw);
+        Ok(())
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
+fn macos_window_level_value(level: WindowLevel) -> i32 {
+    match level {
+        WindowLevel::Normal => 0,
+        WindowLevel::Floating => 3,
+        WindowLevel::ModalPanel => 8,
+        WindowLevel::PopUpMenu => 101,
+        WindowLevel::Custom(v) => v,
+    }
+}
 #[cfg(any(target_os = "windows", test))]
-pub(super) fn logical_bounds_to_device_rect(
-    bounds: Bounds<Pixels>,
-    scale_factor: f32,
-) -> (i32, i32, i32, i32) {
-    let bounds = bounds.to_device_pixels(scale_factor);
-    (
-        bounds.origin.x.0,
-        bounds.origin.y.0,
-        bounds.size.width.0,
-        bounds.size.height.0,
-    )
+fn logical_bounds_to_device_rect(bounds: Bounds<Pixels>, scale: f32) -> (i32, i32, i32, i32) {
+    let b = bounds.to_device_pixels(scale);
+    (b.origin.x.0, b.origin.y.0, b.size.width.0, b.size.height.0)
 }
-
 #[cfg(any(target_os = "windows", test))]
-pub(super) fn resolve_target_scale_factor(
-    fallback_scale_factor: f32,
-    target_scale_factor: Option<f32>,
-) -> f32 {
-    target_scale_factor.unwrap_or(fallback_scale_factor)
+fn select_display_scale<M>(
+    target: u64,
+    monitors: &[M],
+    id: impl Fn(&M) -> u64,
+    query: impl FnOnce(&M) -> Result<f32, WindowExtError>,
+) -> Result<f32, WindowExtError> {
+    let monitor = monitors
+        .iter()
+        .find(|monitor| id(monitor) == target)
+        .ok_or(WindowExtError::DisplayNotFound)?;
+    query(monitor)
 }
-
 #[cfg(target_os = "windows")]
-pub(super) fn scale_factor_for_display(display_id: DisplayId) -> Option<f32> {
-    let display_index = usize::try_from(u64::from(display_id)).ok()?;
-    available_monitors()
-        .into_iter()
-        .nth(display_index)
-        .and_then(|monitor| get_scale_factor_for_monitor(monitor).ok())
-}
-
-#[cfg(target_os = "windows")]
-pub(super) fn available_monitors() -> Vec<HMONITOR> {
+fn available_monitors() -> Vec<HMONITOR> {
     let mut monitors = Vec::new();
     unsafe {
         let _ = EnumDisplayMonitors(
@@ -55,74 +182,101 @@ pub(super) fn available_monitors() -> Vec<HMONITOR> {
     }
     monitors
 }
-
 #[cfg(target_os = "windows")]
-pub(super) unsafe extern "system" fn monitor_enum_proc(
+unsafe extern "system" fn monitor_enum_proc(
     monitor: HMONITOR,
-    _hdc: HDC,
-    _rect: *mut RECT,
+    _: HDC,
+    _: *mut RECT,
     data: LPARAM,
 ) -> BOOL {
-    let monitors = data.0 as *mut Vec<HMONITOR>;
-    unsafe { (*monitors).push(monitor) };
+    unsafe {
+        (*(data.0 as *mut Vec<HMONITOR>)).push(monitor);
+    }
     BOOL(1)
 }
-
 #[cfg(target_os = "windows")]
-pub(super) fn get_scale_factor_for_monitor(monitor: HMONITOR) -> windows::core::Result<f32> {
-    let mut dpi_x = 0;
-    let mut dpi_y = 0;
-    unsafe { GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) }?;
-    debug_assert_eq!(dpi_x, dpi_y);
-    Ok(dpi_x as f32 / USER_DEFAULT_SCREEN_DPI as f32)
+fn get_scale_factor_for_monitor(monitor: &HMONITOR) -> Result<f32, WindowExtError> {
+    let mut x = 0;
+    let mut y = 0;
+    unsafe { GetDpiForMonitor(*monitor, MDT_EFFECTIVE_DPI, &mut x, &mut y) }
+        .map_err(|e| WindowExtError::DisplayDpi(e.to_string()))?;
+    Ok(x as f32 / USER_DEFAULT_SCREEN_DPI as f32)
 }
-
-pub(super) fn get_raw_window(window: &Window) -> Result<RawWindowHandle, WindowExtError> {
-    let raw_window = window
-        .raw_window_handle()
-        .map_err(WindowExtError::FailedToGetHandle)?;
-    Ok(raw_window)
-}
-
 #[cfg(target_os = "macos")]
-pub(super) fn get_ns_window(
-    window: AppKitWindowHandle,
-) -> Result<objc2::rc::Retained<NSWindow>, WindowExtError> {
-    let ns_view = get_ns_view(window)?;
-    let ns_window = ns_view
-        .window()
-        .ok_or(WindowExtError::FailedToGetNSWindow)?;
-
-    Ok(ns_window)
-}
-
-#[cfg(target_os = "macos")]
-pub(super) fn get_ns_view(
-    window: AppKitWindowHandle,
-) -> Result<objc2::rc::Retained<NSView>, WindowExtError> {
-    let ns_view = window.ns_view.as_ptr();
-    let ns_view: Id<NSView> =
-        unsafe { Id::retain(ns_view.cast()) }.ok_or(WindowExtError::FailedToGetNSView)?;
-    Ok(ns_view)
-}
-
-#[cfg(target_os = "macos")]
-pub(super) fn resolve_screen_frame(
-    ns_window: &NSWindow,
-    display_id: Option<DisplayId>,
+fn resolve_screen_frame(
+    window: &NSWindow,
+    display: Option<DisplayId>,
 ) -> Result<objc2_foundation::NSRect, WindowExtError> {
-    if let Some(display_id) = display_id {
+    if let Some(display) = display {
         let mtm = MainThreadMarker::new().ok_or(WindowExtError::FailedToGetNSApplication)?;
         let screens = NSScreen::screens(mtm);
-        for screen in &screens {
-            if u64::from(screen.CGDirectDisplayID()) == u64::from(display_id) {
-                return Ok(screen.frame());
-            }
+        return screens
+            .iter()
+            .find(|s| u64::from(s.CGDirectDisplayID()) == u64::from(display))
+            .map(|s| s.frame())
+            .ok_or(WindowExtError::DisplayNotFound);
+    }
+    Ok(window
+        .screen()
+        .ok_or(WindowExtError::DisplayNotFound)?
+        .frame())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{logical_bounds_to_device_rect, macos_window_level_value, select_display_scale};
+    use crate::{WindowExtError, WindowLevel};
+    use gpui::{bounds, point, px, size};
+    #[test]
+    fn named_and_custom_levels_match_appkit() {
+        for (level, expected) in [
+            (WindowLevel::Normal, 0),
+            (WindowLevel::Floating, 3),
+            (WindowLevel::ModalPanel, 8),
+            (WindowLevel::PopUpMenu, 101),
+            (WindowLevel::Custom(9), 9),
+        ] {
+            assert_eq!(macos_window_level_value(level), expected);
         }
     }
-
-    let screen = ns_window
-        .screen()
-        .ok_or(WindowExtError::FailedToGetNSWindow)?;
-    Ok(screen.frame())
+    #[test]
+    fn display_selection_uses_opaque_identity_and_preserves_query_errors() {
+        let monitors = [(0x100000abcu64, 1.0), (0x200000def, 1.5)];
+        for monitors in [monitors, [monitors[1], monitors[0]]] {
+            assert_eq!(
+                select_display_scale(0x200000def, &monitors, |m| m.0, |m| Ok(m.1)).unwrap(),
+                1.5
+            );
+            assert!(matches!(
+                select_display_scale(
+                    1,
+                    &monitors,
+                    |m| m.0,
+                    |_| panic!("missing monitor must not query DPI")
+                ),
+                Err(WindowExtError::DisplayNotFound)
+            ));
+            assert!(matches!(
+                select_display_scale(
+                    0x100000abc,
+                    &monitors,
+                    |m| m.0,
+                    |_| Err(WindowExtError::DisplayDpi("failed".into()))
+                ),
+                Err(WindowExtError::DisplayDpi(_))
+            ));
+        }
+    }
+    #[test]
+    fn device_coordinates_scale_offsets_and_dimensions() {
+        for (x, expected) in [(1280., 1920), (-1280., -1920)] {
+            assert_eq!(
+                logical_bounds_to_device_rect(
+                    bounds(point(px(x), px(120.)), size(px(800.), px(600.))),
+                    1.5
+                ),
+                (expected, 180, 1200, 900)
+            );
+        }
+    }
 }

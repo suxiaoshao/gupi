@@ -74,7 +74,7 @@ pub(crate) fn suspend_for_capture(
     }
     let window = owner.window.ok_or("Temporary window unavailable")?;
     let native = window
-        .update(cx, |_, window, _| window.native_window_handle())
+        .update(cx, |_, window, cx| window.native_window_handle(cx))
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())?;
     let owner = cx.global_mut::<Temporary>();
@@ -145,7 +145,7 @@ fn hide_impl(window: &mut Window, restore_front: bool, paste: Option<String>, cx
     let epoch = owner.visibility_epoch;
     let front = owner.front.take().filter(|_| restore_front);
     let handle = owner.window;
-    let native = window.native_window_handle().ok();
+    let native = window.native_window_handle(cx).ok();
     // Native show/hide may synchronously re-enter AppKit/GPUI. Never hold an App
     // borrow across them, and discard operations superseded by a later summon.
     let pasting = paste.is_some();
@@ -268,7 +268,7 @@ pub fn show(cx: &mut App) {
             .map(|d| fitting_size(window.bounds().size, d.bounds().size))
             .unwrap_or(WINDOW_SIZE);
         (
-            window.native_window_handle(),
+            window.native_window_handle(cx),
             Bounds::centered(display, size, cx),
         )
     });

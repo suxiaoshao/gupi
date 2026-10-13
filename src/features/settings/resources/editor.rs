@@ -405,8 +405,8 @@ mod tests {
                 view.sync_scope(window, cx);
                 let owner = view.active().clone();
                 view.controller
-                    .update(cx, |controller, _| controller.stop());
-                owner.update(cx, |controller, _| controller.stop());
+                    .update(cx, |controller, _| controller.shutdown());
+                owner.update(cx, |controller, _| controller.shutdown());
                 let request = || Open {
                     path: path.clone(),
                     kind: Kind::Prompt,

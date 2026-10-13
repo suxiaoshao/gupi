@@ -165,3 +165,90 @@ impl gpui_kit::Render for ProbeTestHost {
         gpui_kit::div()
     }
 }
+
+#[cfg(unix)]
+#[gpui_kit::test]
+async fn quit_wait_retains_a_mutation_in_an_inactive_controller(cx: &mut TestAppContext) {
+    use gupi_resources::{
+        pi_resources::Catalog,
+        resources::{Change, ResourceController},
+    };
+    use std::{cell::Cell, os::unix::fs::PermissionsExt, rc::Rc};
+    cx.executor().allow_parking();
+    init(cx);
+    let root = tempfile::tempdir().unwrap();
+    let command = root.path().join("fake-pi");
+    std::fs::write(&command, "#!/bin/sh\nroot=$PI_CODING_AGENT_DIR\n: > \"$root/started\"\nwhile [ ! -f \"$root/release\" ]; do /bin/sleep 0.01; done\n").unwrap();
+    std::fs::set_permissions(&command, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let controller = cx.new(|_| ResourceController::new());
+    let mut startup = None;
+    let (_, visual) = cx.add_window_view(|window, cx| {
+        let view = cx.new(|cx| {
+            StartupView::new(
+                Err(std::io::ErrorKind::PermissionDenied.into()),
+                false,
+                window,
+                cx,
+            )
+        });
+        let settings = view.read(cx).settings.clone();
+        settings.update(cx, |settings, cx| {
+            settings.retain_inactive_controller_for_test(
+                root.path().to_owned(),
+                controller.clone(),
+                cx,
+            )
+        });
+        startup = Some(view);
+        Root::new(cx.new(|_| ProbeTestHost), window, cx)
+    });
+    let startup = startup.unwrap();
+    controller.update(visual, |controller, cx| {
+        let mut catalog = Catalog::default();
+        catalog.root = root.path().to_owned();
+        controller.set_catalog_for_test(catalog);
+        controller.change(
+            Change::Package {
+                command,
+                action: "install",
+                source: "npm:fixture".into(),
+            },
+            cx,
+        );
+    });
+    let started = root.path().join("started");
+    let wait = visual.update(|_, cx| {
+        cx.background_spawn(async move {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while !started.exists() {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "fake package command did not start"
+                );
+                smol::Timer::after(std::time::Duration::from_millis(5)).await;
+            }
+        })
+    });
+    wait.await;
+    let ended = Rc::new(Cell::new(false));
+    let did_end = ended.clone();
+    let waiting = visual.update(|_, cx| {
+        let settings = startup.read(cx).settings.clone();
+        settings.update(cx, |settings, cx| settings.shutdown_resources(cx));
+        let startup = startup.downgrade();
+        cx.spawn(async move |cx| {
+            super::wait_for_operations(&startup, cx).await;
+            did_end.set(true);
+        })
+    });
+    visual.run_until_parked();
+    assert!(
+        !ended.get(),
+        "global controller is idle, but the inactive controller still owns a command"
+    );
+    assert!(controller.read_with(visual, |owner, _| owner.mutation().is_running()));
+    std::fs::write(root.path().join("release"), "").unwrap();
+    waiting.await;
+    assert!(ended.get());
+    assert!(!controller.read_with(visual, |owner, _| owner.mutation().is_running()));
+}

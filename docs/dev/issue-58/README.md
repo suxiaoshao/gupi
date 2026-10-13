@@ -1,6 +1,6 @@
 # 退出收尾、原生窗口句柄与 Windows 显示器标识（[Gupi #58](https://github.com/suxiaoshao/gupi/issues/58)）
 
-状态：计划已确认，实施中。
+状态：已实现。自动检查与原生验证的实际范围、平台限制见文末。
 
 ## 目标与范围
 
@@ -14,9 +14,9 @@ Windows 专用代码在本机一并实现，运行验证交给用户在 Windows 
 
 ## 依据
 
-- 资源变更在 [`ResourceController::change`](../../../crates/gupi-resources/src/resources.rs) 中以 `Tokio::spawn` 运行：文件操作在其中 `spawn_blocking`，包命令为 `kill_on_drop(true)` 子进程。`gpui-tokio` 的任务在丢弃时中止外层 Tokio 任务（`AbortOnDropHandle`）。`stop()` 把 `mutation` 置为 `Idle`，因此丢弃任务：阻塞写入不受控制地继续，包命令被杀死，退出等待也不再看见它们。
-- [`StartupView::begin_quit`](../../../src/features/startup.rs) 的等待循环只检查配置操作和两个 Pi 探测。`stop_resources` 只由退出调用，测试另有直接调用。
-- `NativeWindowHandle` 是 `Copy`，只保存 `RawWindowHandle`（macOS 为 `NSView` 指针）；`hide`/`show`/`set_window_level`/`move_and_resize` 都是安全方法。调用方：`src/app.rs`（主窗口隐藏/显示，`cx.defer` 中执行）、`src/app/temporary.rs`（临时窗口显示/隐藏，在 `cx.spawn` 中且不持有 App 借用执行，带可见代次检查）、`src/app/shortcuts.rs`（截图前隐藏临时窗口）、`gupi-screen-capture` 的覆盖窗口（在 `open_window` 构建闭包中调整位置）。
+- 原实现的资源变更在 [`ResourceController::change`](../../../crates/gupi-resources/src/resources.rs) 中以 `Tokio::spawn` 运行：文件操作在其中 `spawn_blocking`，包命令为 `kill_on_drop(true)` 子进程。`gpui-tokio` 的任务在丢弃时中止外层 Tokio 任务（`AbortOnDropHandle`）。`stop()` 把 `mutation` 置为 `Idle`，因此丢弃任务：阻塞写入不受控制地继续，包命令被杀死，退出等待也不再看见它们。
+- 原实现的 [`StartupView::begin_quit`](../../../src/features/startup.rs) 等待循环只检查配置操作和两个 Pi 探测。`stop_resources` 只由退出调用，测试另有直接调用。
+- 原实现的 `NativeWindowHandle` 是 `Copy`，只保存 `RawWindowHandle`（macOS 为 `NSView` 指针）；`hide`/`show`/`set_window_level`/`move_and_resize` 都是安全方法。调用方：`src/app.rs`（主窗口隐藏/显示，`cx.defer` 中执行）、`src/app/temporary.rs`（临时窗口显示/隐藏，在 `cx.spawn` 中且不持有 App 借用执行，带可见代次检查）、`src/app/shortcuts.rs`（截图前隐藏临时窗口）、`gupi-screen-capture` 的覆盖窗口（在 `open_window` 构建闭包中调整位置）。
 - 以 GPUI 上下文确认存活不能作为安全依据：`App::windows()` 包含正被更新（暂时取出）的窗口；`read_window` 对此类窗口会 panic；`update_window` 返回前会刷新待处理效果，期间排队的关闭可能在确认成功后才生效。
 - GPUI 移除窗口时（`update_window_erased` 收尾）先删除窗口表中已为空的槽位，同步调用 `App::on_window_closed` 观察者，收尾返回时才释放被取出的 `Window`（及平台窗口）；`WindowId` 来自带版本的 slotmap，不会复用。
 - 应用关闭（`App::shutdown`）不走这条路径：先调用 `on_app_quit` 回调，再直接清空窗口表并刷新效果，不触发 `on_window_closed`。
@@ -80,3 +80,15 @@ Windows 的句柄不再记录创建时的缩放比例；未指定目标屏幕时
 - 检查：`cargo fmt --all -- --check`；`cargo check`、`cargo test`、`cargo clippy --all-targets -- -D warnings` 覆盖 `gupi`、`gupi-resources`、`window-ext`、`gupi-screen-capture`（`--locked`）。本机尝试 `window-ext` 的 Windows 目标检查；Windows 编译以 CI（`workflow_dispatch` 或 PR）或用户的 Windows 构建结果为准，分支推送本身不触发 CI。
 - macOS 原生快速试用（协调者使用 Computer Use，`script/gupi-ui-gallery` 隔离环境）：主窗口关闭/重新打开、临时窗口显示/隐藏/粘贴、截图快捷键（含临时窗口可见时）、保存资源文本后立即退出且改动写入。
 - Windows：由用户检查主窗口与临时窗口显示/隐藏、截图；有不同缩放比例的多屏时检查临时窗口与截图覆盖窗口在副屏上的位置和大小。
+
+
+## 实现与验证结果
+
+- `ResourceController::shutdown` 取消目录读取、拒绝新请求并保留运行中的变更任务，成功或失败结束后不再刷新目录。根包的退出等待覆盖全局和所有已保留的非活动控制器；等待循环提取为正式的 `wait_for_operations`，测试与退出执行共用。
+- `window-ext::lifetime` 使用 App 全局注册表和主线程 `Rc<Cell<bool>>`；正常窗口移除、同步退出回调及注册表销毁都会让共享标记失效。macOS 句柄持有 `Retained<NSWindow>`，不再保存稍后解引用的 NSView；Windows 先检查 GPUI 标记，再以 `IsWindow` 防御。原生方法改为借用非 Copy 句柄，调用的 defer/spawn 边界保持不变。
+- Windows 通过完整 `HMONITOR` 标识选择显示器，目标缺失和 DPI 查询失败分别返回错误；未指定目标时查询当前屏幕。macOS 指定屏幕不存在时也明确失败。截图以立即位置设置的结果注册覆盖窗口，失败走现有 `finish`，返回 `DisplayChanged` 并移除窗口；临时窗口仍在定位失败时警告并显示。
+- `cargo check -p gupi -p gupi-resources -p window-ext -p gupi-screen-capture --locked`、相同四包的 `cargo clippy --all-targets --locked -- -D warnings`、`cargo fmt --all -- --check`、`cargo build -p gupi --locked` 通过。
+- 测试通过：gupi 89 项、gupi-resources 44 项、gupi-screen-capture 3 项、window-ext 5 项，共 141 项。新增回归覆盖真实假 Pi 子进程在 shutdown 后继续运行并成功/失败结束、读取取消和新请求拒绝、非活动控制器的退出等待、真实窗口移除/App shutdown/注册表销毁的存活标记、显示器不透明标识/重排/缺失/DPI 错误，以及截图定位失败后的结果与清理。假 Pi 测试仅在 Unix 执行，不联网、不安装真实包；窗口 gate 测试使用 GPUI 测试平台，未伪造可解引用的原生指针。
+- 已尝试 `cargo check -p window-ext --target x86_64-pc-windows-msvc --locked`。本机仅有 Darwin target，检查因找不到 Windows `core/std`（E0463）停止，尚不能宣称 Windows cfg 代码已编译通过；Windows 原生运行仍由用户验证。
+- macOS 原生试用使用 `script/gupi-ui-gallery --prepare-only --keep` 的隔离配置、Pi 数据、项目与日志，额外隔离 `GUPI_DATA_DIR`，以独立 #58 应用标识启动当前构建，避免旧 Gallery 的多实例歧义。Computer Use 验证了主窗口关闭后的隐藏与重新显示（界面恢复，日志记录 hide/show）；菜单打开临时窗口并捕获其界面；编辑隔离模板后点击保存并立即 Cmd+Q，文件为修改后的完整内容，退出码 0，日志包含 `managed quit completed`。
+- 原生验证限制：工具对临时窗口的后续操作会切回主窗口，提升操作的元素标识失效，多窗口清单查询超时；全局快捷键输入未产生可观察的截图结果。因此临时窗口内容操作/粘贴和截图快捷键（包括临时窗口可见时）未完成原生验证，不能以自动测试或窗口出现代替通过。未修改系统权限或使用个人会话作为夹具。

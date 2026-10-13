@@ -101,6 +101,7 @@ pub fn start(cx: &mut App) -> Result<Task<CaptureResult>, Error> {
                 {
                     return Err(Error::DisplayChanged);
                 }
+                let mut placement = Ok(());
                 let handle = gpui_kit::open_window(
                     WindowOptions {
                         display_id: Some(display_id),
@@ -118,19 +119,19 @@ pub fn start(cx: &mut App) -> Result<Task<CaptureResult>, Error> {
                         ..Default::default()
                     },
                     cx,
-                    move |window, cx| {
+                    |window, cx| {
                         // These bounds describe a physical display, not application spacing.
-                        let _ = window.set_window_level(WindowLevel::PopUpMenu);
-                        if let Ok(native) = window.native_window_handle() {
-                            #[cfg(target_os = "macos")]
-                            let origin = Point::default();
-                            #[cfg(target_os = "windows")]
-                            let origin = display_bounds.origin;
-                            let _ = native.move_and_resize(
-                                Bounds::new(origin, display_bounds.size),
-                                Some(display_id),
-                            );
+                        if let Err(error) = window.set_window_level(WindowLevel::PopUpMenu) {
+                            eprintln!("Set capture window level failed: {error}");
                         }
+                        #[cfg(target_os = "macos")]
+                        let origin = Point::default();
+                        #[cfg(target_os = "windows")]
+                        let origin = display_bounds.origin;
+                        placement = window.move_and_resize(
+                            Bounds::new(origin, display_bounds.size),
+                            Some(display_id),
+                        );
                         window.on_window_should_close(cx, move |_, cx| {
                             finish_request(generation, Ok(None), cx);
                             false
@@ -148,9 +149,11 @@ pub fn start(cx: &mut App) -> Result<Task<CaptureResult>, Error> {
                     },
                 )
                 .map_err(|e| Error::Capture(e.to_string()))?;
-                cx.global_mut::<Capture>().window =
-                    Some(handle.0.downcast::<Root>().expect("capture root"));
-                Ok(())
+                register_overlay(
+                    handle.0.downcast::<Root>().expect("capture root"),
+                    placement,
+                    cx,
+                )
             });
             if let Err(error) = result {
                 finish(Err(error), cx);
@@ -159,6 +162,15 @@ pub fn start(cx: &mut App) -> Result<Task<CaptureResult>, Error> {
     });
     cx.global_mut::<Capture>().task = Some(task);
     Ok(cx.spawn(async move |_| receiver.recv().await.unwrap_or(Ok(None))))
+}
+
+fn register_overlay(
+    window: WindowHandle<Root>,
+    placement: Result<(), window_ext::WindowExtError>,
+    cx: &mut App,
+) -> Result<(), Error> {
+    cx.global_mut::<Capture>().window = Some(window);
+    placement.map_err(|_| Error::DisplayChanged)
 }
 
 fn freeze(id: u64) -> Result<(RgbaImage, Arc<RenderImage>), Error> {
@@ -221,5 +233,43 @@ mod tests {
         assert_eq!(result.dimensions(), (4, 2));
         assert_eq!(result.get_pixel(0, 0).0, expected);
         assert_eq!(result.get_pixel(3, 1).0, [5, 4, 193, 255]);
+    }
+}
+
+#[cfg(test)]
+mod placement_tests {
+    use super::{Capture, finish, is_active, register_overlay};
+    use crate::Error;
+    use gpui_kit::component::Root;
+    use gpui_kit::{AppContext, Context, IntoElement, Render, TestAppContext, Window, div};
+    struct Empty;
+    impl Render for Empty {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div()
+        }
+    }
+    #[gpui_kit::test]
+    fn failed_placement_finishes_the_request_and_removes_the_overlay(cx: &mut TestAppContext) {
+        cx.update(gpui_kit::init);
+        let (_, visual) = cx.add_window_view(|window, cx| Root::new(cx.new(|_| Empty), window, cx));
+        let window = visual.update(|window, _| window.window_handle().downcast::<Root>().unwrap());
+        let (sender, receiver) = smol::channel::bounded(1);
+        visual.update(|_, cx| {
+            cx.set_global(Capture {
+                sender: Some(sender),
+                ..Capture::default()
+            });
+            let result =
+                register_overlay(window, Err(window_ext::WindowExtError::DisplayNotFound), cx);
+            assert!(matches!(result, Err(Error::DisplayChanged)));
+            finish(result.map(|_| None), cx);
+            assert!(!is_active(cx));
+        });
+        visual.run_until_parked();
+        assert!(matches!(
+            receiver.try_recv(),
+            Ok(Err(Error::DisplayChanged))
+        ));
+        assert!(window.update(visual, |_, _, _| ()).is_err());
     }
 }

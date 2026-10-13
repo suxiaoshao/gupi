@@ -607,11 +607,19 @@ impl ResourcesView {
         self.project.is_some()
     }
 
-    pub(super) fn stop(&self, cx: &mut Context<Self>) {
-        self.controller.update(cx, |owner, _| owner.stop());
+    pub(super) fn shutdown(&self, cx: &mut Context<Self>) {
+        self.controller.update(cx, |owner, _| owner.shutdown());
         for project in self.projects.values() {
-            project.controller.update(cx, |owner, _| owner.stop());
+            project.controller.update(cx, |owner, _| owner.shutdown());
         }
+    }
+
+    pub(super) fn mutations_running(&self, cx: &App) -> bool {
+        self.controller.read(cx).mutation().is_running()
+            || self
+                .projects
+                .values()
+                .any(|project| project.controller.read(cx).mutation().is_running())
     }
 
     /// The controller listing resources in the current scope.
@@ -1312,4 +1320,24 @@ fn preview_body(text: &str) -> &str {
         }
     }
     text
+}
+
+#[cfg(test)]
+impl super::SettingsView {
+    pub(crate) fn retain_inactive_controller_for_test(
+        &self,
+        cwd: PathBuf,
+        controller: Entity<ResourceController>,
+        cx: &mut App,
+    ) {
+        self.resources.update(cx, |resources, _| {
+            resources.projects.insert(
+                cwd,
+                ProjectResources {
+                    controller,
+                    _subscriptions: vec![],
+                },
+            );
+        });
+    }
 }

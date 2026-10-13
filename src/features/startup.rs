@@ -245,7 +245,7 @@ impl StartupView {
         self.applied_pi.update(cx, |pi, _| pi.stop());
         self.draft_pi.update(cx, |pi, _| pi.stop());
         self.settings
-            .update(cx, |settings, cx| settings.stop_resources(cx));
+            .update(cx, |settings, cx| settings.shutdown_resources(cx));
         let pi = gupi_pi_runtime::global(cx);
         let flush_temporary = crate::app::temporary::drain(cx);
         let close_pi = pi.update(cx, |state, cx| state.close_all(cx));
@@ -255,25 +255,7 @@ impl StartupView {
             .map(|home| home.update(cx, |home, cx| home.flush(cx)));
         let placement = layout::capture(window, cx.global::<layout::LayoutState>());
         self.quit_task = Some(cx.spawn(async move |owner, cx| {
-            loop {
-                let busy = owner
-                    .read_with(cx, |owner, cx| {
-                        owner
-                            .config
-                            .read(cx)
-                            .configuration()
-                            .read(cx, |op| op.is_running())
-                            || owner.applied_pi.read(cx).is_running()
-                            || owner.draft_pi.read(cx).is_running()
-                    })
-                    .unwrap_or(false);
-                if !busy {
-                    break;
-                }
-                cx.background_executor()
-                    .timer(std::time::Duration::from_millis(20))
-                    .await;
-            }
+            wait_for_operations(&owner, cx).await;
             if let Some(flush) = flush_temporary {
                 flush.await;
             }
@@ -617,5 +599,29 @@ impl Render for StartupView {
                     this.open_palette(window, cx)
                 }),
             )
+    }
+}
+
+/// Keep the foreground loop alive until retained writes/commands have settled.
+async fn wait_for_operations(owner: &WeakEntity<StartupView>, cx: &mut AsyncApp) {
+    loop {
+        let busy = owner
+            .read_with(cx, |owner, cx| {
+                owner
+                    .config
+                    .read(cx)
+                    .configuration()
+                    .read(cx, |op| op.is_running())
+                    || owner.applied_pi.read(cx).is_running()
+                    || owner.draft_pi.read(cx).is_running()
+                    || owner.settings.read(cx).resource_mutations_running(cx)
+            })
+            .unwrap_or(false);
+        if !busy {
+            return;
+        }
+        cx.background_executor()
+            .timer(std::time::Duration::from_millis(20))
+            .await;
     }
 }

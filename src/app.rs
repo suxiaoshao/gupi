@@ -152,7 +152,7 @@ pub(crate) fn run() {
         match gpui_kit::open_window(options, cx, |window, cx| {
             window.on_window_should_close(cx, |window, cx| {
                 if cfg!(any(target_os = "macos", target_os = "windows")) {
-                    match window.native_window_handle() {
+                    match window.native_window_handle(cx) {
                         Ok(handle) => cx.defer(move |_| {
                             if let Err(error) = handle.hide() {
                                 tracing::error!(%error, "hide window failed");
@@ -260,7 +260,7 @@ fn show(settings: Option<bool>, cx: &mut App) {
         let mut native = None;
         if let Err(error) = window.update(cx, |_, window, cx| {
             if !window.is_window_active() {
-                native = window.native_window_handle().ok();
+                native = window.native_window_handle(cx).ok();
             }
             view.update(cx, |view, cx| {
                 if !view.is_quitting()

@@ -312,7 +312,7 @@ async fn run(
     if definition.source == InputSource::Screenshot {
         let native = cx.update(super::temporary::suspend_for_capture)?;
         let result = async {
-            if let Some(native) = native {
+            if let Some(native) = &native {
                 native
                     .hide()
                     .map_err(|e| gupi_screen_capture::Error::Capture(e.to_string()))?;

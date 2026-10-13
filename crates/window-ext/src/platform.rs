@@ -3,7 +3,7 @@ use gpui::{Bounds, DisplayId, Pixels, Window};
 #[cfg(target_os = "macos")]
 use objc2::{MainThreadMarker, rc::Retained};
 #[cfg(target_os = "macos")]
-use objc2_app_kit::{NSApplication, NSCursor, NSScreen, NSView, NSWindow, NSWindowStyleMask};
+use objc2_app_kit::{NSApplication, NSScreen, NSView, NSWindow, NSWindowStyleMask};
 use raw_window_handle::HasRawWindowHandle;
 #[cfg(not(target_os = "macos"))]
 use raw_window_handle::RawWindowHandle;
@@ -82,7 +82,6 @@ impl Native {
             self.window.setStyleMask(
                 style & !(NSWindowStyleMask::Titled | NSWindowStyleMask::FullSizeContentView),
             );
-            self.window.disableCursorRects();
             self.window
                 .setLevel(macos_window_level_value(WindowLevel::PopUpMenu) as _);
         }
@@ -100,13 +99,19 @@ impl Native {
     }
     pub(super) fn show_capture(&self, activate: bool) -> Result<(), WindowExtError> {
         if activate {
-            self.show()?;
+            // A nonactivating panel takes key input without activating the app;
+            // asynchronous app activation would reset the cursor afterwards.
             #[cfg(target_os = "macos")]
-            if !self.window.makeFirstResponder(Some(&self.view)) {
-                return Err(WindowExtError::CaptureWindow(
-                    "Could not restore first responder".into(),
-                ));
+            {
+                self.window.makeKeyAndOrderFront(None);
+                if !self.window.makeFirstResponder(Some(&self.view)) {
+                    return Err(WindowExtError::CaptureWindow(
+                        "Could not restore first responder".into(),
+                    ));
+                }
             }
+            #[cfg(target_os = "windows")]
+            self.show()?;
         } else {
             #[cfg(target_os = "macos")]
             self.window.orderFront(None);
@@ -118,8 +123,6 @@ impl Native {
         Ok(())
     }
     pub(super) fn set_capture_cursor(&self) -> Result<(), WindowExtError> {
-        #[cfg(target_os = "macos")]
-        NSCursor::crosshairCursor().set();
         #[cfg(target_os = "windows")]
         unsafe {
             SetCursor(Some(
@@ -130,11 +133,6 @@ impl Native {
         Ok(())
     }
     pub(super) fn restore_capture_cursor(&self) -> Result<(), WindowExtError> {
-        #[cfg(target_os = "macos")]
-        {
-            self.window.enableCursorRects();
-            NSCursor::arrowCursor().set();
-        }
         #[cfg(target_os = "windows")]
         unsafe {
             SetCursor(Some(

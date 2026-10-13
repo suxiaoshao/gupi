@@ -68,10 +68,12 @@ impl NativeWindowHandle {
         self.lifetime.check()?;
         self.native.show_capture(activate)
     }
+    /// Windows only: macOS overlays use GPUI's cursor rects once they are key.
     pub fn set_capture_cursor(&self) -> Result<(), WindowExtError> {
         self.lifetime.check()?;
         self.native.set_capture_cursor()
     }
+    /// Windows only, matching [`Self::set_capture_cursor`].
     pub fn restore_capture_cursor(&self) -> Result<(), WindowExtError> {
         self.lifetime.check()?;
         self.native.restore_capture_cursor()

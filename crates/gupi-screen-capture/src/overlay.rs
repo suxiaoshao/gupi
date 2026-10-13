@@ -147,8 +147,9 @@ impl Render for Overlay {
                     .child(
                         div()
                             .absolute()
-                            .left(px(-1.))
-                            .top(px(-1.))
+                            // Absolute insets start inside the parent border.
+                            .left(px(-2.))
+                            .top(px(-2.))
                             .w(rect.size.width + px(2.))
                             .h(rect.size.height + px(2.))
                             .border_1()

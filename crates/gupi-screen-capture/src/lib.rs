@@ -1,6 +1,8 @@
-//! One frozen display, one selection, and one result. The host owns what happens next.
+//! Frozen displays, one single-display selection, and one result. The host owns what happens next.
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod capture;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+mod display;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod overlay;
 #[cfg(any(target_os = "macos", target_os = "windows", test))]

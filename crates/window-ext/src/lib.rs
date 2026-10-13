@@ -19,6 +19,8 @@ pub enum WindowExtError {
     FailedToGetNSApplication,
     #[error("Failed to set window bounds")]
     FailedSetBounds,
+    #[error("Failed to configure capture window: {0}")]
+    CaptureWindow(String),
     #[error("Window is closed")]
     WindowClosed,
     #[error("Target display was not found")]
@@ -51,6 +53,30 @@ impl NativeWindowHandle {
     pub fn show(&self) -> Result<(), WindowExtError> {
         self.lifetime.check()?;
         self.native.show()
+    }
+    /// Configure a hidden capture overlay; call outside Window/App updates.
+    pub fn configure_capture(
+        &self,
+        bounds: Bounds<Pixels>,
+        display: DisplayId,
+    ) -> Result<(), WindowExtError> {
+        self.lifetime.check()?;
+        self.native.configure_capture(bounds, display)
+    }
+    /// Present an overlay, preserving the key window for non-pointer displays.
+    pub fn show_capture(&self, activate: bool) -> Result<(), WindowExtError> {
+        self.lifetime.check()?;
+        self.native.show_capture(activate)
+    }
+    /// Windows only: macOS overlays use GPUI's cursor rects once they are key.
+    pub fn set_capture_cursor(&self) -> Result<(), WindowExtError> {
+        self.lifetime.check()?;
+        self.native.set_capture_cursor()
+    }
+    /// Windows only, matching [`Self::set_capture_cursor`].
+    pub fn restore_capture_cursor(&self) -> Result<(), WindowExtError> {
+        self.lifetime.check()?;
+        self.native.restore_capture_cursor()
     }
     pub fn set_window_level(&self, level: WindowLevel) -> Result<(), WindowExtError> {
         self.lifetime.check()?;

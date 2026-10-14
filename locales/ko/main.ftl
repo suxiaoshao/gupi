@@ -927,3 +927,17 @@ pi-model-scope-unrestricted = 제한 없음
 pi-model-scope-unrestricted-project = 제한 없음(전역 설정 재정의)
 pi-model-scope-blank = 패턴은 비워 둘 수 없습니다.
 pi-model-scope-malformed = 문자열 배열이어야 합니다. 설정 파일에서 수정하세요.
+
+conversation-edited-files = 파일 { $count }개 편집
+conversation-edit-write = 쓰기
+conversation-edit-error = 오류
+conversation-written-content = 작성한 내용
+conversation-edit-operation = 작업 { $index }
+conversation-edit-more-files = 파일 { $count }개 더 표시
+conversation-edit-less-files = 파일 접기
+conversation-edit-more-operations = 작업 { $count }개 더 표시
+conversation-edit-previous-operations = 이전 작업
+conversation-edit-stats-tooltip = 기록된 편집 패치를 합친 순 추가·삭제 줄 수입니다. 쓰기와 합칠 수 없는 파일은 제외하며 작업 공간 전체의 차이는 아닙니다.
+conversation-edit-file-label = { $path } — { $state }
+conversation-edit-operation-stats-tooltip = 이 기록된 패치의 추가·삭제 줄 수입니다.
+conversation-edit-uncombined = 합칠 수 없어 작업별로 표시합니다

@@ -934,3 +934,17 @@ pi-model-scope-unrestricted = 不限制
 pi-model-scope-unrestricted-project = 不限制（覆寫全域）
 pi-model-scope-blank = 模式不可為空白。
 pi-model-scope-malformed = 此值必須是字串陣列，請在設定檔中修正。
+
+conversation-edited-files = 已編輯 { $count } 個檔案
+conversation-edit-write = 寫入
+conversation-edit-error = 錯誤
+conversation-written-content = 寫入內容
+conversation-edit-operation = 操作 { $index }
+conversation-edit-more-files = 再顯示 { $count } 個檔案
+conversation-edit-less-files = 收起檔案
+conversation-edit-more-operations = 再顯示 { $count } 次操作
+conversation-edit-previous-operations = 上一批操作
+conversation-edit-stats-tooltip = 記錄修補合成後的淨增刪行數。不含寫入和無法合併的檔案，不代表工作區完整差異。
+conversation-edit-file-label = { $path } — { $state }
+conversation-edit-operation-stats-tooltip = 這次記錄修補的新增與刪除行數。
+conversation-edit-uncombined = 無法合併，依操作顯示

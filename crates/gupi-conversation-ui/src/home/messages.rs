@@ -18,7 +18,11 @@ use gupi_conversation::history::DisplayMessage;
 
 mod actions;
 mod activity;
+pub(super) mod changes;
+mod composition;
 mod details;
+mod diff;
+pub(super) mod edited_files;
 mod images;
 pub(super) mod markdown;
 pub(super) mod metadata;
@@ -26,6 +30,7 @@ mod plugin;
 mod presentation;
 mod resources;
 mod tool_details;
+pub(super) mod tools;
 mod viewport;
 pub(super) use actions::copy_button;
 use activity::Activity;
@@ -34,6 +39,9 @@ use activity::RunContent;
 use activity::RunSection;
 use activity::ToolStatus;
 use presentation::Disclosure;
+
+// The list and reading-anchor geometry share the same viewport inset.
+const MESSAGE_INSET_REM: f32 = 0.5;
 
 #[derive(Clone, PartialEq)]
 pub(super) struct ChatRow {
@@ -448,41 +456,71 @@ impl HomeView {
                     ),
             );
         } else {
+            let viewport = view.changes.viewport.clone();
+            let frame = self.message_frame.clone();
             body = body.child(
-                MessageScroller::new(
-                    format!("messages-{key}"),
-                    view.scroller.clone(),
-                    move |index, _window, cx| {
-                        let Some(row) = rows.get(index) else {
-                            return div().into_any_element();
-                        };
-                        owner
-                            .read_with(cx, |this, cx| {
-                                let content = this.render_row(&key, row, cx);
-                                #[cfg(feature = "performance")]
-                                let content =
-                                    crate::performance::measure("message_row", false, content);
-                                div()
-                                    .w_full()
-                                    .flex()
-                                    .justify_center()
-                                    .pt(row.spacing_before(
-                                        index
-                                            .checked_sub(1)
-                                            .and_then(|i| rows.get(i))
-                                            .map(Rc::as_ref),
-                                    ))
-                                    .child(div().w_full().max_w(px(820.)).child(content))
-                                    .into_any_element()
-                            })
-                            .unwrap_or_else(|_| div().into_any_element())
-                    },
-                )
-                // Gupi owns spacing between row kinds; the scroller's default
-                // bottom padding would separate compaction from its run.
-                .with_row_style(StyleRefinement::default().px_5().pb_0())
-                .with_jump_button_label(t(cx, "conversation-bottom"))
-                .size_full(),
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .min_w_0()
+                    .child(
+                        canvas(
+                            move |_, _, _| {
+                                frame.set(frame.get().saturating_add(1));
+                            },
+                            |_, _, _, _| {},
+                        )
+                        .absolute(),
+                    )
+                    .child(
+                        MessageScroller::new(
+                            format!("messages-{key}"),
+                            view.scroller.clone(),
+                            move |index, _window, cx| {
+                                let Some(row) = rows.get(index) else {
+                                    return div().into_any_element();
+                                };
+                                owner
+                                    .read_with(cx, |this, cx| {
+                                        let content = this.render_row(&key, row, owner.clone(), cx);
+                                        #[cfg(feature = "performance")]
+                                        let content = crate::performance::measure(
+                                            "message_row",
+                                            false,
+                                            content,
+                                        );
+                                        div()
+                                            .w_full()
+                                            .flex()
+                                            .justify_center()
+                                            .pt(row.spacing_before(
+                                                index
+                                                    .checked_sub(1)
+                                                    .and_then(|i| rows.get(i))
+                                                    .map(Rc::as_ref),
+                                            ))
+                                            .child(div().w_full().max_w(px(820.)).child(content))
+                                            .into_any_element()
+                                    })
+                                    .unwrap_or_else(|_| div().into_any_element())
+                            },
+                        )
+                        // Gupi owns spacing between row kinds; the scroller's default
+                        // bottom padding would separate compaction from its run.
+                        .with_row_style(StyleRefinement::default().px_5().pb_0())
+                        .with_list_style(StyleRefinement::default().py(rems(MESSAGE_INSET_REM)))
+                        .with_jump_button_label(t(cx, "conversation-bottom"))
+                        .size_full(),
+                    )
+                    .on_children_prepainted(move |bounds, window, _| {
+                        if let Some(bounds) = bounds.last() {
+                            let inset = window.rem_size() * MESSAGE_INSET_REM;
+                            viewport.set(Some(Bounds::from_corners(
+                                point(bounds.left(), bounds.top() + inset),
+                                point(bounds.right(), bounds.bottom() - inset),
+                            )));
+                        }
+                    }),
             );
         }
         body.into_any_element()
@@ -505,7 +543,13 @@ impl HomeView {
             cx.notify();
         }
     }
-    fn render_row(&self, key: &str, row: &ChatRow, cx: &App) -> AnyElement {
+    fn render_row(
+        &self,
+        key: &str,
+        row: &ChatRow,
+        owner: WeakEntity<HomeView>,
+        cx: &App,
+    ) -> AnyElement {
         #[cfg(feature = "performance")]
         let _span = tracing::debug_span!(target: "gupi::performance", "messages.render_row", active = row.active()).entered();
         match &row.kind {
@@ -664,15 +708,8 @@ impl HomeView {
                 active,
                 started_at,
             } => {
-                let live = self
-                    .state
-                    .read(cx)
-                    .sessions()
-                    .get(key)
-                    .filter(|_| *active)
-                    .map(|session| session.tools().as_slice())
-                    .unwrap_or_default();
-                let content = RunContent::project(messages, live, *active);
+                let content =
+                    RunContent::project_indexed(messages, *active, &self.views[key].tools);
                 let current = current_run_id(self.views[key].rows.iter().map(Rc::as_ref))
                     == Some(row.id.as_str());
                 let mut result = MessageGroup::new().w_full();
@@ -789,6 +826,10 @@ impl HomeView {
                         }
                     }
                 }
+                let files = self.views[key].edited_files.files(&row.id);
+                if !files.is_empty() {
+                    result = result.child(self.edited_files_card(key, &row.id, owner, cx));
+                }
                 result.into_any_element()
             }
         }
@@ -853,7 +894,15 @@ mod tests {
                 panic!("missing run")
             };
             assert!(messages.last().unwrap().completed_at.is_none());
-            let content = RunContent::project(messages, session.tools(), *active);
+            let content = RunContent::project(
+                messages,
+                &session
+                    .tools()
+                    .iter()
+                    .map(|tool| tool.as_ref().clone())
+                    .collect::<Vec<_>>(),
+                *active,
+            );
             let delta = &event["assistantMessageEvent"];
             match delta["type"].as_str() {
                 Some("thinking_delta") => {
@@ -918,7 +967,15 @@ mod tests {
                 panic!("missing run")
             };
             assert!(*active);
-            RunContent::project(messages, session.tools(), *active)
+            RunContent::project(
+                messages,
+                &session
+                    .tools()
+                    .iter()
+                    .map(|tool| tool.as_ref().clone())
+                    .collect::<Vec<_>>(),
+                *active,
+            )
         };
         assert!(
             matches!(project_run(&wire).activities.last(), Some(Activity::Text {

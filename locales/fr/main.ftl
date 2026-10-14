@@ -934,3 +934,26 @@ pi-model-scope-unrestricted = Sans restriction
 pi-model-scope-unrestricted-project = Sans restriction (remplace le réglage global)
 pi-model-scope-blank = Les motifs ne peuvent pas être vides.
 pi-model-scope-malformed = Cette valeur doit être un tableau de chaînes. Corrigez-la dans le fichier de configuration.
+
+conversation-edited-files = { $count ->
+    [one] { $count } fichier modifié
+   *[other] { $count } fichiers modifiés
+    }
+conversation-edit-write = Écriture
+conversation-edit-error = Erreur
+conversation-written-content = Contenu écrit
+conversation-edit-operation = Opération { $index }
+conversation-edit-more-files = { $count ->
+    [one] Afficher { $count } fichier de plus
+   *[other] Afficher { $count } fichiers de plus
+    }
+conversation-edit-less-files = Afficher moins de fichiers
+conversation-edit-more-operations = { $count ->
+    [one] Afficher { $count } opération de plus
+   *[other] Afficher { $count } opérations de plus
+    }
+conversation-edit-previous-operations = Opérations précédentes
+conversation-edit-stats-tooltip = Lignes nettes ajoutées et supprimées des correctifs enregistrés combinés. Les écritures et les fichiers non combinables sont exclus ; ce résultat ne couvre pas tout l’espace de travail.
+conversation-edit-file-label = { $path } — { $state }
+conversation-edit-operation-stats-tooltip = Lignes ajoutées et supprimées dans ce correctif enregistré.
+conversation-edit-uncombined = Combinaison impossible ; affichage par opération

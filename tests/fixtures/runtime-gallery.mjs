@@ -16,7 +16,7 @@ export default function (pi) {
   const faux = fauxProvider({
     provider,
     models: [{ id: "gallery", name: "Runtime Gallery · 慢速运行", reasoning: true }],
-    tokensPerSecond: 2,
+    tokensPerSecond: process.env.GUPI_RUNTIME_GALLERY_CASE === "changes" ? 8 : 2,
     tokenSize: { min: 1, max: 1 },
   });
   pi.registerProvider(faux.provider);
@@ -49,7 +49,12 @@ export default function (pi) {
       assertProject(ctx);
       for (const text of ["1/3 检查测试文件", "2/3 检查结果展示", "3/3 检查完成"]) {
         onUpdate?.(result(text));
-        await delay(2000, undefined, { signal });
+        await delay(process.env.GUPI_RUNTIME_GALLERY_CASE === "changes" ? 4000 : 2000, undefined, { signal });
+      }
+      if (process.env.GUPI_RUNTIME_GALLERY_CASE === "changes") {
+        // A real unrecorded change makes the next returned patch inconsistent
+        // with the earlier known context. Only the temporary gallery file changes.
+        writeFileSync(join(project, "fallback.txt"), "state: 1\ncontext: external\n");
       }
       return result("测试检查完成，三次进度更新已发送。");
     },
@@ -70,6 +75,30 @@ export default function (pi) {
     const text = (value) => fauxText(value);
     const call = (name, args) => fauxToolCall(name, args);
     const step = (...blocks) => () => fauxAssistantMessage(blocks, { stopReason: "toolUse" });
+    if (process.env.GUPI_RUNTIME_GALLERY_CASE === "changes") {
+      writeFileSync(join(project, "net.txt"), "value: 0\nstable context\n");
+      writeFileSync(join(project, "fallback.txt"), "state: 0\ncontext: original\n");
+      writeFileSync(join(project, "cancel.txt"), "before\n");
+      const edit = (path, oldText, newText) => call("edit", { path, edits: [{ oldText, newText }] });
+      faux.setResponses([
+        step(text("展开 net.txt 观察同一个净差异视图更新；报告展示写入后的最终内容，fallback.txt 将演示无法合并的回退。"),
+          edit("net.txt", "value: 0", "value: 1"),
+          call("write", { path: "report.md", content: "# 卡片试用\n\n状态：0\n\n" + "long line ".repeat(40) + "\n" }),
+          edit("fallback.txt", "state: 0", "state: 1")),
+        step(call("runtime_check", {})),
+        step(text("继续修改，净统计不应累计重复改动。"),
+          edit("net.txt", "value: 1", "value: 2"),
+          edit("report.md", "状态：0", "状态：1"),
+          edit("fallback.txt", "state: 1", "state: 2")),
+        step(text("净差异继续原地更新；下一次操作会完全抵消 cancel.txt。"),
+          edit("net.txt", "value: 2", "value: 3"),
+          edit("report.md", "状态：1", "状态：2"),
+          edit("cancel.txt", "before", "temporary")),
+        step(edit("cancel.txt", "temporary", "before")),
+        () => fauxAssistantMessage([text("净差异试用完成：net.txt 一个净补丁，report.md 中性最终内容，fallback.txt 按操作回退；cancel.txt 已完全抵消，不列出。")]),
+      ]);
+      return;
+    }
     faux.setResponses([
       step(
         thinking("我先梳理这个临时项目的内容。这里故意慢慢思考，方便观察思考图标、运行提示和内容展开。先看目录，再读取第一份技能说明，之后才开始处理文件。"),

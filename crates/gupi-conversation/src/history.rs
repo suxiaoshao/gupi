@@ -260,12 +260,14 @@ pub struct DisplayMessage {
     pub value: Value,
     pub completed_at: Option<i64>,
     pub final_answer_part: Option<usize>,
+    pub(crate) live_revision: u64,
 }
 impl DisplayMessage {
     pub fn new(id: String, value: Value) -> Self {
         Self {
             id,
             value,
+            live_revision: 0,
             entry: None,
             completed_at: None,
             final_answer_part: None,
@@ -289,6 +291,7 @@ impl DisplayMessage {
         };
         Some(Self {
             id: e.id.clone(),
+            live_revision: 0,
             entry: Some(e.id.clone()),
             value,
             final_answer_part: None,
@@ -300,6 +303,11 @@ impl DisplayMessage {
             .map(|time| (time.unix_timestamp_nanos() / 1_000_000) as i64),
         })
     }
+    /// Session-owned mutation token; zero denotes an unversioned/history value.
+    pub fn live_revision(&self) -> u64 {
+        self.live_revision
+    }
+
     pub fn role(&self) -> &str {
         self.value["role"].as_str().unwrap_or("custom")
     }

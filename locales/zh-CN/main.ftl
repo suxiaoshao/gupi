@@ -934,3 +934,17 @@ pi-model-scope-unrestricted = 不限制
 pi-model-scope-unrestricted-project = 不限制（覆盖全局）
 pi-model-scope-blank = 模式不能为空。
 pi-model-scope-malformed = 此值必须是字符串数组，请在设置文件中修复。
+
+conversation-edited-files = 已编辑 { $count } 个文件
+conversation-edit-write = 写入
+conversation-edit-error = 错误
+conversation-written-content = 写入内容
+conversation-edit-operation = 操作 { $index }
+conversation-edit-more-files = 再显示 { $count } 个文件
+conversation-edit-less-files = 收起文件
+conversation-edit-more-operations = 再显示 { $count } 次操作
+conversation-edit-previous-operations = 上一批操作
+conversation-edit-stats-tooltip = 记录补丁合成后的净增删行数。不含写入和无法合并的文件，不代表工作区完整差异。
+conversation-edit-file-label = { $path } — { $state }
+conversation-edit-operation-stats-tooltip = 这次记录补丁的新增与删除行数。
+conversation-edit-uncombined = 无法合并，按操作显示

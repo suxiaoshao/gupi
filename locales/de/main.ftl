@@ -934,3 +934,26 @@ pi-model-scope-unrestricted = Unbeschränkt
 pi-model-scope-unrestricted-project = Unbeschränkt (überschreibt global)
 pi-model-scope-blank = Muster dürfen nicht leer sein.
 pi-model-scope-malformed = Dieser Wert muss eine Liste von Zeichenfolgen sein. Korrigiere ihn in der Einstellungsdatei.
+
+conversation-edited-files = { $count ->
+    [one] { $count } Datei bearbeitet
+   *[other] { $count } Dateien bearbeitet
+    }
+conversation-edit-write = Schreiben
+conversation-edit-error = Fehler
+conversation-written-content = Geschriebener Inhalt
+conversation-edit-operation = Vorgang { $index }
+conversation-edit-more-files = { $count ->
+    [one] { $count } weitere Datei anzeigen
+   *[other] { $count } weitere Dateien anzeigen
+    }
+conversation-edit-less-files = Weniger Dateien anzeigen
+conversation-edit-more-operations = { $count ->
+    [one] { $count } weiteren Vorgang anzeigen
+   *[other] { $count } weitere Vorgänge anzeigen
+    }
+conversation-edit-previous-operations = Vorherige Vorgänge
+conversation-edit-stats-tooltip = Netto hinzugefügte und entfernte Zeilen aus zusammengeführten aufgezeichneten Patches. Schreibvorgänge und nicht zusammenführbare Dateien sind ausgeschlossen; dies ist kein vollständiger Arbeitsbereichsvergleich.
+conversation-edit-file-label = { $path } — { $state }
+conversation-edit-operation-stats-tooltip = Hinzugefügte und entfernte Zeilen in diesem aufgezeichneten Patch.
+conversation-edit-uncombined = Zusammenführen nicht möglich; einzelne Vorgänge werden angezeigt

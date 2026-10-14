@@ -235,7 +235,7 @@ pub struct Session {
     message_stream: Option<messages::MessageStream>,
     last_message_update: Option<(u64, usize)>,
     run: RunState,
-    tools: Vec<ToolActivity>,
+    tools: Vec<Arc<ToolActivity>>,
     models: ReadState<Vec<Model>>,
     commands: ReadState<Vec<protocol::SlashCommand>>,
     thinking_levels: ReadState<ThinkingLevels>,
@@ -260,6 +260,8 @@ pub struct Session {
     interrupted: bool,
     draft_revision: u64,
     content_revision: u64,
+    tool_revision: u64,
+    message_revision: u64,
     pending_count: usize,
     queued: Option<protocol::ClearedQueue>,
     command: SessionCommand,
@@ -294,7 +296,7 @@ impl Session {
     pub fn live(&self) -> &Vec<DisplayMessage> {
         &self.live
     }
-    pub fn tools(&self) -> &Vec<ToolActivity> {
+    pub fn tools(&self) -> &Vec<Arc<ToolActivity>> {
         &self.tools
     }
     pub fn models(&self) -> ReadView<'_, Vec<Model>> {
@@ -357,6 +359,15 @@ impl Session {
     }
     pub fn content_revision(&self) -> u64 {
         self.content_revision
+    }
+    /// Invalidates tool projections for history, tool payload or execution changes,
+    /// independently of ordinary streamed text/thinking deltas.
+    pub fn tool_projection_revision(&self) -> (u64, u64, bool) {
+        (
+            self.history().revision,
+            self.tool_revision,
+            self.active_messages().is_some(),
+        )
     }
     pub fn pending_count(&self) -> usize {
         self.pending_count
@@ -449,6 +460,8 @@ impl Session {
             interrupted: false,
             draft_revision: 0,
             content_revision: 0,
+            tool_revision: 0,
+            message_revision: 0,
             pending_count: 0,
             queued: None,
             command: SessionCommand::Idle,
@@ -589,6 +602,7 @@ impl Session {
                 let signature = message.signature();
                 if let Some(existing) = messages.iter_mut().find(|m| m.signature() == signature) {
                     existing.value = message.value.clone();
+                    existing.live_revision = message.live_revision;
                     existing.final_answer_part =
                         message.final_answer_part.or(existing.final_answer_part);
                 } else {
@@ -1192,6 +1206,9 @@ impl ConversationState {
             if session.instance.is_none()
                 && let Some(info) = by_path.get(&session.info.key())
             {
+                if session.info.cwd != info.cwd {
+                    session.tool_revision += 1;
+                }
                 session.info = (*info).clone();
             }
         }
@@ -1730,6 +1747,7 @@ impl ConversationState {
         let had_live = !s.live.is_empty() || !s.tools.is_empty();
         let was_running = s.running();
         if let Some(entries) = snapshot.entries {
+            s.tool_revision += 1;
             s.run.observe_streaming(snapshot.state.is_streaming);
             s.compacting = snapshot.state.is_compacting;
             if !s.running() && !s.compacting {
@@ -2276,6 +2294,7 @@ impl ConversationState {
                     "agent_start" => {
                         s.message_stream = None;
                         s.tools.clear();
+                        s.tool_revision += 1;
                         s.run.start();
                         s.error = None;
                         s.interrupted = false;
@@ -2437,17 +2456,18 @@ impl ConversationState {
                         }
                     }
                     "tool_execution_start" | "tool_execution_update" | "tool_execution_end" => {
+                        s.tool_revision += 1;
                         content_changed = true;
                         let id = raw["toolCallId"].as_str().unwrap_or_default();
                         if !s.tools.iter().any(|t| t.id == id) {
-                            s.tools.push(ToolActivity {
+                            s.tools.push(Arc::new(ToolActivity {
                                 id: id.into(),
                                 name: raw["toolName"].as_str().unwrap_or_default().into(),
                                 args: raw.get("args").cloned().unwrap_or(Value::Null),
                                 execution: ToolExecution::Running(Value::Null),
-                            });
+                            }));
                         }
-                        let tool = s.tools.iter_mut().find(|t| t.id == id).unwrap();
+                        let tool = Arc::make_mut(s.tools.iter_mut().find(|t| t.id == id).unwrap());
                         let output = raw.get("partialResult").or_else(|| raw.get("result"));
                         let previous = match &tool.execution {
                             ToolExecution::Running(value)
@@ -2813,9 +2833,11 @@ impl Session {
         &mut self.state
     }
     pub fn live_for_test(&mut self) -> &mut Vec<DisplayMessage> {
+        self.tool_revision += 1;
         &mut self.live
     }
-    pub fn tools_for_test(&mut self) -> &mut Vec<ToolActivity> {
+    pub fn tools_for_test(&mut self) -> &mut Vec<Arc<ToolActivity>> {
+        self.tool_revision += 1;
         &mut self.tools
     }
     pub fn pending_ui_for_test(&mut self) -> &mut VecDeque<PendingUi> {

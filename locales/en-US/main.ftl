@@ -934,3 +934,26 @@ pi-model-scope-unrestricted = Unrestricted
 pi-model-scope-unrestricted-project = Unrestricted (overrides global)
 pi-model-scope-blank = Patterns cannot be blank.
 pi-model-scope-malformed = This value must be an array of strings. Correct it in the settings file.
+
+conversation-edited-files = { $count ->
+    [one] { $count } file edited
+   *[other] { $count } files edited
+    }
+conversation-edit-write = Write
+conversation-edit-error = Error
+conversation-written-content = Written content
+conversation-edit-operation = Operation { $index }
+conversation-edit-more-files = { $count ->
+    [one] Show { $count } more file
+   *[other] Show { $count } more files
+    }
+conversation-edit-less-files = Show fewer files
+conversation-edit-more-operations = { $count ->
+    [one] Show { $count } more operation
+   *[other] Show { $count } more operations
+    }
+conversation-edit-previous-operations = Previous operations
+conversation-edit-stats-tooltip = Net added and removed lines from combined recorded edit patches. Writes and files that could not be combined are excluded; this is not a complete workspace diff.
+conversation-edit-file-label = { $path } — { $state }
+conversation-edit-operation-stats-tooltip = Added and removed lines in this recorded patch.
+conversation-edit-uncombined = Could not combine; showing operations

@@ -927,3 +927,17 @@ pi-model-scope-unrestricted = 制限なし
 pi-model-scope-unrestricted-project = 制限なし（グローバル設定を上書き）
 pi-model-scope-blank = 空白のパターンは保存できません。
 pi-model-scope-malformed = 文字列の配列である必要があります。設定ファイルで修正してください。
+
+conversation-edited-files = { $count } 個のファイルを編集
+conversation-edit-write = 書き込み
+conversation-edit-error = エラー
+conversation-written-content = 書き込んだ内容
+conversation-edit-operation = 操作 { $index }
+conversation-edit-more-files = さらに { $count } 個のファイルを表示
+conversation-edit-less-files = ファイルを折りたたむ
+conversation-edit-more-operations = さらに { $count } 件の操作を表示
+conversation-edit-previous-operations = 前の操作
+conversation-edit-stats-tooltip = 記録された編集パッチを統合した正味の追加・削除行数です。書き込みと統合できないファイルは除き、作業領域全体の差分ではありません。
+conversation-edit-file-label = { $path } — { $state }
+conversation-edit-operation-stats-tooltip = この記録されたパッチの追加・削除行数です。
+conversation-edit-uncombined = 統合できないため、操作ごとに表示

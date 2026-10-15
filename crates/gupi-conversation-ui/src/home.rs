@@ -80,6 +80,10 @@ struct SessionView {
     row_positions: Rc<std::cell::RefCell<HashMap<String, usize>>>,
     content_revision: u64,
     markdown: messages::markdown::Registry,
+    tools: messages::tools::ToolIndex,
+    tool_projection: Option<((u64, u64, bool), Option<String>)>,
+    edited_files: messages::edited_files::EditedFiles,
+    changes: messages::changes::ChangesState,
 }
 pub struct HomeView {
     pub(crate) state: Entity<ConversationState>,
@@ -90,6 +94,7 @@ pub struct HomeView {
     input_questionnaire: Option<Entity<gpui_kit::component::questionnaire::QuestionnaireState>>,
     questionnaire_subscriptions: Vec<Subscription>,
     shown_key: Option<String>,
+    message_frame: Rc<std::cell::Cell<u64>>,
     notification_visible: bool,
     shown_request: Option<(String, String)>,
     views: BTreeMap<String, SessionView>,
@@ -149,18 +154,50 @@ impl HomeView {
         gupi_settings::commands::conversation_commands(commands, window, cx);
     }
 
-    fn sync_messages(&mut self, key: &str, force: bool, cx: &mut Context<Self>) {
+    fn sync_messages(
+        &mut self,
+        key: &str,
+        force: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         #[cfg(feature = "performance")]
         let _span = tracing::debug_span!(target: "gupi::performance", "home.sync_messages", force)
             .entered();
         let Some(session) = self.state.read(cx).sessions().get(key) else {
             return;
         };
+        let tool_revision = session.tool_projection_revision();
         let Some(view) = self.views.get_mut(key) else {
             return;
         };
-        if force || view.content_revision != session.content_revision() {
+        let stale_preview = view
+            .preview
+            .as_ref()
+            .is_some_and(|id| session.history().entry(id).is_none());
+        if stale_preview {
+            view.preview = None;
+        }
+        view.changes.sync_scope(session, view.preview.as_deref());
+        let tool_snapshot = (view.tool_projection.as_ref()
+            != Some(&(tool_revision, view.preview.clone())))
+        .then(|| {
+            (
+                if view
+                    .preview
+                    .as_deref()
+                    .is_none_or(|id| session.history().on_current_path(id))
+                {
+                    session.tools().clone()
+                } else {
+                    Vec::new()
+                },
+                session.info().cwd.to_string_lossy().into_owned(),
+            )
+        });
+        if force || stale_preview || view.content_revision != session.content_revision() {
             if !force
+                && !stale_preview
                 && view.preview.is_none()
                 && let Some(message) = session.message_update_since(view.content_revision)
                 && let Some(&index) = view.message_rows.get(&message.id)
@@ -168,11 +205,15 @@ impl HomeView {
                 && Rc::make_mut(row).update_message(message)
             {
                 view.content_revision = session.content_revision();
+                if !view.scroller.read(cx).is_following_tail() {
+                    view.changes.capture_anchors();
+                }
                 view.scroller.update(cx, |state, cx| {
                     #[cfg(feature = "performance")]
                     let _span = tracing::debug_span!(target: "gupi::performance", "messages.diff_rows", changed_rows = 1).entered();
                     state.remeasure_items(index..index + 1, cx);
                 });
+                Self::sync_edited_files(view, tool_snapshot.as_ref(), tool_revision, window, cx);
                 if let Some(find) = &self.find {
                     let sources = view
                         .rows
@@ -183,13 +224,7 @@ impl HomeView {
                 }
                 return;
             }
-            if view
-                .preview
-                .as_ref()
-                .is_some_and(|id| session.history().entry(id).is_none())
-            {
-                view.preview = None;
-            }
+            view.changes.sync_scope(session, view.preview.as_deref());
             let rows = messages::project(session, view.preview.as_deref());
             let old = view.rows.clone();
             view.rows = Rc::new(rows.into_iter().map(Rc::new).collect());
@@ -205,6 +240,9 @@ impl HomeView {
                 .map(|(i, row)| (row.id.clone(), i))
                 .collect();
             view.content_revision = session.content_revision();
+            if !view.scroller.read(cx).is_following_tail() {
+                view.changes.capture_anchors();
+            }
             view.scroller.update(cx, |state, cx| {
                 #[cfg(feature = "performance")]
                 let _span = tracing::debug_span!(target: "gupi::performance", "messages.diff_rows", old_rows = old.len(), new_rows = new.len()).entered();
@@ -222,10 +260,60 @@ impl HomeView {
                     }
                 }
             });
+            Self::sync_edited_files(view, tool_snapshot.as_ref(), tool_revision, window, cx);
             if let Some(find) = &self.find {
                 let sources = new.iter().flat_map(|row| row.find_sources()).collect();
                 find.update(cx, |find, cx| find.sync(sources, cx));
             }
+        } else {
+            Self::sync_edited_files(view, tool_snapshot.as_ref(), tool_revision, window, cx);
+        }
+    }
+    fn sync_edited_files(
+        view: &mut SessionView,
+        snapshot: Option<&(
+            Vec<std::sync::Arc<gupi_conversation::conversation::ToolActivity>>,
+            String,
+        )>,
+        revision: (u64, u64, bool),
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((live_tools, cwd)) = snapshot else {
+            return;
+        };
+        #[cfg(feature = "performance")]
+        let _span = tracing::debug_span!(target: "gupi::performance", "messages.tools_sync", rows = view.rows.len(), live_tools = live_tools.len()).entered();
+        let same_history = view
+            .tool_projection
+            .as_ref()
+            .is_some_and(|(old, preview)| old.0 == revision.0 && preview == &view.preview);
+        let next = messages::tools::ToolIndex::project_reusing(
+            view.rows.iter().map(Rc::as_ref),
+            live_tools,
+            same_history.then_some(&view.tools),
+        );
+        let changed: Vec<_> = view
+            .rows
+            .iter()
+            .enumerate()
+            .filter_map(|(index, row)| (!view.tools.same_run(&next, &row.id)).then_some(index))
+            .collect();
+        if !changed.is_empty() && !view.scroller.read(cx).is_following_tail() {
+            view.changes.capture_anchors();
+        }
+        view.edited_files.sync(&next, cwd);
+        if view.changes.sync(&view.edited_files, &next, window, cx) {
+            view.input.update(cx, |input, cx| input.focus(window, cx));
+        }
+        view.tools = next;
+        view.tool_projection = Some((revision, view.preview.clone()));
+        if !changed.is_empty() {
+            view.scroller.update(cx, |scroller, cx| {
+                for index in changed {
+                    scroller.remeasure_items(index..index + 1, cx);
+                }
+            });
         }
     }
     pub fn has_image_preview(&self, cx: &App) -> bool {
@@ -356,7 +444,7 @@ impl HomeView {
                         } else if let Some(key) = this.state.read(cx).selected().clone()
                             && changes.bodies.contains(&key)
                         {
-                            this.sync_messages(&key, false, cx);
+                            this.sync_messages(&key, false, window, cx);
                         }
                         for key in changes.sessions.keys() {
                             if !this.state.read(cx).sessions().contains_key(key) {
@@ -417,6 +505,7 @@ impl HomeView {
             input_questionnaire: None,
             questionnaire_subscriptions: vec![],
             shown_key: None,
+            message_frame: Rc::default(),
             notification_visible: true,
             shown_request: None,
             views: BTreeMap::new(),
@@ -751,6 +840,10 @@ impl HomeView {
                     row_positions: Rc::default(),
                     content_revision: u64::MAX,
                     markdown: Default::default(),
+                    tools: Default::default(),
+                    tool_projection: None,
+                    edited_files: Default::default(),
+                    changes: Default::default(),
                 },
             );
         }
@@ -794,7 +887,7 @@ impl HomeView {
                 p.selection.clone(),
             )
         });
-        self.sync_messages(&key, changed || force, cx);
+        self.sync_messages(&key, changed || force, window, cx);
         let view = self.views.get_mut(&key).unwrap();
         let Some(session) = self.state.read(cx).sessions().get(&key) else {
             return;
@@ -971,7 +1064,9 @@ impl HomeView {
                                 },
                             ));
                             selection.update(cx, |selection, cx| {
-                                selection.focus_current_item(window, cx)
+                                if !window.has_active_dialog(cx) {
+                                    selection.focus_current_item(window, cx);
+                                }
                             });
                         }
                     }
@@ -981,7 +1076,9 @@ impl HomeView {
                         self.extension_line.update(cx, |input, cx| {
                             input.set_value(text, window, cx);
                             input.set_placeholder(placeholder.unwrap_or_default(), window, cx);
-                            input.focus(window, cx);
+                            if !window.has_active_dialog(cx) {
+                                input.focus(window, cx);
+                            }
                         });
                         use gpui_kit::component::questionnaire::QuestionnaireEvent;
                         use gpui_kit::component::questionnaire::QuestionnaireInputDefinition;
@@ -1022,16 +1119,24 @@ impl HomeView {
                         self.extension_input.update(cx, |input, cx| {
                             input.set_value(text, window, cx);
                             input.set_submit_on_enter(true, cx);
-                            input.focus(window, cx);
+                            if !window.has_active_dialog(cx) {
+                                input.focus(window, cx);
+                            }
                         });
                     }
-                    _ => self.extension_focus.focus(window, cx),
+                    _ => {
+                        if !window.has_active_dialog(cx) {
+                            self.extension_focus.focus(window, cx);
+                        }
+                    }
                 }
             }
         } else if self.shown_request.take().is_some() {
             self.questionnaire_subscriptions.clear();
             self.input_questionnaire = None;
-            self.input.update(cx, |input, cx| input.focus(window, cx));
+            if !window.has_active_dialog(cx) {
+                self.input.update(cx, |input, cx| input.focus(window, cx));
+            }
         }
         cx.notify();
     }
@@ -1048,9 +1153,13 @@ impl HomeView {
         }
         self.sync(true, window, cx);
         if let Some(view) = self.views.get_mut(&key)
-            && let Some(index) = view.rows.iter().position(|row| row.entries.contains(&id))
+            && let Some(index) = messages::reveal_entry(
+                view.rows.iter().map(Rc::as_ref),
+                &view.tools,
+                &id,
+                &mut view.process_open,
+            )
         {
-            view.rows[index].reveal(&id, &mut view.process_open);
             view.scroller.update(cx, |s, cx| {
                 s.remeasure_items(index..index + 1, cx);
                 s.scroll_to_item(index, cx);

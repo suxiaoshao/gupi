@@ -1,6 +1,7 @@
 //! Window-owned readers for recorded summaries and live tool details.
 use super::actions::copy_button;
 use super::activity::Tool;
+use super::diff::DiffBlock;
 use super::presentation::MarkerAction;
 use super::presentation::activity_marker;
 use super::presentation::code_fence;
@@ -10,6 +11,7 @@ use super::presentation::tool_title;
 use super::tool_details;
 use super::tool_details::Detail;
 use super::tool_details::Section;
+use super::tools::ToolProjection;
 use super::*;
 use crate::tool_icon::ToolIcon;
 use gpui_kit::base::TextSelection;
@@ -33,6 +35,10 @@ struct DetailsView {
     metadata: Vec<Detail>,
     sections: Vec<Section>,
     text: BTreeMap<String, TextBlock>,
+    diffs: BTreeMap<String, DiffBlock>,
+    tool_revision: Option<(u64, u64, bool)>,
+    projection: ToolProjection,
+    tool_source: Option<Rc<Tool>>,
     scroll: ScrollHandle,
     follow: bool,
     _subscription: Option<Subscription>,
@@ -166,29 +172,13 @@ impl HomeView {
     }
 }
 
+#[cfg(test)]
 fn find_tool(state: &ConversationState, target: &Target) -> Option<Tool> {
     let session = state.sessions().get(&target.key)?;
-    // The RPC call ID survives live-message IDs being replaced by history entry IDs.
-    for row in project(session, target.preview.as_deref()) {
-        if let RowKind::Run {
-            messages, active, ..
-        } = row.kind
-            && let Some(tool) = RunContent::project(
-                &messages,
-                if active { session.tools() } else { &[] },
-                active,
-            )
-            .activities
-            .into_iter()
-            .find_map(|activity| match activity {
-                Activity::Tool(tool) if tool.id == target.tool => Some(tool),
-                _ => None,
-            })
-        {
-            return Some(tool);
-        }
-    }
-    None
+    ToolProjection::default()
+        .sync(session, target.preview.as_deref())
+        .tool(&target.tool)
+        .cloned()
 }
 
 impl DetailsView {
@@ -200,6 +190,18 @@ impl DetailsView {
         cx: &mut Context<Self>,
     ) -> Self {
         let mut view = Self::empty();
+        view.tool_revision = state
+            .read(cx)
+            .sessions()
+            .get(&target.key)
+            .map(|session| session.tool_projection_revision());
+        if let Some(session) = state.read(cx).sessions().get(&target.key) {
+            view.tool_source = view
+                .projection
+                .sync(session, target.preview.as_deref())
+                .shared_tool(&target.tool)
+                .cloned();
+        }
         view.follow = tool.status == ToolStatus::Running;
         view.set_tool(tool, window, cx);
         view._subscription = Some(cx.subscribe_in(
@@ -214,8 +216,30 @@ impl DetailsView {
                 {
                     return;
                 }
-                if let Some(tool) = find_tool(state.read(cx), &target) {
-                    this.set_tool(tool, window, cx);
+                let state = state.read(cx);
+                let Some(session) = state.sessions().get(&target.key) else {
+                    return;
+                };
+                let revision = Some(session.tool_projection_revision());
+                let tool = this
+                    .projection
+                    .sync(session, target.preview.as_deref())
+                    .shared_tool(&target.tool)
+                    .cloned();
+                if revision == this.tool_revision {
+                    return;
+                }
+                this.tool_revision = revision;
+                if let Some(tool) = tool {
+                    if this
+                        .tool_source
+                        .as_ref()
+                        .is_some_and(|old| Rc::ptr_eq(old, &tool))
+                    {
+                        return;
+                    }
+                    this.tool_source = Some(tool.clone());
+                    this.set_tool(tool.as_ref().clone(), window, cx);
                 }
             },
         ));
@@ -227,6 +251,10 @@ impl DetailsView {
             metadata: vec![],
             sections: vec![],
             text: BTreeMap::new(),
+            diffs: BTreeMap::new(),
+            tool_revision: None,
+            projection: ToolProjection::default(),
+            tool_source: None,
             scroll: ScrollHandle::new(),
             follow: false,
             _subscription: None,
@@ -245,6 +273,7 @@ impl DetailsView {
     }
     fn sync_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let mut keep = HashSet::new();
+        let mut keep_diffs = HashSet::new();
         for section in &self.sections {
             // Pi content blocks have ordered positions rather than individual IDs.
             for (index, part) in section.parts.iter().enumerate() {
@@ -252,6 +281,17 @@ impl DetailsView {
                     continue;
                 };
                 let id = format!("{}-{index}", section.id);
+                if language == "diff" {
+                    keep_diffs.insert(id.clone());
+                    if self
+                        .diffs
+                        .get(&id)
+                        .is_none_or(|block| !block.matches_patch(text))
+                    {
+                        self.diffs.insert(id, DiffBlock::patch(text, cx));
+                    }
+                    continue;
+                }
                 keep.insert(id.clone());
                 let source = if section.id == "summary" {
                     text.clone()
@@ -289,6 +329,7 @@ impl DetailsView {
             }
         }
         self.text.retain(|id, _| keep.contains(id));
+        self.diffs.retain(|id, _| keep_diffs.contains(id));
     }
     fn update_follow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.follow = self.tool.is_some()
@@ -340,6 +381,9 @@ impl Render for DetailsView {
             }
             for (index, part) in section.parts.iter().enumerate() {
                 content = match part {
+                    Detail::Code { language, .. } if language == "diff" => {
+                        content.child(self.diffs[&format!("{}-{index}", section.id)].render())
+                    }
                     Detail::Code { .. } => content.child(
                         TextView::new(&self.text[&format!("{}-{index}", section.id)].view)
                             .selectable(true),
@@ -456,12 +500,14 @@ mod tests {
             json!({"type":"message_end", "message":{"role":"user", "timestamp":1, "content":"test"}}),
             json!({"type":"message_end", "message":{"role":"assistant", "timestamp":2, "stopReason":"toolUse", "content":[{"type":"toolCall", "id":"call", "name":"bash", "arguments":{"command":"printf hello"}}]}}),
         ]);
-        session.tools_for_test().push(ToolActivity::new(
-            "call".into(),
-            "bash".into(),
-            json!({"command":"printf hello"}),
-            ToolExecution::Running(json!({"content":[{"type":"text", "text":output}]})),
-        ));
+        session
+            .tools_for_test()
+            .push(std::sync::Arc::new(ToolActivity::new(
+                "call".into(),
+                "bash".into(),
+                json!({"command":"printf hello"}),
+                ToolExecution::Running(json!({"content":[{"type":"text", "text":output}]})),
+            )));
         session
     }
     fn target() -> Target {

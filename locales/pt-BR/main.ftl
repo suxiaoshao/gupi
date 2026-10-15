@@ -933,3 +933,26 @@ pi-model-scope-unrestricted = Sem restrições
 pi-model-scope-unrestricted-project = Sem restrições (substitui o global)
 pi-model-scope-blank = Os padrões não podem estar vazios.
 pi-model-scope-malformed = O valor deve ser uma lista de strings. Corrija-o no arquivo de configurações.
+
+conversation-edited-files = { $count ->
+    [one] { $count } arquivo editado
+   *[other] { $count } arquivos editados
+    }
+conversation-edit-write = Gravação
+conversation-edit-error = Erro
+conversation-written-content = Conteúdo gravado
+conversation-edit-operation = Operação { $index }
+conversation-edit-more-files = { $count ->
+    [one] Mostrar mais { $count } arquivo
+   *[other] Mostrar mais { $count } arquivos
+    }
+conversation-edit-less-files = Mostrar menos arquivos
+conversation-edit-more-operations = { $count ->
+    [one] Mostrar mais { $count } operação
+   *[other] Mostrar mais { $count } operações
+    }
+conversation-edit-previous-operations = Operações anteriores
+conversation-edit-stats-tooltip = Linhas líquidas adicionadas e removidas dos patches registrados combinados. Gravações e arquivos que não podem ser combinados são excluídos; não é uma comparação completa do espaço de trabalho.
+conversation-edit-file-label = { $path } — { $state }
+conversation-edit-operation-stats-tooltip = Linhas adicionadas e removidas neste patch registrado.
+conversation-edit-uncombined = Não foi possível combinar; exibindo operações

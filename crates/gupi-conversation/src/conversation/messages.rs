@@ -15,6 +15,21 @@ impl Session {
     pub(super) fn receive_message(&mut self, kind: &str, raw: &Value) {
         #[cfg(feature = "performance")]
         let _span = tracing::debug_span!(target: "gupi::performance", "messages.receive", kind, live_messages = self.live.len()).entered();
+        if kind != "message_update"
+            || !matches!(
+                raw["assistantMessageEvent"]["type"].as_str(),
+                Some(
+                    "text_start"
+                        | "text_delta"
+                        | "text_end"
+                        | "thinking_start"
+                        | "thinking_delta"
+                        | "thinking_end"
+                )
+            )
+        {
+            self.tool_revision += 1;
+        }
         self.last_message_update = None;
         // Custom messages gain their identity only in Pi's persisted entries.
         // Keep the assistant stream intact until the authoritative history read.
@@ -23,6 +38,7 @@ impl Session {
         }
         let index = if let Some(value) = raw.get("message") {
             let candidate = DisplayMessage {
+                live_revision: 0,
                 id: format!(
                     "live-{}-{}",
                     value["role"].as_str().unwrap_or("message"),
@@ -90,6 +106,8 @@ impl Session {
             return;
         };
 
+        self.message_revision += 1;
+        self.live[index].live_revision = self.message_revision;
         let message = &self.live[index];
         if kind == "message_update" {
             self.last_message_update = Some((self.content_revision.wrapping_add(1), index));
@@ -222,6 +240,33 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tool_revision_ignores_text_and_thinking_but_tracks_tool_call_deltas() {
+        let mut session = Session::from_rpc_messages(&[
+            json!({"type":"message_start", "message":{"role":"assistant", "timestamp":1, "content":[]}}),
+        ]);
+        let revision = session.tool_projection_revision();
+        for kind in [
+            "text_start",
+            "text_delta",
+            "text_end",
+            "thinking_start",
+            "thinking_delta",
+            "thinking_end",
+        ] {
+            session.receive_message("message_update", &json!({"assistantMessageEvent":{"type":kind,"contentIndex":0,"delta":"text","content":"text"}}));
+            assert_eq!(session.tool_projection_revision(), revision);
+        }
+        for kind in ["toolcall_start", "toolcall_delta", "toolcall_end"] {
+            let old = session.tool_projection_revision();
+            session.receive_message("message_update", &json!({"assistantMessageEvent":{"type":kind,"contentIndex":1,"id":"edit","toolName":"edit","delta":"{}","toolCall":{"type":"toolCall","id":"edit","name":"edit","arguments":{}}}}));
+            assert_ne!(session.tool_projection_revision(), old);
+        }
+        let old = session.tool_projection_revision();
+        session.receive_message("message_end", &json!({"message":{"role":"toolResult","toolCallId":"edit","timestamp":2,"content":[]}}));
+        assert_ne!(session.tool_projection_revision(), old);
+    }
 
     #[test]
     fn custom_events_do_not_overlay_messages_or_interrupt_the_assistant_stream() {

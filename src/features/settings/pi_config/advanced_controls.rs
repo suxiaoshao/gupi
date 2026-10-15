@@ -1,21 +1,10 @@
 //! Controls for advanced settings; file and form state stay in PiConfig.
 use super::*;
+use gpui_kit::component::Sizable as _;
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::{Disableable as _, h_flex};
 
 impl PiConfig {
-    pub(super) fn render_advanced(
-        &mut self,
-        field: Field,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        if field == Field::DefaultTools || field == Field::NpmCommand {
-            self.render_list(field, window, cx)
-        } else {
-            self.render_model_map(field, window, cx)
-        }
-    }
     pub(super) fn render_timeout(
         &mut self,
         field: Field,
@@ -29,7 +18,15 @@ impl PiConfig {
         h_flex()
             .gap_2()
             .items_center()
-            .child(self.render_input(field, window, cx))
+            .w_full()
+            .child(
+                gpui_kit::component::input::Input::new(&self.input(field, window, cx))
+                    .small()
+                    .flex_1()
+                    .min_w_0()
+                    .aria_label(t(cx, field.label()))
+                    .disabled(disabled || self.is_saving()),
+            )
             .child(
                 Checkbox::new(SharedString::from(format!("pi-disable-{}", field.id())))
                     .label(t(cx, "pi-timeout-disabled"))

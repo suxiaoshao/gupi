@@ -965,21 +965,14 @@ fn tool_last_row_and_argv_use_distinct_empty_rules(cx: &mut TestAppContext) {
     window.update(|window, cx| {
         config.update(cx, |this, cx| {
             this.set_values(Field::NpmCommand, vec![Slot::Set(json!(["npm"]))], cx);
-            let path = this
-                .list_paths(Field::NpmCommand, cx)
-                .unwrap()
-                .try_items(&this.tools, cx)
-                .unwrap()
-                .remove(0);
-            this.change_list(
-                Field::NpmCommand,
-                &model_scope::RowKey::Local(path.key()),
-                0,
-                window,
-                cx,
-            );
+            let input = this.input(Field::NpmCommand, window, cx);
+            input.update(cx, |input, cx| {
+                input.set_value("", window, cx);
+                cx.emit(gpui_kit::component::input::InputEvent::Change);
+            });
         })
     });
+    window.run_until_parked();
     save(&config, Page::Tools, window);
     assert!(read(&path).get("npmCommand").is_none());
 }
@@ -1147,4 +1140,110 @@ fn saving_model_maps_keeps_disk_order_and_clears_dirty(cx: &mut TestAppContext) 
         assert!(this.snapshot(cx) == this.baseline);
     });
     assert_eq!(read(&path)["modelThinkingLevels"]["b/model"], "off");
+}
+
+#[gpui_kit::test]
+fn compact_tools_append_remove_and_npm_invalid_input(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let path = agent.path().join("settings.json");
+    fs::write(
+        &path,
+        r#"{"defaultTools":["read","bash"],"npmCommand":["npm",""," run "]}"#,
+    )
+    .unwrap();
+    let (config, visual) = setup(cx, agent.path());
+    visual.update(|window, cx| {
+        config.update(cx, |this, cx| {
+            this.append_list(Field::DefaultTools, "+custom".into(), window, cx);
+            let paths = this
+                .list_paths(Field::DefaultTools, cx)
+                .unwrap()
+                .try_items(&this.tools, cx)
+                .unwrap();
+            this.change_list(
+                Field::DefaultTools,
+                &model_scope::RowKey::Local(paths[1].key()),
+                0,
+                window,
+                cx,
+            );
+            let input = this.input(Field::NpmCommand, window, cx);
+            input.update(cx, |input, cx| {
+                input.set_value("npm 'unfinished", window, cx);
+                cx.emit(gpui_kit::component::input::InputEvent::Change);
+            });
+        })
+    });
+    visual.run_until_parked();
+    config.read_with(visual, |this, cx| {
+        assert_eq!(
+            this.snapshot(cx).value(Field::DefaultTools),
+            vec![Slot::Set(json!(["read", "+custom"]))]
+        );
+        assert!(this.invalid(Field::NpmCommand, cx));
+        assert!(this.has_page_drafts(Page::Tools, cx));
+    });
+    let input = visual.update(|window, cx| {
+        config.update(cx, |this, cx| this.input(Field::NpmCommand, window, cx))
+    });
+    visual.update(|window, cx| {
+        input.update(cx, |input, cx| {
+            input.set_value("npm '' ' run '", window, cx);
+            cx.emit(gpui_kit::component::input::InputEvent::Change);
+        })
+    });
+    visual.run_until_parked();
+    save(&config, Page::Tools, visual);
+    assert_eq!(read(&path)["npmCommand"], json!(["npm", "", " run "]));
+    assert_eq!(read(&path)["defaultTools"], json!(["read", "+custom"]));
+}
+
+#[gpui_kit::test]
+fn grouped_budget_inputs_reconcile_independently(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let path = agent.path().join("settings.json");
+    fs::write(
+        &path,
+        r#"{"thinkingBudgets":{"minimal":1,"low":2,"medium":3,"high":4}}"#,
+    )
+    .unwrap();
+    let (config, visual) = setup(cx, agent.path());
+    visual.update(|window, cx| {
+        config.update(cx, |this, cx| {
+            for (field, text) in [(Field::BudgetMinimal, "10"), (Field::BudgetHigh, "40")] {
+                let input = this.input(field, window, cx);
+                input.update(cx, |input, cx| {
+                    input.set_value(text, window, cx);
+                    cx.emit(gpui_kit::component::input::InputEvent::Change);
+                });
+            }
+            this.set_values(Field::Transport, vec![Slot::Set(json!("sse"))], cx);
+        })
+    });
+    visual.run_until_parked();
+    fs::write(
+        &path,
+        r#"{"thinkingBudgets":{"minimal":1,"low":25,"medium":3,"high":4}}"#,
+    )
+    .unwrap();
+    save(&config, Page::Network, visual);
+    config.read_with(visual, |this, cx| {
+        assert_eq!(
+            this.snapshot(cx).value(Field::BudgetMinimal),
+            vec![Slot::Set(json!(10))]
+        );
+        assert_eq!(
+            this.snapshot(cx).value(Field::BudgetLow),
+            vec![Slot::Set(json!(25))]
+        );
+        assert_eq!(
+            this.snapshot(cx).value(Field::BudgetHigh),
+            vec![Slot::Set(json!(40))]
+        );
+    });
+    save(&config, Page::Conversation, visual);
+    assert_eq!(
+        read(&path)["thinkingBudgets"],
+        json!({"minimal":10,"low":25,"medium":3,"high":40})
+    );
 }

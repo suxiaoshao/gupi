@@ -23,7 +23,6 @@ use gpui_kit::component::input::Input;
 use gpui_kit::component::menu::DropdownMenu as _;
 use gpui_kit::component::menu::PopupMenuItem;
 use gpui_kit::component::select::Select;
-use gpui_kit::component::setting::SettingField;
 use gpui_kit::component::setting::SettingGroup;
 use gpui_kit::component::setting::SettingItem;
 use gpui_kit::component::setting::SettingPage;
@@ -65,6 +64,16 @@ const CONVERSATION: &[(&str, &[Field])] = &[
     ("pi-group-images", &[Field::AutoResize, Field::BlockImages]),
 ];
 const NETWORK: &[(&str, &[Field])] = &[
+    ("pi-group-proxy", &[Field::Proxy]),
+    (
+        "pi-group-retry",
+        &[
+            Field::Retry,
+            Field::MaxRetries,
+            Field::BaseDelay,
+            Field::MaxDelay,
+        ],
+    ),
     (
         "pi-group-advanced",
         &[
@@ -79,16 +88,6 @@ const NETWORK: &[(&str, &[Field])] = &[
             Field::ProviderTimeout,
             Field::ProviderRetries,
             Field::ProviderDelay,
-        ],
-    ),
-    ("pi-group-proxy", &[Field::Proxy]),
-    (
-        "pi-group-retry",
-        &[
-            Field::Retry,
-            Field::MaxRetries,
-            Field::BaseDelay,
-            Field::MaxDelay,
         ],
     ),
 ];
@@ -153,13 +152,14 @@ impl Field {
     }
     fn help(self) -> Option<&'static str> {
         Some(match self {
-            Self::CodemodeMode | Self::CodemodeBudget => "pi-codemode-help",
+            Self::CodemodeMode | Self::CodemodeBudget => return None,
             Self::BudgetMinimal | Self::BudgetLow | Self::BudgetMedium | Self::BudgetHigh => {
                 "pi-thinking-budget-help"
             }
             Self::CacheWarming => "pi-cache-warming-help",
             Self::Telemetry => "pi-telemetry-help",
             Self::ProviderRetries => "pi-provider-retry-help",
+            Self::NpmCommand => "pi-npm-help",
             Self::Model => "pi-field-model-help",
             Self::ReserveTokens => "pi-field-reserve-help",
             Self::KeepRecentTokens => "pi-field-keep-help",
@@ -272,47 +272,55 @@ impl PiConfig {
             return settings;
         }
         for (title, fields) in page.groups() {
-            let items = fields.iter().map(|field| {
-                let field = *field;
-                let weak = weak.clone();
-                if matches!(
-                    field.kind(),
-                    Kind::List | Kind::ThinkingMap | Kind::CompactionMap
-                ) {
-                    return SettingItem::render(move |_, window, cx| {
-                        weak.update(cx, |this, cx| this.render_advanced(field, window, cx))
-                            .unwrap_or_else(|_| div().into_any_element())
+            let items = fields
+                .iter()
+                .filter(|field| {
+                    !matches!(
+                        field,
+                        Field::BudgetLow | Field::BudgetMedium | Field::BudgetHigh
+                    )
+                })
+                .map(|field| {
+                    let field = *field;
+                    let weak = weak.clone();
+                    SettingItem::render(move |_, window, cx| {
+                        weak.update(cx, |this, cx| match field {
+                            Field::BudgetMinimal => this.render_budgets(window, cx),
+                            Field::ModelScope => this.render_model_scope(window, cx),
+                            Field::ModelThinking | Field::ModelOverrides => {
+                                this.render_model_map(field, window, cx)
+                            }
+                            _ => this.render_field(field, window, cx),
+                        })
+                        .unwrap_or_else(|_| div().into_any_element())
                     })
-                    .keywords([t(cx, field.label())]);
-                }
-                if field == Field::ModelScope {
-                    return SettingItem::render(move |_, window, cx| {
-                        weak.update(cx, |this, cx| this.render_model_scope(window, cx))
-                            .unwrap_or_else(|_| div().into_any_element())
-                    })
-                    .keywords(["enabledModels".to_owned(), t(cx, field.label())]);
-                }
-                let mut item = SettingItem::new(
-                    t(cx, field.label()),
-                    SettingField::render(move |_, window, cx| {
-                        weak.update(cx, |this, cx| this.render_field(field, window, cx))
-                            .unwrap_or_else(|_| div().into_any_element())
-                    }),
-                )
-                .keywords(
-                    field
-                        .leaves()
-                        .iter()
-                        .map(|leaf| leaf.join("."))
-                        .chain(["pi".to_owned()])
+                    .keywords(
+                        (if field == Field::BudgetMinimal {
+                            vec![
+                                Field::BudgetMinimal,
+                                Field::BudgetLow,
+                                Field::BudgetMedium,
+                                Field::BudgetHigh,
+                            ]
+                        } else {
+                            vec![field]
+                        })
+                        .into_iter()
+                        .flat_map(|field| {
+                            field
+                                .leaves()
+                                .iter()
+                                .map(|leaf| leaf.join("."))
+                                .chain([t(cx, field.label())])
+                        })
                         .collect::<Vec<_>>(),
-                );
-                if let Some(help) = field.help() {
-                    item = item.description(t(cx, help));
-                }
-                item
-            });
-            settings = settings.group(SettingGroup::new().title(t(cx, title)).items(items));
+                    )
+                });
+            let mut group = SettingGroup::new().title(t(cx, title)).items(items);
+            if *title == "pi-group-tools" {
+                group = group.description(t(cx, "pi-codemode-help"));
+            }
+            settings = settings.group(group);
         }
         settings
     }
@@ -541,92 +549,242 @@ impl PiConfig {
             return div().into_any_element();
         };
         let project = matches!(self.scope, Scope::Project(_));
-        if project && field.is_global_only() {
-            return self.render_global_only(field, cx);
-        }
+
         let pending = self.pending(field, cx);
         let resolved = self.resolved(field, cx);
         let saving = self.is_saving();
         let id = format!("pi-{}-{}", self.generation, field.id());
-        let control = match field.kind() {
-            Kind::Bool => {
-                let checked = resolved.values[0].as_ref().and_then(Value::as_bool) == Some(true);
-                Checkbox::new(SharedString::from(id))
-                    .checked(checked)
-                    .disabled(saving)
-                    .accessibility_label(t(cx, field.label()))
-                    .on_click(cx.listener(move |this, checked: &bool, _, cx| {
-                        this.set_values(field, vec![Slot::Set(Value::Bool(*checked))], cx)
-                    }))
-                    .into_any_element()
+        let control = if project && field.is_global_only() {
+            self.render_global_only(field, cx)
+        } else {
+            match field.kind() {
+                Kind::Bool => {
+                    let checked =
+                        resolved.values[0].as_ref().and_then(Value::as_bool) == Some(true);
+                    Checkbox::new(SharedString::from(id))
+                        .checked(checked)
+                        .disabled(saving)
+                        .accessibility_label(t(cx, field.label()))
+                        .on_click(cx.listener(move |this, checked: &bool, _, cx| {
+                            this.set_values(field, vec![Slot::Set(Value::Bool(*checked))], cx)
+                        }))
+                        .into_any_element()
+                }
+                Kind::Choice(options) => {
+                    self.render_choice(field, options, &resolved.values, saving, cx)
+                }
+                Kind::List => self.render_tools_chips(window, cx),
+                Kind::ThinkingMap | Kind::CompactionMap => unreachable!("map block"),
+                Kind::Timeout => self.render_timeout(field, window, cx),
+                Kind::Count | Kind::Text => self.render_input(field, window, cx),
+                Kind::ModelScope => self.render_model_scope(window, cx),
+                Kind::Model => self.render_model(&resolved.values, saving, window, cx),
             }
-            Kind::Choice(options) => {
-                self.render_choice(field, options, &resolved.values, saving, cx)
-            }
-            Kind::List | Kind::ThinkingMap | Kind::CompactionMap => {
-                self.render_advanced(field, window, cx)
-            }
-            Kind::Timeout => self.render_timeout(field, window, cx),
-            Kind::Count | Kind::Text => self.render_input(field, window, cx),
-            Kind::ModelScope => self.render_model_scope(window, cx),
-            Kind::Model => self.render_model(&resolved.values, saving, window, cx),
         };
-        let mut lane = match resolved.source {
-            Source::Default => t(cx, "pi-source-default"),
-            Source::Global => t(cx, "pi-source-global"),
-            Source::Project => t(cx, "pi-source-project"),
+        let description = if field == Field::DefaultTools {
+            Some(self.tools_preview(cx))
+        } else {
+            field.help().map(|key| t(cx, key))
         };
-        if pending {
-            lane = format!("{lane} · {}", t(cx, "pi-unsaved"));
+        let mut label = v_flex()
+            .gap_1()
+            .flex_1()
+            .min_w_0()
+            .child(self.field_label(field, cx));
+        if let Some(description) = description {
+            label = label.child(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(description),
+            );
+        }
+        if field == Field::DefaultTools {
+            label = label.child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(t(cx, "pi-tools-startup-help")),
+            );
+        }
+        if field == Field::Telemetry
+            && let Some(enabled) = super::advanced::telemetry(
+                std::env::var_os("PI_TELEMETRY")
+                    .as_deref()
+                    .map(|s| s.to_str().unwrap_or("")),
+            )
+        {
+            label = label.child(
+                div()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(t(
+                        cx,
+                        if enabled {
+                            "pi-telemetry-env-on"
+                        } else {
+                            "pi-telemetry-env-off"
+                        },
+                    )),
+            );
         }
         let conflict = self.conflicts.contains(&field);
         let invalid = self.invalid(field, cx);
         v_flex()
+            .w_full()
+            .max_w(rems(56.))
             .gap_1()
-            .items_end()
             .child(
                 h_flex()
                     .gap_2()
                     .items_center()
-                    .child(control)
-                    .child(
-                        div()
-                            .w_24()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .truncate()
-                            .child(lane),
-                    )
-                    .child(self.render_field_menu(field, pending, saving, cx)),
+                    .w_full()
+                    .child(label)
+                    .child(h_flex().w_80().flex_shrink_0().justify_end().child(control))
+                    .child(if project && field.is_global_only() {
+                        div().w_6().flex_shrink_0().into_any_element()
+                    } else {
+                        self.render_field_menu(field, pending, saving, cx)
+                    }),
             )
-            .when(field == Field::Telemetry, |this| {
-                let env = std::env::var_os("PI_TELEMETRY");
-                let enabled =
-                    super::advanced::telemetry(env.as_deref().map(|s| s.to_str().unwrap_or("")));
-                this.children(enabled.map(|enabled| {
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(t(
-                            cx,
-                            if enabled {
-                                "pi-telemetry-env-on"
-                            } else {
-                                "pi-telemetry-env-off"
-                            },
-                        ))
-                }))
-            })
             .when(conflict || invalid, |this| {
                 this.child(div().text_xs().text_color(cx.theme().danger).child(t(
                     cx,
                     if conflict {
                         "pi-changed-on-disk"
+                    } else if field == Field::NpmCommand {
+                        "pi-npm-invalid"
                     } else {
                         "pi-invalid-count"
                     },
                 )))
             })
+            .into_any_element()
+    }
+
+    pub(super) fn field_label(&self, field: Field, cx: &App) -> AnyElement {
+        let source = if field.is_global_only() && matches!(self.scope, Scope::Project(_)) {
+            match &self.files {
+                Load::Ready(files)
+                    if field
+                        .leaves()
+                        .iter()
+                        .any(|leaf| files.global.get(leaf).is_some()) =>
+                {
+                    Source::Global
+                }
+                _ => Source::Default,
+            }
+        } else {
+            self.resolved(field, cx).source
+        };
+        h_flex()
+            .gap_1()
+            .flex_wrap()
+            .child(t(cx, field.label()))
+            .when(source != Source::Default, |this| {
+                this.child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(format!(
+                            "· {}",
+                            t(
+                                cx,
+                                if source == Source::Global {
+                                    "pi-source-global"
+                                } else {
+                                    "pi-source-project"
+                                }
+                            )
+                        )),
+                )
+            })
+            .when(self.pending(field, cx), |this| {
+                this.child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(format!("· {}", t(cx, "pi-unsaved"))),
+                )
+            })
+            .into_any_element()
+    }
+
+    fn render_budgets(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let mut controls = h_flex().w(rems(22.)).flex_shrink_0().gap_1();
+        for field in [
+            Field::BudgetMinimal,
+            Field::BudgetLow,
+            Field::BudgetMedium,
+            Field::BudgetHigh,
+        ] {
+            let input = self.input(field, window, cx);
+            controls = controls.child(
+                v_flex()
+                    .flex_1()
+                    .min_w_0()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(self.field_label(field, cx)),
+                    )
+                    .child(
+                        h_flex()
+                            .gap_1()
+                            .child(
+                                Input::new(&input)
+                                    .small()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .aria_label({
+                                        let mut args = fluent_bundle::FluentArgs::new();
+                                        args.set("level", t(cx, field.label()));
+                                        t_with_args(cx, "pi-budget-input", &args)
+                                    })
+                                    .disabled(self.is_saving()),
+                            )
+                            .child(self.render_field_menu(
+                                field,
+                                self.pending(field, cx),
+                                self.is_saving(),
+                                cx,
+                            )),
+                    )
+                    .when(
+                        self.invalid(field, cx) || self.conflicts.contains(&field),
+                        |this| {
+                            this.child(
+                                div()
+                                    .text_xs()
+                                    .text_color(cx.theme().danger)
+                                    .child(t(cx, "pi-invalid-count")),
+                            )
+                        },
+                    ),
+            );
+        }
+        h_flex()
+            .w_full()
+            .max_w(rems(56.))
+            .gap_2()
+            .items_center()
+            .child(
+                v_flex()
+                    .gap_1()
+                    .flex_1()
+                    .min_w_0()
+                    .child(t(cx, "pi-thinking-budgets"))
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(t(cx, "pi-thinking-budget-help")),
+                    ),
+            )
+            .child(controls)
             .into_any_element()
     }
 
@@ -647,6 +805,8 @@ impl PiConfig {
             .iter()
             .any(|value| !matches!(value, Slot::Unset));
         Button::new(SharedString::from(format!("pi-menu-{}", field.id())))
+            .w_6()
+            .flex_shrink_0()
             .ghost()
             .xsmall()
             .icon(IconName::Ellipsis)
@@ -746,6 +906,7 @@ impl PiConfig {
         Button::new(SharedString::from(format!("pi-choice-{}", field.id())))
             .outline()
             .small()
+            .w_80()
             .label(selected)
             .dropdown_caret(true)
             .disabled(saving)
@@ -802,7 +963,8 @@ impl PiConfig {
         Input::new(&input)
             .id(SharedString::from(format!("pi-input-{}", field.id())))
             .small()
-            .w_40()
+            .w_full()
+            .aria_label(t(cx, field.label()))
             .disabled(self.is_saving())
             .into_any_element()
     }
@@ -846,22 +1008,17 @@ impl PiConfig {
         }
         let known = key.is_none() || self.model_picker.read(cx).selected_value().is_some();
         let note = match &self.models {
-            Models::Loading => Some((t(cx, "pi-models-loading"), false)),
-            Models::Failed(error) => {
-                let mut args = fluent_bundle::FluentArgs::new();
-                args.set("error", error.clone());
-                Some((t_with_args(cx, "pi-models-failed", &args), true))
-            }
             Models::Ready(_) if !known => Some((t(cx, "pi-field-model-unavailable"), true)),
             _ => None,
         };
         v_flex()
+            .w_full()
             .gap_1()
             .items_end()
             .child(
                 Select::new(&self.model_picker)
                     .small()
-                    .w_64()
+                    .w_full()
                     .placeholder(raw)
                     .search_placeholder(t(cx, "conversation-model-search"))
                     .accessibility_label(t(cx, "pi-field-model"))
@@ -878,18 +1035,7 @@ impl PiConfig {
                         } else {
                             cx.theme().muted_foreground
                         })
-                        .child(note)
-                        .when(matches!(self.models, Models::Failed(_)), |this| {
-                            this.child(
-                                Button::new("pi-models-retry")
-                                    .xsmall()
-                                    .ghost()
-                                    .label(t(cx, "pi-models-retry"))
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.load_models(window, cx)
-                                    })),
-                            )
-                        }),
+                        .child(note),
                 )
             })
             .into_any_element()
@@ -906,7 +1052,12 @@ impl PiConfig {
         };
         let value = global.resolve(field, None).values[0]
             .as_ref()
-            .map(|value| display(Some(value)))
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(|v| choice_label(field, v, cx))
+                    .unwrap_or_else(|| display(Some(value)))
+            })
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| t(cx, "pi-value-unset"));
         let entity = cx.entity();
@@ -916,6 +1067,7 @@ impl PiConfig {
             .child(div().text_sm().truncate().max_w_64().child(value))
             .child(
                 Button::new(SharedString::from(format!("pi-global-{}", field.id())))
+                    .ghost()
                     .small()
                     .label(t(cx, "pi-edit-in-global"))
                     .on_click(move |_, window, cx| {

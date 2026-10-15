@@ -96,8 +96,7 @@ pub(super) struct ToolsDraft {
     pub(super) codemode_budget: Slot<u64>,
     pub(super) shell_path: Slot<String>,
     pub(super) shell_prefix: Slot<String>,
-    #[form(child)]
-    pub(super) npm_command: super::lists::ListSlot,
+    pub(super) npm_command: Slot<Vec<String>>,
     pub(super) telemetry: Slot<bool>,
     pub(super) project_trust: Slot<String>,
 }
@@ -251,8 +250,7 @@ impl Snapshot {
                 self.tools.shell_prefix = Slot::decode(values.next().unwrap_or(Slot::Unset));
             }
             Field::NpmCommand => {
-                self.tools.npm_command =
-                    super::lists::ListSlot::decode(values.next().unwrap_or(Slot::Unset));
+                self.tools.npm_command = Slot::decode(values.next().unwrap_or(Slot::Unset));
             }
             Field::Telemetry => {
                 self.tools.telemetry = Slot::decode(values.next().unwrap_or(Slot::Unset));
@@ -390,7 +388,7 @@ impl Snapshot {
             && (field == Field::ModelScope
                 && matches!(&self.conversation.enabled_models, ModelScopeSlot::Set(s) if s.patterns.iter().any(|p| p.text.trim().is_empty()))
                 || field == Field::NpmCommand
-                    && matches!(&self.tools.npm_command, super::lists::ListSlot::Set(s) if s.items.first().is_some_and(|i| i.text.is_empty())))
+                    && matches!(&self.tools.npm_command, Slot::Set(s) if s.first().is_some_and(|i| i.is_empty())))
     }
     pub(super) fn merge(current: &Self, next: &Self, since: &Self) -> Self {
         let mut merged = next.clone();

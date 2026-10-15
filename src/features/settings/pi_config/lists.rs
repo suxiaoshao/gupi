@@ -47,199 +47,59 @@ impl ListSlot {
 
 use super::model_scope::RowKey;
 use super::*;
-use gpui_form::{
-    ControlBinding, ControlProjection, DynamicItemsPath, IntoTotalPath, ItemPath, TotalPath,
-};
+use gpui_form::DynamicItemsPath;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::input::Input;
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
-use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, h_flex};
 use gupi_settings::assets::IconName;
 
-pub(super) struct ListAdapter {
-    pub(super) input: Entity<InputState>,
-    _binding: Option<ControlBinding>,
-    _subscription: Subscription,
-}
-fn slot(field: Field) -> TotalPath<ToolsDraft, ListSlot> {
-    match field {
-        Field::DefaultTools => ToolsDraft::DEFAULT_TOOLS.into_total_path(),
-        Field::NpmCommand => ToolsDraft::NPM_COMMAND.into_total_path(),
-        _ => unreachable!("ordered tool/argv field"),
-    }
-}
 impl PiConfig {
     pub(super) fn list_paths(
         &self,
         field: Field,
         cx: &App,
     ) -> Option<DynamicItemsPath<ToolsDraft, ListItem>> {
-        slot(field)
+        assert_eq!(field, Field::DefaultTools);
+        ToolsDraft::DEFAULT_TOOLS
             .case(ListSlot::SET)
             .resolve(&self.tools, cx)
             .ok()
             .flatten()
             .map(|p| p.then(ListRows::ITEMS))
     }
-    fn list_values(&self, field: Field, cx: &App) -> Option<Vec<String>> {
-        match self.resolved(field, cx).values[0].clone() {
+    fn tool_values(&self, cx: &App) -> Option<Vec<String>> {
+        match self.resolved(Field::DefaultTools, cx).values[0].clone() {
             None => Some(Vec::new()),
             Some(value) => serde_json::from_value(value).ok(),
         }
     }
-    fn bind_list(
-        &self,
-        input: Entity<InputState>,
-        path: ItemPath<ToolsDraft, ListItem>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> ListAdapter {
-        let (binding, writer) = path
-            .then(ListItem::TEXT)
-            .try_bind_control_in(
-                &self.tools,
-                &input,
-                |input, projection, window, cx| {
-                    if let ControlProjection::Value(value) = projection
-                        && input.value().as_ref() != value
-                    {
-                        input.set_value(value, window, cx);
-                    }
-                },
-                window,
-                cx,
-            )
-            .expect("active list row");
-        let subscription =
-            cx.subscribe_in(&input, window, move |this, input, event, window, cx| {
-                if matches!(event, InputEvent::Change) && !this.is_saving() {
-                    writer.defer_set(input.read(cx).value().to_string(), window, cx);
-                }
-            });
-        ListAdapter {
-            input,
-            _binding: Some(binding),
-            _subscription: subscription,
-        }
-    }
-    fn materialize_list(
+    fn materialize_tools(
         &mut self,
-        field: Field,
-        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<DynamicItemsPath<ToolsDraft, ListItem>> {
         if self.is_saving() {
             return None;
         }
-        if self.list_paths(field, cx).is_none() {
+        if self.list_paths(Field::DefaultTools, cx).is_none() {
             let items = self
-                .list_values(field, cx)?
+                .tool_values(cx)?
                 .into_iter()
                 .map(|text| ListItem { text })
                 .collect();
-            slot(field).set(&self.tools, ListSlot::Set(ListRows { items }), cx);
-            let paths = self
-                .list_paths(field, cx)?
-                .try_items(&self.tools, cx)
-                .ok()?;
-            for (index, path) in paths.into_iter().enumerate() {
-                if let Some(adapter) = self
-                    .list_inputs
-                    .remove(&(field, RowKey::Inherited(self.generation, index)))
-                {
-                    let input = adapter.input.clone();
-                    drop(adapter);
-                    let adapter = self.bind_list(input, path.clone(), window, cx);
-                    self.list_inputs
-                        .insert((field, RowKey::Local(path.key())), adapter);
-                }
-            }
+            ToolsDraft::DEFAULT_TOOLS.set(&self.tools, ListSlot::Set(ListRows { items }), cx);
         }
-        self.list_paths(field, cx)
-    }
-    fn list_input(
-        &mut self,
-        field: Field,
-        key: &RowKey,
-        text: &str,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Entity<InputState> {
-        if let Some(adapter) = self.list_inputs.get(&(field, key.clone())) {
-            return adapter.input.clone();
-        }
-        let input = cx.new(|cx| InputState::new(window, cx).default_value(text.to_owned()));
-        let adapter = match key {
-            RowKey::Local(key) => {
-                let path = self
-                    .list_paths(field, cx)
-                    .unwrap()
-                    .try_items(&self.tools, cx)
-                    .unwrap()
-                    .into_iter()
-                    .find(|p| p.key() == *key)
-                    .unwrap();
-                self.bind_list(input.clone(), path, window, cx)
-            }
-            RowKey::Inherited(generation, index) => {
-                let (generation, index, key) = (*generation, *index, key.clone());
-                let subscription =
-                    cx.subscribe_in(&input, window, move |_, input, event, window, cx| {
-                        if !matches!(event, InputEvent::Change) {
-                            return;
-                        }
-                        let input = input.clone();
-                        let key = key.clone();
-                        cx.defer_in(window, move |this, window, cx| {
-                            if this.generation != generation
-                                || this
-                                    .list_inputs
-                                    .get(&(field, key))
-                                    .is_none_or(|a| a.input != input)
-                                || this.is_saving()
-                            {
-                                return;
-                            }
-                            let text = input.read(cx).value().to_string();
-                            if this
-                                .list_values(field, cx)
-                                .and_then(|v| v.get(index).cloned())
-                                .as_deref()
-                                == Some(&text)
-                            {
-                                return;
-                            }
-                            if let Some(paths) = this
-                                .materialize_list(field, window, cx)
-                                .and_then(|p| p.try_items(&this.tools, cx).ok())
-                                && let Some(path) = paths.get(index)
-                            {
-                                let _ = path.clone().then(ListItem::TEXT).try_set(
-                                    &this.tools,
-                                    text,
-                                    cx,
-                                );
-                            }
-                        });
-                    });
-                ListAdapter {
-                    input: input.clone(),
-                    _binding: None,
-                    _subscription: subscription,
-                }
-            }
-        };
-        self.list_inputs.insert((field, key.clone()), adapter);
-        input
+        self.list_paths(Field::DefaultTools, cx)
     }
     pub(super) fn append_list(
         &mut self,
         field: Field,
         text: String,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(items) = self.materialize_list(field, window, cx) {
+        assert_eq!(field, Field::DefaultTools);
+        if let Some(items) = self.materialize_tools(cx) {
             let _ = items.append(&self.tools, ListItem { text }, cx);
             cx.notify();
         }
@@ -248,11 +108,12 @@ impl PiConfig {
         &mut self,
         field: Field,
         key: &RowKey,
-        action: i8,
-        window: &mut Window,
+        _action: i8,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(items) = self.materialize_list(field, window, cx) else {
+        assert_eq!(field, Field::DefaultTools);
+        let Some(items) = self.materialize_tools(cx) else {
             return;
         };
         let paths = items.try_items(&self.tools, cx).unwrap();
@@ -261,42 +122,39 @@ impl PiConfig {
             RowKey::Inherited(g, i) if *g == self.generation => Some(*i),
             _ => None,
         };
-        let Some(index) = index.filter(|i| *i < paths.len()) else {
-            return;
-        };
-        if action == 0 {
-            self.list_inputs
-                .remove(&(field, RowKey::Local(paths[index].key())));
-            let _ = items.remove(&self.tools, paths[index].clone(), cx);
-            if paths.len() == 1 && field == Field::NpmCommand {
-                slot(field).set(&self.tools, ListSlot::Unset, cx);
-            }
-        } else if action < 0 && index > 0 {
-            let _ = items.move_before(&self.tools, &paths[index], &paths[index - 1], cx);
-        } else if action > 0 && index + 1 < paths.len() {
-            let _ = items.move_before(&self.tools, &paths[index + 1], &paths[index], cx);
+        if let Some(path) = index.and_then(|i| paths.get(i)) {
+            let _ = items.remove(&self.tools, path.clone(), cx);
+            cx.notify();
         }
-        cx.notify();
     }
-    pub(super) fn render_list(
+    pub(super) fn tools_preview(&self, cx: &App) -> String {
+        let Load::Ready(files) = &self.files else {
+            return String::new();
+        };
+        let local = self.snapshot(cx).value(Field::DefaultTools)[0].raw();
+        let tools = if files.project.is_some() {
+            super::advanced::startup_tools(files.global.get(&["defaultTools"]), local.as_ref())
+        } else {
+            super::advanced::startup_tools(local.as_ref(), None)
+        };
+        let mut args = fluent_bundle::FluentArgs::new();
+        args.set("tools", tools.join(" · "));
+        gupi_settings::i18n::t_with_args(cx, "pi-tools-preview", &args)
+    }
+    pub(super) fn render_tools_chips(
         &mut self,
-        field: Field,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let saving = self.is_saving();
-        let Some(values) = self.list_values(field, cx) else {
-            return v_flex()
-                .gap_2()
-                .child(t(cx, field.label()))
-                .child(
-                    serde_json::to_string(&self.resolved(field, cx).values[0]).unwrap_or_default(),
-                )
-                .child(self.render_field_menu(field, self.pending(field, cx), saving, cx))
+        let field = Field::DefaultTools;
+        let Some(values) = self.tool_values(cx) else {
+            return div()
+                .text_sm()
+                .child(fields::display(self.resolved(field, cx).values[0].as_ref()))
                 .into_any_element();
         };
-        let keys = if let Some(paths) = self.list_paths(field, cx) {
-            paths
+        let keys = if let Some(items) = self.list_paths(field, cx) {
+            items
                 .try_items(&self.tools, cx)
                 .unwrap()
                 .into_iter()
@@ -307,124 +165,125 @@ impl PiConfig {
                 .map(|i| RowKey::Inherited(self.generation, i))
                 .collect()
         };
-        let mut origin = t(
-            cx,
-            match self.resolved(field, cx).source {
-                fields::Source::Default => "pi-source-default",
-                fields::Source::Global => "pi-source-global",
-                fields::Source::Project => "pi-source-project",
-            },
-        );
-        if self.pending(field, cx) {
-            origin = format!("{origin} · {}", t(cx, "pi-unsaved"));
-        }
-        let mut body = v_flex().gap_2().w_full().child(
-            h_flex()
-                .gap_2()
-                .items_center()
-                .child(div().flex_1().child(t(cx, field.label())))
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(origin),
-                )
-                .child(self.render_field_menu(field, self.pending(field, cx), saving, cx)),
-        );
-        for (index, (key, text)) in keys.into_iter().zip(&values).enumerate() {
-            let input = self.list_input(field, &key, text, window, cx);
-            let mut row = h_flex()
-                .gap_2()
-                .items_center()
-                .child(Input::new(&input).small().disabled(saving).flex_1());
-            for (action, icon, label) in [
-                (-1, IconName::ArrowUp, "pi-model-scope-up"),
-                (1, IconName::ArrowDown, "pi-model-scope-down"),
-                (0, IconName::Trash, "pi-list-remove"),
-            ] {
-                let key = key.clone();
-                row = row.child(
-                    Button::new(SharedString::from(format!(
-                        "list-{field:?}-{index}-{action}"
-                    )))
-                    .ghost()
-                    .small()
-                    .icon(icon)
-                    .accessibility_label(t(cx, label))
-                    .disabled(
-                        saving
-                            || action < 0 && index == 0
-                            || action > 0 && index + 1 == values.len(),
-                    )
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.change_list(field, &key, action, window, cx)
-                    })),
-                );
-            }
-            body = body.child(row);
+        let mut chips = h_flex()
+            .w_full()
+            .min_w_0()
+            .gap_1()
+            .p_1()
+            .flex_wrap()
+            .border_1()
+            .border_color(cx.theme().border)
+            .rounded_md()
+            .bg(cx.theme().group_box);
+        let count = values.len();
+        for (index, (key, text)) in keys.into_iter().zip(values).enumerate() {
+            let to_add = count - index;
+            let delete = key.clone();
+            let mut args = fluent_bundle::FluentArgs::new();
+            args.set("tool", text.clone());
+            let remove = gupi_settings::i18n::t_with_args(cx, "pi-tool-remove", &args);
+            chips = chips.child(
+                h_flex()
+                    .id(SharedString::from(format!("tool-chip-{key:?}")))
+                    .gap_1()
+                    .pl_2()
+                    .rounded_sm()
+                    .bg(cx.theme().muted)
+                    .child(div().text_sm().max_w_48().truncate().child(text))
+                    .child(
+                        Button::new("delete")
+                            .xsmall()
+                            .ghost()
+                            .icon(IconName::X)
+                            .accessibility_label(remove.clone())
+                            .tooltip(remove)
+                            .disabled(self.is_saving())
+                            .on_click(cx.listener(
+                                move |this, event: &gpui_kit::ClickEvent, window, cx| {
+                                    if event.is_keyboard() {
+                                        // The Add trigger survives inherited -> local materialization;
+                                        // sibling chip occurrences may acquire new Form identities.
+                                        for _ in 0..to_add {
+                                            window.focus_next(cx);
+                                        }
+                                    }
+                                    this.change_list(field, &delete, 0, window, cx)
+                                },
+                            )),
+                    ),
+            );
         }
         let entity = cx.entity();
-        let add = Button::new(SharedString::from(format!("list-add-{field:?}")))
-            .small()
-            .label(t(cx, "pi-list-add"))
-            .disabled(saving)
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.append_list(field, String::new(), window, cx)
-            }));
-        if field == Field::DefaultTools {
-            body = body.child(
-                Button::new("pi-tools-known")
-                    .small()
-                    .label(t(cx, "pi-tools-known"))
-                    .disabled(saving)
-                    .dropdown_menu(move |menu, _, _cx| {
-                        super::advanced::KNOWN_TOOLS
-                            .iter()
-                            .fold(menu, |menu, name| {
-                                let entity = entity.clone();
-                                let name = (*name).to_owned();
-                                menu.item(PopupMenuItem::new(name.clone()).on_click(
-                                    move |_, window, cx| {
-                                        entity.update(cx, |this, cx| {
-                                            this.append_list(field, name.clone(), window, cx)
-                                        })
-                                    },
-                                ))
-                            })
-                    }),
-            );
-        }
-        body = body.child(add);
-        if field == Field::DefaultTools {
-            let Load::Ready(files) = &self.files else {
-                unreachable!()
-            };
-            let local = self.snapshot(cx).value(field)[0].raw();
-            let tools = if files.project.is_some() {
-                super::advanced::startup_tools(files.global.get(&["defaultTools"]), local.as_ref())
-            } else {
-                super::advanced::startup_tools(local.as_ref(), None)
-            };
-            body = body
-                .child(div().text_sm().child(t(cx, "pi-tools-startup")))
-                .child(div().text_sm().child(tools.join(", ")))
+        chips = chips.child(
+            Button::new("pi-tools-add")
+                .small()
+                .ghost()
+                .label(t(cx, "pi-tools-add"))
+                .dropdown_caret(true)
+                .disabled(self.is_saving())
+                .dropdown_menu(move |menu, _, cx| {
+                    let menu = super::advanced::KNOWN_TOOLS
+                        .iter()
+                        .fold(menu, |menu, name| {
+                            let (entity, name) = (entity.clone(), (*name).to_owned());
+                            menu.item(PopupMenuItem::new(name.clone()).on_click(
+                                move |_, window, cx| {
+                                    entity.update(cx, |this, cx| {
+                                        this.append_list(field, name.clone(), window, cx)
+                                    })
+                                },
+                            ))
+                        });
+                    let entity = entity.clone();
+                    menu.separator()
+                        .item(PopupMenuItem::new(t(cx, "pi-tools-custom")).on_click(
+                            move |_, window, cx| {
+                                entity.update(cx, |this, cx| {
+                                    this.custom_tool_open = true;
+                                    this.custom_tool
+                                        .update(cx, |input, cx| input.set_value("", window, cx));
+                                    window.focus(&this.custom_tool.read(cx).focus_handle(cx), cx);
+                                    cx.notify();
+                                })
+                            },
+                        ))
+                }),
+        );
+        if self.custom_tool_open {
+            chips = chips
                 .child(
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(t(cx, "pi-tools-startup-help")),
+                    Input::new(&self.custom_tool)
+                        .small()
+                        .w_32()
+                        .aria_label(t(cx, "pi-tools-custom"))
+                        .disabled(self.is_saving()),
+                )
+                .child(
+                    Button::new("pi-tool-confirm")
+                        .small()
+                        .ghost()
+                        .icon(IconName::Check)
+                        .accessibility_label(t(cx, "pi-tools-add"))
+                        .disabled(self.is_saving())
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.finish_custom_tool(window, cx)),
+                        ),
                 );
-        } else if values.is_empty() {
-            body = body.child(t(cx, "pi-npm-default"));
         }
-        if self.invalid(field, cx) {
-            body = body.child(
-                div()
-                    .text_sm()
-                    .text_color(cx.theme().danger)
-                    .child(t(cx, "pi-npm-command-required")),
-            );
+        let _ = window;
+        chips.into_any_element()
+    }
+    pub(super) fn finish_custom_tool(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.is_saving() {
+            return;
         }
-        body.into_any_element()
+        let text = self.custom_tool.read(cx).value().to_string();
+        if text.is_empty() {
+            return;
+        }
+        self.append_list(Field::DefaultTools, text, window, cx);
+        self.custom_tool
+            .update(cx, |input, cx| input.set_value("", window, cx));
+        cx.notify();
     }
 }

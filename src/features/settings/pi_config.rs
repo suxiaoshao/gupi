@@ -107,7 +107,8 @@ pub(super) struct PiConfig {
     /// Projection of the loaded file, also the baseline of all three forms.
     baseline: Snapshot,
     inputs: BTreeMap<Field, inputs::Adapter>,
-    list_inputs: std::collections::HashMap<(Field, model_scope::RowKey), lists::ListAdapter>,
+    custom_tool: Entity<gpui_kit::component::input::InputState>,
+    custom_tool_open: bool,
     conflicts: Vec<Field>,
     conflict_leaves: Vec<pi_settings::Leaf>,
     map_inputs: std::collections::HashMap<map_controls::MapInputKey, map_controls::MapAdapter>,
@@ -188,7 +189,18 @@ impl PiConfig {
             ));
             map_pickers.insert(field, picker);
         }
+        let custom_tool = cx.new(|cx| gpui_kit::component::input::InputState::new(window, cx));
+        let custom_tool_sub =
+            cx.subscribe_in(&custom_tool, window, |this, _, event, window, cx| {
+                if matches!(
+                    event,
+                    gpui_kit::component::input::InputEvent::PressEnter { .. }
+                ) {
+                    this.finish_custom_tool(window, cx);
+                }
+            });
         let mut subscriptions = vec![
+            custom_tool_sub,
             picker_sub,
             scope_sub,
             applied_sub,
@@ -213,7 +225,8 @@ impl PiConfig {
             tools,
             baseline: Snapshot::default(),
             inputs: BTreeMap::new(),
-            list_inputs: std::collections::HashMap::new(),
+            custom_tool,
+            custom_tool_open: false,
             conflicts: Vec::new(),
             conflict_leaves: Vec::new(),
             map_inputs: std::collections::HashMap::new(),
@@ -331,7 +344,7 @@ impl PiConfig {
             .update(cx, |form, cx| form.rebase(ConversationDraft::default(), cx));
         self.network
             .update(cx, |form, cx| form.rebase(NetworkDraft::default(), cx));
-        self.list_inputs.clear();
+        self.custom_tool_open = false;
         self.tools
             .update(cx, |form, cx| form.rebase(ToolsDraft::default(), cx));
         self.baseline = Snapshot::default();
@@ -349,8 +362,7 @@ impl PiConfig {
             return;
         }
         self.generation += 1;
-        self.list_inputs
-            .retain(|(_, key), _| matches!(key, model_scope::RowKey::Local(_)));
+        self.custom_tool_open = false;
         self.map_inputs
             .retain(|key, _| matches!(key, map_controls::MapInputKey::Local(_, _)));
         self.conflicts.clear();
@@ -423,7 +435,7 @@ impl PiConfig {
 
     fn retire_advanced_controls(&mut self, field: Field) {
         if matches!(field, Field::DefaultTools | Field::NpmCommand) {
-            self.list_inputs.retain(|(owner, _), _| *owner != field);
+            self.custom_tool_open = false;
         }
         if field == Field::ModelOverrides {
             self.map_inputs.clear();
@@ -480,7 +492,7 @@ impl PiConfig {
             self.network.update(cx, |f, cx| f.reset(cx));
         }
         if page.is_none_or(|p| p == Page::Tools) {
-            self.list_inputs.clear();
+            self.custom_tool_open = false;
             self.tools.update(cx, |f, cx| f.reset(cx));
         }
         self.conflicts.clear();
@@ -510,7 +522,7 @@ impl PiConfig {
             });
         }
         if self.baseline.tools != next.tools {
-            self.list_inputs.clear();
+            self.custom_tool_open = false;
             self.tools.update(cx, |form, cx| {
                 form.rebase(next.tools.clone(), cx);
                 if merged.tools != next.tools {

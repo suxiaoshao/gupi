@@ -192,7 +192,7 @@ impl Field {
             Self::CodemodeBudget => Kind::Count,
             Self::ShellPath => Kind::Text,
             Self::ShellPrefix => Kind::Text,
-            Self::NpmCommand => Kind::List,
+            Self::NpmCommand => Kind::Text,
             Self::Telemetry => Kind::Bool,
             Self::ProjectTrust => Kind::Choice(&["ask", "always", "never"]),
             Self::ModelThinking => Kind::ThinkingMap,

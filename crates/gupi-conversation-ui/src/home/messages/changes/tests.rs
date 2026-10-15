@@ -841,3 +841,46 @@ fn composed_fallback_write_recovery_preserves_file_entity_and_restores_focus(
         assert!(view.edited_files.stats(&run).is_none());
     });
 }
+
+#[gpui_kit::test]
+fn home_preview_switches_keep_current_path_live_tools(cx: &mut TestAppContext) {
+    let messages = vec![
+        message(
+            "call",
+            json!({"role":"assistant","content":[{"type":"toolCall","id":"one","name":"write","arguments":{"path":"a.rs","content":"new"}}]}),
+        ),
+        message("current", json!({"role":"user","content":"steer"})),
+    ];
+    let (home, state, visual) = mount(cx, &messages, false);
+    state.update(visual, |state, _| {
+        let session = state.sessions_for_test().get_mut("a").unwrap();
+        let mut history = entries(&messages);
+        history.entries.push(serde_json::from_value(json!({"id":"sibling","parentId":"call","timestamp":"2026-10-15T00:00:00Z","type":"message","message":{"role":"user","content":"other branch"}})).unwrap());
+        session.replace_entries_for_test(history);
+        session.tools_for_test().push(Arc::new(ToolActivity::new(
+            "one".into(), "write".into(), json!({}),
+            ToolExecution::Complete(json!({"content":"live output"})),
+        )));
+    });
+    for preview in [
+        None,
+        Some("call"),
+        Some("current"),
+        Some("sibling"),
+        Some("call"),
+    ] {
+        visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                home.views.get_mut("a").unwrap().preview = preview.map(str::to_owned);
+                home.sync_messages("a", true, window, cx);
+                let view = &home.views["a"];
+                let tool = view.tools.tool("tool-one").unwrap();
+                assert_eq!(
+                    tool.result["content"].as_str(),
+                    (preview != Some("sibling")).then_some("live output")
+                );
+                assert_eq!(view.tool_projection.as_ref().unwrap().1.as_deref(), preview);
+            })
+        });
+    }
+}

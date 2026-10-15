@@ -171,17 +171,33 @@ impl HomeView {
         let Some(view) = self.views.get_mut(key) else {
             return;
         };
+        let stale_preview = view
+            .preview
+            .as_ref()
+            .is_some_and(|id| session.history().entry(id).is_none());
+        if stale_preview {
+            view.preview = None;
+        }
         view.changes.sync_scope(session, view.preview.as_deref());
         let tool_snapshot = (view.tool_projection.as_ref()
             != Some(&(tool_revision, view.preview.clone())))
         .then(|| {
             (
-                session.tools().clone(),
+                if view
+                    .preview
+                    .as_deref()
+                    .is_none_or(|id| session.history().on_current_path(id))
+                {
+                    session.tools().clone()
+                } else {
+                    Vec::new()
+                },
                 session.info().cwd.to_string_lossy().into_owned(),
             )
         });
-        if force || view.content_revision != session.content_revision() {
+        if force || stale_preview || view.content_revision != session.content_revision() {
             if !force
+                && !stale_preview
                 && view.preview.is_none()
                 && let Some(message) = session.message_update_since(view.content_revision)
                 && let Some(&index) = view.message_rows.get(&message.id)
@@ -207,13 +223,6 @@ impl HomeView {
                     find.update(cx, |find, cx| find.sync(sources, cx));
                 }
                 return;
-            }
-            if view
-                .preview
-                .as_ref()
-                .is_some_and(|id| session.history().entry(id).is_none())
-            {
-                view.preview = None;
             }
             view.changes.sync_scope(session, view.preview.as_deref());
             let rows = messages::project(session, view.preview.as_deref());
@@ -275,18 +284,13 @@ impl HomeView {
         };
         #[cfg(feature = "performance")]
         let _span = tracing::debug_span!(target: "gupi::performance", "messages.tools_sync", rows = view.rows.len(), live_tools = live_tools.len()).entered();
-        let live = if view.preview.is_none() {
-            live_tools.as_slice()
-        } else {
-            &[]
-        };
         let same_history = view
             .tool_projection
             .as_ref()
             .is_some_and(|(old, preview)| old.0 == revision.0 && preview == &view.preview);
         let next = messages::tools::ToolIndex::project_reusing(
             view.rows.iter().map(Rc::as_ref),
-            live,
+            live_tools,
             same_history.then_some(&view.tools),
         );
         let changed: Vec<_> = view
@@ -1149,9 +1153,13 @@ impl HomeView {
         }
         self.sync(true, window, cx);
         if let Some(view) = self.views.get_mut(&key)
-            && let Some(index) = view.rows.iter().position(|row| row.entries.contains(&id))
+            && let Some(index) = messages::reveal_entry(
+                view.rows.iter().map(Rc::as_ref),
+                &view.tools,
+                &id,
+                &mut view.process_open,
+            )
         {
-            view.rows[index].reveal(&id, &mut view.process_open);
             view.scroller.update(cx, |s, cx| {
                 s.remeasure_items(index..index + 1, cx);
                 s.scroll_to_item(index, cx);

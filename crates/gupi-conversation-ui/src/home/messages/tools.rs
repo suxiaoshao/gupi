@@ -325,6 +325,13 @@ impl ToolIndex {
         old.len() == new.len() && old.iter().zip(new).all(|(a, b)| Rc::ptr_eq(a, b) || a == b)
     }
 
+    pub(super) fn entry_owner(&self, entry: &str) -> Option<&str> {
+        self.records
+            .iter()
+            .find(|record| record.tool.entries.iter().any(|id| id == entry))
+            .map(|record| record.owner.as_str())
+    }
+
     pub fn owner(&self, id: &str) -> Option<&str> {
         self.ids.get(id).map(|&i| self.records[i].owner.as_str())
     }
@@ -370,6 +377,7 @@ impl ToolProjection {
         preview: Option<&str>,
     ) -> &ToolIndex {
         let revision = session.tool_projection_revision();
+        let include_live = preview.is_none_or(|id| session.history().on_current_path(id));
         let same_history = self.revision.is_some_and(|old| old.0 == revision.0)
             && self.preview.as_deref() == preview;
         if self.revision == Some(revision) && self.preview.as_deref() == preview {
@@ -379,7 +387,7 @@ impl ToolProjection {
         let incremental = same_history
             && self.revision.is_some_and(|old| old.2 == revision.2)
             && (self.content_revision == session.content_revision()
-                || (preview.is_none()
+                || (include_live
                     && session
                         .message_update_since(self.content_revision)
                         .is_some_and(|message| {
@@ -390,11 +398,7 @@ impl ToolProjection {
         }
         self.tools = ToolIndex::project_reusing(
             self.rows.iter(),
-            if preview.is_none() {
-                session.tools()
-            } else {
-                &[]
-            },
+            if include_live { session.tools() } else { &[] },
             same_history.then_some(&self.tools),
         );
         self.revision = Some(revision);
@@ -443,6 +447,77 @@ mod tests {
             &format!("result-{id}"),
             json!({"role":"toolResult","toolCallId":id,"toolName":"write","content":"done"}),
         )
+    }
+
+    #[test]
+    fn current_path_previews_keep_live_tools_and_invalidate_on_preview_changes() {
+        use gupi_conversation::conversation::Session;
+        let mut session = Session::from_rpc_messages(&[]);
+        let call = call("one", "write").value;
+        let entries = [
+            ("call", None, call),
+            ("current", Some("call"), json!({"role":"user","content":"steer"})),
+            ("sibling", Some("call"), json!({"role":"user","content":"other branch"})),
+        ].into_iter().map(|(id, parent, message)| {
+            serde_json::from_value(json!({"id":id,"parentId":parent,"timestamp":"2026-10-15T00:00:00Z","type":"message","message":message})).unwrap()
+        }).collect();
+        session.replace_entries_for_test(pi_rpc::protocol::Entries {
+            entries,
+            leaf_id: Some("current".into()),
+        });
+        session.tools_for_test().push(Arc::new(ToolActivity::new(
+            "one".into(),
+            "write".into(),
+            json!({}),
+            ToolExecution::Complete(json!({"content":"live output"})),
+        )));
+        let mut projection = ToolProjection::default();
+        for preview in [
+            None,
+            Some("call"),
+            Some("current"),
+            Some("sibling"),
+            Some("call"),
+        ] {
+            let tool = projection.sync(&session, preview).tool("tool-one").unwrap();
+            if preview == Some("sibling") {
+                assert_eq!(tool.status, ToolStatus::Unfinished);
+                assert!(tool.result.is_null());
+            } else {
+                assert_eq!(tool.status, ToolStatus::Complete);
+                assert_eq!(tool.result["content"], "live output");
+            }
+            assert_eq!(projection.preview.as_deref(), preview);
+        }
+        // A live message delta in the same current-path preview updates the
+        // retained rows rather than keeping a stale call argument snapshot.
+        session.receive_message_for_test(
+            "message_start",
+            &json!({"message":{"role":"assistant","timestamp":7,"content":[]}}),
+        );
+        *session.content_revision_for_test() += 1;
+        projection.sync(&session, Some("call"));
+        session.receive_message_for_test("message_update", &json!({"assistantMessageEvent":{"type":"toolcall_start","contentIndex":0,"id":"two","toolName":"write"}}));
+        *session.content_revision_for_test() += 1;
+        projection.sync(&session, Some("call"));
+        session.receive_message_for_test("message_update", &json!({"assistantMessageEvent":{"type":"toolcall_delta","contentIndex":0,"delta":"{\"path\":\"live.txt\",\"content\":\"new\"}"}}));
+        *session.content_revision_for_test() += 1;
+        assert_eq!(
+            projection
+                .sync(&session, Some("call"))
+                .tool("tool-two")
+                .unwrap()
+                .args
+                .as_ref()
+                .unwrap()["path"],
+            "live.txt"
+        );
+        assert!(
+            projection
+                .sync(&session, Some("sibling"))
+                .tool("tool-two")
+                .is_none()
+        );
     }
 
     #[test]

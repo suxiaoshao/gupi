@@ -164,8 +164,15 @@ impl ChatRow {
         }
     }
 
-    pub(super) fn reveal(&self, entry: &str, open: &mut HashMap<String, bool>) {
-        if !self.entries.iter().any(|id| id == entry) {
+    pub(super) fn reveal(
+        &self,
+        entry: &str,
+        tools: &tools::ToolIndex,
+        open: &mut HashMap<String, bool>,
+    ) {
+        if !self.entries.iter().any(|id| id == entry)
+            && tools.entry_owner(entry) != Some(self.id.as_str())
+        {
             return;
         }
         match &self.kind {
@@ -176,7 +183,7 @@ impl ChatRow {
                 {
                     return;
                 }
-                let content = RunContent::project(messages, &[], false);
+                let content = RunContent::project_indexed(messages, false, tools);
                 for section in &content.sections {
                     if let RunSection::Process(range) = section {
                         open.insert(content.process_id(&self.id, range), true);
@@ -209,6 +216,23 @@ enum RowKind {
     Compaction(DisplayMessage),
     BranchSummary(DisplayMessage),
 }
+pub(super) fn reveal_entry<'a>(
+    rows: impl IntoIterator<Item = &'a ChatRow>,
+    tools: &tools::ToolIndex,
+    entry: &str,
+    open: &mut HashMap<String, bool>,
+) -> Option<usize> {
+    let owner = tools.entry_owner(entry);
+    let (index, row) = rows.into_iter().enumerate().find(|(_, row)| {
+        owner.map_or_else(
+            || row.entries.iter().any(|id| id == entry),
+            |id| row.id == id,
+        )
+    })?;
+    row.reveal(entry, tools, open);
+    Some(index)
+}
+
 pub(super) fn project(session: &Session, preview: Option<&str>) -> Vec<ChatRow> {
     #[cfg(feature = "performance")]
     let _span = tracing::debug_span!(target: "gupi::performance", "messages.project", preview = preview.is_some()).entered();
@@ -1141,9 +1165,17 @@ mod tests {
         );
         assert_eq!(rows.len(), 2, "plugin messages do not split a logical run");
         let mut open = HashMap::new();
-        rows[1].reveal("plugin", &mut open);
+        rows[1].reveal(
+            "plugin",
+            &super::tools::ToolIndex::project(rows.iter(), &[]),
+            &mut open,
+        );
         assert!(open.is_empty());
-        rows[1].reveal("b", &mut open);
+        rows[1].reveal(
+            "b",
+            &super::tools::ToolIndex::project(rows.iter(), &[]),
+            &mut open,
+        );
         assert_eq!(open.get("run-after-u"), Some(&true));
         assert_eq!(open.get("run-after-u-process-b"), Some(&true));
     }
@@ -1168,11 +1200,58 @@ mod tests {
             None,
         );
         let mut open = HashMap::new();
-        rows[1].reveal("c", &mut open);
+        rows[1].reveal(
+            "c",
+            &super::tools::ToolIndex::project(rows.iter(), &[]),
+            &mut open,
+        );
         assert_eq!(open.get("run-after-u-process-tool-b"), Some(&true));
         assert_eq!(open.get("group-tool-b"), Some(&true));
         assert!(!open.contains_key("group-tool-a"));
     }
+    #[test]
+    fn locating_cross_run_results_reveals_the_call_owner_and_group() {
+        for boundary in ["user", "compaction"] {
+            let mut call = message("call", "assistant");
+            call.value["content"] = serde_json::json!([{"type":"toolCall","id":"one","name":"read","arguments":{"path":"a.rs"}}]);
+            let mut result = message("result", "toolResult");
+            result.value["toolCallId"] = "one".into();
+            result.value["toolName"] = "read".into();
+            let rows = project_rows(
+                vec![
+                    message("u", "user"),
+                    call,
+                    message("boundary", boundary),
+                    result,
+                ],
+                None,
+            );
+            let tools = super::tools::ToolIndex::project(rows.iter(), &[]);
+            let owner = rows
+                .iter()
+                .position(|row| row.entries.iter().any(|id| id == "call"))
+                .unwrap();
+            let result_row = rows
+                .iter()
+                .position(|row| row.entries.iter().any(|id| id == "result"))
+                .unwrap();
+            assert_ne!(owner, result_row);
+            let mut open = HashMap::new();
+            assert_eq!(
+                super::reveal_entry(rows.iter(), &tools, "result", &mut open),
+                Some(owner)
+            );
+            assert_eq!(open.get(&rows[owner].id), Some(&true));
+            assert_eq!(open.get("group-tool-one"), Some(&true));
+            assert!(!open.contains_key(&rows[result_row].id));
+            // Non-tool history nodes still locate their chronological row.
+            assert_eq!(
+                super::reveal_entry(rows.iter(), &tools, "boundary", &mut open),
+                Some(2)
+            );
+        }
+    }
+
     #[test]
     fn steering_does_not_collapse_an_earlier_part_of_the_active_run() {
         let first = message("a", "assistant");
@@ -1235,12 +1314,20 @@ mod tests {
         );
         let mut open = HashMap::new();
         for row in &rows {
-            row.reveal("c", &mut open);
+            row.reveal(
+                "c",
+                &super::tools::ToolIndex::project(rows.iter(), &[]),
+                &mut open,
+            );
         }
         assert!(open.is_empty());
         open.clear();
         for row in &rows {
-            row.reveal("u", &mut open);
+            row.reveal(
+                "u",
+                &super::tools::ToolIndex::project(rows.iter(), &[]),
+                &mut open,
+            );
         }
         assert!(open.is_empty());
     }

@@ -25,10 +25,10 @@ pub(super) enum Domain {
 #[cfg(test)]
 pub(super) const KEYBOARD_PAGE: usize = 3;
 #[cfg(test)]
-pub(super) const DOMAIN_PAGES: [(Domain, usize); 2] = [(Domain::Gupi, 5), (Domain::Pi, 6)];
+pub(super) const DOMAIN_PAGES: [(Domain, usize); 2] = [(Domain::Gupi, 5), (Domain::Pi, 7)];
 pub(super) const PI_PAGE: usize = 0;
 pub(super) const CONVERSATION_PAGE: usize = 1;
-pub(super) const PACKAGES_PAGE: usize = 3;
+pub(super) const PACKAGES_PAGE: usize = 4;
 
 impl SettingsView {
     /// Settings selection lives in the component's keyed state; a new key

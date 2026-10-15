@@ -712,13 +712,14 @@ impl PiConfig {
     }
 
     fn render_budgets(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let mut controls = h_flex().w(rems(22.)).flex_shrink_0().gap_1();
-        for field in [
+        const BUDGETS: [Field; 4] = [
             Field::BudgetMinimal,
             Field::BudgetLow,
             Field::BudgetMedium,
             Field::BudgetHigh,
-        ] {
+        ];
+        let mut controls = h_flex().w_80().flex_shrink_0().gap_1();
+        for field in BUDGETS {
             let input = self.input(field, window, cx);
             controls = controls.child(
                 v_flex()
@@ -732,26 +733,15 @@ impl PiConfig {
                             .child(self.field_label(field, cx)),
                     )
                     .child(
-                        h_flex()
-                            .gap_1()
-                            .child(
-                                Input::new(&input)
-                                    .small()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .aria_label({
-                                        let mut args = fluent_bundle::FluentArgs::new();
-                                        args.set("level", t(cx, field.label()));
-                                        t_with_args(cx, "pi-budget-input", &args)
-                                    })
-                                    .disabled(self.is_saving()),
-                            )
-                            .child(self.render_field_menu(
-                                field,
-                                self.pending(field, cx),
-                                self.is_saving(),
-                                cx,
-                            )),
+                        Input::new(&input)
+                            .small()
+                            .min_w_0()
+                            .aria_label({
+                                let mut args = fluent_bundle::FluentArgs::new();
+                                args.set("level", t(cx, field.label()));
+                                t_with_args(cx, "pi-budget-input", &args)
+                            })
+                            .disabled(self.is_saving()),
                     )
                     .when(
                         self.invalid(field, cx) || self.conflicts.contains(&field),
@@ -785,6 +775,13 @@ impl PiConfig {
                     ),
             )
             .child(controls)
+            .child(self.render_fields_menu(
+                "budgets",
+                BUDGETS.to_vec(),
+                BUDGETS.iter().any(|field| self.pending(*field, cx)),
+                self.is_saving(),
+                cx,
+            ))
             .into_any_element()
     }
 
@@ -795,16 +792,31 @@ impl PiConfig {
         saving: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        self.render_fields_menu(field.id(), vec![field], pending, saving, cx)
+    }
+
+    /// One menu for fields shown together; each action applies to the fields it fits.
+    fn render_fields_menu(
+        &self,
+        id: &str,
+        fields: Vec<Field>,
+        pending: bool,
+        saving: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let entity = cx.entity();
         let project = matches!(self.scope, Scope::Project(_));
         let has_draft = pending;
+        let snapshot = self.snapshot(cx);
         // After saving, would the edited scope hold a value?
-        let set_here = self
-            .snapshot(cx)
-            .value(field)
-            .iter()
-            .any(|value| !matches!(value, Slot::Unset));
-        Button::new(SharedString::from(format!("pi-menu-{}", field.id())))
+        let (set_here, unset_here): (Vec<Field>, Vec<Field>) =
+            fields.iter().copied().partition(|field| {
+                snapshot
+                    .value(*field)
+                    .iter()
+                    .any(|value| !matches!(value, Slot::Unset))
+            });
+        Button::new(SharedString::from(format!("pi-menu-{id}")))
             .w_6()
             .flex_shrink_0()
             .ghost()
@@ -816,12 +828,20 @@ impl PiConfig {
                 let mut menu = menu;
                 if has_draft {
                     let entity = entity.clone();
+                    let fields = fields.clone();
                     menu = menu.item(PopupMenuItem::new(t(cx, "pi-menu-revert")).on_click(
-                        move |_, _, cx| entity.update(cx, |this, cx| this.clear_draft(field, cx)),
+                        move |_, _, cx| {
+                            entity.update(cx, |this, cx| {
+                                for field in &fields {
+                                    this.clear_draft(*field, cx);
+                                }
+                            })
+                        },
                     ));
                 }
-                if !set_here {
+                if !unset_here.is_empty() {
                     let entity = entity.clone();
+                    let unset_here = unset_here.clone();
                     menu = menu.item(
                         PopupMenuItem::new(t(
                             cx,
@@ -832,11 +852,17 @@ impl PiConfig {
                             },
                         ))
                         .on_click(move |_, _, cx| {
-                            entity.update(cx, |this, cx| this.pin(field, cx))
+                            entity.update(cx, |this, cx| {
+                                for field in &unset_here {
+                                    this.pin(*field, cx);
+                                }
+                            })
                         }),
                     );
-                } else {
+                }
+                if !set_here.is_empty() {
                     let entity = entity.clone();
+                    let set_here = set_here.clone();
                     menu = menu.item(
                         PopupMenuItem::new(t(
                             cx,
@@ -848,7 +874,13 @@ impl PiConfig {
                         ))
                         .on_click(move |_, _, cx| {
                             entity.update(cx, |this, cx| {
-                                this.set_values(field, vec![Slot::Unset; field.leaves().len()], cx)
+                                for field in &set_here {
+                                    this.set_values(
+                                        *field,
+                                        vec![Slot::Unset; field.leaves().len()],
+                                        cx,
+                                    )
+                                }
                             })
                         }),
                     );

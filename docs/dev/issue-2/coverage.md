@@ -49,7 +49,7 @@ Pi `settings.schema.json` 有 **58 个顶层键**，其中嵌套对象算一个�
 | `enableInstallTelemetry` | 尚无专用 UI | — |
 | `enableAnalytics` | 尚无专用 UI | — |
 | `trackingId` | 元数据/兼容 | — |
-| `packages` | 部分覆盖 | 已有全局包管理和项目安装/移除；项目更新、delta 编辑与任意资源过滤结构编辑未做 |
+| `packages` | 部分覆盖 | 已有全局包管理和项目安装/移除；delta 编辑与任意资源过滤结构编辑未做；项目更新因 Pi 无项目作用域契约不提供（#52） |
 | `extensions` | 部分覆盖 | 已有全局资源启停；项目独立及显式路径资源只读展示；未做路径列表写入、内置扩展开关 |
 | `deviceId` | 元数据/兼容 | — |
 | `skills` | 部分覆盖 | 已有全局和项目文件管理，项目显式路径来源只读；未做完整路径表达式编辑 |
@@ -96,13 +96,13 @@ Pi `settings.schema.json` 有 **58 个顶层键**，其中嵌套对象算一个�
 | `AGENTS.override.md` / `AGENTS.md` / `CLAUDE.md` 等 | 无专用指令管理页 | 全局、当前目录及父目录指令来源和覆盖预览；普通文件查看不计作配置 UI |
 | 全局／项目 `SYSTEM.md`、`APPEND_SYSTEM.md` | 已有提示词页编辑及项目回退全局操作 | 不提供完整运行时合成预览 |
 | 全局 `extensions/skills/prompts/themes` | 已有包及资源管理，覆盖部分文件操作 | 不是所有资源类型的通用编辑器；内置扩展选择仍缺专用 UI |
-| 项目 `.pi` 下资源与提示词 | 已有 Skill/模板/系统提示词编辑、包安装/移除；独立扩展/主题及显式路径只读展示 | 资源启停/过滤写入、路径数组编辑、扩展/主题代码编辑及项目包更新未做 |
+| 项目 `.pi` 下资源与提示词 | 已有 Skill/模板/系统提示词编辑、包安装/移除；独立扩展/主题及显式路径只读展示 | 资源启停/过滤写入、路径数组编辑、扩展/主题代码编辑未做；项目包更新不提供（#52） |
 | 环境变量／启动参数 | Pi 可执行路径已有配置 | 没有通用环境变量/CLI 编辑器；需逐项区分路径、代理、遥测、认证和运行覆盖 |
 | 扩展自有文件与 settings 未知键 | 保存时保留未知内容 | 无统一字段全集；需按扩展及版本独立盘点，不能把某扩展的设置当作 Pi 核心契约 |
 
 ## 剩余工作
 
-#2 以[第二批：模型范围](model-scope.md)收尾；其余缺口已拆为独立 Issue：项目资源编辑 [#47](https://github.com/suxiaoshao/gupi/issues/47)、供应商/模型/认证 [#48](https://github.com/suxiaoshao/gupi/issues/48)、工具与环境 [#49](https://github.com/suxiaoshao/gupi/issues/49)、按模型覆盖与高级运行 [#50](https://github.com/suxiaoshao/gupi/issues/50)、MCP [#51](https://github.com/suxiaoshao/gupi/issues/51)、项目包更新调研 [#52](https://github.com/suxiaoshao/gupi/issues/52)。AGENTS/祖先目录指令、全局信任记录管理与终端专用设置不在这些 Issue 内。
+#2 以[第二批：模型范围](model-scope.md)收尾；其余缺口已拆为独立 Issue：项目资源编辑 [#47](https://github.com/suxiaoshao/gupi/issues/47)、供应商/模型/认证 [#48](https://github.com/suxiaoshao/gupi/issues/48)、工具与环境 [#49](https://github.com/suxiaoshao/gupi/issues/49)、按模型覆盖与高级运行 [#50](https://github.com/suxiaoshao/gupi/issues/50)、MCP [#51](https://github.com/suxiaoshao/gupi/issues/51)。项目包更新调研 [#52](https://github.com/suxiaoshao/gupi/issues/52) 结论为不提供。AGENTS/祖先目录指令、全局信任记录管理与终端专用设置不在这些 Issue 内。
 
 ## 依据与验证范围
 

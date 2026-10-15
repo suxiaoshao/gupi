@@ -11,10 +11,11 @@ impl PiConfig {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let disabled = self.resolved(field, cx).values[0]
-            .as_ref()
-            .and_then(advanced::timeout)
-            == Some(0.);
+        // Only the edited file's own value; an inherited "disabled" leaves the input editable.
+        let disabled = matches!(
+            self.snapshot(cx).value(field).first(),
+            Some(Slot::Set(value)) if advanced::timeout(value) == Some(0.)
+        );
         h_flex()
             .gap_2()
             .items_center()

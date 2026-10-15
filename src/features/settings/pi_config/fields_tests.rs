@@ -141,11 +141,17 @@ fn fields_are_assigned_to_pages_and_scopes() {
             Field::Retry,
             Field::MaxRetries,
             Field::BaseDelay,
-            Field::MaxDelay
+            Field::MaxDelay,
+            Field::Transport,
+            Field::HttpTimeout,
+            Field::WebsocketTimeout,
+            Field::ProviderTimeout,
+            Field::ProviderRetries,
+            Field::ProviderDelay,
         ]
     );
     assert!(Field::Proxy.is_global_only());
-    assert!(Field::ALL.iter().filter(|f| f.is_global_only()).count() == 1);
+    assert!(Field::ALL.iter().filter(|f| f.is_global_only()).count() == 3);
 }
 
 #[test]
@@ -248,4 +254,105 @@ fn snapshot_merge_preserves_newer_edits_and_adopts_unedited_disk_values() {
         merged.value(Field::MaxRetries),
         old.value(Field::MaxRetries)
     );
+}
+
+#[test]
+fn safe_counts_raw_timeouts_and_argv_are_preserved() {
+    assert_eq!(
+        parse_count("9007199254740991"),
+        Some(json!(9007199254740991u64))
+    );
+    assert_eq!(parse_count("9007199254740992"), None);
+    for raw in [
+        json!("disabled"),
+        json!("DISABLED"),
+        json!("300"),
+        json!(1.5),
+        json!(0),
+    ] {
+        let doc = document(json!({"httpIdleTimeoutMs":raw,"unknown":true}));
+        let baseline = Snapshot::project(&doc);
+        let mut current = baseline.clone();
+        current.set(Field::Transport, vec![Slot::Set(json!("sse"))]);
+        let files = Files {
+            global: doc,
+            project: None,
+        };
+        let changes = files.changes(&current, &baseline, Some(Page::Network));
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].leaf(), &["transport"]);
+        assert_eq!(current.value(Field::HttpTimeout), vec![Slot::Set(raw)]);
+    }
+    let doc = document(json!({"npmCommand":[" node ",""," --flag "]}));
+    let baseline = Snapshot::project(&doc);
+    assert_eq!(
+        baseline.value(Field::NpmCommand),
+        vec![Slot::Set(json!([" node ", "", " --flag "]))]
+    );
+    let mut current = baseline.clone();
+    current.set(Field::NpmCommand, vec![Slot::Set(json!(["", "arg"]))]);
+    assert!(current.invalid(Field::NpmCommand, &baseline));
+    assert!(!baseline.invalid(Field::NpmCommand, &baseline));
+}
+
+#[test]
+fn mapped_changes_are_token_leaves_and_reconcile_independently() {
+    let doc = document(
+        json!({"compaction":{"modelOverrides":{"p/m":{"reserveTokens":100,"keepRecentTokens":200,"unknown":true}}},"modelThinkingLevels":{"p/m":"high","missing/model":false}}),
+    );
+    let baseline = Snapshot::project(&doc);
+    let mut current = baseline.clone();
+    current.set(
+        Field::ModelOverrides,
+        vec![Slot::Set(
+            json!({"p/m":{"reserveTokens":300,"keepRecentTokens":200,"unknown":true}}),
+        )],
+    );
+    current.set(
+        Field::ModelThinking,
+        vec![Slot::Set(json!({"p/m":"low","missing/model":false}))],
+    );
+    let files = Files {
+        global: doc,
+        project: None,
+    };
+    let changes = files.changes(&current, &baseline, Some(Page::Conversation));
+    assert_eq!(changes.len(), 2);
+    assert!(
+        changes
+            .iter()
+            .any(|c| c.leaf() == ["compaction", "modelOverrides", "p/m", "reserveTokens"])
+    );
+    assert!(
+        changes
+            .iter()
+            .any(|c| c.leaf() == ["modelThinkingLevels", "p/m"])
+    );
+    let next = Snapshot::project(&document(
+        json!({"compaction":{"modelOverrides":{"p/m":{"reserveTokens":150,"keepRecentTokens":250,"unknown":true},"p/new":{"reserveTokens":50}}},"modelThinkingLevels":{"p/m":"medium","missing/model":false,"p/new":"off"}}),
+    ));
+    let merged = Snapshot::merge(&current, &next, &baseline);
+    assert_eq!(
+        merged.value(Field::ModelOverrides),
+        vec![Slot::Set(
+            json!({"p/m":{"reserveTokens":300,"keepRecentTokens":250,"unknown":true},"p/new":{"reserveTokens":50}})
+        )]
+    );
+    assert_eq!(
+        merged.value(Field::ModelThinking),
+        vec![Slot::Set(
+            json!({"p/m":"low","missing/model":false,"p/new":"off"})
+        )]
+    );
+}
+
+#[test]
+fn global_only_fields_never_generate_project_writes() {
+    let files = project(json!({}), json!({"unknown":true}));
+    let baseline = Snapshot::project(files.edited());
+    let mut current = baseline.clone();
+    for field in [Field::Proxy, Field::CacheWarming, Field::ProjectTrust] {
+        current.set(field, vec![Slot::Set(json!("always"))]);
+    }
+    assert!(files.changes(&current, &baseline, None).is_empty());
 }

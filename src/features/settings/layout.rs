@@ -666,6 +666,7 @@ impl SettingsView {
                 .page(pi.title(t(cx, "settings-page-connection")))
                 .page(pi_config::PiConfig::page(&self.pi_config, pi_config::Page::Conversation, cx))
                 .page(pi_config::PiConfig::page(&self.pi_config, pi_config::Page::Network, cx))
+                .page(pi_config::PiConfig::page(&self.pi_config, pi_config::Page::Tools, cx))
                 .page(resource_page("settings-page-packages",Kind::Extension,"package plugin extension install update remove source version path enable disable browse search npm 插件 扩展 包 安装 更新 移除 启停 浏览 搜索"))
                 .page(resource_page("settings-page-skills",Kind::Skill,"skill name description source path create edit delete enable disable 技能 创建 编辑 删除 启停"))
                 .page(resource_page("settings-page-prompts",Kind::Prompt,"prompt template 创建 编辑 删除 模板")),

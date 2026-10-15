@@ -40,7 +40,17 @@ use serde_json::Value;
 const CONVERSATION: &[(&str, &[Field])] = &[
     (
         "pi-group-model",
-        &[Field::Model, Field::Thinking, Field::ModelScope],
+        &[
+            Field::Model,
+            Field::Thinking,
+            Field::ModelThinking,
+            Field::BudgetMinimal,
+            Field::BudgetLow,
+            Field::BudgetMedium,
+            Field::BudgetHigh,
+            Field::CacheWarming,
+            Field::ModelScope,
+        ],
     ),
     (
         "pi-group-context",
@@ -48,12 +58,29 @@ const CONVERSATION: &[(&str, &[Field])] = &[
             Field::Compaction,
             Field::ReserveTokens,
             Field::KeepRecentTokens,
+            Field::ModelOverrides,
         ],
     ),
     ("pi-group-queue", &[Field::Steering, Field::FollowUp]),
     ("pi-group-images", &[Field::AutoResize, Field::BlockImages]),
 ];
 const NETWORK: &[(&str, &[Field])] = &[
+    (
+        "pi-group-advanced",
+        &[
+            Field::Transport,
+            Field::HttpTimeout,
+            Field::WebsocketTimeout,
+        ],
+    ),
+    (
+        "pi-group-provider",
+        &[
+            Field::ProviderTimeout,
+            Field::ProviderRetries,
+            Field::ProviderDelay,
+        ],
+    ),
     ("pi-group-proxy", &[Field::Proxy]),
     (
         "pi-group-retry",
@@ -66,9 +93,47 @@ const NETWORK: &[(&str, &[Field])] = &[
     ),
 ];
 
+const TOOLS: &[(&str, &[Field])] = &[
+    (
+        "pi-group-tools",
+        &[
+            Field::DefaultTools,
+            Field::CodemodeMode,
+            Field::CodemodeBudget,
+        ],
+    ),
+    ("pi-group-shell", &[Field::ShellPath, Field::ShellPrefix]),
+    ("pi-group-package-command", &[Field::NpmCommand]),
+    (
+        "pi-group-privacy-trust",
+        &[Field::Telemetry, Field::ProjectTrust],
+    ),
+];
+
 impl Field {
-    fn label(self) -> &'static str {
+    pub(super) fn label(self) -> &'static str {
         match self {
+            Self::DefaultTools => "pi-field-default-tools",
+            Self::CodemodeMode => "pi-field-codemode-mode",
+            Self::CodemodeBudget => "pi-field-codemode-budget",
+            Self::ShellPath => "pi-field-shell-path",
+            Self::ShellPrefix => "pi-field-shell-prefix",
+            Self::NpmCommand => "pi-field-npm-command",
+            Self::Telemetry => "pi-field-telemetry",
+            Self::ProjectTrust => "pi-field-project-trust",
+            Self::ModelThinking => "pi-field-model-thinking",
+            Self::ModelOverrides => "pi-field-model-overrides",
+            Self::BudgetMinimal => "pi-field-budget-minimal",
+            Self::BudgetLow => "pi-field-budget-low",
+            Self::BudgetMedium => "pi-field-budget-medium",
+            Self::BudgetHigh => "pi-field-budget-high",
+            Self::CacheWarming => "pi-field-cache-warming",
+            Self::Transport => "pi-field-transport",
+            Self::HttpTimeout => "pi-field-http-timeout",
+            Self::WebsocketTimeout => "pi-field-websocket-timeout",
+            Self::ProviderTimeout => "pi-field-provider-timeout",
+            Self::ProviderRetries => "pi-field-provider-retries",
+            Self::ProviderDelay => "pi-field-provider-delay",
             Self::Model => "pi-field-model",
             Self::Thinking => "pi-field-thinking",
             Self::ModelScope => "pi-model-scope",
@@ -88,6 +153,13 @@ impl Field {
     }
     fn help(self) -> Option<&'static str> {
         Some(match self {
+            Self::CodemodeMode | Self::CodemodeBudget => "pi-codemode-help",
+            Self::BudgetMinimal | Self::BudgetLow | Self::BudgetMedium | Self::BudgetHigh => {
+                "pi-thinking-budget-help"
+            }
+            Self::CacheWarming => "pi-cache-warming-help",
+            Self::Telemetry => "pi-telemetry-help",
+            Self::ProviderRetries => "pi-provider-retry-help",
             Self::Model => "pi-field-model-help",
             Self::ReserveTokens => "pi-field-reserve-help",
             Self::KeepRecentTokens => "pi-field-keep-help",
@@ -96,7 +168,10 @@ impl Field {
             _ => return None,
         })
     }
-    fn id(self) -> &'static str {
+    pub(super) fn id(self) -> &'static str {
+        if self == Self::ProviderRetries {
+            return "provider-maxRetries";
+        }
         self.leaves()[self.leaves().len() - 1][self.leaves()[0].len() - 1]
     }
 }
@@ -106,17 +181,19 @@ impl Page {
         match self {
             Self::Conversation => CONVERSATION,
             Self::Network => NETWORK,
+            Self::Tools => TOOLS,
         }
     }
     pub(in super::super) fn title(self) -> &'static str {
         match self {
             Self::Conversation => "settings-page-pi-conversation",
             Self::Network => "settings-page-pi-network",
+            Self::Tools => "settings-page-pi-tools",
         }
     }
 }
 
-fn level_label(level: &str, cx: &App) -> String {
+pub(super) fn level_label(level: &str, cx: &App) -> String {
     match level {
         "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" => {
             t(cx, &format!("conversation-thinking-{level}"))
@@ -127,6 +204,30 @@ fn level_label(level: &str, cx: &App) -> String {
 
 fn choice_label(field: Field, value: &str, cx: &App) -> String {
     match field {
+        Field::ProjectTrust => t(
+            cx,
+            match value {
+                "ask" => "pi-choice-ask",
+                "always" => "pi-choice-always",
+                "never" => "pi-choice-never",
+                _ => return value.to_owned(),
+            },
+        ),
+        Field::CodemodeMode => t(
+            cx,
+            match value {
+                "on" => "pi-choice-codemode-on",
+                "only" => "pi-choice-codemode-only",
+                _ => return value.to_owned(),
+            },
+        ),
+        Field::CacheWarming => match value {
+            "off" => level_label("off", cx),
+            "streaming" => t(cx, "pi-choice-streaming"),
+            "idle" => t(cx, "pi-choice-idle"),
+            _ => value.to_owned(),
+        },
+        Field::Transport if value == "auto" => t(cx, "pi-choice-auto"),
         Field::Thinking => level_label(value, cx),
         _ => match value {
             "one-at-a-time" => t(cx, "pi-delivery-one"),
@@ -145,6 +246,7 @@ impl PiConfig {
             .icon(match page {
                 Page::Conversation => IconName::MessageSquare,
                 Page::Network => IconName::Globe,
+                Page::Tools => IconName::Terminal,
             })
             .resettable(false)
             .title_suffix(move |window, cx| {
@@ -173,6 +275,16 @@ impl PiConfig {
             let items = fields.iter().map(|field| {
                 let field = *field;
                 let weak = weak.clone();
+                if matches!(
+                    field.kind(),
+                    Kind::List | Kind::ThinkingMap | Kind::CompactionMap
+                ) {
+                    return SettingItem::render(move |_, window, cx| {
+                        weak.update(cx, |this, cx| this.render_advanced(field, window, cx))
+                            .unwrap_or_else(|_| div().into_any_element())
+                    })
+                    .keywords([t(cx, field.label())]);
+                }
                 if field == Field::ModelScope {
                     return SettingItem::render(move |_, window, cx| {
                         weak.update(cx, |this, cx| this.render_model_scope(window, cx))
@@ -451,6 +563,10 @@ impl PiConfig {
             Kind::Choice(options) => {
                 self.render_choice(field, options, &resolved.values, saving, cx)
             }
+            Kind::List | Kind::ThinkingMap | Kind::CompactionMap => {
+                self.render_advanced(field, window, cx)
+            }
+            Kind::Timeout => self.render_timeout(field, window, cx),
             Kind::Count | Kind::Text => self.render_input(field, window, cx),
             Kind::ModelScope => self.render_model_scope(window, cx),
             Kind::Model => self.render_model(&resolved.values, saving, window, cx),
@@ -483,6 +599,24 @@ impl PiConfig {
                     )
                     .child(self.render_field_menu(field, pending, saving, cx)),
             )
+            .when(field == Field::Telemetry, |this| {
+                let env = std::env::var_os("PI_TELEMETRY");
+                let enabled =
+                    super::advanced::telemetry(env.as_deref().map(|s| s.to_str().unwrap_or("")));
+                this.children(enabled.map(|enabled| {
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(t(
+                            cx,
+                            if enabled {
+                                "pi-telemetry-env-on"
+                            } else {
+                                "pi-telemetry-env-off"
+                            },
+                        ))
+                }))
+            })
             .when(conflict || invalid, |this| {
                 this.child(div().text_xs().text_color(cx.theme().danger).child(t(
                     cx,
@@ -564,7 +698,7 @@ impl PiConfig {
             .into_any_element()
     }
 
-    fn render_choice(
+    pub(super) fn render_choice(
         &self,
         field: Field,
         options: &'static [&'static str],
@@ -623,14 +757,18 @@ impl PiConfig {
                     menu.item(
                         PopupMenuItem::new(label.clone())
                             .checked(current.as_deref() == Some(value.as_str()))
-                            .on_click(move |_, _, cx| {
-                                entity.update(cx, |this, cx| {
-                                    this.set_values(
-                                        field,
-                                        vec![Slot::Set(Value::from(next.clone()))],
-                                        cx,
-                                    )
-                                })
+                            .on_click(move |_, window, cx| {
+                                if field == Field::ProjectTrust && next == "always" {
+                                    PiConfig::confirm_always(&entity, window, cx);
+                                } else {
+                                    entity.update(cx, |this, cx| {
+                                        this.set_values(
+                                            field,
+                                            vec![Slot::Set(Value::from(next.clone()))],
+                                            cx,
+                                        )
+                                    });
+                                }
                             }),
                     )
                 })
@@ -654,7 +792,7 @@ impl PiConfig {
             .map(supported_levels)
     }
 
-    fn render_input(
+    pub(super) fn render_input(
         &mut self,
         field: Field,
         window: &mut Window,
@@ -758,13 +896,16 @@ impl PiConfig {
     }
 
     /// A project row for a field Pi reads only from the global file.
-    fn render_global_only(&self, field: Field, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn render_global_only(&self, field: Field, cx: &mut Context<Self>) -> AnyElement {
         let Load::Ready(files) = &self.files else {
             return div().into_any_element();
         };
-        let value = files
-            .global
-            .get(field.leaves()[0])
+        let global = super::fields::Files {
+            global: files.global.clone(),
+            project: None,
+        };
+        let value = global.resolve(field, None).values[0]
+            .as_ref()
             .map(|value| display(Some(value)))
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| t(cx, "pi-value-unset"));

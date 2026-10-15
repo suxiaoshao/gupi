@@ -13,6 +13,7 @@ pub(super) struct Adapter {
 }
 impl PiConfig {
     pub(super) fn refresh_inputs(&self, cx: &mut Context<Self>) {
+        self.refresh_map_inputs(cx);
         let config = cx.entity().downgrade();
         for (field, adapter) in &self.inputs {
             let field = *field;
@@ -56,6 +57,102 @@ impl PiConfig {
         }
         let input = cx.new(|cx| InputState::new(window, cx).default_value(self.shown(field, cx)));
         let adapter = match field {
+            Field::CodemodeBudget => bind(
+                &self.tools,
+                ToolsDraft::CODEMODE_BUDGET,
+                field,
+                &input,
+                window,
+                cx,
+            ),
+            Field::ShellPath => bind(
+                &self.tools,
+                ToolsDraft::SHELL_PATH,
+                field,
+                &input,
+                window,
+                cx,
+            ),
+            Field::ShellPrefix => bind(
+                &self.tools,
+                ToolsDraft::SHELL_PREFIX,
+                field,
+                &input,
+                window,
+                cx,
+            ),
+            Field::BudgetMinimal => bind(
+                &self.conversation,
+                ConversationDraft::BUDGET_MINIMAL,
+                field,
+                &input,
+                window,
+                cx,
+            ),
+            Field::BudgetLow => bind(
+                &self.conversation,
+                ConversationDraft::BUDGET_LOW,
+                field,
+                &input,
+                window,
+                cx,
+            ),
+            Field::BudgetMedium => bind(
+                &self.conversation,
+                ConversationDraft::BUDGET_MEDIUM,
+                field,
+                &input,
+                window,
+                cx,
+            ),
+            Field::BudgetHigh => bind(
+                &self.conversation,
+                ConversationDraft::BUDGET_HIGH,
+                field,
+                &input,
+                window,
+                cx,
+            ),
+            Field::HttpTimeout => bind(
+                &self.network,
+                NetworkDraft::HTTP_TIMEOUT,
+                field,
+                &input,
+                window,
+                cx,
+            ),
+            Field::WebsocketTimeout => bind(
+                &self.network,
+                NetworkDraft::WEBSOCKET_TIMEOUT,
+                field,
+                &input,
+                window,
+                cx,
+            ),
+            Field::ProviderTimeout => bind(
+                &self.network,
+                NetworkDraft::PROVIDER_TIMEOUT,
+                field,
+                &input,
+                window,
+                cx,
+            ),
+            Field::ProviderRetries => bind(
+                &self.network,
+                NetworkDraft::PROVIDER_RETRIES,
+                field,
+                &input,
+                window,
+                cx,
+            ),
+            Field::ProviderDelay => bind(
+                &self.network,
+                NetworkDraft::PROVIDER_DELAY,
+                field,
+                &input,
+                window,
+                cx,
+            ),
             Field::ReserveTokens => bind(
                 &self.conversation,
                 ConversationDraft::RESERVE_TOKENS,
@@ -113,11 +210,23 @@ impl PiConfig {
 
 fn parse(field: Field, text: String) -> Slot<Value> {
     match field.kind() {
+        Kind::Timeout => match super::advanced::timeout(&Value::String(text.clone())) {
+            Some(value) => Slot::Set(Value::from(value)),
+            None => Slot::Invalid(text),
+        },
         Kind::Count => match super::fields::parse_count(&text) {
             Some(n) => Slot::Set(n),
             None => Slot::Invalid(text),
         },
-        _ if text.trim().is_empty() => Slot::Unset,
+        _ if text.is_empty()
+            || (!matches!(field, Field::ShellPath | Field::ShellPrefix)
+                && text.trim().is_empty()) =>
+        {
+            Slot::Unset
+        }
+        _ if matches!(field, Field::ShellPath | Field::ShellPrefix) => {
+            Slot::Set(Value::String(text))
+        }
         _ => Slot::Set(Value::String(text.trim().to_owned())),
     }
 }
@@ -166,7 +275,7 @@ where
             return;
         };
         let baseline_display = display(files.resolve(field, None).values[0].as_ref());
-        let value = if matches!(field.kind(), Kind::Count)
+        let value = if matches!(field.kind(), Kind::Count | Kind::Timeout)
             && (text == baseline_display
                 || matches!(&parsed, Slot::Set(value) if display(Some(value)) == baseline_display))
         {

@@ -144,6 +144,7 @@ impl EntryEditor {
         self.replacements.retain(|p, _| !p.starts_with(path));
         self.secrets.retain(|p, _| !p.starts_with(path));
         self.expanded.retain(|p| !p.starts_with(path));
+        self.additions.retain(|p, _| !p.starts_with(path));
     }
     /// Array positions change; keep drafts attached to the same logical item.
     fn change_array(&mut self, path: &[String], ix: usize, to: Option<usize>) {
@@ -590,5 +591,98 @@ mod tests {
         cx.simulate_keystrokes("escape");
         cx.run_until_parked();
         cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
+    }
+    #[gpui_kit::test]
+    fn project_auth_provider_can_only_be_removed_and_then_entry_can_be_prepared(
+        cx: &mut TestAppContext,
+    ) {
+        use gpui_kit::test::TestWindowExt as _;
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::English, cx);
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mcp.json");
+        std::fs::write(&path, r#"{"mcpServers":{"stdio":{"command":"never-run","auth":{"provider":"old","future":1}},"http":{"url":"https://invalid.example","auth":{"provider":"old","future":1}}}}"#).unwrap();
+        let file = File::load(Kind::Mcp, &path).unwrap();
+        let provider = vec!["auth".into(), "provider".into()];
+        for name in ["stdio", "http"] {
+            let mut editor = None;
+            let (_, cx) = cx.add_window_view(|window, cx| {
+                let e = cx.new(|cx| {
+                    EntryEditor::new(
+                        Kind::Mcp,
+                        name.into(),
+                        file.entry(name).unwrap(),
+                        true,
+                        true,
+                        window,
+                        cx,
+                    )
+                });
+                editor = Some(e.clone());
+                gpui_kit::component::Root::new(e, window, cx)
+            });
+            let editor = editor.unwrap();
+            cx.update(|window, cx| {
+                window.render_frame(cx);
+                editor.update(cx, |this, cx| {
+                    assert!(this.prepare(cx).is_err());
+                    assert!(!this.text.contains_key(&provider));
+                    this.scroll
+                        .set_offset(gpui_kit::point(gpui_kit::px(0.), gpui_kit::px(-10000.)));
+                });
+                window.render_frame(cx);
+                window.click(
+                    gpui_kit::SharedString::from("field-[\"auth\",\"provider\"]"),
+                    cx,
+                );
+            });
+            cx.run_until_parked();
+            cx.simulate_keystrokes("down enter");
+            cx.run_until_parked();
+            cx.update(|window, cx| {
+                window.render_frame(cx);
+                editor.update(cx, |this, cx| {
+                    assert!(!this.entry.present(&provider));
+                    assert!(this.prepare(cx).is_ok());
+                    assert_eq!(
+                        this.entry.visible(&["auth".into(), "future".into()]),
+                        Some(serde_json::json!(1))
+                    );
+                    assert!(!this.text.contains_key(&provider));
+                });
+            });
+        }
+        // Global HTTP entries still expose the editable provider input.
+        let mut global = None;
+        let (_, cx) = cx.add_window_view(|window, cx| {
+            let e = cx.new(|cx| {
+                EntryEditor::new(
+                    Kind::Mcp,
+                    "http".into(),
+                    file.entry("http").unwrap(),
+                    true,
+                    false,
+                    window,
+                    cx,
+                )
+            });
+            global = Some(e.clone());
+            gpui_kit::component::Root::new(e, window, cx)
+        });
+        let global = global.unwrap();
+        cx.update(|window, cx| {
+            window.render_frame(cx);
+            assert_eq!(
+                global.read(cx).text[&provider]
+                    .state
+                    .read(cx)
+                    .value()
+                    .as_str(),
+                "old"
+            );
+            global.update(cx, |this, cx| assert!(this.prepare(cx).is_ok()));
+        });
     }
 }

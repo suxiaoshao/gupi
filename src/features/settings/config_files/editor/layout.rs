@@ -515,8 +515,9 @@ impl EntryEditor {
                 cx,
             ));
             body = body.child(section("pi-files-exposure-section", exposure, cx));
+            let mut auth = Vec::new();
             if !self.partial && self.transport() != Transport::Stdio {
-                let mut auth = self.fields(
+                auth.extend(self.fields(
                     &["oauth".into()],
                     &[
                         ("clientId", Field::Text),
@@ -530,7 +531,7 @@ impl EntryEditor {
                     ],
                     window,
                     cx,
-                );
+                ));
                 if !self.project {
                     auth.extend(self.fields(
                         &["auth".into()],
@@ -539,6 +540,38 @@ impl EntryEditor {
                         cx,
                     ));
                 }
+            }
+            let provider = vec!["auth".into(), "provider".into()];
+            if self.project && self.entry.present(&provider) {
+                let value = self
+                    .entry
+                    .visible(&provider)
+                    .map(|value| {
+                        value
+                            .as_str()
+                            .map(str::to_owned)
+                            .unwrap_or_else(|| value.to_string())
+                    })
+                    .unwrap_or_else(|| t(cx, "pi-resource-unsupported"));
+                let tooltip = value.clone();
+                auth.push(collection_row(
+                    field_label("provider", cx),
+                    div()
+                        .id("project-auth-provider")
+                        .py_1()
+                        .text_sm()
+                        .font_family(cx.theme().mono_font_family.clone())
+                        .truncate()
+                        .child(value)
+                        .tooltip(move |window, cx| {
+                            gpui_kit::component::tooltip::Tooltip::new(tooltip.clone())
+                                .build(window, cx)
+                        })
+                        .into_any_element(),
+                    self.field_menu(&provider, false, cx),
+                ));
+            }
+            if !auth.is_empty() {
                 body = body.child(section("pi-files-authentication", auth, cx));
             }
         }

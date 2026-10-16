@@ -581,3 +581,80 @@ impl EntryEditor {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Collection, EntryEditor};
+    use gpui_kit::component::input::InputEvent;
+    use gpui_kit::{AppContext as _, TestAppContext};
+    use gupi_resources::pi_config_files::{File, Kind};
+
+    #[gpui_kit::test]
+    fn model_array_changes_drop_pending_additions_and_their_writers(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::English, cx);
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("models.json");
+        std::fs::write(
+            &path,
+            r#"{"providers":{"p":{"models":[{"id":"a"},{"id":"b"}]}}}"#,
+        )
+        .unwrap();
+        let file = File::load(Kind::Models, &path).unwrap();
+        for destination in [Some(1), None] {
+            let mut editor = None;
+            let (_, cx) = cx.add_window_view(|window, cx| {
+                let e = cx.new(|cx| {
+                    EntryEditor::new(
+                        Kind::Models,
+                        "p".into(),
+                        file.entry("p").unwrap(),
+                        true,
+                        false,
+                        window,
+                        cx,
+                    )
+                });
+                editor = Some(e.clone());
+                gpui_kit::component::Root::new(e, window, cx)
+            });
+            let editor = editor.unwrap();
+            let pending = vec!["models".into(), "0".into(), "input".into()];
+            let unrelated = vec!["headers".into()];
+            let input = cx.update(|window, cx| {
+                editor.update(cx, |this, cx| {
+                    this.add_input(&unrelated, Collection::Secrets, window, cx);
+                    this.open_add(&pending, Collection::Strings, window, cx);
+                    let input = this.additions[&pending].input.clone();
+                    input.update(cx, |input, cx| input.set_value("pending-for-a", window, cx));
+                    this.change_array(&["models".into()], 0, destination);
+                    assert!(!this.additions.contains_key(&pending));
+                    assert!(this.additions.contains_key(&unrelated));
+                    input
+                })
+            });
+            // A retained old input must no longer have a writer into the reindexed model.
+            input.update(cx, |_, cx| {
+                cx.emit(InputEvent::PressEnter {
+                    secondary: false,
+                    shift: false,
+                })
+            });
+            cx.run_until_parked();
+            editor.read_with(cx, |this, _| {
+                assert!(
+                    !this
+                        .entry
+                        .present(&["models".into(), "0".into(), "input".into()])
+                );
+                assert!(
+                    !this
+                        .entry
+                        .present(&["models".into(), "1".into(), "input".into()])
+                );
+            });
+        }
+    }
+}

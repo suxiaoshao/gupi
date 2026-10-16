@@ -159,4 +159,4 @@
 
 ## 待定事项
 
-- **待核实**：以 `install -l` 作为仅限项目更新的语义，见 d2-packages.md。
+- 项目更新不提供：Pi 1.2.0 没有只更新项目包的可靠契约（[#52](https://github.com/suxiaoshao/gupi/issues/52#issuecomment-6190448806)），见 d2-packages.md。

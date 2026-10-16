@@ -25,10 +25,10 @@ pub(super) enum Domain {
 #[cfg(test)]
 pub(super) const KEYBOARD_PAGE: usize = 3;
 #[cfg(test)]
-pub(super) const DOMAIN_PAGES: [(Domain, usize); 2] = [(Domain::Gupi, 5), (Domain::Pi, 6)];
+pub(super) const DOMAIN_PAGES: [(Domain, usize); 2] = [(Domain::Gupi, 5), (Domain::Pi, 7)];
 pub(super) const PI_PAGE: usize = 0;
 pub(super) const CONVERSATION_PAGE: usize = 1;
-pub(super) const PACKAGES_PAGE: usize = 3;
+pub(super) const PACKAGES_PAGE: usize = 4;
 
 impl SettingsView {
     /// Settings selection lives in the component's keyed state; a new key
@@ -666,6 +666,7 @@ impl SettingsView {
                 .page(pi.title(t(cx, "settings-page-connection")))
                 .page(pi_config::PiConfig::page(&self.pi_config, pi_config::Page::Conversation, cx))
                 .page(pi_config::PiConfig::page(&self.pi_config, pi_config::Page::Network, cx))
+                .page(pi_config::PiConfig::page(&self.pi_config, pi_config::Page::Tools, cx))
                 .page(resource_page("settings-page-packages",Kind::Extension,"package plugin extension install update remove source version path enable disable browse search npm 插件 扩展 包 安装 更新 移除 启停 浏览 搜索"))
                 .page(resource_page("settings-page-skills",Kind::Skill,"skill name description source path create edit delete enable disable 技能 创建 编辑 删除 启停"))
                 .page(resource_page("settings-page-prompts",Kind::Prompt,"prompt template 创建 编辑 删除 模板")),

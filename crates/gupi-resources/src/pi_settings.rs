@@ -147,26 +147,74 @@ pub fn commit(path: &Path, changes: &[Change]) -> Result<Document, Error> {
 
 fn commit_locked(path: &Path, changes: &[Change], mut lock: Lock) -> Result<Document, Error> {
     let mut document = load(path)?;
+    apply_changes(&mut document, changes, false)?;
+    if changes.is_empty() {
+        return Ok(document);
+    }
+    write(path, &mut lock, &document.root)?;
+    document.exists = true;
+    Ok(document)
+}
+
+/// The shared leaf transaction, independent of file parsing and locking.
+/// File editors retain empty parents and compare object insertion order.
+pub(crate) fn apply_changes(
+    document: &mut Document,
+    changes: &[Change],
+    ordered: bool,
+) -> Result<(), Error> {
     let conflicts: Vec<Leaf> = changes
         .iter()
-        .filter(|change| document.get(&change.leaf) != change.base.as_ref())
+        .filter(|change| {
+            if ordered {
+                !ordered_eq(document.get(&change.leaf), change.base.as_ref())
+            } else {
+                document.get(&change.leaf) != change.base.as_ref()
+            }
+        })
         .map(|change| change.leaf.clone())
         .collect();
     if !conflicts.is_empty() {
         return Err(Error::Conflict(conflicts));
     }
-    if changes.is_empty() {
-        return Ok(document);
-    }
     for change in changes {
         match &change.next {
             Some(value) => set(&mut document.root, &change.leaf, value.clone())?,
+            None if ordered => remove_leaf(&mut document.root, &change.leaf),
             None => remove(&mut document.root, &change.leaf),
         }
     }
-    write(path, &mut lock, &document.root)?;
-    document.exists = true;
-    Ok(document)
+    Ok(())
+}
+
+/// JSON equality including the insertion order of every object.
+pub fn ordered_eq(left: Option<&Value>, right: Option<&Value>) -> bool {
+    match (left, right) {
+        (Some(Value::Object(a)), Some(Value::Object(b))) => {
+            a.len() == b.len()
+                && a.iter()
+                    .zip(b)
+                    .all(|((ak, av), (bk, bv))| ak == bk && ordered_eq(Some(av), Some(bv)))
+        }
+        (Some(Value::Array(a)), Some(Value::Array(b))) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| ordered_eq(Some(a), Some(b)))
+        }
+        _ => left == right,
+    }
+}
+
+fn remove_leaf(object: &mut Map<String, Value>, leaf: &[String]) {
+    match leaf {
+        [] => {}
+        [last] => {
+            object.shift_remove(last);
+        }
+        [first, rest @ ..] => {
+            if let Some(child) = object.get_mut(first).and_then(Value::as_object_mut) {
+                remove_leaf(child, rest);
+            }
+        }
+    }
 }
 
 /// Rewrites the file under Pi's lock; `change` sees the latest contents.

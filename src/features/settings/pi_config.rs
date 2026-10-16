@@ -97,6 +97,7 @@ impl EventEmitter<PiConfigEvent> for PiConfig {}
 
 pub(super) struct PiConfig {
     applied_pi: Entity<PiProbeController>,
+    pub(super) file_pages: Entity<super::config_files::FilePages>,
     agent: Result<PathBuf, String>,
     scope: Scope,
     /// Projects opened or chosen in this session, offered by the scope menu.
@@ -208,7 +209,10 @@ impl PiConfig {
                     this.finish_custom_tool(window, cx);
                 }
             });
+        let file_pages = cx.new(super::config_files::FilePages::new);
+        let file_pages_sub = cx.observe(&file_pages, |_, _, cx| cx.notify());
         let mut subscriptions = vec![
+            file_pages_sub,
             custom_tool_sub,
             picker_sub,
             scope_sub,
@@ -221,6 +225,7 @@ impl PiConfig {
         cx.on_release(|this, cx| this.cancel_model_query(cx))
             .detach();
         Self {
+            file_pages,
             applied_pi,
             agent: pi_resources::agent_dir().map_err(|e| e.to_string()),
             scope: Scope::Global,
@@ -261,12 +266,15 @@ impl PiConfig {
     }
 
     #[cfg(test)]
-    pub(super) fn set_agent_for_test(&mut self, agent: PathBuf) {
+    pub(super) fn set_agent_for_test(&mut self, agent: PathBuf, cx: &mut App) {
+        self.file_pages
+            .update(cx, |files, _| files.set_agent_for_test(agent.clone()));
         self.agent = Ok(agent);
     }
 
     /// Re-reads the files when the Pi area is shown, unless drafts are open.
     pub(super) fn activate(&mut self, cx: &mut Context<Self>) {
+        self.file_pages.update(cx, |files, cx| files.activate(cx));
         if !self.has_unsaved(cx) && !self.is_saving() {
             self.reload(cx);
         }
@@ -311,10 +319,11 @@ impl PiConfig {
         self.conversation.read(cx).is_dirty()
             || self.network.read(cx).is_dirty()
             || self.tools.read(cx).is_dirty()
+            || self.file_pages.read(cx).dirty()
     }
 
     pub(super) fn needs_leave_guard(&self, cx: &App) -> bool {
-        self.has_unsaved(cx) || self.is_saving()
+        self.has_unsaved(cx) || self.is_saving() || self.file_pages.read(cx).busy()
     }
 
     fn is_saving(&self) -> bool {
@@ -351,6 +360,8 @@ impl PiConfig {
             return;
         }
         self.cancel_model_query(cx);
+        self.file_pages
+            .update(cx, |files, cx| files.set_scope(scope.clone(), cx));
         self.scope = scope;
         self.conversation
             .update(cx, |form, cx| form.rebase(ConversationDraft::default(), cx));
@@ -735,12 +746,30 @@ impl PiConfig {
         window: &mut Window,
         cx: &mut App,
     ) {
+        let files = this.read(cx).file_pages.clone();
+        let this = this.clone();
+        super::config_files::FilePages::confirm_leave(
+            &files,
+            Box::new(move |window, cx| {
+                Self::confirm_settings_leave(&this, proceed, window, cx);
+            }),
+            window,
+            cx,
+        );
+    }
+
+    fn confirm_settings_leave(
+        this: &Entity<Self>,
+        proceed: impl FnOnce(&mut Window, &mut App) + 'static,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
         if this.read(cx).is_saving() {
             let target = this.clone();
             this.update(cx, |this, _| {
                 if this.leave_after_save.is_none() {
                     this.leave_after_save = Some(Box::new(move |window, cx| {
-                        Self::confirm_leave(&target, proceed, window, cx);
+                        Self::confirm_settings_leave(&target, proceed, window, cx);
                     }));
                 }
             });

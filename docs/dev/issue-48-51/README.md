@@ -1,6 +1,6 @@
 # #48 + #51 自定义模型与 MCP 配置文件编辑
 
-状态：Ready。架构师已审查；A/B/C 由用户确认。
+状态：Done。
 
 依据：Pi v1.2.0（本地 `/Users/sushao/Documents/code/pi`，标签 `v1.2.0`），路径相对 `packages/coding-agent/src/`。研究记录见 [MCP 配置盘点](../issue-2/mcp-configuration.md)。
 
@@ -158,3 +158,13 @@ Pi 设置新增两页：“模型与供应商”（仅全局）和“MCP”（�
 - 不连接 MCP 服务，不发起 OAuth。
 
 **检查命令**：`cargo fmt --all -- --check`、`cargo clippy -p gupi --all-targets --locked -- -D warnings`，以及受影响包的测试。
+
+## 实现与验证结果
+
+- 已实现两个独立文件页、作用域内条目列表与编辑对话框、页面保存/放弃和离开保护；项目 MCP 局部覆盖只提供三个允许字段。九种语言文案已补齐。
+- 存储共享 settings 的按叶比对/应用步骤，settings 原有锁行为不变；两个新文件使用各自解析器重读、按顺序比较条目、保留空父对象并同目录原子替换。凭据原值封装在无 Debug 的文档/条目内，只写控件不接收原值；模型条目移动或删除时保留对应的输入与凭据草稿。
+- `cargo fmt --all -- --check`、`cargo test -p gupi -p gupi-resources -p gupi-settings --locked`（110 / 56 / 21 项）、`cargo clippy -p gupi --all-targets --locked -- -D warnings` 和本地构建通过。回归覆盖解析器双次读取、未知键与键顺序、按条目冲突、别名、空父对象、凭据三态、项目覆盖及名称/必填项校验。
+- 原生临时 gallery 验证：供应商和 MCP 条目添加/编辑/删除/保存、离开时保存、项目覆盖、模型页仅全局可编辑、浅色/深色，以及各级 headers、env、clientSecret 的隐藏显示；检查了保存文件中的空字符串替换、凭据移除、别名、键顺序与未知字段。未读取真实 Pi 凭据文件、未连接 MCP、未发起 OAuth 或重新加载会话。
+- 原生复现并修复“添加供应商”退出：添加按钮在 FilePages 实体更新期间重读同一实体，触发 GPUI 借用 panic。改为在实体借用外打开表单；实际点击按钮的挂载回归在修复前以同一 panic 失败，修复后同时覆盖两页并通过，原生复测也通过。
+
+MCP 与 Pi 不协作加锁，保存前重读到原子替换之间的短暂竞态仍按已确认的决定保留。

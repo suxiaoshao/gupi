@@ -1,3 +1,4 @@
+mod config_files;
 mod global_keys;
 mod keys;
 mod layout;

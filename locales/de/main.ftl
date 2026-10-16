@@ -1044,3 +1044,95 @@ pi-resource-add = Hinzufügen
 pi-resource-clear = Array leeren []
 pi-resource-remove-key = Schlüssel entfernen
 pi-resource-entry-actions = Eintragsaktionen
+
+# Pi configuration files
+pi-files-models = Modelle und Anbieter
+pi-files-mcp = MCP
+pi-files-startup-only = Pi liest diese Datei beim Start einer neuen Sitzung. Bestehende Sitzungen werden nicht neu geladen.
+pi-files-global-only = Diese Datei gilt nur global. Zum Bearbeiten den globalen Bereich wählen.
+pi-files-comments = Beim Speichern werden Kommentare aus der Datei entfernt.
+pi-files-add = Hinzufügen…
+pi-files-edit = Bearbeiten…
+pi-files-delete = Löschen
+pi-files-override = Überschreibung
+pi-files-definition = Vollständige Definition
+pi-files-disabled = Deaktiviert
+pi-files-duplicate = Dieser Name steht im Konflikt mit einem vorhandenen Eintrag.
+pi-files-invalid = Eintrag konnte nicht gelesen oder gespeichert werden. Felder und Konfigurationsdatei prüfen.
+pi-files-secret-set = Gesetzt · beibehalten
+pi-files-secret-keep = Beibehalten
+pi-files-secret-replace = Durch neuen Wert ersetzen
+pi-files-secret-remove = Entfernen
+pi-files-name = Name
+pi-files-key = Schlüssel
+pi-files-model = Modell
+pi-files-add-model = Modell hinzufügen
+pi-files-on = Ein
+pi-files-off = Aus
+
+# Structured configuration editor
+pi-files-label-name = Anzeigename
+pi-files-label-id = Modell-ID
+pi-files-label-baseUrl = Basis-URL
+pi-files-label-api = API
+pi-files-label-apiKey = API-Schlüssel
+pi-files-label-authHeader = Authentifizierungsheader
+pi-files-label-oauth = OAuth
+pi-files-label-compat = Kompatibilität
+pi-files-label-models = Modelle
+pi-files-label-modelOverrides = Modellüberschreibungen
+pi-files-label-enabled = Aktiviert
+pi-files-label-exposure = Bereitstellung
+pi-files-label-type = Transport
+pi-files-label-description = Beschreibung
+pi-files-label-command = Befehl
+pi-files-label-url = URL
+pi-files-label-cwd = Arbeitsverzeichnis
+pi-files-label-timeout = Zeitlimit
+pi-files-label-toolExposure = Tool-Bereitstellung
+pi-files-label-args = Argumente
+pi-files-label-env = Umgebungsvariablen
+pi-files-label-headers = Header
+pi-files-label-clientId = Client-ID
+pi-files-label-clientSecret = Client-Geheimnis
+pi-files-label-callbackPort = Callback-Port
+pi-files-label-callbackUrl = Callback-URL
+pi-files-label-scope = Berechtigungen
+pi-files-label-clientName = Client-Name
+pi-files-label-clientRegistration = Client-Registrierung
+pi-files-label-authServerMetadataUrl = URL der Authentifizierungsmetadaten
+pi-files-label-provider = Anbieter
+pi-files-label-reasoning = Schlussfolgern
+pi-files-label-contextWindow = Kontextfenster
+pi-files-label-maxTokens = Maximale Ausgabetokens
+pi-files-label-input = Eingabetypen
+pi-files-label-cost = Kosten
+pi-files-label-thinkingLevelMap = Zuordnung der Denkstufen
+pi-files-label-inputLimits = Eingabegrenzen
+pi-files-label-promptCache = Prompt-Cache
+pi-files-label-samplingParams = Sampling-Parameter
+pi-files-label-samplingParamsByThinkingLevel = Sampling nach Denkstufe
+pi-files-label-autoEnableCodemode = Codemode automatisch aktivieren
+pi-files-providers = Anbieter
+pi-files-servers = MCP-Server
+pi-files-automation = Codemode
+pi-files-empty = Keine Einträge
+pi-files-basic = Grundlagen
+pi-files-connection = Verbindung
+pi-files-exposure-section = Bereitstellung
+pi-files-authentication = Authentifizierung
+pi-files-advanced = Erweitert
+pi-files-back = Zurück
+pi-files-stage = Änderungen vormerken
+pi-files-secret-present = Gesetzt
+pi-files-add-value = Neuer Wert
+pi-files-confirm-add = Hinzufügen
+pi-files-definition-kind = Definition
+pi-files-provider-summary =
+    { $models ->
+        [one] { $models } Modell
+       *[other] { $models } Modelle
+    } · { $overrides ->
+        [one] { $overrides } Überschreibung
+       *[other] { $overrides } Überschreibungen
+    }

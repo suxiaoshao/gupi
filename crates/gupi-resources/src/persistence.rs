@@ -20,6 +20,14 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
         .parent()
         .ok_or_else(|| io::Error::other("missing parent"))?;
     fs::create_dir_all(parent)?;
+    write_atomic_existing_parent(path, bytes)
+}
+
+/// Atomically replace a file without recreating a disappeared project parent.
+pub(crate) fn write_atomic_existing_parent(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::other("missing parent"))?;
     let mut temp = tempfile::NamedTempFile::new_in(parent)?;
     temp.write_all(bytes)?;
     temp.as_file().sync_all()?;

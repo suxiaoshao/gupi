@@ -90,7 +90,7 @@ fn setup<'a>(
         });
         let entity = cx.new(|cx| {
             let mut this = PiConfig::new(probe, window, cx);
-            this.set_agent_for_test(agent);
+            this.set_agent_for_test(agent, cx);
             this.activate(cx);
             this
         });

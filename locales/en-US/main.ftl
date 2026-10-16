@@ -1044,3 +1044,95 @@ pi-resource-add = Add
 pi-resource-clear = Clear array []
 pi-resource-remove-key = Remove key
 pi-resource-entry-actions = Entry actions
+
+# Pi configuration files
+pi-files-models = Models & providers
+pi-files-mcp = MCP
+pi-files-startup-only = Pi reads this file when a new session starts. Existing sessions are not reloaded.
+pi-files-global-only = This file is global only. Choose the global scope to edit it.
+pi-files-comments = Saving removes comments from this file.
+pi-files-add = Add…
+pi-files-edit = Edit…
+pi-files-delete = Delete
+pi-files-override = Override
+pi-files-definition = Full definition
+pi-files-disabled = Disabled
+pi-files-duplicate = This name conflicts with an existing entry.
+pi-files-invalid = Could not read or save this entry. Check its fields and the configuration file.
+pi-files-secret-set = Set · keep
+pi-files-secret-keep = Keep
+pi-files-secret-replace = Replace with new value
+pi-files-secret-remove = Remove
+pi-files-name = Name
+pi-files-key = Key
+pi-files-model = Model
+pi-files-add-model = Add model
+pi-files-on = On
+pi-files-off = Off
+
+# Structured configuration editor
+pi-files-label-name = Display name
+pi-files-label-id = Model ID
+pi-files-label-baseUrl = Base URL
+pi-files-label-api = API
+pi-files-label-apiKey = API key
+pi-files-label-authHeader = Authorization header
+pi-files-label-oauth = OAuth
+pi-files-label-compat = Compatibility
+pi-files-label-models = Models
+pi-files-label-modelOverrides = Model overrides
+pi-files-label-enabled = Enabled
+pi-files-label-exposure = Exposure
+pi-files-label-type = Transport
+pi-files-label-description = Description
+pi-files-label-command = Command
+pi-files-label-url = URL
+pi-files-label-cwd = Working directory
+pi-files-label-timeout = Timeout
+pi-files-label-toolExposure = Tool exposure
+pi-files-label-args = Arguments
+pi-files-label-env = Environment variables
+pi-files-label-headers = Headers
+pi-files-label-clientId = Client ID
+pi-files-label-clientSecret = Client secret
+pi-files-label-callbackPort = Callback port
+pi-files-label-callbackUrl = Callback URL
+pi-files-label-scope = Scopes
+pi-files-label-clientName = Client name
+pi-files-label-clientRegistration = Client registration
+pi-files-label-authServerMetadataUrl = Authorization metadata URL
+pi-files-label-provider = Provider
+pi-files-label-reasoning = Reasoning
+pi-files-label-contextWindow = Context window
+pi-files-label-maxTokens = Maximum output tokens
+pi-files-label-input = Input modalities
+pi-files-label-cost = Cost
+pi-files-label-thinkingLevelMap = Thinking level map
+pi-files-label-inputLimits = Input limits
+pi-files-label-promptCache = Prompt cache
+pi-files-label-samplingParams = Sampling parameters
+pi-files-label-samplingParamsByThinkingLevel = Sampling by thinking level
+pi-files-label-autoEnableCodemode = Automatically enable Codemode
+pi-files-providers = Providers
+pi-files-servers = MCP servers
+pi-files-automation = Codemode
+pi-files-empty = No entries
+pi-files-basic = Basic
+pi-files-connection = Connection
+pi-files-exposure-section = Exposure
+pi-files-authentication = Authentication
+pi-files-advanced = Advanced
+pi-files-back = Back
+pi-files-stage = Stage changes
+pi-files-secret-present = Set
+pi-files-add-value = New value
+pi-files-confirm-add = Add
+pi-files-definition-kind = Definition
+pi-files-provider-summary =
+    { $models ->
+        [one] { $models } model
+       *[other] { $models } models
+    } · { $overrides ->
+        [one] { $overrides } override
+       *[other] { $overrides } overrides
+    }

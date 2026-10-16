@@ -295,7 +295,7 @@ mod tests {
         });
         pi_config.update(cx, |config, cx| {
             // Never the user's own agent directory.
-            config.set_agent_for_test(agent.path().to_owned());
+            config.set_agent_for_test(agent.path().to_owned(), cx);
             config.set_scope(Scope::Project(project.path().to_owned()), cx);
         });
         // The view is notified when the project's catalog arrives.
@@ -432,7 +432,7 @@ mod tests {
         });
         pi_config.update(cx, |config, cx| {
             // Never the user's own agent directory.
-            config.set_agent_for_test(agent.path().to_owned());
+            config.set_agent_for_test(agent.path().to_owned(), cx);
             config.set_scope(Scope::Project(project.path().to_owned()), cx);
         });
         cx.condition(&resources, |view, cx| !view.filtered_skills(cx).is_empty())

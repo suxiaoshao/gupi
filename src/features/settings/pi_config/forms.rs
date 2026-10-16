@@ -91,6 +91,14 @@ pub(super) struct NetworkDraft {
 #[derive(Clone, Default, PartialEq, FormSchema)]
 pub(super) struct ToolsDraft {
     #[form(child)]
+    pub(super) extensions: super::lists::ListSlot,
+    #[form(child)]
+    pub(super) skills: super::lists::ListSlot,
+    #[form(child)]
+    pub(super) prompts: super::lists::ListSlot,
+    #[form(child)]
+    pub(super) themes: super::lists::ListSlot,
+    #[form(child)]
     pub(super) default_tools: super::lists::ListSlot,
     pub(super) codemode_mode: Slot<String>,
     pub(super) codemode_budget: Slot<u64>,
@@ -164,6 +172,10 @@ impl Snapshot {
                 self.conversation.default_provider.encode(),
                 self.conversation.default_model.encode(),
             ],
+            Field::Extensions => vec![self.tools.extensions.encode()],
+            Field::Skills => vec![self.tools.skills.encode()],
+            Field::Prompts => vec![self.tools.prompts.encode()],
+            Field::Themes => vec![self.tools.themes.encode()],
             Field::DefaultTools => vec![self.tools.default_tools.encode()],
             Field::CodemodeMode => vec![self.tools.codemode_mode.encode()],
             Field::CodemodeBudget => vec![self.tools.codemode_budget.encode()],
@@ -232,6 +244,22 @@ impl Snapshot {
                     Slot::decode(values.next().unwrap_or(Slot::Unset));
                 self.conversation.default_model =
                     Slot::decode(values.next().unwrap_or(Slot::Unset));
+            }
+            Field::Extensions => {
+                self.tools.extensions =
+                    super::lists::ListSlot::decode(values.next().unwrap_or(Slot::Unset));
+            }
+            Field::Skills => {
+                self.tools.skills =
+                    super::lists::ListSlot::decode(values.next().unwrap_or(Slot::Unset));
+            }
+            Field::Prompts => {
+                self.tools.prompts =
+                    super::lists::ListSlot::decode(values.next().unwrap_or(Slot::Unset));
+            }
+            Field::Themes => {
+                self.tools.themes =
+                    super::lists::ListSlot::decode(values.next().unwrap_or(Slot::Unset));
             }
             Field::DefaultTools => {
                 self.tools.default_tools =
@@ -385,8 +413,13 @@ impl Snapshot {
         self.leaf_values(field).iter().any(|(leaf, value)| {
             previous.get(leaf).unwrap_or(&Slot::Unset) != value && matches!(value, Slot::Invalid(_))
         }) || self.pending(field, baseline)
-            && (field == Field::ModelScope
-                && matches!(&self.conversation.enabled_models, ModelScopeSlot::Set(s) if s.patterns.iter().any(|p| p.text.trim().is_empty()))
+            && (field.is_resource_paths()
+                && baseline
+                    .value(field)
+                    .iter()
+                    .any(|slot| matches!(slot, Slot::Unreadable(_)))
+                || field == Field::ModelScope
+                    && matches!(&self.conversation.enabled_models, ModelScopeSlot::Set(s) if s.patterns.iter().any(|p| p.text.trim().is_empty()))
                 || field == Field::NpmCommand
                     && matches!(&self.tools.npm_command, Slot::Set(s) if s.first().is_some_and(|i| i.is_empty())))
     }
@@ -432,6 +465,18 @@ impl Snapshot {
                     self.conversation.default_model.clone(),
                     cx,
                 );
+            }
+            Field::Extensions => {
+                ToolsDraft::EXTENSIONS.set(tools, self.tools.extensions.clone(), cx);
+            }
+            Field::Skills => {
+                ToolsDraft::SKILLS.set(tools, self.tools.skills.clone(), cx);
+            }
+            Field::Prompts => {
+                ToolsDraft::PROMPTS.set(tools, self.tools.prompts.clone(), cx);
+            }
+            Field::Themes => {
+                ToolsDraft::THEMES.set(tools, self.tools.themes.clone(), cx);
             }
             Field::DefaultTools => {
                 ToolsDraft::DEFAULT_TOOLS.set(tools, self.tools.default_tools.clone(), cx);

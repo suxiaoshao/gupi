@@ -13,6 +13,7 @@ mod map_controls;
 mod model_maps;
 mod model_scope;
 mod page;
+mod resource_paths;
 
 pub(super) use fields::Page;
 pub(super) use page::request_scope;
@@ -89,6 +90,11 @@ impl SearchableListItem for ModelItem {
     }
 }
 
+pub(super) enum PiConfigEvent {
+    ResourcePathsSaved(Scope),
+}
+impl EventEmitter<PiConfigEvent> for PiConfig {}
+
 pub(super) struct PiConfig {
     applied_pi: Entity<PiProbeController>,
     agent: Result<PathBuf, String>,
@@ -109,6 +115,7 @@ pub(super) struct PiConfig {
     inputs: BTreeMap<Field, inputs::Adapter>,
     custom_tool: Entity<gpui_kit::component::input::InputState>,
     custom_tool_open: bool,
+    resource_inputs: BTreeMap<Field, resource_paths::EntryInput>,
     conflicts: Vec<Field>,
     conflict_leaves: Vec<pi_settings::Leaf>,
     map_inputs: std::collections::HashMap<map_controls::MapInputKey, map_controls::MapAdapter>,
@@ -125,6 +132,8 @@ pub(super) struct PiConfig {
     /// The model key last projected into `model_picker`.
     synced_model: Option<Option<(String, String)>>,
     file_task: Option<Task<()>>,
+    resource_refreshing: bool,
+    resource_refresh_pending: bool,
     model_task: Option<Task<()>>,
     model_instance: Option<gupi_pi_runtime::InstanceId>,
     _subscriptions: Vec<Subscription>,
@@ -227,6 +236,7 @@ impl PiConfig {
             inputs: BTreeMap::new(),
             custom_tool,
             custom_tool_open: false,
+            resource_inputs: BTreeMap::new(),
             conflicts: Vec::new(),
             conflict_leaves: Vec::new(),
             map_inputs: std::collections::HashMap::new(),
@@ -242,6 +252,8 @@ impl PiConfig {
             rows: std::collections::HashMap::new(),
             synced_model: None,
             file_task: None,
+            resource_refreshing: false,
+            resource_refresh_pending: false,
             model_task: None,
             model_instance: None,
             _subscriptions: subscriptions,
@@ -345,6 +357,7 @@ impl PiConfig {
         self.network
             .update(cx, |form, cx| form.rebase(NetworkDraft::default(), cx));
         self.custom_tool_open = false;
+        self.resource_inputs.clear();
         self.tools
             .update(cx, |form, cx| form.rebase(ToolsDraft::default(), cx));
         self.baseline = Snapshot::default();
@@ -358,6 +371,18 @@ impl PiConfig {
     /// Re-reads the files. Drafts are kept so the user can compare and save
     /// again after a conflict.
     pub(super) fn reload(&mut self, cx: &mut Context<Self>) {
+        self.reload_files(false, cx);
+    }
+
+    pub(super) fn refresh_resource_paths(&mut self, cx: &mut Context<Self>) {
+        if self.is_saving() {
+            self.resource_refresh_pending = true;
+            return;
+        }
+        self.reload_files(true, cx);
+    }
+
+    fn reload_files(&mut self, preserve_arrays: bool, cx: &mut Context<Self>) {
         if self.is_saving() {
             return;
         }
@@ -368,8 +393,16 @@ impl PiConfig {
         self.conflicts.clear();
         self.conflict_leaves.clear();
         self.error = None;
-        self.files = Load::Loading;
-        self.trust = None;
+        let previous = match &self.files {
+            Load::Ready(files) if preserve_arrays => Some(files.clone()),
+            _ => None,
+        };
+        self.resource_refreshing = preserve_arrays;
+        if !preserve_arrays {
+            self.resource_refresh_pending = false;
+            self.files = Load::Loading;
+            self.trust = None;
+        }
         let generation = self.generation;
         let agent = self.agent.clone();
         let scope = self.scope.clone();
@@ -393,8 +426,16 @@ impl PiConfig {
                 if this.generation != generation {
                     return;
                 }
+                this.resource_refreshing = false;
                 match result {
-                    Ok((files, trust)) => {
+                    Ok((mut files, trust)) => {
+                        if let Some(previous) = &previous {
+                            files.preserve_dirty_resource_bases(
+                                previous,
+                                &this.snapshot(cx),
+                                &this.baseline,
+                            );
+                        }
                         let next = Snapshot::project(files.edited());
                         let since = this.baseline.clone();
                         this.reconcile(next, &since, cx);
@@ -583,11 +624,22 @@ impl PiConfig {
             prepared.tools = snapshot.into_parts().1;
         }
         let changes = files.changes(&prepared, &self.baseline, page);
+        let paths_saved = changes.iter().any(|change| {
+            Field::RESOURCE_PATHS
+                .iter()
+                .any(|field| change.leaf() == field.leaves()[0])
+        });
         let mut since = self.baseline.clone();
         for field in Field::ALL {
             if page.is_none_or(|p| field.page() == p) {
                 since.set(field, prepared.value(field));
             }
+        }
+        // A read started by a switch must not install a pre-save document afterwards.
+        if self.resource_refreshing {
+            self.file_task = None;
+            self.resource_refreshing = false;
+            self.resource_refresh_pending = true;
         }
         let scope = self.scope.clone();
         let agent = agent.clone();
@@ -605,8 +657,29 @@ impl PiConfig {
                     this.leave_after_save = None;
                     return None;
                 }
+                if std::mem::take(&mut this.resource_refresh_pending) {
+                    let config = cx.entity().downgrade();
+                    cx.defer(move |cx| {
+                        let _ = config.update(cx, |this, cx| this.refresh_resource_paths(cx));
+                    });
+                }
                 match result {
-                    Ok(document) => {
+                    Ok(mut document) => {
+                        if page.is_some_and(|p| p != Page::Tools)
+                            && let Load::Ready(previous) = &this.files
+                        {
+                            let mut next_files = previous.clone();
+                            match &mut next_files.project {
+                                Some(project) => *project = document,
+                                None => next_files.global = document,
+                            }
+                            next_files.preserve_dirty_resource_bases(
+                                previous,
+                                &this.snapshot(cx),
+                                &this.baseline,
+                            );
+                            document = next_files.edited().clone();
+                        }
                         let next = Snapshot::project(&document);
                         this.reconcile(next, &since, cx);
                         if let Load::Ready(files) = &mut this.files {
@@ -614,6 +687,9 @@ impl PiConfig {
                                 Some(project) => *project = document,
                                 None => files.global = document,
                             }
+                        }
+                        if paths_saved {
+                            cx.emit(PiConfigEvent::ResourcePathsSaved(this.scope.clone()));
                         }
                         return this.leave_after_save.take().or(then);
                     }

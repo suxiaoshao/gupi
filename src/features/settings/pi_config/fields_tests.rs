@@ -356,3 +356,34 @@ fn global_only_fields_never_generate_project_writes() {
     }
     assert!(files.changes(&current, &baseline, None).is_empty());
 }
+
+#[test]
+fn resource_arrays_keep_unsupported_values_and_one_conflict_leaf_each() {
+    for field in Field::RESOURCE_PATHS {
+        let key = field.leaves()[0][0];
+        for value in [
+            json!(null),
+            json!(false),
+            json!(["keep", 4]),
+            json!({"keep":true}),
+        ] {
+            let files = Files {
+                global: document(json!({key:value,"unknown":9})),
+                project: None,
+            };
+            let baseline = Snapshot::project(files.edited());
+            assert_eq!(baseline.value(field), vec![Slot::Unreadable(value.clone())]);
+            assert!(files.changes(&baseline, &baseline, None).is_empty());
+        }
+        let files = Files {
+            global: document(json!({key:["a","a","!x","+x","-x","builtin:mcp"]})),
+            project: None,
+        };
+        let baseline = Snapshot::project(files.edited());
+        let mut current = baseline.clone();
+        current.set(field, vec![Slot::Set(json!(["a", "!x"]))]);
+        let changes = files.changes(&current, &baseline, None);
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].leaf(), &[key]);
+    }
+}

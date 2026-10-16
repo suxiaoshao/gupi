@@ -268,6 +268,19 @@ impl PiConfig {
                         .on_click(
                             cx.listener(|this, _, window, cx| this.finish_custom_tool(window, cx)),
                         ),
+                )
+                .child(
+                    Button::new("pi-tool-cancel")
+                        .small()
+                        .ghost()
+                        .icon(IconName::X)
+                        .accessibility_label(t(cx, "action-cancel"))
+                        .tooltip(t(cx, "action-cancel"))
+                        .disabled(self.is_saving())
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.custom_tool_open = false;
+                            cx.notify();
+                        })),
                 );
         }
         let _ = window;

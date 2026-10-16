@@ -223,6 +223,31 @@ fn write_settings(
         (Err(error), None) => Err(Error(error.to_string())),
     }
 }
+/// Toggle only resources originating in this project's catalog, never inherited ones.
+pub fn set_project_enabled(cwd: &Path, resource: &Resource, enabled: bool) -> Result<(), Error> {
+    crate::pi_settings::trust::existing_directory(cwd).map_err(|e| Error(e.to_string()))?;
+    let catalog = scan_project(cwd)?;
+    let current = catalog
+        .resources
+        .iter()
+        .find(|item| {
+            item.path == resource.path
+                && item.kind == resource.kind
+                && item.package == resource.package
+        })
+        .ok_or_else(|| Error("Resource is read-only or no longer configured".into()))?;
+    set_enabled(&catalog.root, current, enabled)
+}
+
+fn ordered_strings(value: Option<&Value>) -> Result<Vec<String>, Error> {
+    match value {
+        None => Ok(Vec::new()),
+        Some(value) => serde_json::from_value(value.clone()).map_err(|_| {
+            Error("Unsupported resource field format; expected a string array".into())
+        }),
+    }
+}
+
 pub fn set_enabled(root: &Path, resource: &Resource, enabled: bool) -> Result<(), Error> {
     write_settings(root, |settings| {
         let target = if let Some(source) = &resource.package {
@@ -233,6 +258,12 @@ pub fn set_enabled(root: &Path, resource: &Resource, enabled: bool) -> Result<()
                 .iter_mut()
                 .find(|v| v.as_str().or_else(|| v["source"].as_str()) == Some(source))
                 .ok_or_else(|| Error("Package no longer configured".into()))?;
+            if entry.get("autoload") == Some(&Value::Bool(false)) {
+                return Err(Error("Resource is read-only".into()));
+            }
+            if !entry.is_string() && !entry.is_object() {
+                return Err(Error("Unsupported package format".into()));
+            }
             if entry.is_string() {
                 *entry = json!({"source": source});
             }
@@ -241,7 +272,7 @@ pub fn set_enabled(root: &Path, resource: &Resource, enabled: bool) -> Result<()
             settings
         };
         let key = resource.kind.key();
-        let mut patterns = strings(&target[key]);
+        let mut patterns = ordered_strings(target.get(key))?;
         // An explicitly empty package filter means all disabled, unlike an absent filter.
         if resource.package.is_some()
             && target[key].as_array().is_some_and(Vec::is_empty)

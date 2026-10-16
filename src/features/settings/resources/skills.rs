@@ -157,11 +157,12 @@ impl ResourcesView {
                     .when_some(relation, |header, relation| {
                         header.child(Tag::secondary().small().outline().child(relation))
                     })
-                    // Enabling writes settings, which project scope leaves alone.
-                    .when(row == Row::Global, |header| {
+                    // The row catalog determines the destination settings file.
+                    .when(self.can_toggle(resource, row, cx), |header| {
                         header.child(
                             Switch::new(ElementId::NamedChild(id.clone(), "enabled".into()))
                                 .checked(resource.enabled)
+                                .accessibility_label(resource.name.clone())
                                 .disabled(busy)
                                 .on_click(cx.listener(move |this, active, _, cx| {
                                     this.change(Change::Toggle(toggle.clone(), *active), cx);
@@ -315,6 +316,51 @@ mod tests {
             !agent.path().join("settings.json").exists(),
             "listing a project writes nothing"
         );
+
+        let skill = resources.read_with(cx, |view, cx| view.filtered_skills(cx)[0].clone());
+        resources.update(cx, |view, cx| {
+            assert!(view.can_toggle(&skill, Row::Own, cx));
+            assert!(!view.can_toggle(&skill, Row::Inherited, cx));
+            view.change(
+                gupi_resources::resources::Change::Toggle(skill.clone(), false),
+                cx,
+            );
+        });
+        cx.condition(&resources, |view, cx| {
+            !view.active().read(cx).busy() && !view.filtered_skills(cx)[0].enabled
+        })
+        .await;
+        let settings_path = project.path().join(".pi/settings.json");
+        let settings: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&settings_path).unwrap()).unwrap();
+        assert_eq!(
+            settings["skills"],
+            serde_json::json!(["-skills/review/SKILL.md"])
+        );
+        assert!(!agent.path().join("settings.json").exists());
+        // Saving a raw path refreshes the already-selected project catalog.
+        let prompt = trust::canonical(project.path()).join("extra.md");
+        std::fs::write(&prompt, "Extra prompt").unwrap();
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            pi_config.update(cx, |config, cx| {
+                config.append_prompt_path_for_test("../extra.md".into(), cx);
+                config.save(
+                    Some(crate::features::settings::pi_config::Page::Tools),
+                    None,
+                    window,
+                    cx,
+                );
+            })
+        });
+        cx.condition(&resources, |view, cx| {
+            view.active()
+                .read(cx)
+                .catalog()
+                .data()
+                .is_some_and(|catalog| catalog.resources.iter().any(|r| r.path == prompt))
+        })
+        .await;
 
         pi_config.update(cx, |config, cx| config.set_scope(Scope::Global, cx));
         cx.run_until_parked();

@@ -455,7 +455,26 @@ impl PiConfig {
                                     this.open_resource_entry(field, window, cx);
                                 }
                             })),
-                    ),
+                    )
+                    .when(open, |row| {
+                        row.child(
+                            Button::new(SharedString::from(format!(
+                                "resource-cancel-{}",
+                                field.id()
+                            )))
+                            .small()
+                            .ghost()
+                            .icon(IconName::X)
+                            .accessibility_label(t(cx, "action-cancel"))
+                            .tooltip(t(cx, "action-cancel"))
+                            .disabled(self.is_saving())
+                            .on_click(cx.listener(
+                                move |this, _, window, cx| {
+                                    this.finish_resource_entry(field, false, window, cx)
+                                },
+                            )),
+                        )
+                    }),
             )
             .into_any_element()
     }

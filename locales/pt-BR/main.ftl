@@ -1053,7 +1053,6 @@ pi-files-comments = Salvar remove os comentários do arquivo.
 pi-files-add = Adicionar…
 pi-files-edit = Editar…
 pi-files-delete = Excluir
-pi-files-apply = Aplicar
 pi-files-override = Substituição
 pi-files-definition = Definição completa
 pi-files-disabled = Desativado
@@ -1069,3 +1068,70 @@ pi-files-model = Modelo
 pi-files-add-model = Adicionar modelo
 pi-files-on = Ativado
 pi-files-off = Desativado
+
+# Structured configuration editor
+pi-files-label-name = Nome de exibição
+pi-files-label-id = ID do modelo
+pi-files-label-baseUrl = URL base
+pi-files-label-api = API
+pi-files-label-apiKey = Chave de API
+pi-files-label-authHeader = Cabeçalho de autorização
+pi-files-label-oauth = OAuth
+pi-files-label-compat = Compatibilidade
+pi-files-label-models = Modelos
+pi-files-label-modelOverrides = Substituições de modelos
+pi-files-label-enabled = Ativado
+pi-files-label-exposure = Exposição
+pi-files-label-type = Transporte
+pi-files-label-description = Descrição
+pi-files-label-command = Comando
+pi-files-label-url = URL
+pi-files-label-cwd = Diretório de trabalho
+pi-files-label-timeout = Tempo limite
+pi-files-label-toolExposure = Exposição de ferramentas
+pi-files-label-args = Argumentos
+pi-files-label-env = Variáveis de ambiente
+pi-files-label-headers = Cabeçalhos
+pi-files-label-clientId = ID do cliente
+pi-files-label-clientSecret = Segredo do cliente
+pi-files-label-callbackPort = Porta de retorno
+pi-files-label-callbackUrl = URL de retorno
+pi-files-label-scope = Permissões
+pi-files-label-clientName = Nome do cliente
+pi-files-label-clientRegistration = Registro do cliente
+pi-files-label-authServerMetadataUrl = URL de metadados de autorização
+pi-files-label-provider = Provedor
+pi-files-label-reasoning = Raciocínio
+pi-files-label-contextWindow = Janela de contexto
+pi-files-label-maxTokens = Tokens máximos de saída
+pi-files-label-input = Tipos de entrada
+pi-files-label-cost = Custo
+pi-files-label-thinkingLevelMap = Mapa de níveis de pensamento
+pi-files-label-inputLimits = Limites de entrada
+pi-files-label-promptCache = Cache de prompts
+pi-files-label-samplingParams = Parâmetros de amostragem
+pi-files-label-samplingParamsByThinkingLevel = Amostragem por nível de pensamento
+pi-files-label-autoEnableCodemode = Ativar Codemode automaticamente
+pi-files-providers = Provedores
+pi-files-servers = Servidores MCP
+pi-files-automation = Codemode
+pi-files-empty = Nenhuma entrada
+pi-files-basic = Informações básicas
+pi-files-connection = Conexão
+pi-files-exposure-section = Exposição
+pi-files-authentication = Autenticação
+pi-files-advanced = Avançado
+pi-files-back = Voltar
+pi-files-stage = Preparar alterações
+pi-files-secret-present = Definido
+pi-files-add-value = Novo valor
+pi-files-confirm-add = Adicionar
+pi-files-definition-kind = Definição
+pi-files-provider-summary =
+    { $models ->
+        [one] { $models } modelo
+       *[other] { $models } modelos
+    } · { $overrides ->
+        [one] { $overrides } substituição
+       *[other] { $overrides } substituições
+    }

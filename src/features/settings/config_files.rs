@@ -11,7 +11,10 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use gupi_resources::pi_config_files::{Entry, Error, File, Kind};
 use gupi_resources::pi_settings::{Scope, ordered_eq};
-use gupi_settings::{assets::IconName, i18n::t};
+use gupi_settings::{
+    assets::IconName,
+    i18n::{t, t_with_args},
+};
 use serde_json::Value;
 use std::path::PathBuf;
 
@@ -312,7 +315,7 @@ impl FilePages {
         let e = entity.clone();
         let h = entity.clone();
         let config = config.clone();
-        SettingPage::new(t(
+        let page = SettingPage::new(t(
             cx,
             if kind == Kind::Models {
                 "pi-files-models"
@@ -320,6 +323,11 @@ impl FilePages {
                 "pi-files-mcp"
             },
         ))
+        .icon(if kind == Kind::Models {
+            IconName::Boxes
+        } else {
+            IconName::Server
+        })
         .resettable(false)
         .title_suffix(move |_, cx| {
             let e = h.clone();
@@ -372,13 +380,24 @@ impl FilePages {
                 .into_any_element()
         })
         .group(
-            SettingGroup::new()
-                .description(t(cx, "pi-files-startup-only"))
-                .item(SettingItem::render(move |_, window, cx| {
-                    e.update(cx, |this, cx| this.render_page(kind, window, cx))
-                })),
-        )
+            SettingGroup::new().item(SettingItem::render(move |_, window, cx| {
+                e.update(cx, |this, cx| this.render_page(kind, window, cx))
+            })),
+        );
+        if kind == Kind::Mcp {
+            let e = entity.clone();
+            page.group(
+                SettingGroup::new()
+                    .title(t(cx, "pi-files-automation"))
+                    .item(SettingItem::render(move |_, _, cx| {
+                        e.update(cx, |this, cx| this.render_auto(cx))
+                    })),
+            )
+        } else {
+            page
+        }
     }
+
     fn render_page(&mut self, kind: Kind, _: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         if kind == Kind::Models && matches!(self.scope, Scope::Project(_)) {
             return div()
@@ -400,11 +419,41 @@ impl FilePages {
             });
         }
         let draft = self.draft(kind);
-        let mut body = v_flex().w_full().max_w(rems(56.)).gap_3().child(
-            div()
-                .text_sm()
-                .text_color(cx.theme().muted_foreground)
-                .child(t(cx, "pi-files-startup-only")),
+        let mut body = v_flex().w_full().max_w(rems(56.)).gap_2();
+        let add = cx.entity();
+        body = body.child(
+            h_flex()
+                .w_full()
+                .items_start()
+                .gap_2()
+                .child(
+                    v_flex()
+                        .flex_1()
+                        .gap_1()
+                        .child(div().text_sm().font_weight(FontWeight::SEMIBOLD).child(t(
+                            cx,
+                            if kind == Kind::Models {
+                                "pi-files-providers"
+                            } else {
+                                "pi-files-servers"
+                            },
+                        )))
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(t(cx, "pi-files-startup-only")),
+                        ),
+                )
+                .child(
+                    Button::new("file-add")
+                        .small()
+                        .label(t(cx, "pi-files-add"))
+                        .disabled(self.busy() || self.loading.is_some() || draft.names().is_err())
+                        .on_click(move |_, window, cx| {
+                            Self::open_editor(&add, kind, None, window, cx)
+                        }),
+                ),
         );
         if self.loading.is_some() {
             return body.child(t(cx, "pi-settings-loading")).into_any_element();
@@ -430,16 +479,15 @@ impl FilePages {
             );
         }
         let busy = self.busy();
-        let add = cx.entity();
-        body = body.child(
-            h_flex().justify_end().child(
-                Button::new("file-add")
-                    .small()
-                    .label(t(cx, "pi-files-add"))
-                    .disabled(busy)
-                    .on_click(move |_, window, cx| Self::open_editor(&add, kind, None, window, cx)),
-            ),
-        );
+        if names.is_empty() {
+            body = body.child(
+                div()
+                    .py_2()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(t(cx, "pi-files-empty")),
+            );
+        }
         for name in names {
             let Some(entry) = draft.entry(&name) else {
                 continue;
@@ -460,24 +508,60 @@ impl FilePages {
                         })
                 }
             } else {
-                String::new()
+                let mut args = fluent_bundle::FluentArgs::new();
+                match entry.len(&["models".into()]) {
+                    Ok(count) => args.set("models", count as i64),
+                    Err(_) => args.set("models", "—"),
+                };
+                match entry.keys(&["modelOverrides".into()]) {
+                    Ok(keys) => args.set("overrides", keys.len() as i64),
+                    Err(_) => args.set("overrides", "—"),
+                };
+                t_with_args(cx, "pi-files-provider-summary", &args)
+            };
+            let label = if entry.disabled() {
+                format!("{label} · {}", t(cx, "pi-files-disabled"))
+            } else {
+                label
             };
             let e = cx.entity();
+            let open = (e.clone(), name.clone());
             let row_name = name.clone();
             body = body.child(
                 h_flex()
                     .gap_2()
                     .items_center()
-                    .child(div().flex_1().min_w_0().truncate().child(name.clone()))
                     .child(
-                        div()
-                            .text_sm()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(label),
+                        Button::new(SharedString::from(format!("file-row-{name}")))
+                            .ghost()
+                            .small()
+                            .flex_1()
+                            .min_w_0()
+                            .accessibility_label(name.clone())
+                            .disabled(busy)
+                            .child(
+                                h_flex()
+                                    .w_full()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .text_left()
+                                            .truncate()
+                                            .child(name.clone()),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child(label),
+                                    ),
+                            )
+                            .on_click(move |_, window, cx| {
+                                Self::open_editor(&open.0, kind, Some(open.1.clone()), window, cx)
+                            }),
                     )
-                    .when(entry.disabled(), |row| {
-                        row.child(t(cx, "pi-files-disabled"))
-                    })
                     .child(
                         Button::new(SharedString::from(format!("file-menu-{name}")))
                             .ghost()
@@ -513,68 +597,107 @@ impl FilePages {
                     ),
             );
         }
-        if kind == Kind::Mcp {
-            let current = draft
-                .auto
-                .clone()
-                .unwrap_or_else(|| draft.file.as_ref().and_then(File::auto_enable));
-            let label = match &current {
-                None => t(cx, "pi-value-unset"),
-                Some(Value::Bool(true)) => t(cx, "pi-files-on"),
-                Some(Value::Bool(false)) => t(cx, "pi-files-off"),
-                _ => t(cx, "pi-resource-unsupported"),
-            };
-            let entity = cx.entity();
-            body = body.child(
-                h_flex()
-                    .gap_2()
-                    .items_center()
-                    .child(div().flex_1().child("autoEnableCodemode"))
-                    .child(
-                        Button::new("file-auto")
-                            .small()
-                            .outline()
-                            .label(label)
-                            .dropdown_caret(true)
-                            .disabled(busy)
-                            .dropdown_menu(move |menu, _, cx| {
-                                [
-                                    ("pi-value-unset", None),
-                                    ("pi-files-on", Some(Value::Bool(true))),
-                                    ("pi-files-off", Some(Value::Bool(false))),
-                                ]
-                                .into_iter()
-                                .fold(
-                                    menu,
-                                    |menu, (label, value)| {
-                                        let e = entity.clone();
-                                        menu.item(PopupMenuItem::new(t(cx, label)).on_click(
-                                            move |_, _, cx| {
-                                                e.update(cx, |this, cx| {
-                                                    let original = this
-                                                        .mcp
-                                                        .file
-                                                        .as_ref()
-                                                        .and_then(File::auto_enable);
-                                                    this.mcp.auto = if ordered_eq(
-                                                        original.as_ref(),
-                                                        value.as_ref(),
-                                                    ) {
-                                                        None
-                                                    } else {
-                                                        Some(value.clone())
-                                                    };
-                                                    cx.notify()
-                                                })
-                                            },
-                                        ))
-                                    },
-                                )
-                            }),
-                    ),
-            );
-        }
         body.into_any_element()
+    }
+    fn set_auto(&mut self, value: Option<Value>, cx: &mut Context<Self>) {
+        let original = self.mcp.file.as_ref().and_then(File::auto_enable);
+        self.mcp.auto = if ordered_eq(original.as_ref(), value.as_ref()) {
+            None
+        } else {
+            Some(value)
+        };
+        cx.notify();
+    }
+    fn render_auto(&self, cx: &mut Context<Self>) -> AnyElement {
+        let current = self
+            .mcp
+            .auto
+            .clone()
+            .unwrap_or_else(|| self.mcp.file.as_ref().and_then(File::auto_enable));
+        let label = match current {
+            None => t(cx, "pi-value-unset"),
+            Some(Value::Bool(true)) => t(cx, "pi-files-on"),
+            Some(Value::Bool(false)) => t(cx, "pi-files-off"),
+            _ => t(cx, "pi-resource-unsupported"),
+        };
+        let e = cx.entity();
+        let menu_e = e.clone();
+        let pending = self.mcp.auto.is_some();
+        let busy = self.busy() || self.mcp.file.is_none();
+        h_flex()
+            .w_full()
+            .max_w(rems(56.))
+            .gap_2()
+            .items_center()
+            .child(
+                v_flex()
+                    .flex_1()
+                    .gap_1()
+                    .child(editor::field_label("autoEnableCodemode", cx))
+                    .when(pending, |label| {
+                        label.child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(t(cx, "pi-unsaved")),
+                        )
+                    }),
+            )
+            .child(
+                Button::new("file-auto")
+                    .small()
+                    .outline()
+                    .w_80()
+                    .label(label)
+                    .dropdown_caret(true)
+                    .disabled(busy)
+                    .accessibility_label(t(cx, "pi-files-label-autoEnableCodemode"))
+                    .dropdown_menu(move |menu, _, cx| {
+                        [
+                            ("pi-value-unset", None),
+                            ("pi-files-on", Some(Value::Bool(true))),
+                            ("pi-files-off", Some(Value::Bool(false))),
+                        ]
+                        .into_iter()
+                        .fold(menu, |menu, (label, value)| {
+                            let e = e.clone();
+                            menu.item(PopupMenuItem::new(t(cx, label)).on_click(move |_, _, cx| {
+                                e.update(cx, |this, cx| this.set_auto(value.clone(), cx))
+                            }))
+                        })
+                    }),
+            )
+            .child(
+                Button::new("file-auto-menu")
+                    .w_6()
+                    .ghost()
+                    .xsmall()
+                    .icon(IconName::Ellipsis)
+                    .accessibility_label(t(cx, "pi-field-actions"))
+                    .disabled(busy)
+                    .dropdown_menu(move |menu, _, cx| {
+                        let e = menu_e.clone();
+                        let clear = menu_e.clone();
+                        menu.when(pending, |menu| {
+                            menu.item(PopupMenuItem::new(t(cx, "pi-menu-revert")).on_click(
+                                move |_, _, cx| {
+                                    e.update(cx, |this, cx| {
+                                        this.mcp.auto = None;
+                                        cx.notify()
+                                    })
+                                },
+                            ))
+                        })
+                        .item(
+                            PopupMenuItem::new(t(cx, "pi-value-unset")).on_click(
+                                move |_, _, cx| {
+                                    clear.update(cx, |this, cx| this.set_auto(None, cx))
+                                },
+                            ),
+                        )
+                    }),
+            )
+            .into_any_element()
     }
     fn open_editor(
         entity: &Entity<Self>,
@@ -616,8 +739,8 @@ impl FilePages {
                 ))
                 .width(window.rem_size() * 42.)
                 .overlay_closable(false)
-                .child(editor)
-                .footer(super::dialog_buttons("pi-files-apply", false, false, cx))
+                .content(move |content, _, _| content.min_h_0().child(editor.clone()))
+                .footer(super::dialog_buttons("pi-files-stage", false, false, cx))
                 .on_ok(move |_, window, cx| {
                     let result = save.1.update(cx, |editor, cx| editor.prepare(cx));
                     let Ok((name, entry)) = result else {

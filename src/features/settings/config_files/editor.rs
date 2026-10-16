@@ -3,13 +3,20 @@ use super::{Entry, Error, Kind, error_key};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
+mod collections;
+mod layout;
+use collections::{Addition, Collection, path_id};
 use gpui_kit::component::{ActiveTheme as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use gupi_resources::pi_config_files::Credential;
 use gupi_settings::{assets::IconName, i18n::t};
+pub(super) use layout::field_label;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
+
+struct EditorKeys;
+impl Global for EditorKeys {}
 
 #[derive(Clone, Copy)]
 enum Field {
@@ -42,7 +49,11 @@ pub(super) struct EntryEditor {
     replacements: BTreeMap<Vec<String>, String>,
     secrets: BTreeMap<Vec<String>, u8>,
     expanded: BTreeSet<Vec<String>>,
-    key_inputs: BTreeMap<Vec<String>, Entity<InputState>>,
+    additions: BTreeMap<Vec<String>, Addition>,
+    subview: Option<(Vec<String>, bool)>,
+    scroll: ScrollHandle,
+    parent_offset: Point<Pixels>,
+    focus: FocusHandle,
     error: Option<Error>,
 }
 const EXPOSURE: &[&str] = &["codemode", "deferred", "direct", "hidden"];
@@ -65,6 +76,16 @@ impl EntryEditor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        // Keep Enter local to inputs/buttons instead of the enclosing dialog's
+        // "stage the whole entry" shortcut. Input's deeper context still owns Enter.
+        if !cx.has_global::<EditorKeys>() {
+            cx.bind_keys([KeyBinding::new(
+                "enter",
+                NoAction,
+                Some("PiConfigFileEditor"),
+            )]);
+            cx.set_global(EditorKeys);
+        }
         let partial = kind == Kind::Mcp && project && entry.partial();
         Self {
             kind,
@@ -80,7 +101,11 @@ impl EntryEditor {
             replacements: BTreeMap::new(),
             secrets: BTreeMap::new(),
             expanded: BTreeSet::new(),
-            key_inputs: BTreeMap::new(),
+            additions: BTreeMap::new(),
+            subview: None,
+            scroll: ScrollHandle::new(),
+            parent_offset: point(px(0.), px(0.)),
+            focus: cx.focus_handle(),
             error: None,
         }
     }
@@ -171,7 +196,17 @@ impl EntryEditor {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let secret = matches!(kind, Field::Secret);
-        let label = path.join(".");
+        let key = path.last().map(String::as_str).unwrap_or_default();
+        let label = if path
+            .iter()
+            .rev()
+            .nth(1)
+            .is_some_and(|key| matches!(key.as_str(), "headers" | "env"))
+        {
+            path.join(".")
+        } else {
+            t(cx, &format!("pi-files-label-{key}"))
+        };
         if matches!(kind, Field::Json) {
             if !self.json.contains_key(path) {
                 let text = self.invalid.get(path).cloned().unwrap_or_else(|| {
@@ -180,7 +215,13 @@ impl EntryEditor {
                         .map(|v| serde_json::to_string_pretty(&v).unwrap_or_default())
                         .unwrap_or_default()
                 });
-                let state = cx.new(|cx| TextareaState::new(window, cx).default_value(text).rows(4));
+                let placeholder = t(cx, "pi-value-unset");
+                let state = cx.new(|cx| {
+                    TextareaState::new(window, cx)
+                        .default_value(text)
+                        .placeholder(placeholder)
+                        .auto_grow(1, 4)
+                });
                 let p = path.to_vec();
                 let sub = cx.subscribe(&state, move |this, state, event, cx| {
                     if matches!(event, InputEvent::Change) {
@@ -204,7 +245,7 @@ impl EntryEditor {
             }
             return Textarea::new(&self.json[path].state)
                 .small()
-                .h(rems(6.))
+                .font_family(cx.theme().mono_font_family.clone())
                 .aria_label(label)
                 .into_any_element();
         }
@@ -223,9 +264,11 @@ impl EntryEditor {
                     })
                     .unwrap_or_default()
             };
+            let placeholder = t(cx, "pi-value-unset");
             let state = cx.new(|cx| {
                 InputState::new(window, cx)
                     .default_value(value)
+                    .placeholder(placeholder)
                     .masked(secret)
             });
             let p = path.to_vec();
@@ -269,729 +312,24 @@ impl EntryEditor {
             .aria_label(label)
             .into_any_element()
     }
-    fn field(
-        &mut self,
-        path: Vec<String>,
-        kind: Field,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let label = path.last().cloned().unwrap_or_default();
-        let id = serde_json::to_string(&path).unwrap_or_default();
-        let entity = cx.entity();
-        let current = self.entry.visible(&path);
-        let present = self.entry.present(&path);
-        let mut control = v_flex().gap_1().w_80().min_w_0().flex_shrink_0();
-        if matches!(kind, Field::Secret) {
-            let mode = self.secrets.get(&path).copied().unwrap_or(0);
-            let p = path.clone();
-            let e = entity.clone();
-            let status = if mode == 0 {
-                if self.original.present(&path) {
-                    "pi-files-secret-set"
-                } else {
-                    "pi-value-unset"
-                }
-            } else if mode == 1 {
-                "pi-files-secret-replace"
-            } else {
-                "pi-files-secret-remove"
-            };
-            control = control.child(
-                Button::new(SharedString::from(format!("secret-{id}")))
-                    .small()
-                    .outline()
-                    .label(t(cx, status))
-                    .dropdown_caret(true)
-                    .accessibility_label(label.clone())
-                    .dropdown_menu(move |menu, _, cx| {
-                        [
-                            (0, "pi-files-secret-keep"),
-                            (1, "pi-files-secret-replace"),
-                            (2, "pi-files-secret-remove"),
-                        ]
-                        .into_iter()
-                        .fold(menu, |menu, (mode, label)| {
-                            let (e, p) = (e.clone(), p.clone());
-                            menu.item(PopupMenuItem::new(t(cx, label)).on_click(move |_, _, cx| {
-                                e.update(cx, |this, cx| {
-                                    this.clear_controls(&p);
-                                    this.secrets.insert(p.clone(), mode);
-                                    let result = if mode == 0 {
-                                        this.entry.restore_credential(&this.original, &p)
-                                    } else {
-                                        this.entry.credential(
-                                            &p,
-                                            if mode == 1 {
-                                                Credential::Replace(String::new())
-                                            } else {
-                                                Credential::Remove
-                                            },
-                                        )
-                                    };
-                                    if let Err(e) = result {
-                                        this.error = Some(e)
-                                    }
-                                    cx.notify()
-                                })
-                            }))
-                        })
-                    }),
-            );
-            if mode == 1 {
-                control = control.child(self.input(&path, kind, window, cx));
-            }
-        } else if matches!(kind, Field::Bool | Field::Choice(_)) {
-            let mut values = vec![(None, t(cx, "pi-value-unset"))];
-            match kind {
-                Field::Bool => {
-                    values.push((Some(Value::Bool(true)), t(cx, "pi-files-on")));
-                    values.push((Some(Value::Bool(false)), t(cx, "pi-files-off")))
-                }
-                Field::Choice(options) => {
-                    for value in options {
-                        values.push((Some(json!(value)), (*value).into()))
-                    }
-                }
-                _ => {}
-            }
-            let label = current
-                .as_ref()
-                .map(|v| {
-                    v.as_str()
-                        .map(str::to_owned)
-                        .unwrap_or_else(|| v.to_string())
-                })
-                .unwrap_or_else(|| {
-                    t(
-                        cx,
-                        if present {
-                            "pi-resource-unsupported"
-                        } else {
-                            "pi-value-unset"
-                        },
-                    )
-                });
-            let p = path.clone();
-            let choice_entity = entity.clone();
-            control = control.child(
-                Button::new(SharedString::from(format!("choice-{id}")))
-                    .small()
-                    .outline()
-                    .label(label)
-                    .dropdown_caret(true)
-                    .accessibility_label(path.join("."))
-                    .dropdown_menu(move |menu, _, _| {
-                        values.iter().fold(menu, |menu, (value, label)| {
-                            let (e, p, value) = (choice_entity.clone(), p.clone(), value.clone());
-                            menu.item(PopupMenuItem::new(label.clone()).on_click(
-                                move |_, _, cx| {
-                                    e.update(cx, |this, cx| this.write(&p, value.clone(), cx))
-                                },
-                            ))
-                        })
-                    }),
-            );
-        } else {
-            control = control.child(self.input(&path, kind, window, cx));
-        }
-        if self.invalid.contains_key(&path) {
-            control = control.child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().danger)
-                    .child(t(cx, "pi-files-invalid")),
-            );
-        }
-        let mut row = h_flex()
-            .items_start()
-            .gap_2()
-            .child(div().flex_1().min_w_0().text_sm().child(label))
-            .child(control);
-        if !matches!(kind, Field::Secret) {
-            let p = path.clone();
-            row = row.child(
-                Button::new(SharedString::from(format!("field-{id}")))
-                    .w_6()
-                    .flex_shrink_0()
-                    .ghost()
-                    .xsmall()
-                    .icon(IconName::Ellipsis)
-                    .accessibility_label(t(cx, "pi-field-actions"))
-                    .dropdown_menu(move |menu, _, cx| {
-                        let p = p.clone();
-                        let entity = entity.clone();
-                        let mut menu = menu;
-                        if p.len() == 2 && p[0] == "toolExposure" {
-                            let parent = vec![p[0].clone()];
-                            let keys = entity.read(cx).entry.keys(&parent).unwrap_or_default();
-                            if let Some(ix) = keys.iter().position(|k| k == &p[1]) {
-                                for (valid, to, key) in [
-                                    (ix > 0, ix.saturating_sub(1), "pi-resource-move-up"),
-                                    (ix + 1 < keys.len(), ix + 1, "pi-resource-move-down"),
-                                ] {
-                                    if valid {
-                                        let (e, parent) = (entity.clone(), parent.clone());
-                                        menu = menu.item(PopupMenuItem::new(t(cx, key)).on_click(
-                                            move |_, _, cx| {
-                                                e.update(cx, |this, cx| {
-                                                    let _ = this.entry.move_item(&parent, ix, to);
-                                                    cx.notify()
-                                                })
-                                            },
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                        menu.item(PopupMenuItem::new(t(cx, "pi-value-unset")).on_click(
-                            move |_, _, cx| {
-                                entity.update(cx, |this, cx| {
-                                    this.clear_controls(&p);
-                                    this.write(&p, None, cx)
-                                })
-                            },
-                        ))
-                    }),
-            );
-        }
-        if matches!(kind, Field::Secret) {
-            row = row.child(div().w_6().flex_shrink_0());
-        }
-        row.into_any_element()
-    }
-    fn collection_header(&self, path: &[String], array: bool, cx: &Context<Self>) -> AnyElement {
-        let label = path.last().cloned().unwrap_or_default();
-        let entity = cx.entity();
-        let p = path.to_vec();
-        h_flex()
-            .gap_2()
-            .items_center()
-            .child(div().flex_1().text_sm().child(label))
-            .when(!self.entry.present(path), |row| {
-                row.child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(t(cx, "pi-value-unset")),
-                )
-            })
-            .child(
-                Button::new(SharedString::from(format!(
-                    "collection-{}",
-                    serde_json::to_string(path).unwrap_or_default()
-                )))
-                .ghost()
-                .xsmall()
-                .icon(IconName::Ellipsis)
-                .accessibility_label(t(cx, "pi-field-actions"))
-                .dropdown_menu(move |menu, _, cx| {
-                    [None, Some(if array { json!([]) } else { json!({}) })]
-                        .into_iter()
-                        .fold(menu, |menu, value| {
-                            let (e, p) = (entity.clone(), p.clone());
-                            let label = if value.is_none() {
-                                t(cx, "pi-value-unset")
-                            } else if array {
-                                "[]".into()
-                            } else {
-                                "{}".into()
-                            };
-                            menu.item(PopupMenuItem::new(label).on_click(move |_, _, cx| {
-                                e.update(cx, |this, cx| {
-                                    this.clear_controls(&p);
-                                    let _ = this.original.set(&p, value.clone());
-                                    this.write(&p, value.clone(), cx)
-                                })
-                            }))
-                        })
-                }),
-            )
-            .into_any_element()
-    }
-    fn map(
-        &mut self,
-        path: Vec<String>,
-        secret: bool,
-        models: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let mut body = v_flex()
-            .gap_2()
-            .child(self.collection_header(&path, false, cx));
-        let Ok(keys) = self.entry.keys(&path) else {
-            return body
-                .child(t(cx, "pi-resource-unsupported"))
-                .into_any_element();
-        };
-        let keys = if secret {
-            let mut all = self.original.keys(&path).unwrap_or_default();
-            for key in keys {
-                if !all.contains(&key) {
-                    all.push(key)
-                }
-            }
-            all
-        } else {
-            keys
-        };
-        for key in keys {
-            let mut p = path.clone();
-            p.push(key);
-            body = body.child(if models {
-                self.model(p, true, window, cx)
-            } else {
-                self.field(
-                    p,
-                    if secret {
-                        Field::Secret
-                    } else {
-                        Field::Choice(EXPOSURE)
-                    },
-                    window,
-                    cx,
-                )
-            });
-        }
-        if !self.key_inputs.contains_key(&path) {
-            let input = cx.new(|cx| InputState::new(window, cx));
-            self.key_inputs.insert(path.clone(), input);
-        }
-        let input = self.key_inputs[&path].clone();
-        let p = path.clone();
-        let e = cx.entity();
-        body.child(
-            h_flex()
-                .gap_2()
-                .child(Input::new(&input).small().aria_label(t(cx, "pi-files-key")))
-                .child(
-                    Button::new(SharedString::from(format!("map-add-{}", path.join("/"))))
-                        .small()
-                        .ghost()
-                        .label(t(cx, "pi-resource-add"))
-                        .on_click(move |_, window, cx| {
-                            let key = input.read(cx).value().to_string();
-                            if key.is_empty() {
-                                return;
-                            }
-                            e.update(cx, |this, cx| {
-                                let mut p = p.clone();
-                                p.push(key);
-                                if this.entry.present(&p) || (secret && this.original.present(&p)) {
-                                    this.show_error(Error::Duplicate, cx);
-                                    return;
-                                }
-                                if secret {
-                                    let _ = this
-                                        .entry
-                                        .credential(&p, Credential::Replace(String::new()));
-                                    this.secrets.insert(p, 1);
-                                } else {
-                                    if models {
-                                        let _ = this.original.set(&p, Some(json!({})));
-                                        this.expanded.insert(p.clone());
-                                    }
-                                    this.write(
-                                        &p,
-                                        Some(if models { json!({}) } else { json!("codemode") }),
-                                        cx,
-                                    )
-                                }
-                                cx.notify()
-                            });
-                            input.update(cx, |input, cx| input.set_value("", window, cx));
-                        }),
-                ),
-        )
-        .into_any_element()
-    }
-    fn strings(
-        &mut self,
-        path: Vec<String>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let mut body = v_flex()
-            .gap_1()
-            .child(self.collection_header(&path, true, cx));
-        let Ok(len) = self.entry.len(&path) else {
-            return body
-                .child(t(cx, "pi-resource-unsupported"))
-                .into_any_element();
-        };
-        for ix in 0..len {
-            let mut p = path.clone();
-            p.push(ix.to_string());
-            let input = self.input(&p, Field::Text, window, cx);
-            let e = cx.entity();
-            let list = path.clone();
-            body = body.child(
-                h_flex()
-                    .gap_2()
-                    .items_center()
-                    .child(div().flex_1().min_w_0().child(input))
-                    .child(
-                        Button::new(SharedString::from(format!(
-                            "list-menu-{}/{ix}",
-                            path.join("/")
-                        )))
-                        .xsmall()
-                        .ghost()
-                        .icon(IconName::Ellipsis)
-                        .accessibility_label(t(cx, "pi-field-actions"))
-                        .dropdown_menu(move |menu, _, cx| {
-                            let mut menu = menu;
-                            for (valid, to, label) in [
-                                (ix > 0, ix.saturating_sub(1), "pi-resource-move-up"),
-                                (ix + 1 < len, ix + 1, "pi-resource-move-down"),
-                            ] {
-                                if valid {
-                                    let (e, p) = (e.clone(), list.clone());
-                                    menu = menu.item(PopupMenuItem::new(t(cx, label)).on_click(
-                                        move |_, _, cx| {
-                                            e.update(cx, |this, cx| {
-                                                this.clear_controls(&p);
-                                                let _ = this.entry.move_item(&p, ix, to);
-                                                cx.notify()
-                                            })
-                                        },
-                                    ));
-                                }
-                            }
-                            let (e, p) = (e.clone(), list.clone());
-                            menu.item(PopupMenuItem::new(t(cx, "pi-files-delete")).on_click(
-                                move |_, _, cx| {
-                                    e.update(cx, |this, cx| {
-                                        this.clear_controls(&p);
-                                        let _ = this.entry.remove_item(&p, ix);
-                                        cx.notify()
-                                    })
-                                },
-                            ))
-                        }),
-                    ),
-            );
-        }
-        let e = cx.entity();
-        let p = path.clone();
-        body.child(
-            Button::new(SharedString::from(format!("list-add-{}", path.join("/"))))
-                .ghost()
-                .small()
-                .label(t(cx, "pi-resource-add"))
-                .on_click(move |_, _, cx| {
-                    e.update(cx, |this, cx| {
-                        let _ = this.entry.append(&p, json!(""));
-                        cx.notify()
-                    })
-                }),
-        )
-        .into_any_element()
-    }
-    fn model(
-        &mut self,
-        path: Vec<String>,
-        overrides: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let mut body = v_flex().gap_2();
-        let key = path.join("/");
-        let open = self.expanded.contains(&path);
-        let p = path.clone();
-        let title = if overrides {
-            path.last().cloned().unwrap_or_default()
-        } else {
-            let mut id = path.clone();
-            id.push("id".into());
-            self.entry
-                .visible(&id)
-                .and_then(|v| v.as_str().map(str::to_owned))
-                .unwrap_or_else(|| t(cx, "pi-files-model"))
-        };
-        let e = cx.entity();
-        let item = path.clone();
-        body = body.child(
-            h_flex()
-                .gap_2()
-                .items_center()
-                .child(
-                    Button::new(SharedString::from(format!("model-expand-{key}")))
-                        .ghost()
-                        .small()
-                        .label(title)
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            if !this.expanded.remove(&p) {
-                                this.expanded.insert(p.clone());
-                            }
-                            cx.notify()
-                        })),
-                )
-                .child(
-                    Button::new(SharedString::from(format!("model-actions-{key}")))
-                        .ghost()
-                        .xsmall()
-                        .icon(IconName::Ellipsis)
-                        .accessibility_label(t(cx, "pi-field-actions"))
-                        .dropdown_menu(move |menu, _, cx| {
-                            let mut menu = menu;
-                            let parent = item[..item.len() - 1].to_vec();
-                            let keys = if overrides {
-                                e.read(cx).entry.keys(&parent).unwrap_or_default()
-                            } else {
-                                (0..e.read(cx).entry.len(&parent).unwrap_or_default())
-                                    .map(|ix| ix.to_string())
-                                    .collect()
-                            };
-                            if let Some(ix) = keys.iter().position(|k| Some(k) == item.last()) {
-                                for (valid, to, label) in [
-                                    (ix > 0, ix.saturating_sub(1), "pi-resource-move-up"),
-                                    (ix + 1 < keys.len(), ix + 1, "pi-resource-move-down"),
-                                ] {
-                                    if valid {
-                                        let (e, p) = (e.clone(), parent.clone());
-                                        menu =
-                                            menu.item(PopupMenuItem::new(t(cx, label)).on_click(
-                                                move |_, _, cx| {
-                                                    e.update(cx, |this, cx| {
-                                                        if overrides {
-                                                            let _ =
-                                                                this.entry.move_item(&p, ix, to);
-                                                            let _ =
-                                                                this.original.move_item(&p, ix, to);
-                                                        } else {
-                                                            this.change_array(&p, ix, Some(to));
-                                                        }
-                                                        cx.notify()
-                                                    })
-                                                },
-                                            ));
-                                    }
-                                }
-                                let (e, p, item) = (e.clone(), parent.clone(), item.clone());
-                                menu = menu.item(
-                                    PopupMenuItem::new(t(cx, "pi-files-delete")).on_click(
-                                        move |_, _, cx| {
-                                            e.update(cx, |this, cx| {
-                                                if overrides {
-                                                    this.clear_controls(&item);
-                                                    let _ = this.entry.set(&item, None);
-                                                    let _ = this.original.set(&item, None);
-                                                } else {
-                                                    this.change_array(&p, ix, None);
-                                                }
-                                                cx.notify()
-                                            })
-                                        },
-                                    ),
-                                );
-                            }
-                            menu
-                        }),
-                ),
-        );
-        if open {
-            let mut fields = vec![
-                ("name", Field::Text),
-                ("reasoning", Field::Bool),
-                ("contextWindow", Field::Number),
-                ("maxTokens", Field::Number),
-            ];
-            if !overrides {
-                fields.splice(
-                    0..0,
-                    [
-                        ("id", Field::Text),
-                        ("api", Field::Text),
-                        ("baseUrl", Field::Text),
-                    ],
-                );
-            }
-            for (k, f) in fields {
-                let mut p = path.clone();
-                p.push(k.into());
-                body = body.child(self.field(p, f, window, cx));
-            }
-            let mut input = path.clone();
-            input.push("input".into());
-            body = body.child(self.strings(input, window, cx));
-            for k in COMPLEX {
-                let mut p = path.clone();
-                p.push((*k).into());
-                body = body.child(self.field(p, Field::Json, window, cx));
-            }
-            let mut headers = path.clone();
-            headers.push("headers".into());
-            body = body.child(self.map(headers, true, false, window, cx));
-        }
-        body.into_any_element()
-    }
-}
-impl Render for EntryEditor {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let mut body = v_flex().gap_3().w_full();
-        if let Some(error) = self.error {
-            body = body.child(
-                div()
-                    .text_sm()
-                    .text_color(cx.theme().danger)
-                    .child(t(cx, error_key(error))),
-            );
-        }
-        body = body.child(
-            h_flex()
-                .gap_2()
-                .items_center()
-                .child(div().flex_1().child(t(cx, "pi-files-name")))
-                .child(
-                    Input::new(&self.name)
-                        .small()
-                        .w_80()
-                        .disabled(self.editing)
-                        .aria_label(t(cx, "pi-files-name")),
-                )
-                .child(div().w_6().flex_shrink_0()),
-        );
-        if !self.entry.is_object() {
-            return body.child(t(cx, "pi-resource-unsupported"));
-        }
-        let mut fields = vec![];
-        if self.kind == Kind::Models {
-            fields.extend([
-                ("name", Field::Text),
-                ("baseUrl", Field::Text),
-                ("api", Field::Text),
-                ("apiKey", Field::Secret),
-                ("authHeader", Field::Bool),
-                ("oauth", Field::Choice(&["radius"])),
-                ("compat", Field::Json),
-            ]);
-        } else {
-            if self.project && !self.editing {
-                let current = if self.partial {
-                    "pi-files-override"
-                } else {
-                    "pi-files-definition"
-                };
-                body = body.child(
-                    Button::new("mcp-definition")
-                        .small()
-                        .outline()
-                        .label(t(cx, current))
-                        .dropdown_caret(true)
-                        .dropdown_menu({
-                            let e = cx.entity();
-                            move |menu, _, cx| {
-                                [(true, "pi-files-override"), (false, "pi-files-definition")]
-                                    .into_iter()
-                                    .fold(menu, |menu, (partial, label)| {
-                                        let e = e.clone();
-                                        menu.item(PopupMenuItem::new(t(cx, label)).on_click(
-                                            move |_, _, cx| {
-                                                e.update(cx, |this, cx| {
-                                                    this.partial = partial;
-                                                    this.entry = Entry::new(Kind::Mcp);
-                                                    this.text.clear();
-                                                    this.json.clear();
-                                                    this.invalid.clear();
-                                                    cx.notify()
-                                                })
-                                            },
-                                        ))
-                                    })
-                            }
-                        }),
-                );
-            }
-            fields.extend([
-                ("enabled", Field::Bool),
-                ("exposure", Field::Choice(EXPOSURE)),
-            ]);
-            if !self.partial {
-                fields.extend([
-                    ("type", Field::Choice(&["stdio", "http"])),
-                    ("description", Field::Text),
-                    ("command", Field::Text),
-                    ("url", Field::Text),
-                    ("cwd", Field::Text),
-                    ("timeout", Field::Number),
-                ]);
-            }
-        }
-        for (k, field) in fields {
-            body = body.child(self.field(vec![k.into()], field, window, cx));
-        }
-        if self.kind == Kind::Models {
-            body = body.child(self.map(vec!["headers".into()], true, false, window, cx));
-            let path = vec!["models".into()];
-            body = body.child(self.collection_header(&path, true, cx));
-            if let Ok(len) = self.entry.len(&path) {
-                for ix in 0..len {
-                    body = body.child(self.model(
-                        vec!["models".into(), ix.to_string()],
-                        false,
-                        window,
-                        cx,
-                    ));
-                }
-                body = body.child(
-                    Button::new("model-add")
-                        .small()
-                        .ghost()
-                        .label(t(cx, "pi-files-add-model"))
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            let path = vec!["models".into()];
-                            let ix = this.entry.len(&path).unwrap_or_default();
-                            let _ = this.entry.append(&path, json!({}));
-                            let _ = this.original.append(&path, json!({}));
-                            this.expanded.insert(vec!["models".into(), ix.to_string()]);
-                            cx.notify()
-                        })),
-                );
-            } else {
-                body = body.child(t(cx, "pi-resource-unsupported"));
-            }
-            body = body.child(self.map(vec!["modelOverrides".into()], false, true, window, cx));
-        } else {
-            body = body.child(self.map(vec!["toolExposure".into()], false, false, window, cx));
-            if !self.partial {
-                body = body
-                    .child(self.strings(vec!["args".into()], window, cx))
-                    .child(self.map(vec!["env".into()], true, false, window, cx))
-                    .child(self.map(vec!["headers".into()], true, false, window, cx));
-                for (k, f) in [
-                    ("clientId", Field::Text),
-                    ("clientSecret", Field::Secret),
-                    ("callbackPort", Field::Number),
-                    ("callbackUrl", Field::Text),
-                    ("scope", Field::Text),
-                    ("clientName", Field::Text),
-                    ("clientRegistration", Field::Choice(&["dcr", "cimd"])),
-                    ("authServerMetadataUrl", Field::Text),
-                ] {
-                    body = body.child(self.field(vec!["oauth".into(), k.into()], f, window, cx));
-                }
-                if !self.project {
-                    body = body.child(self.field(
-                        vec!["auth".into(), "provider".into()],
-                        Field::Text,
-                        window,
-                        cx,
-                    ));
-                }
-            }
-        }
-        body
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{EntryEditor, Field};
     use gpui_kit::component::input::InputEvent;
-    use gpui_kit::{AppContext as _, TestAppContext};
+    use gpui_kit::{AppContext as _, ParentElement as _, TestAppContext};
     use gupi_resources::pi_config_files::{File, Kind};
+    struct Host;
+    impl gpui_kit::Render for Host {
+        fn render(
+            &mut self,
+            _: &mut gpui_kit::Window,
+            _: &mut gpui_kit::Context<Self>,
+        ) -> impl gpui_kit::IntoElement {
+            gpui_kit::div()
+        }
+    }
     #[gpui_kit::test]
     fn original_credential_never_enters_input_and_replacement_uses_real_subscription(
         cx: &mut TestAppContext,
@@ -1112,5 +450,145 @@ mod tests {
                 assert!(this.prepare(cx).is_err());
             })
         });
+    }
+    #[gpui_kit::test]
+    fn model_subview_back_and_collapsed_advanced_preserve_entry(cx: &mut TestAppContext) {
+        use gpui_kit::test::TestWindowExt as _;
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::English, cx);
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("models.json");
+        std::fs::write(
+            &path,
+            r#"{"providers":{"p":{"models":[{"id":"first","compat":{"future":1}}]}}}"#,
+        )
+        .unwrap();
+        let file = File::load(Kind::Models, &path).unwrap();
+        let mut editor = None;
+        let (_, cx) = cx.add_window_view(|window, cx| {
+            let e = cx.new(|cx| {
+                EntryEditor::new(
+                    Kind::Models,
+                    "p".into(),
+                    file.entry("p").unwrap(),
+                    true,
+                    false,
+                    window,
+                    cx,
+                )
+            });
+            editor = Some(e.clone());
+            gpui_kit::component::Root::new(e, window, cx)
+        });
+        let editor = editor.unwrap();
+        cx.update(|window, cx| {
+            window.render_frame(cx);
+            assert!(editor.read(cx).json.is_empty());
+            editor.update(cx, |this, cx| {
+                this.open_model(vec!["models".into(), "0".into()], false, window, cx)
+            });
+            window.render_frame(cx);
+            assert!(editor.read(cx).json.is_empty());
+            window.click("model-back", cx);
+            window.render_frame(cx);
+            assert!(editor.read(cx).subview.is_none());
+            assert!(editor.read(cx).entry.same(&editor.read(cx).original));
+        });
+    }
+    #[gpui_kit::test]
+    fn stdio_inline_list_confirm_and_cancel_do_not_expose_http_fields(cx: &mut TestAppContext) {
+        use gpui_kit::component::WindowExt as _;
+        use gpui_kit::test::TestWindowExt as _;
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::English, cx);
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mcp.json");
+        std::fs::write(
+            &path,
+            r#"{"mcpServers":{"s":{"type":"stdio","command":"never-run","args":["one"]}}}"#,
+        )
+        .unwrap();
+        let file = File::load(Kind::Mcp, &path).unwrap();
+        let mut editor = None;
+        let (_, cx) = cx.add_window_view(|window, cx| {
+            let e = cx.new(|cx| {
+                EntryEditor::new(
+                    Kind::Mcp,
+                    "s".into(),
+                    file.entry("s").unwrap(),
+                    true,
+                    false,
+                    window,
+                    cx,
+                )
+            });
+            editor = Some(e.clone());
+            let host = cx.new(|_| Host);
+            gpui_kit::component::Root::new(host, window, cx)
+        });
+        let editor = editor.unwrap();
+        cx.update(|window, cx| {
+            let content = editor.clone();
+            window.open_dialog(cx, move |dialog, _, _| {
+                dialog
+                    .entrance(gpui_kit::component::dialog::DialogEntrance::None)
+                    .content({
+                        let content = content.clone();
+                        move |body, _, _| body.child(content.clone())
+                    })
+            });
+            window.render_frame(cx);
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            window.render_frame(cx);
+            assert!(!editor.read(cx).text.contains_key(&vec!["url".into()]));
+            window.click(gpui_kit::SharedString::from("add-[\"args\"]"), cx);
+            window.render_frame(cx);
+        });
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            window.render_frame(cx);
+            assert!(window.has_active_dialog(cx));
+            assert!(
+                editor.read(cx).additions[&vec!["args".into()]]
+                    .focus
+                    .is_focused(window)
+            );
+        });
+        assert!(editor.read_with(cx, |this, _| this.entry.same(&this.original)));
+        let keystroke = gpui_kit::Keystroke::parse("enter").unwrap();
+        cx.simulate_event(gpui_kit::KeyDownEvent {
+            keystroke: keystroke.clone(),
+            is_held: false,
+            prefer_character_input: false,
+        });
+        cx.simulate_event(gpui_kit::KeyUpEvent { keystroke });
+        cx.run_until_parked();
+        cx.update(|window, cx| window.render_frame(cx));
+        cx.simulate_input("two");
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            window.render_frame(cx);
+            assert!(window.has_active_dialog(cx));
+            assert!(
+                editor.read(cx).additions[&vec!["args".into()]]
+                    .focus
+                    .is_focused(window)
+            );
+        });
+        assert_eq!(
+            editor.read_with(cx, |this, _| this.entry.visible(&["args".into()])),
+            Some(serde_json::json!(["one", "two"]))
+        );
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+        cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
     }
 }

@@ -696,10 +696,11 @@ impl ResourcesView {
                         }),
                 )
             })
-            .when(!self.in_project_scope(), |row| {
+            .when(self.can_toggle(resource, row, cx), |row| {
                 row.child(
                     Switch::new(id("enabled"))
                         .checked(resource.enabled)
+                        .accessibility_label(resource.name.clone())
                         .disabled(busy)
                         .on_click(cx.listener(move |this, enabled, _, cx| {
                             this.change(Change::Toggle(toggle.clone(), *enabled), cx);

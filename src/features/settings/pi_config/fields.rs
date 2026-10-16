@@ -29,6 +29,10 @@ pub(super) enum Field {
     MaxRetries,
     BaseDelay,
     MaxDelay,
+    Extensions,
+    Skills,
+    Prompts,
+    Themes,
     DefaultTools,
     CodemodeMode,
     CodemodeBudget,
@@ -63,6 +67,7 @@ pub(super) enum Kind {
     Count,
     Text,
     List,
+    RawList,
     Timeout,
     ThinkingMap,
     CompactionMap,
@@ -74,7 +79,7 @@ pub(super) const THINKING_LEVELS: &[&str] =
 pub(super) const DELIVERY: &[&str] = &["one-at-a-time", "all"];
 
 impl Field {
-    pub(super) const ALL: [Self; 36] = [
+    pub(super) const ALL: [Self; 40] = [
         Self::Model,
         Self::Thinking,
         Self::ModelScope,
@@ -90,6 +95,10 @@ impl Field {
         Self::MaxRetries,
         Self::BaseDelay,
         Self::MaxDelay,
+        Self::Extensions,
+        Self::Skills,
+        Self::Prompts,
+        Self::Themes,
         Self::DefaultTools,
         Self::CodemodeMode,
         Self::CodemodeBudget,
@@ -116,6 +125,10 @@ impl Field {
     /// The JSON leaves this field writes. The model writes provider and id.
     pub(super) fn leaves(self) -> &'static [&'static [&'static str]] {
         match self {
+            Self::Extensions => &[&["extensions"]],
+            Self::Skills => &[&["skills"]],
+            Self::Prompts => &[&["prompts"]],
+            Self::Themes => &[&["themes"]],
             Self::DefaultTools => &[&["defaultTools"]],
             Self::CodemodeMode => &[&["codemode", "mode"]],
             Self::CodemodeBudget => &[&["codemode", "inlineBudget"]],
@@ -157,6 +170,7 @@ impl Field {
 
     pub(super) fn page(self) -> Page {
         match self {
+            Self::Extensions | Self::Skills | Self::Prompts | Self::Themes => Page::Tools,
             Self::DefaultTools => Page::Tools,
             Self::CodemodeMode => Page::Tools,
             Self::CodemodeBudget => Page::Tools,
@@ -187,6 +201,7 @@ impl Field {
 
     pub(super) fn kind(self) -> Kind {
         match self {
+            Self::Extensions | Self::Skills | Self::Prompts | Self::Themes => Kind::RawList,
             Self::DefaultTools => Kind::List,
             Self::CodemodeMode => Kind::Choice(&["on", "only"]),
             Self::CodemodeBudget => Kind::Count,
@@ -222,6 +237,12 @@ impl Field {
         }
     }
 
+    pub(super) const RESOURCE_PATHS: [Self; 4] =
+        [Self::Extensions, Self::Skills, Self::Prompts, Self::Themes];
+    pub(super) fn is_resource_paths(self) -> bool {
+        Self::RESOURCE_PATHS.contains(&self)
+    }
+
     /// Pi reads this field from the global file only.
     pub(super) fn is_global_only(self) -> bool {
         matches!(self, Self::Proxy | Self::ProjectTrust | Self::CacheWarming)
@@ -230,6 +251,7 @@ impl Field {
     /// Pi 1.1.0 defaults, per leaf. `None` means unset (automatic).
     fn default(self) -> Option<Value> {
         Some(match self {
+            Self::Extensions | Self::Skills | Self::Prompts | Self::Themes => return None,
             Self::DefaultTools => return None,
             Self::CodemodeMode => json!("on"),
             Self::CodemodeBudget => json!(3000),
@@ -306,7 +328,8 @@ impl Files {
 
     /// The value one leaf inherits when the edited scope does not set it.
     fn inherited(&self, field: Field, leaf: &[&str]) -> (Option<Value>, Source) {
-        if self.project.is_some()
+        if !field.is_resource_paths()
+            && self.project.is_some()
             && let Some(value) = self.global.get(leaf)
         {
             return (Some(value.clone()), Source::Global);
@@ -343,6 +366,34 @@ impl Files {
             values,
             source,
             overridden,
+        }
+    }
+
+    /// A resource switch must not advance the conflict base of a dirty raw array.
+    pub(super) fn preserve_dirty_resource_bases(
+        &mut self,
+        previous: &Self,
+        current: &Snapshot,
+        baseline: &Snapshot,
+    ) {
+        let mut root = self.edited().root().clone();
+        for field in Field::RESOURCE_PATHS {
+            if current.pending(field, baseline) {
+                let key = field.leaves()[0][0];
+                match previous.edited().get(&[key]) {
+                    Some(value) => {
+                        root.insert(key.to_owned(), value.clone());
+                    }
+                    None => {
+                        root.remove(key);
+                    }
+                }
+            }
+        }
+        let document = Document::from_object(root);
+        match &mut self.project {
+            Some(project) => *project = document,
+            None => self.global = document,
         }
     }
 

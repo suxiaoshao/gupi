@@ -1,6 +1,6 @@
 # #47 项目资源路径与启停
 
-状态：Ready。架构师已审查，用户已确认范围。
+状态：Done。
 
 依据：Pi v1.2.0（本地 `/Users/sushao/Documents/code/pi`，标签 `v1.2.0`），路径相对 `packages/coding-agent/src/`。
 
@@ -108,4 +108,11 @@
 
 **检查命令**：`cargo fmt --all -- --check`、`cargo clippy -p gupi --all-targets --locked -- -D warnings`，以及受影响包的测试。
 
-关闭 #47 时说明：继承包的启停开关和内置扩展专用开关没有做，后者可在 `extensions` 列表里直接写条目。
+
+## 实现与验证结果
+
+- 四个资源数组接入 ToolsDraft，按当前文件原样编辑；缺键、空数组、重复项和顺序保持独立语义，不支持的形状只读。每个数组仍是一个冲突叶。
+- 项目开关通过项目 controller 写入，写入时重新核对项目目录来源并严格检查目标数组；继承资源和 `autoload: false` 条目不提供开关。开关重读保留脏数组的旧基准（包括随后保存其他页时）；列表保存会刷新同作用域目录，正在读取时的刷新请求会排队。
+- 自动检查通过：`cargo fmt --all -- --check`、`cargo check -p gupi --locked`、`cargo clippy -p gupi --all-targets --locked -- -D warnings`、`cargo test -p gupi -p gupi-resources -p gupi-settings --locked`（106 / 47 / 21 项）。新增覆盖原样数组往返、单叶冲突、项目/包开关、只读来源与非法形状拒写、脏数组冲突/干净数组更新；挂载设置视图验证真实 controller 路由及列表保存后的目录刷新。九种语言文案键和参数一致性检查通过。
+- macOS 原生试验使用 `script/gupi-ui-gallery --no-build --keep` 的临时配置：两种作用域显示、追加、上移/下移、键盘删除及焦点回到输入框、清空为 `[]`、移除此键、格式不支持只读；全局/项目开关后列表自动更新，新增路径保存后目录更新，项目包资源开关及继承行只读。核对临时 JSON 的作用域、包过滤、重复项顺序和未知字段均符合预期；未修改真实 `~/.pi`。
+- 范围未扩展；运行中的会话仍需手动刷新。继承包启停和内置扩展专用开关未加入，内置条目可在 `extensions` 原样编辑。

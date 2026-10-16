@@ -93,6 +93,7 @@ const NETWORK: &[(&str, &[Field])] = &[
 ];
 
 const TOOLS: &[(&str, &[Field])] = &[
+    ("pi-group-resource-paths", &Field::RESOURCE_PATHS),
     (
         "pi-group-tools",
         &[
@@ -112,6 +113,10 @@ const TOOLS: &[(&str, &[Field])] = &[
 impl Field {
     pub(super) fn label(self) -> &'static str {
         match self {
+            Self::Extensions => "pi-field-resource-extensions",
+            Self::Skills => "pi-field-resource-skills",
+            Self::Prompts => "pi-field-resource-prompts",
+            Self::Themes => "pi-field-resource-themes",
             Self::DefaultTools => "pi-field-default-tools",
             Self::CodemodeMode => "pi-field-codemode-mode",
             Self::CodemodeBudget => "pi-field-codemode-budget",
@@ -152,6 +157,7 @@ impl Field {
     }
     fn help(self) -> Option<&'static str> {
         Some(match self {
+            Self::Extensions | Self::Skills | Self::Prompts | Self::Themes => return None,
             Self::CodemodeMode | Self::CodemodeBudget => return None,
             Self::BudgetMinimal | Self::BudgetLow | Self::BudgetMedium | Self::BudgetHigh => {
                 "pi-thinking-budget-help"
@@ -319,6 +325,9 @@ impl PiConfig {
             let mut group = SettingGroup::new().title(t(cx, title)).items(items);
             if *title == "pi-group-tools" {
                 group = group.description(t(cx, "pi-codemode-help"));
+            }
+            if *title == "pi-group-resource-paths" {
+                group = group.description(t(cx, "pi-resource-paths-help"));
             }
             settings = settings.group(group);
         }
@@ -573,6 +582,7 @@ impl PiConfig {
                 Kind::Choice(options) => {
                     self.render_choice(field, options, &resolved.values, saving, cx)
                 }
+                Kind::RawList => self.render_resource_paths(field, window, cx),
                 Kind::List => self.render_tools_chips(window, cx),
                 Kind::ThinkingMap | Kind::CompactionMap => unreachable!("map block"),
                 Kind::Timeout => self.render_timeout(field, window, cx),
@@ -644,7 +654,11 @@ impl PiConfig {
                     .child(if project && field.is_global_only() {
                         div().w_6().flex_shrink_0().into_any_element()
                     } else {
-                        self.render_field_menu(field, pending, saving, cx)
+                        if field.is_resource_paths() {
+                            self.render_resource_paths_menu(field, cx)
+                        } else {
+                            self.render_field_menu(field, pending, saving, cx)
+                        }
                     }),
             )
             .when(conflict || invalid, |this| {
@@ -652,6 +666,8 @@ impl PiConfig {
                     cx,
                     if conflict {
                         "pi-changed-on-disk"
+                    } else if field.is_resource_paths() {
+                        "pi-resource-unsupported"
                     } else if field == Field::NpmCommand {
                         "pi-npm-invalid"
                     } else {

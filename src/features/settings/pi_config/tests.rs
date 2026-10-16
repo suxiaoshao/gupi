@@ -1247,3 +1247,139 @@ fn grouped_budget_inputs_reconcile_independently(cx: &mut TestAppContext) {
         json!({"minimal":10,"low":25,"medium":3,"high":40})
     );
 }
+
+#[gpui_kit::test]
+fn resource_arrays_are_raw_ordered_and_scope_local(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    fs::write(agent.path().join("settings.json"), json!({"extensions":["global"],"skills":["global"],"prompts":["global"],"themes":["global"]}).to_string()).unwrap();
+    let (config, visual) = setup(cx, agent.path());
+    config.update(visual, |this, cx| {
+        this.set_scope(Scope::Project(project.path().to_owned()), cx)
+    });
+    visual.run_until_parked();
+    config.update(visual, |this, cx| {
+        for field in Field::RESOURCE_PATHS {
+            assert_eq!(this.snapshot(cx).value(field), vec![Slot::Unset]);
+            assert_eq!(this.resolved(field, cx).values, vec![None]);
+            for text in ["", "same", "same", "!*.ts", "+a", "-a", "-builtin:mcp"] {
+                this.append_resource_path(field, text.into(), cx);
+            }
+        }
+    });
+    save(&config, Page::Tools, visual);
+    let file = project.path().join(".pi/settings.json");
+    let saved = read(&file);
+    for key in ["extensions", "skills", "prompts", "themes"] {
+        assert_eq!(
+            saved[key],
+            json!(["", "same", "same", "!*.ts", "+a", "-a", "-builtin:mcp"])
+        );
+    }
+    config.update(visual, |this, cx| {
+        for field in Field::RESOURCE_PATHS {
+            this.set_values(field, vec![Slot::Set(json!([]))], cx);
+        }
+    });
+    save(&config, Page::Tools, visual);
+    for key in ["extensions", "skills", "prompts", "themes"] {
+        assert_eq!(read(&file)[key], json!([]));
+    }
+    config.update(visual, |this, cx| {
+        for field in Field::RESOURCE_PATHS {
+            this.set_values(field, vec![Slot::Unset], cx);
+        }
+    });
+    save(&config, Page::Tools, visual);
+    assert_eq!(read(&file), json!({}));
+    assert_eq!(
+        read(&agent.path().join("settings.json"))["extensions"],
+        json!(["global"])
+    );
+}
+
+#[gpui_kit::test]
+fn switch_reread_preserves_dirty_array_conflict_but_updates_clean_arrays(cx: &mut TestAppContext) {
+    for project_scope in [false, true] {
+        let agent = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let root = if project_scope {
+            project.path().join(".pi")
+        } else {
+            agent.path().to_owned()
+        };
+        fs::create_dir_all(root.join("prompts")).unwrap();
+        fs::write(root.join("prompts/a.md"), "a").unwrap();
+        fs::create_dir_all(root.join("extensions")).unwrap();
+        fs::write(root.join("extensions/a.ts"), "export default () => {};").unwrap();
+        fs::write(
+            root.join("settings.json"),
+            json!({"extensions":["old"],"unknown":true}).to_string(),
+        )
+        .unwrap();
+        let (config, visual) = setup(cx, agent.path());
+        if project_scope {
+            config.update(visual, |this, cx| {
+                this.set_scope(Scope::Project(project.path().to_owned()), cx)
+            });
+            visual.run_until_parked();
+        }
+        config.update(visual, |this, cx| {
+            this.append_resource_path(Field::Prompts, "draft".into(), cx)
+        });
+        // Real switch write, then the refresh used by ResourcesView.
+        let resource = gupi_resources::pi_resources::Resource::new(
+            gupi_resources::pi_resources::Kind::Prompt,
+            root.join("prompts/a.md"),
+            root.clone(),
+            "a".into(),
+        );
+        let extension = gupi_resources::pi_resources::Resource::new(
+            gupi_resources::pi_resources::Kind::Extension,
+            root.join("extensions/a.ts"),
+            root.clone(),
+            "a".into(),
+        );
+        for resource in [resource, extension] {
+            if project_scope {
+                gupi_resources::pi_resources::set_project_enabled(project.path(), &resource, false)
+                    .unwrap();
+            } else {
+                gupi_resources::pi_resources::set_enabled(&root, &resource, false).unwrap();
+            }
+        }
+        config.update(visual, |this, cx| this.refresh_resource_paths(cx));
+        visual.run_until_parked();
+        config.read_with(visual, |this, cx| {
+            assert_eq!(
+                this.snapshot(cx).value(Field::Extensions),
+                vec![Slot::Set(json!(["old", "-extensions/a.ts"]))]
+            );
+            assert_eq!(this.baseline.value(Field::Prompts), vec![Slot::Unset]);
+        });
+        // An unrelated page save must not adopt the new resource base either.
+        config.update(visual, |this, cx| {
+            this.set_values(Field::MaxRetries, vec![Slot::Set(json!(4))], cx)
+        });
+        save(&config, Page::Network, visual);
+        save(&config, Page::Tools, visual);
+        config.read_with(visual, |this, _| {
+            assert!(this.conflicts.contains(&Field::Prompts))
+        });
+        assert_eq!(
+            read(&root.join("settings.json"))["prompts"],
+            json!(["-prompts/a.md"])
+        );
+        assert_eq!(read(&root.join("settings.json"))["unknown"], true);
+    }
+}
+
+impl PiConfig {
+    pub(in crate::features::settings) fn append_prompt_path_for_test(
+        &mut self,
+        text: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.append_resource_path(Field::Prompts, text, cx);
+    }
+}

@@ -301,11 +301,12 @@ impl ResourcesView {
                         this.toggle_preview(toggle_key.clone(), cx);
                     })),
             )
-            // Enabling writes settings, which project scope leaves alone.
-            .when(row == Row::Global, |actions| {
+            // The row catalog determines the destination settings file.
+            .when(self.can_toggle(resource, row, cx), |actions| {
                 actions.child(
                     Switch::new(id("enabled"))
                         .checked(resource.enabled)
+                        .accessibility_label(resource.name.clone())
                         .disabled(busy)
                         .on_click(cx.listener(move |this, active, _, cx| {
                             this.change(Change::Toggle(toggle.clone(), *active), cx)

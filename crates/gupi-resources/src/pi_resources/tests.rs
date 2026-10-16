@@ -374,3 +374,90 @@ fn project_package_deltas_only_override_matching_inherited_resources() {
     theme.enabled = false;
     assert!(!project.inherited_enabled(&global.root, &theme));
 }
+
+#[test]
+fn project_toggles_write_the_project_array_and_package_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = dir.path().join("project");
+    let global = dir.path().join("global");
+    write(&global.join("prompts/global.md"), "Global");
+    write(&global.join("settings.json"), r#"{"unknown":1}"#);
+    write(&cwd.join(".pi/prompts/local.md"), "Local");
+    write(&cwd.join(".pi/pkg/prompts/pkg.md"), "Package");
+    write(
+        &cwd.join(".pi/pkg/package.json"),
+        r#"{"pi":{"prompts":["prompts/pkg.md"]}}"#,
+    );
+    write(
+        &cwd.join(".pi/settings.json"),
+        r#"{"packages":["./pkg"],"unknown":2}"#,
+    );
+    let catalog = scan_project(&cwd).unwrap();
+    assert_eq!(catalog.resources.len(), 2);
+    for resource in &catalog.resources {
+        set_project_enabled(&cwd, resource, false).unwrap();
+    }
+    let settings = read_json(&cwd.join(".pi/settings.json")).unwrap();
+    assert_eq!(settings["prompts"], json!(["-prompts/local.md"]));
+    assert_eq!(
+        settings["packages"][0],
+        json!({"source":"./pkg","prompts":["-prompts/pkg.md"]})
+    );
+    assert_eq!(settings["unknown"], 2);
+    let inherited = scan(global.clone(), None, &[]).unwrap().resources.remove(0);
+    assert!(set_project_enabled(&cwd, &inherited, false).is_err());
+    assert_eq!(
+        read_json(&global.join("settings.json")).unwrap(),
+        json!({"unknown":1})
+    );
+}
+
+#[test]
+fn toggles_refuse_unsupported_arrays_and_autoload_false_without_writing() {
+    let dir = tempfile::tempdir().unwrap();
+    write(&dir.path().join("prompts/p.md"), "p");
+    let resource = Resource::new(
+        Kind::Prompt,
+        dir.path().join("prompts/p.md"),
+        dir.path().to_owned(),
+        "p".into(),
+    );
+    for value in [
+        json!(null),
+        json!(false),
+        json!("p"),
+        json!(["p", 7]),
+        json!({"x":1}),
+    ] {
+        let original = json!({"prompts":value,"unknown":true}).to_string();
+        write(&dir.path().join("settings.json"), &original);
+        assert!(set_enabled(dir.path(), &resource, false).is_err());
+        assert_eq!(
+            fs::read_to_string(dir.path().join("settings.json")).unwrap(),
+            original
+        );
+        for autoload in [true, false] {
+            let original = json!({"packages":[{"source":"./pkg","autoload":autoload,"prompts":value}],"unknown":true}).to_string();
+            write(&dir.path().join("settings.json"), &original);
+            let mut packaged = resource.clone();
+            packaged.package = Some("./pkg".into());
+            assert!(set_enabled(dir.path(), &packaged, true).is_err());
+            assert_eq!(
+                fs::read_to_string(dir.path().join("settings.json")).unwrap(),
+                original
+            );
+        }
+    }
+    write(
+        &dir.path().join("settings.json"),
+        r#"{"packages":[{"source":"./pkg","autoload":false,"prompts":[] }]}"#,
+    );
+    let before = fs::read_to_string(dir.path().join("settings.json")).unwrap();
+    let mut packaged = resource;
+    packaged.package = Some("./pkg".into());
+    assert!(set_enabled(dir.path(), &packaged, true).is_err());
+    assert_eq!(
+        fs::read_to_string(dir.path().join("settings.json")).unwrap(),
+        before
+    );
+}

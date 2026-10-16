@@ -640,6 +640,7 @@ impl PiConfig {
         }
         let conflict = self.conflicts.contains(&field);
         let invalid = self.invalid(field, cx);
+        let top_aligned = field.is_resource_paths();
         v_flex()
             .w_full()
             .max_w(rems(56.))
@@ -648,6 +649,7 @@ impl PiConfig {
                 h_flex()
                     .gap_2()
                     .items_center()
+                    .when(top_aligned, |row| row.items_start())
                     .w_full()
                     .child(label)
                     .child(h_flex().w_80().flex_shrink_0().justify_end().child(control))

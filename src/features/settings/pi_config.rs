@@ -115,7 +115,7 @@ pub(super) struct PiConfig {
     inputs: BTreeMap<Field, inputs::Adapter>,
     custom_tool: Entity<gpui_kit::component::input::InputState>,
     custom_tool_open: bool,
-    resource_inputs: BTreeMap<Field, Entity<gpui_kit::component::input::InputState>>,
+    resource_inputs: BTreeMap<Field, resource_paths::EntryInput>,
     conflicts: Vec<Field>,
     conflict_leaves: Vec<pi_settings::Leaf>,
     map_inputs: std::collections::HashMap<map_controls::MapInputKey, map_controls::MapAdapter>,

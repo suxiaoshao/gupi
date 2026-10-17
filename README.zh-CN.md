@@ -55,16 +55,16 @@ Gupi 带有内置更新功能，`--greedy` 会将它的 Cask 纳入 Homebrew 升
 
 ### 下载 Gupi
 
-| 平台 | 下载 v0.1.5 | 安装方法 |
+| 平台 | 下载 v0.1.6 | 安装方法 |
 | --- | --- | --- |
-| macOS · Apple 芯片 | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.5/Gupi_0.1.5_aarch64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.5/Gupi_0.1.5_aarch64_macos.zip) | 打开 DMG，将 `Gupi.app` 拖到“应用程序”；也可以解压 ZIP 后将应用移入该目录。 |
-| macOS · Intel | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.5/Gupi_0.1.5_x86_64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.5/Gupi_0.1.5_x86_64_macos.zip) | 打开 DMG，将 `Gupi.app` 拖到“应用程序”；也可以解压 ZIP 后将应用移入该目录。 |
-| Windows · x64 | [简体中文 MSI](https://github.com/suxiaoshao/gupi/releases/download/v0.1.5/Gupi_0.1.5_x64_zh-CN.msi) · [全部安装语言](https://github.com/suxiaoshao/gupi/releases/tag/v0.1.5) | 运行 MSI 完成安装，再从开始菜单打开 Gupi。 |
-| Linux · x64 Debian/Ubuntu | [deb](https://github.com/suxiaoshao/gupi/releases/download/v0.1.5/Gupi_0.1.5_amd64.deb) | 执行 `sudo apt install ./Gupi_0.1.5_amd64.deb`，然后在图形桌面会话中启动 Gupi。 |
+| macOS · Apple 芯片 | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_aarch64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_aarch64_macos.zip) | 打开 DMG，将 `Gupi.app` 拖到“应用程序”；也可以解压 ZIP 后将应用移入该目录。 |
+| macOS · Intel | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_x86_64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_x86_64_macos.zip) | 打开 DMG，将 `Gupi.app` 拖到“应用程序”；也可以解压 ZIP 后将应用移入该目录。 |
+| Windows · x64 | [简体中文 MSI](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_x64_zh-CN.msi) · [全部安装语言](https://github.com/suxiaoshao/gupi/releases/tag/v0.1.6) | 运行 MSI 完成安装，再从开始菜单打开 Gupi。 |
+| Linux · x64 Debian/Ubuntu | [deb](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_amd64.deb) | 执行 `sudo apt install ./Gupi_0.1.6_amd64.deb`，然后在图形桌面会话中启动 Gupi。 |
 
 macOS 安装包要求 macOS 11 或更高版本，已使用 Developer ID 签名并通过 Apple 公证。Windows 安装包尚未做 Authenticode 签名，系统可能显示“未知发布者”；Linux 包也未签名。Release 中提供 `SHA256SUMS`，用于校验下载文件。
 
-如果已有 Windows 发行版启动时提示缺少 `VCRUNTIME140.dll` 或错误 `0xc0000135`，请安装微软官方 [x64 Visual C++ 运行库](https://aka.ms/vc14/vc_redist.x64.exe)，再打开 Gupi。当前源码构建的 MSI 已包含运行库，直接安装和 WinGet 安装均可使用；此前已发布的安装包不会因此改变。
+从 0.1.6 起，Windows MSI 已包含 Visual C++ 运行库，直接安装和 WinGet 安装均可使用。如果旧版启动时提示缺少 `VCRUNTIME140.dll` 或错误 `0xc0000135`，请升级到 0.1.6，或安装微软官方 [x64 Visual C++ 运行库](https://aka.ms/vc14/vc_redist.x64.exe)后再打开 Gupi。此前已发布的安装包未被替换。
 
 <details>
 <summary>从源码运行或创建本地安装包</summary>
@@ -325,7 +325,7 @@ macOS 系统通知需要应用 bundle 和系统授权，专注模式可能影响
 
 macOS 发现新版后，可选择**下载并安装…**，并在更新窗口中继续。可通过**查看更新进度…**重新打开该窗口。安装前，Gupi 会保存草稿、关闭 Pi 连接，并重新启动新版。下载由你主动开始。跳过某个版本后，不再自动提醒该版本，仍可手动检查并安装。
 
-Windows 0.1.0/0.1.1 安装版可能检测到更新，却只显示**更新说明与下载**，没有安装按钮。请手动下载与已安装语言一致的新版 MSI 并运行升级，获得 0.1.2 引入的安装识别修复。Windows 自动升级完整链路仍待实机确认。
+Windows 应用内安装更新目前不可用。请退出 Gupi，从发行页下载与已安装语言一致的最新 MSI，运行安装包手动升级。版本检查和更新说明、下载链接仍可使用。WinGet 分发仍待社区收录。
 
 保存设置时，**下载并安装…**暂不可用。更新窗口打开期间暂停设置修改，窗口关闭且进行中的保存完成后恢复。
 
@@ -342,7 +342,7 @@ Windows 0.1.0/0.1.1 安装版可能检测到更新，却只显示**更新说明�
 | macOS 构建失败 | 确认已选择完整 Xcode，并且 `xcrun metal --version` 成功。 |
 | macOS 没有通知 | 使用应用 bundle，在系统设置中允许通知；专注模式也可能影响显示。 |
 
-**检测 Pi** 只验证可执行文件版本，不验证模型账户；账户、凭据与模型请求仍由 Pi 管理。高级 Pi 字段、完整队列管理和任意 TUI 扩展界面尚未提供对应的图形管理能力。
+**检测 Pi** 只验证可执行文件版本，不验证模型账户；账户、凭据与模型请求仍由 Pi 管理。Gupi 不会复刻所有终端扩展界面。
 
 ### 数据与诊断
 

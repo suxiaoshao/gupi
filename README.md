@@ -55,16 +55,16 @@ brew uninstall --cask suxiaoshao/tap/gupi
 
 ### Download Gupi
 
-| Platform | Download v0.1.5 | Installation |
+| Platform | Download v0.1.6 | Installation |
 | --- | --- | --- |
-| macOS · Apple silicon | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.5/Gupi_0.1.5_aarch64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.5/Gupi_0.1.5_aarch64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
-| macOS · Intel | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.5/Gupi_0.1.5_x86_64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.5/Gupi_0.1.5_x86_64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
-| Windows · x64 | [English MSI](https://github.com/suxiaoshao/gupi/releases/download/v0.1.5/Gupi_0.1.5_x64_en-US.msi) · [All installer languages](https://github.com/suxiaoshao/gupi/releases/tag/v0.1.5) | Run the MSI, complete the installation, and open Gupi from the Start menu. |
-| Linux · x64 Debian/Ubuntu | [deb](https://github.com/suxiaoshao/gupi/releases/download/v0.1.5/Gupi_0.1.5_amd64.deb) | Run `sudo apt install ./Gupi_0.1.5_amd64.deb`, then launch Gupi in a graphical desktop session. |
+| macOS · Apple silicon | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_aarch64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_aarch64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
+| macOS · Intel | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_x86_64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_x86_64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
+| Windows · x64 | [English MSI](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_x64_en-US.msi) · [All installer languages](https://github.com/suxiaoshao/gupi/releases/tag/v0.1.6) | Run the MSI, complete the installation, and open Gupi from the Start menu. |
+| Linux · x64 Debian/Ubuntu | [deb](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_amd64.deb) | Run `sudo apt install ./Gupi_0.1.6_amd64.deb`, then launch Gupi in a graphical desktop session. |
 
 macOS packages require macOS 11 or later and are signed with Developer ID and notarized by Apple. Windows installers are not yet Authenticode-signed, so Windows may show an unknown publisher. Linux packages are also unsigned. The release includes `SHA256SUMS` for checking downloaded files.
 
-If an existing Windows release fails to start with a missing `VCRUNTIME140.dll` or error `0xc0000135`, install Microsoft's [x64 Visual C++ Redistributable](https://aka.ms/vc14/vc_redist.x64.exe), then reopen Gupi. MSI packages built from the current source include the runtime for both direct and WinGet installation; this does not change previously published installers.
+Windows MSI packages from 0.1.6 include the Visual C++ runtime for both direct and WinGet installation. If an older release fails to start with a missing `VCRUNTIME140.dll` or error `0xc0000135`, upgrade to 0.1.6 or install Microsoft's [x64 Visual C++ Redistributable](https://aka.ms/vc14/vc_redist.x64.exe), then reopen Gupi. Previously published installers have not been replaced.
 
 <details>
 <summary>Build from source or create local packages</summary>
@@ -325,7 +325,7 @@ Choose **Gupi → Check for updates…**, or open **Settings → About → Updat
 
 On macOS, choose **Download and install…** when a new version is available, then follow the update window. Use **Show update progress…** to bring that window back. Before installation, Gupi saves drafts, closes Pi connections, and restarts into the new version. Downloads begin only when you choose. Skipping a version stops automatic reminders for that version; you can still check and install it manually.
 
-Windows 0.1.0/0.1.1 installations may detect an update but show only **Release notes and downloads**, without the install button. Manually download and run the new MSI in your installed language to receive the installation-recognition fix introduced in 0.1.2. The complete Windows native upgrade path still requires device verification.
+Windows in-app installation is currently unavailable. Quit Gupi, download the latest MSI in your installed language from the release page, and run it to upgrade manually. Version checks and release/download links remain available. WinGet distribution is still pending community inclusion.
 
 While settings are being saved, **Download and install…** is disabled. Settings changes are disabled while the update window is open and become available again when it closes and any pending save finishes.
 
@@ -342,7 +342,7 @@ If the install button is unavailable, use the release page or your original pack
 | Build fails on macOS | Verify that full Xcode is selected and `xcrun metal --version` succeeds. |
 | Notifications do not appear on macOS | Use an application bundle and enable notifications in macOS settings; Focus can also suppress delivery. |
 
-**Check Pi** verifies the executable version, not your model account; Pi manages accounts, credentials, and model requests. Advanced Pi fields, complete message queues and arbitrary TUI extension interfaces do not yet have corresponding graphical controls.
+**Check Pi** verifies the executable version, not your model account; Pi manages accounts, credentials, and model requests. Gupi does not reproduce every terminal extension interface.
 
 ### Data and diagnostics
 

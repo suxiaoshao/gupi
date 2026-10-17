@@ -1,5 +1,9 @@
 # Third-party notices
 
+## Microsoft Visual C++ runtime (Windows packages)
+
+Windows binaries statically link Microsoft Visual C++ runtime components. These Microsoft components are distributed under their applicable Microsoft license terms, not Gupi's MIT license. See [Redistributing Visual C++ files](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files) for the redistribution documentation.
+
 ## Pi logo and derived visual assets
 
 Gupi's application icons, tray icon, and `assets/brand/` logos are derived from the official Pi logo. Upstream attribution: **Earendil Inc. and contributors**. Gupi is an independent project and is not endorsed by Pi or Earendil.

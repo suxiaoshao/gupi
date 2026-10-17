@@ -3,9 +3,9 @@ use super::*;
 use serde_json::json;
 use std::fs;
 
-const ENABLED: Leaf = &["compaction", "enabled"];
-const RESERVE: Leaf = &["compaction", "reserveTokens"];
-const STEERING: Leaf = &["steeringMode"];
+const ENABLED: &[&str] = &["compaction", "enabled"];
+const RESERVE: &[&str] = &["compaction", "reserveTokens"];
+const STEERING: &[&str] = &["steeringMode"];
 
 fn file(dir: &tempfile::TempDir, contents: &str) -> PathBuf {
     let path = dir.path().join("settings.json");
@@ -103,16 +103,31 @@ fn same_leaf_external_changes_conflict_without_writing() {
             Change::new(STEERING, Some(json!("all")), Some(json!("one-at-a-time"))),
         ],
     );
-    assert_eq!(changed, Err(Error::Conflict(vec![ENABLED])));
+    assert_eq!(
+        changed,
+        Err(Error::Conflict(vec![
+            ENABLED.iter().map(|s| (*s).to_owned()).collect()
+        ]))
+    );
     // Deleted since read.
     let deleted = commit(
         &path,
         &[Change::new(RESERVE, Some(json!(1)), Some(json!(2)))],
     );
-    assert_eq!(deleted, Err(Error::Conflict(vec![RESERVE])));
+    assert_eq!(
+        deleted,
+        Err(Error::Conflict(vec![
+            RESERVE.iter().map(|s| (*s).to_owned()).collect()
+        ]))
+    );
     // Appeared since read.
     let appeared = commit(&path, &[Change::new(STEERING, None, None)]);
-    assert_eq!(appeared, Err(Error::Conflict(vec![STEERING])));
+    assert_eq!(
+        appeared,
+        Err(Error::Conflict(vec![
+            STEERING.iter().map(|s| (*s).to_owned()).collect()
+        ]))
+    );
     assert_eq!(text(&path), before);
 }
 
@@ -326,4 +341,45 @@ fn project_scope_rejects_invalid_folders_without_creating_them() {
             .is_err()
     );
     assert!(!project.exists());
+}
+
+#[test]
+fn runtime_model_keys_keep_siblings_and_conflict_per_token() {
+    let dir = tempfile::tempdir().unwrap();
+    let key = format!("{}/{}", "provider", "model.with/slashes");
+    let leaf = vec![
+        "compaction".to_owned(),
+        "modelOverrides".into(),
+        key.clone(),
+        "reserveTokens".into(),
+    ];
+    let path = file(&dir, &json!({"compaction":{"modelOverrides":{&key:{"reserveTokens":100,"keepRecentTokens":200,"custom":true}}},"unknown":7}).to_string());
+    let baseline = load(&path).unwrap();
+    assert_eq!(baseline.get(&leaf), Some(&json!(100)));
+    update(&path, |root| {
+        root["compaction"]["modelOverrides"][&key]["keepRecentTokens"] = json!(250);
+        Ok(())
+    })
+    .unwrap();
+    let saved = commit(
+        &path,
+        &[Change::new(&leaf, Some(json!(100)), Some(json!(300)))],
+    )
+    .unwrap();
+    assert_eq!(saved.get(&leaf), Some(&json!(300)));
+    assert_eq!(
+        saved.root()["compaction"]["modelOverrides"][&key],
+        json!({"reserveTokens":300,"keepRecentTokens":250,"custom":true})
+    );
+    assert_eq!(saved.root()["unknown"], json!(7));
+    assert_eq!(
+        commit(&path, &[Change::new(&leaf, Some(json!(100)), None)]),
+        Err(Error::Conflict(vec![leaf.clone()]))
+    );
+    let removed = commit(&path, &[Change::new(&leaf, Some(json!(300)), None)]).unwrap();
+    assert!(removed.get(&leaf).is_none());
+    assert_eq!(
+        removed.root()["compaction"]["modelOverrides"][&key]["custom"],
+        json!(true)
+    );
 }

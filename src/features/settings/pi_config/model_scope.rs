@@ -5,8 +5,10 @@ use forms::{ModelScope, ModelScopeSlot, Pattern};
 use gpui_form::{ControlBinding, ControlProjection, DynamicItemsPath, ItemPath, PathKey};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::select::Select;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, h_flex, v_flex};
+use gpui_kit::prelude::FluentBuilder as _;
 use gupi_settings::assets::IconName;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -334,39 +336,51 @@ impl PiConfig {
         };
         let saving = self.is_saving();
         let count = rows.len();
-        let mut source = t(
-            cx,
-            match resolved.source {
-                Source::Default => "pi-source-default",
-                Source::Global => "pi-source-global",
-                Source::Project => "pi-source-project",
-            },
-        );
-        if pending {
-            source = format!("{source} · {}", t(cx, "pi-unsaved"));
-        }
+        let header = h_flex()
+            .gap_2()
+            .w_full()
+            .child(div().flex_1().min_w_0().child(self.field_label(field, cx)))
+            .child(
+                div().w_40().h_6().flex_shrink_0().child(
+                    Select::new(&self.scope_picker)
+                        .small()
+                        .w_full()
+                        .placeholder(t(cx, "pi-model-scope-add-model"))
+                        .search_placeholder(t(cx, "conversation-model-search"))
+                        .accessibility_label(t(cx, "pi-model-scope-add-model"))
+                        .disabled(saving || !matches!(self.models, Models::Ready(_))),
+                ),
+            )
+            .child(
+                Button::new("model-scope-add-pattern")
+                    .small()
+                    .ghost()
+                    .label(t(cx, "pi-model-scope-add-pattern"))
+                    .disabled(saving)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.append_pattern(String::new(), window, cx)
+                    })),
+            )
+            .child(self.render_field_menu(field, pending, saving, cx));
         let mut list = v_flex()
             .w_full()
+            .max_w(rems(56.))
             .min_w_0()
             .gap_2()
-            .child(
-                h_flex()
-                    .gap_2()
-                    .child(div().flex_1().child(t(cx, "pi-model-scope")))
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(source),
-                    )
-                    .child(self.render_field_menu(field, pending, saving, cx)),
-            )
+            .mb_4()
+            .child(header)
             .child(
                 div()
                     .text_sm()
                     .text_color(cx.theme().muted_foreground)
                     .child(t(cx, "pi-model-scope-help")),
             );
+        let mut table = v_flex()
+            .w_full()
+            .border_1()
+            .border_color(cx.theme().border)
+            .rounded_md()
+            .bg(cx.theme().group_box);
         let keys = self.row_keys(cx);
         self.rows.retain(|key, _| keys.contains(key));
         for (index, (row, text)) in keys.into_iter().zip(&rows).enumerate() {
@@ -374,9 +388,13 @@ impl PiConfig {
             let up = row.clone();
             let down = row.clone();
             let delete = row.clone();
-            list = list.child(
+            table = table.child(
                 h_flex()
                     .id(row.element_id())
+                    .p_2()
+                    .when(index > 0, |this| {
+                        this.border_t_1().border_color(cx.theme().border)
+                    })
                     .gap_1()
                     .min_w_0()
                     .child(
@@ -386,46 +404,60 @@ impl PiConfig {
                             .child(Input::new(&input).small().disabled(saving)),
                     )
                     .child(
-                        Button::new("model-scope-up")
+                        Button::new("model-scope-actions")
                             .small()
                             .ghost()
-                            .icon(IconName::ChevronUp)
-                            .accessibility_label(t(cx, "pi-model-scope-up"))
-                            .tooltip(t(cx, "pi-model-scope-up"))
-                            .disabled(saving || index == 0)
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.move_pattern(&up, false, window, cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("model-scope-down")
-                            .small()
-                            .ghost()
-                            .icon(IconName::ChevronDown)
-                            .accessibility_label(t(cx, "pi-model-scope-down"))
-                            .tooltip(t(cx, "pi-model-scope-down"))
-                            .disabled(saving || index + 1 == count)
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.move_pattern(&down, true, window, cx);
-                            })),
-                    )
-                    .child(
-                        Button::new("model-scope-delete")
-                            .small()
-                            .ghost()
-                            .icon(IconName::Trash)
-                            .accessibility_label(t(cx, "pi-model-scope-delete"))
-                            .tooltip(t(cx, "pi-model-scope-delete"))
+                            .w_6()
+                            .flex_shrink_0()
+                            .icon(IconName::Ellipsis)
+                            .accessibility_label(t(cx, "pi-field-actions"))
                             .disabled(saving)
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.remove_pattern(&delete, window, cx);
-                            })),
+                            .dropdown_menu({
+                                let entity = cx.entity();
+                                move |mut menu, _, cx| {
+                                    if index > 0 {
+                                        let (entity, up) = (entity.clone(), up.clone());
+                                        menu = menu.item(
+                                            PopupMenuItem::new(t(cx, "pi-model-scope-up"))
+                                                .icon(IconName::ChevronUp)
+                                                .on_click(move |_, window, cx| {
+                                                    entity.update(cx, |this, cx| {
+                                                        this.move_pattern(&up, false, window, cx)
+                                                    })
+                                                }),
+                                        );
+                                    }
+                                    if index + 1 < count {
+                                        let (entity, down) = (entity.clone(), down.clone());
+                                        menu = menu.item(
+                                            PopupMenuItem::new(t(cx, "pi-model-scope-down"))
+                                                .icon(IconName::ChevronDown)
+                                                .on_click(move |_, window, cx| {
+                                                    entity.update(cx, |this, cx| {
+                                                        this.move_pattern(&down, true, window, cx)
+                                                    })
+                                                }),
+                                        );
+                                    }
+                                    let (entity, delete) = (entity.clone(), delete.clone());
+                                    menu.separator().item(
+                                        PopupMenuItem::new(t(cx, "pi-model-scope-delete"))
+                                            .icon(IconName::Trash)
+                                            .on_click(move |_, window, cx| {
+                                                entity.update(cx, |this, cx| {
+                                                    this.remove_pattern(&delete, window, cx)
+                                                })
+                                            }),
+                                    )
+                                }
+                            }),
                     ),
             );
         }
         if rows.is_empty() {
-            list = list.child(
+            table = table.child(
                 div()
+                    .p_2()
                     .text_sm()
                     .text_color(cx.theme().muted_foreground)
                     .child(t(
@@ -438,29 +470,7 @@ impl PiConfig {
                     )),
             );
         }
-        list = list.child(
-            h_flex()
-                .gap_2()
-                .flex_wrap()
-                .child(
-                    Select::new(&self.scope_picker)
-                        .small()
-                        .w_64()
-                        .placeholder(t(cx, "pi-model-scope-add-model"))
-                        .search_placeholder(t(cx, "conversation-model-search"))
-                        .accessibility_label(t(cx, "pi-model-scope-add-model"))
-                        .disabled(saving || !matches!(self.models, Models::Ready(_))),
-                )
-                .child(
-                    Button::new("model-scope-add-pattern")
-                        .small()
-                        .label(t(cx, "pi-model-scope-add-pattern"))
-                        .disabled(saving)
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.append_pattern(String::new(), window, cx)
-                        })),
-                ),
-        );
+        list = list.child(table);
         if self.invalid(field, cx) || self.conflicts.contains(&field) {
             list = list.child(div().text_sm().text_color(cx.theme().danger).child(t(
                 cx,

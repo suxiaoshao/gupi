@@ -6,6 +6,7 @@ use super::Support;
 use super::Trust;
 use super::fields;
 use super::forms::Slot;
+use super::model_scope;
 use super::supports;
 use gpui_kit::AppContext as _;
 use gpui_kit::Context;
@@ -89,7 +90,7 @@ fn setup<'a>(
         });
         let entity = cx.new(|cx| {
             let mut this = PiConfig::new(probe, window, cx);
-            this.set_agent_for_test(agent);
+            this.set_agent_for_test(agent, cx);
             this.activate(cx);
             this
         });
@@ -331,7 +332,7 @@ impl Render for PageHost {
 }
 
 #[gpui_kit::test]
-fn both_pages_render_fields_in_each_scope(cx: &mut TestAppContext) {
+fn all_three_pages_render_fields_in_each_scope(cx: &mut TestAppContext) {
     let agent = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
     fs::write(
@@ -358,7 +359,7 @@ fn both_pages_render_fields_in_each_scope(cx: &mut TestAppContext) {
             this.models = super::Models::Failed("offline".into());
         });
         window.run_until_parked();
-        for page in [Page::Conversation, Page::Network] {
+        for page in [Page::Conversation, Page::Network, Page::Tools] {
             host.update(window, |host, cx| {
                 host.1 = page;
                 cx.notify();
@@ -892,4 +893,493 @@ fn reloading_an_unchanged_conversation_keeps_local_input_entities(cx: &mut TestA
         assert_eq!(this.rows[&key].input, input);
         assert!(!this.has_unsaved(cx));
     });
+}
+
+#[gpui_kit::test]
+fn tools_save_preserves_invalid_conversation_and_network_drafts(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let path = agent.path().join("settings.json");
+    fs::write(
+        &path,
+        r#"{"httpIdleTimeoutMs":"DISABLED","unknown":{"keep":true}}"#,
+    )
+    .unwrap();
+    let (config, window) = setup(cx, agent.path());
+    config.update(window, |this, cx| {
+        this.set_values(Field::ReserveTokens, vec![Slot::Invalid("-".into())], cx);
+        this.set_values(Field::MaxRetries, vec![Slot::Invalid("bad".into())], cx);
+        this.set_values(
+            Field::ShellPrefix,
+            vec![Slot::Set(json!(" export TEST=1; "))],
+            cx,
+        );
+    });
+    save(&config, Page::Tools, window);
+    let disk = read(&path);
+    assert_eq!(disk["shellCommandPrefix"], " export TEST=1; ");
+    assert_eq!(disk["httpIdleTimeoutMs"], "DISABLED");
+    assert_eq!(disk["unknown"]["keep"], true);
+    config.read_with(window, |this, cx| {
+        assert!(this.invalid(Field::ReserveTokens, cx));
+        assert!(this.invalid(Field::MaxRetries, cx));
+        assert!(!this.has_page_drafts(Page::Tools, cx));
+        assert!(this.needs_leave_guard(cx));
+    });
+}
+
+#[gpui_kit::test]
+fn tool_last_row_and_argv_use_distinct_empty_rules(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let path = agent.path().join("settings.json");
+    fs::write(
+        &path,
+        r#"{"defaultTools":["read"],"npmCommand":["npm",""," run "]}"#,
+    )
+    .unwrap();
+    let (config, window) = setup(cx, agent.path());
+    window.update(|window, cx| {
+        config.update(cx, |this, cx| {
+            let path = this
+                .list_paths(Field::DefaultTools, cx)
+                .unwrap()
+                .try_items(&this.tools, cx)
+                .unwrap()
+                .remove(0);
+            this.change_list(
+                Field::DefaultTools,
+                &model_scope::RowKey::Local(path.key()),
+                0,
+                window,
+                cx,
+            );
+        })
+    });
+    save(&config, Page::Tools, window);
+    assert_eq!(read(&path)["defaultTools"], json!([]));
+    assert_eq!(read(&path)["npmCommand"], json!(["npm", "", " run "]));
+    config.update(window, |this, cx| {
+        this.set_values(Field::DefaultTools, vec![Slot::Unset], cx)
+    });
+    save(&config, Page::Tools, window);
+    assert!(read(&path).get("defaultTools").is_none());
+    window.update(|window, cx| {
+        config.update(cx, |this, cx| {
+            this.set_values(Field::NpmCommand, vec![Slot::Set(json!(["npm"]))], cx);
+            let input = this.input(Field::NpmCommand, window, cx);
+            input.update(cx, |input, cx| {
+                input.set_value("", window, cx);
+                cx.emit(gpui_kit::component::input::InputEvent::Change);
+            });
+        })
+    });
+    window.run_until_parked();
+    save(&config, Page::Tools, window);
+    assert!(read(&path).get("npmCommand").is_none());
+}
+
+#[gpui_kit::test]
+fn model_tokens_inherit_per_leaf_and_report_exact_conflicts(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    fs::write(
+        agent.path().join("settings.json"),
+        r#"{"compaction":{"modelOverrides":{"p/m":{"reserveTokens":100,"keepRecentTokens":200}}}}"#,
+    )
+    .unwrap();
+    fs::create_dir(project.path().join(".pi")).unwrap();
+    let path = project.path().join(".pi/settings.json");
+    fs::write(&path,r#"{"compaction":{"modelOverrides":{"p/m":{"reserveTokens":300,"custom":true}}},"unknown":7}"#).unwrap();
+    let (config, window) = setup(cx, agent.path());
+    config.update(window, |this, cx| {
+        this.set_scope(Scope::Project(project.path().to_owned()), cx)
+    });
+    window.run_until_parked();
+    config.read_with(window, |this, cx| {
+        assert_eq!(
+            this.token_value("p/m", false, cx),
+            ("300".into(), fields::Source::Project)
+        );
+        assert_eq!(
+            this.token_value("p/m", true, cx),
+            ("200".into(), fields::Source::Global)
+        );
+    });
+    config.update(window, |this, cx| {
+        this.set_token("p/m", false, Slot::Set(400), cx)
+    });
+    save(&config, Page::Conversation, window);
+    assert_eq!(
+        read(&path)["compaction"]["modelOverrides"]["p/m"],
+        json!({"reserveTokens":400,"custom":true})
+    );
+    config.update(window, |this, cx| {
+        this.set_token("p/m", false, Slot::Set(500), cx)
+    });
+    fs::write(&path,r#"{"compaction":{"modelOverrides":{"p/m":{"reserveTokens":450,"custom":true}}},"unknown":7}"#).unwrap();
+    save(&config, Page::Conversation, window);
+    config.read_with(window, |this, cx| {
+        assert!(this.conflict_leaves.contains(&vec![
+            "compaction".into(),
+            "modelOverrides".into(),
+            "p/m".into(),
+            "reserveTokens".into()
+        ]));
+        assert!(this.conflicts.contains(&Field::ModelOverrides));
+        assert_eq!(this.token_value("p/m", false, cx).0, "500");
+    });
+    config.update(window, |this, cx| this.reload(cx));
+    window.run_until_parked();
+    config.update(window, |this, cx| {
+        this.remove_map_row(Field::ModelOverrides, "p/m", cx)
+    });
+    save(&config, Page::Conversation, window);
+    config.read_with(window, |this, cx| {
+        assert_eq!(
+            this.token_value("p/m", false, cx),
+            ("100".into(), fields::Source::Global)
+        )
+    });
+    assert_eq!(
+        read(&path)["compaction"]["modelOverrides"]["p/m"],
+        json!({"custom":true})
+    );
+    assert_eq!(read(&path)["unknown"], 7);
+}
+
+#[gpui_kit::test]
+fn inherited_model_input_keeps_invalid_text_across_other_page_save(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    fs::write(
+        agent.path().join("settings.json"),
+        r#"{"compaction":{"modelOverrides":{"p/m":{"reserveTokens":100,"keepRecentTokens":200}}}}"#,
+    )
+    .unwrap();
+    let (config, window) = setup(cx, agent.path());
+    config.update(window, |this, cx| {
+        this.set_scope(Scope::Project(project.path().to_owned()), cx)
+    });
+    window.run_until_parked();
+    let input = window.update(|window, cx| {
+        config.update(cx, |this, cx| this.token_input("p/m", false, window, cx))
+    });
+    window.update(|window, cx| {
+        input.update(cx, |input, cx| {
+            input.set_value("-", window, cx);
+            cx.emit(gpui_kit::component::input::InputEvent::Change);
+        })
+    });
+    window.run_until_parked();
+    config.read_with(window, |this, cx| {
+        assert!(this.invalid(Field::ModelOverrides, cx))
+    });
+    config.update(window, |this, cx| {
+        this.set_values(Field::Telemetry, vec![Slot::Set(json!(false))], cx)
+    });
+    save(&config, Page::Tools, window);
+    config.read_with(window, |this, cx| {
+        assert_eq!(this.token_slot("p/m", false, cx), Slot::Invalid("-".into()));
+        assert_eq!(this.token_value("p/m", true, cx).0, "200");
+    });
+    assert_eq!(
+        input.read_with(window, |input, _| input.value().to_string()),
+        "-"
+    );
+}
+
+#[gpui_kit::test]
+fn model_map_picker_rejects_duplicate_keys_and_keeps_unavailable_records(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let path = agent.path().join("settings.json");
+    fs::write(
+        &path,
+        r#"{"modelThinkingLevels":{"missing/model":false},"unknown":true}"#,
+    )
+    .unwrap();
+    let (config, window) = setup(cx, agent.path());
+    for field in [Field::ModelThinking, Field::ModelOverrides] {
+        let picker = config.read_with(window, |this, _| this.map_pickers[&field].clone());
+        for _ in 0..2 {
+            picker.update(window, |_, cx| {
+                cx.emit(gpui_kit::component::select::SelectEvent::<
+                    gpui_kit::component::searchable_list::SearchableVec<super::ModelItem>,
+                >::Confirm(Some(("p".into(), "new".into()))))
+            });
+            window.run_until_parked();
+        }
+        config.read_with(window, |this, cx| {
+            let raw = this.snapshot(cx).value(field)[0].raw().unwrap();
+            let map = raw.as_object().unwrap();
+            assert_eq!(map.keys().filter(|key| key.as_str() == "p/new").count(), 1);
+        });
+        config.update(window, |this, cx| this.remove_map_row(field, "p/new", cx));
+    }
+    config.update(window, |this, cx| {
+        this.set_values(Field::CacheWarming, vec![Slot::Set(json!("off"))], cx)
+    });
+    save(&config, Page::Conversation, window);
+    assert_eq!(read(&path)["modelThinkingLevels"]["missing/model"], false);
+    assert!(read(&path).get("compaction").is_none());
+    assert_eq!(read(&path)["unknown"], true);
+}
+
+#[gpui_kit::test]
+fn saving_model_maps_keeps_disk_order_and_clears_dirty(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let path = agent.path().join("settings.json");
+    fs::write(&path, r#"{"modelThinkingLevels":{"z/model":"high","a/model":"low"},"compaction":{"modelOverrides":{"z/model":{"reserveTokens":100},"a/model":{"keepRecentTokens":200}}}}"#).unwrap();
+    let (config, window) = setup(cx, agent.path());
+    config.update(window, |this, cx| {
+        this.set_values(Field::ModelThinking, vec![Slot::Set(json!({"z/model":"medium","a/model":"low","b/model":"off"}))], cx);
+        this.set_values(Field::ModelOverrides, vec![Slot::Set(json!({"z/model":{"reserveTokens":300},"a/model":{"keepRecentTokens":200},"b/model":{"reserveTokens":50}}))], cx);
+    });
+    save(&config, Page::Conversation, window);
+    config.read_with(window, |this, cx| {
+        assert!(!this.has_unsaved(cx));
+        assert!(!this.needs_leave_guard(cx));
+        assert!(this.snapshot(cx) == this.baseline);
+    });
+    assert_eq!(read(&path)["modelThinkingLevels"]["b/model"], "off");
+}
+
+#[gpui_kit::test]
+fn compact_tools_append_remove_and_npm_invalid_input(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let path = agent.path().join("settings.json");
+    fs::write(
+        &path,
+        r#"{"defaultTools":["read","bash"],"npmCommand":["npm",""," run "]}"#,
+    )
+    .unwrap();
+    let (config, visual) = setup(cx, agent.path());
+    visual.update(|window, cx| {
+        config.update(cx, |this, cx| {
+            this.append_list(Field::DefaultTools, "+custom".into(), window, cx);
+            let paths = this
+                .list_paths(Field::DefaultTools, cx)
+                .unwrap()
+                .try_items(&this.tools, cx)
+                .unwrap();
+            this.change_list(
+                Field::DefaultTools,
+                &model_scope::RowKey::Local(paths[1].key()),
+                0,
+                window,
+                cx,
+            );
+            let input = this.input(Field::NpmCommand, window, cx);
+            input.update(cx, |input, cx| {
+                input.set_value("npm 'unfinished", window, cx);
+                cx.emit(gpui_kit::component::input::InputEvent::Change);
+            });
+        })
+    });
+    visual.run_until_parked();
+    config.read_with(visual, |this, cx| {
+        assert_eq!(
+            this.snapshot(cx).value(Field::DefaultTools),
+            vec![Slot::Set(json!(["read", "+custom"]))]
+        );
+        assert!(this.invalid(Field::NpmCommand, cx));
+        assert!(this.has_page_drafts(Page::Tools, cx));
+    });
+    let input = visual.update(|window, cx| {
+        config.update(cx, |this, cx| this.input(Field::NpmCommand, window, cx))
+    });
+    visual.update(|window, cx| {
+        input.update(cx, |input, cx| {
+            input.set_value("npm '' ' run '", window, cx);
+            cx.emit(gpui_kit::component::input::InputEvent::Change);
+        })
+    });
+    visual.run_until_parked();
+    save(&config, Page::Tools, visual);
+    assert_eq!(read(&path)["npmCommand"], json!(["npm", "", " run "]));
+    assert_eq!(read(&path)["defaultTools"], json!(["read", "+custom"]));
+}
+
+#[gpui_kit::test]
+fn grouped_budget_inputs_reconcile_independently(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let path = agent.path().join("settings.json");
+    fs::write(
+        &path,
+        r#"{"thinkingBudgets":{"minimal":1,"low":2,"medium":3,"high":4}}"#,
+    )
+    .unwrap();
+    let (config, visual) = setup(cx, agent.path());
+    visual.update(|window, cx| {
+        config.update(cx, |this, cx| {
+            for (field, text) in [(Field::BudgetMinimal, "10"), (Field::BudgetHigh, "40")] {
+                let input = this.input(field, window, cx);
+                input.update(cx, |input, cx| {
+                    input.set_value(text, window, cx);
+                    cx.emit(gpui_kit::component::input::InputEvent::Change);
+                });
+            }
+            this.set_values(Field::Transport, vec![Slot::Set(json!("sse"))], cx);
+        })
+    });
+    visual.run_until_parked();
+    fs::write(
+        &path,
+        r#"{"thinkingBudgets":{"minimal":1,"low":25,"medium":3,"high":4}}"#,
+    )
+    .unwrap();
+    save(&config, Page::Network, visual);
+    config.read_with(visual, |this, cx| {
+        assert_eq!(
+            this.snapshot(cx).value(Field::BudgetMinimal),
+            vec![Slot::Set(json!(10))]
+        );
+        assert_eq!(
+            this.snapshot(cx).value(Field::BudgetLow),
+            vec![Slot::Set(json!(25))]
+        );
+        assert_eq!(
+            this.snapshot(cx).value(Field::BudgetHigh),
+            vec![Slot::Set(json!(40))]
+        );
+    });
+    save(&config, Page::Conversation, visual);
+    assert_eq!(
+        read(&path)["thinkingBudgets"],
+        json!({"minimal":10,"low":25,"medium":3,"high":40})
+    );
+}
+
+#[gpui_kit::test]
+fn resource_arrays_are_raw_ordered_and_scope_local(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    fs::write(agent.path().join("settings.json"), json!({"extensions":["global"],"skills":["global"],"prompts":["global"],"themes":["global"]}).to_string()).unwrap();
+    let (config, visual) = setup(cx, agent.path());
+    config.update(visual, |this, cx| {
+        this.set_scope(Scope::Project(project.path().to_owned()), cx)
+    });
+    visual.run_until_parked();
+    config.update(visual, |this, cx| {
+        for field in Field::RESOURCE_PATHS {
+            assert_eq!(this.snapshot(cx).value(field), vec![Slot::Unset]);
+            assert_eq!(this.resolved(field, cx).values, vec![None]);
+            for text in ["", "same", "same", "!*.ts", "+a", "-a", "-builtin:mcp"] {
+                this.append_resource_path(field, text.into(), cx);
+            }
+        }
+    });
+    save(&config, Page::Tools, visual);
+    let file = project.path().join(".pi/settings.json");
+    let saved = read(&file);
+    for key in ["extensions", "skills", "prompts", "themes"] {
+        assert_eq!(
+            saved[key],
+            json!(["", "same", "same", "!*.ts", "+a", "-a", "-builtin:mcp"])
+        );
+    }
+    config.update(visual, |this, cx| {
+        for field in Field::RESOURCE_PATHS {
+            this.set_values(field, vec![Slot::Set(json!([]))], cx);
+        }
+    });
+    save(&config, Page::Tools, visual);
+    for key in ["extensions", "skills", "prompts", "themes"] {
+        assert_eq!(read(&file)[key], json!([]));
+    }
+    config.update(visual, |this, cx| {
+        for field in Field::RESOURCE_PATHS {
+            this.set_values(field, vec![Slot::Unset], cx);
+        }
+    });
+    save(&config, Page::Tools, visual);
+    assert_eq!(read(&file), json!({}));
+    assert_eq!(
+        read(&agent.path().join("settings.json"))["extensions"],
+        json!(["global"])
+    );
+}
+
+#[gpui_kit::test]
+fn switch_reread_preserves_dirty_array_conflict_but_updates_clean_arrays(cx: &mut TestAppContext) {
+    for project_scope in [false, true] {
+        let agent = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let root = if project_scope {
+            project.path().join(".pi")
+        } else {
+            agent.path().to_owned()
+        };
+        fs::create_dir_all(root.join("prompts")).unwrap();
+        fs::write(root.join("prompts/a.md"), "a").unwrap();
+        fs::create_dir_all(root.join("extensions")).unwrap();
+        fs::write(root.join("extensions/a.ts"), "export default () => {};").unwrap();
+        fs::write(
+            root.join("settings.json"),
+            json!({"extensions":["old"],"unknown":true}).to_string(),
+        )
+        .unwrap();
+        let (config, visual) = setup(cx, agent.path());
+        if project_scope {
+            config.update(visual, |this, cx| {
+                this.set_scope(Scope::Project(project.path().to_owned()), cx)
+            });
+            visual.run_until_parked();
+        }
+        config.update(visual, |this, cx| {
+            this.append_resource_path(Field::Prompts, "draft".into(), cx)
+        });
+        // Real switch write, then the refresh used by ResourcesView.
+        let resource = gupi_resources::pi_resources::Resource::new(
+            gupi_resources::pi_resources::Kind::Prompt,
+            root.join("prompts/a.md"),
+            root.clone(),
+            "a".into(),
+        );
+        let extension = gupi_resources::pi_resources::Resource::new(
+            gupi_resources::pi_resources::Kind::Extension,
+            root.join("extensions/a.ts"),
+            root.clone(),
+            "a".into(),
+        );
+        for resource in [resource, extension] {
+            if project_scope {
+                gupi_resources::pi_resources::set_project_enabled(project.path(), &resource, false)
+                    .unwrap();
+            } else {
+                gupi_resources::pi_resources::set_enabled(&root, &resource, false).unwrap();
+            }
+        }
+        config.update(visual, |this, cx| this.refresh_resource_paths(cx));
+        visual.run_until_parked();
+        config.read_with(visual, |this, cx| {
+            assert_eq!(
+                this.snapshot(cx).value(Field::Extensions),
+                vec![Slot::Set(json!(["old", "-extensions/a.ts"]))]
+            );
+            assert_eq!(this.baseline.value(Field::Prompts), vec![Slot::Unset]);
+        });
+        // An unrelated page save must not adopt the new resource base either.
+        config.update(visual, |this, cx| {
+            this.set_values(Field::MaxRetries, vec![Slot::Set(json!(4))], cx)
+        });
+        save(&config, Page::Network, visual);
+        save(&config, Page::Tools, visual);
+        config.read_with(visual, |this, _| {
+            assert!(this.conflicts.contains(&Field::Prompts))
+        });
+        assert_eq!(
+            read(&root.join("settings.json"))["prompts"],
+            json!(["-prompts/a.md"])
+        );
+        assert_eq!(read(&root.join("settings.json"))["unknown"], true);
+    }
+}
+
+impl PiConfig {
+    pub(in crate::features::settings) fn append_prompt_path_for_test(
+        &mut self,
+        text: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.append_resource_path(Field::Prompts, text, cx);
+    }
 }

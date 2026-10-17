@@ -396,8 +396,8 @@ mod tests {
             (view.resources.clone(), view.pi_config.clone())
         });
         cx.update(|window, cx| {
-            config.update(cx, |config, _| {
-                config.set_agent_for_test(agent.path().to_owned())
+            config.update(cx, |config, cx| {
+                config.set_agent_for_test(agent.path().to_owned(), cx)
             });
             resources.update(cx, |view, cx| {
                 let scope = Scope::Project(project.path().to_owned());

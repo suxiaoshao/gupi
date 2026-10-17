@@ -18,7 +18,11 @@ use gupi_conversation::history::DisplayMessage;
 
 mod actions;
 mod activity;
+pub(super) mod changes;
+mod composition;
 mod details;
+mod diff;
+pub(super) mod edited_files;
 mod images;
 pub(super) mod markdown;
 pub(super) mod metadata;
@@ -26,6 +30,7 @@ mod plugin;
 mod presentation;
 mod resources;
 mod tool_details;
+pub(super) mod tools;
 mod viewport;
 pub(super) use actions::copy_button;
 use activity::Activity;
@@ -34,6 +39,9 @@ use activity::RunContent;
 use activity::RunSection;
 use activity::ToolStatus;
 use presentation::Disclosure;
+
+// The list and reading-anchor geometry share the same viewport inset.
+const MESSAGE_INSET_REM: f32 = 0.5;
 
 #[derive(Clone, PartialEq)]
 pub(super) struct ChatRow {
@@ -156,8 +164,15 @@ impl ChatRow {
         }
     }
 
-    pub(super) fn reveal(&self, entry: &str, open: &mut HashMap<String, bool>) {
-        if !self.entries.iter().any(|id| id == entry) {
+    pub(super) fn reveal(
+        &self,
+        entry: &str,
+        tools: &tools::ToolIndex,
+        open: &mut HashMap<String, bool>,
+    ) {
+        if !self.entries.iter().any(|id| id == entry)
+            && tools.entry_owner(entry) != Some(self.id.as_str())
+        {
             return;
         }
         match &self.kind {
@@ -168,7 +183,7 @@ impl ChatRow {
                 {
                     return;
                 }
-                let content = RunContent::project(messages, &[], false);
+                let content = RunContent::project_indexed(messages, false, tools);
                 for section in &content.sections {
                     if let RunSection::Process(range) = section {
                         open.insert(content.process_id(&self.id, range), true);
@@ -201,6 +216,23 @@ enum RowKind {
     Compaction(DisplayMessage),
     BranchSummary(DisplayMessage),
 }
+pub(super) fn reveal_entry<'a>(
+    rows: impl IntoIterator<Item = &'a ChatRow>,
+    tools: &tools::ToolIndex,
+    entry: &str,
+    open: &mut HashMap<String, bool>,
+) -> Option<usize> {
+    let owner = tools.entry_owner(entry);
+    let (index, row) = rows.into_iter().enumerate().find(|(_, row)| {
+        owner.map_or_else(
+            || row.entries.iter().any(|id| id == entry),
+            |id| row.id == id,
+        )
+    })?;
+    row.reveal(entry, tools, open);
+    Some(index)
+}
+
 pub(super) fn project(session: &Session, preview: Option<&str>) -> Vec<ChatRow> {
     #[cfg(feature = "performance")]
     let _span = tracing::debug_span!(target: "gupi::performance", "messages.project", preview = preview.is_some()).entered();
@@ -448,41 +480,71 @@ impl HomeView {
                     ),
             );
         } else {
+            let viewport = view.changes.viewport.clone();
+            let frame = self.message_frame.clone();
             body = body.child(
-                MessageScroller::new(
-                    format!("messages-{key}"),
-                    view.scroller.clone(),
-                    move |index, _window, cx| {
-                        let Some(row) = rows.get(index) else {
-                            return div().into_any_element();
-                        };
-                        owner
-                            .read_with(cx, |this, cx| {
-                                let content = this.render_row(&key, row, cx);
-                                #[cfg(feature = "performance")]
-                                let content =
-                                    crate::performance::measure("message_row", false, content);
-                                div()
-                                    .w_full()
-                                    .flex()
-                                    .justify_center()
-                                    .pt(row.spacing_before(
-                                        index
-                                            .checked_sub(1)
-                                            .and_then(|i| rows.get(i))
-                                            .map(Rc::as_ref),
-                                    ))
-                                    .child(div().w_full().max_w(px(820.)).child(content))
-                                    .into_any_element()
-                            })
-                            .unwrap_or_else(|_| div().into_any_element())
-                    },
-                )
-                // Gupi owns spacing between row kinds; the scroller's default
-                // bottom padding would separate compaction from its run.
-                .with_row_style(StyleRefinement::default().px_5().pb_0())
-                .with_jump_button_label(t(cx, "conversation-bottom"))
-                .size_full(),
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .min_w_0()
+                    .child(
+                        canvas(
+                            move |_, _, _| {
+                                frame.set(frame.get().saturating_add(1));
+                            },
+                            |_, _, _, _| {},
+                        )
+                        .absolute(),
+                    )
+                    .child(
+                        MessageScroller::new(
+                            format!("messages-{key}"),
+                            view.scroller.clone(),
+                            move |index, _window, cx| {
+                                let Some(row) = rows.get(index) else {
+                                    return div().into_any_element();
+                                };
+                                owner
+                                    .read_with(cx, |this, cx| {
+                                        let content = this.render_row(&key, row, owner.clone(), cx);
+                                        #[cfg(feature = "performance")]
+                                        let content = crate::performance::measure(
+                                            "message_row",
+                                            false,
+                                            content,
+                                        );
+                                        div()
+                                            .w_full()
+                                            .flex()
+                                            .justify_center()
+                                            .pt(row.spacing_before(
+                                                index
+                                                    .checked_sub(1)
+                                                    .and_then(|i| rows.get(i))
+                                                    .map(Rc::as_ref),
+                                            ))
+                                            .child(div().w_full().max_w(px(820.)).child(content))
+                                            .into_any_element()
+                                    })
+                                    .unwrap_or_else(|_| div().into_any_element())
+                            },
+                        )
+                        // Gupi owns spacing between row kinds; the scroller's default
+                        // bottom padding would separate compaction from its run.
+                        .with_row_style(StyleRefinement::default().px_5().pb_0())
+                        .with_list_style(StyleRefinement::default().py(rems(MESSAGE_INSET_REM)))
+                        .with_jump_button_label(t(cx, "conversation-bottom"))
+                        .size_full(),
+                    )
+                    .on_children_prepainted(move |bounds, window, _| {
+                        if let Some(bounds) = bounds.last() {
+                            let inset = window.rem_size() * MESSAGE_INSET_REM;
+                            viewport.set(Some(Bounds::from_corners(
+                                point(bounds.left(), bounds.top() + inset),
+                                point(bounds.right(), bounds.bottom() - inset),
+                            )));
+                        }
+                    }),
             );
         }
         body.into_any_element()
@@ -505,7 +567,13 @@ impl HomeView {
             cx.notify();
         }
     }
-    fn render_row(&self, key: &str, row: &ChatRow, cx: &App) -> AnyElement {
+    fn render_row(
+        &self,
+        key: &str,
+        row: &ChatRow,
+        owner: WeakEntity<HomeView>,
+        cx: &App,
+    ) -> AnyElement {
         #[cfg(feature = "performance")]
         let _span = tracing::debug_span!(target: "gupi::performance", "messages.render_row", active = row.active()).entered();
         match &row.kind {
@@ -664,15 +732,8 @@ impl HomeView {
                 active,
                 started_at,
             } => {
-                let live = self
-                    .state
-                    .read(cx)
-                    .sessions()
-                    .get(key)
-                    .filter(|_| *active)
-                    .map(|session| session.tools().as_slice())
-                    .unwrap_or_default();
-                let content = RunContent::project(messages, live, *active);
+                let content =
+                    RunContent::project_indexed(messages, *active, &self.views[key].tools);
                 let current = current_run_id(self.views[key].rows.iter().map(Rc::as_ref))
                     == Some(row.id.as_str());
                 let mut result = MessageGroup::new().w_full();
@@ -789,6 +850,10 @@ impl HomeView {
                         }
                     }
                 }
+                let files = self.views[key].edited_files.files(&row.id);
+                if !files.is_empty() {
+                    result = result.child(self.edited_files_card(key, &row.id, owner, cx));
+                }
                 result.into_any_element()
             }
         }
@@ -853,7 +918,15 @@ mod tests {
                 panic!("missing run")
             };
             assert!(messages.last().unwrap().completed_at.is_none());
-            let content = RunContent::project(messages, session.tools(), *active);
+            let content = RunContent::project(
+                messages,
+                &session
+                    .tools()
+                    .iter()
+                    .map(|tool| tool.as_ref().clone())
+                    .collect::<Vec<_>>(),
+                *active,
+            );
             let delta = &event["assistantMessageEvent"];
             match delta["type"].as_str() {
                 Some("thinking_delta") => {
@@ -918,7 +991,15 @@ mod tests {
                 panic!("missing run")
             };
             assert!(*active);
-            RunContent::project(messages, session.tools(), *active)
+            RunContent::project(
+                messages,
+                &session
+                    .tools()
+                    .iter()
+                    .map(|tool| tool.as_ref().clone())
+                    .collect::<Vec<_>>(),
+                *active,
+            )
         };
         assert!(
             matches!(project_run(&wire).activities.last(), Some(Activity::Text {
@@ -1084,9 +1165,17 @@ mod tests {
         );
         assert_eq!(rows.len(), 2, "plugin messages do not split a logical run");
         let mut open = HashMap::new();
-        rows[1].reveal("plugin", &mut open);
+        rows[1].reveal(
+            "plugin",
+            &super::tools::ToolIndex::project(rows.iter(), &[]),
+            &mut open,
+        );
         assert!(open.is_empty());
-        rows[1].reveal("b", &mut open);
+        rows[1].reveal(
+            "b",
+            &super::tools::ToolIndex::project(rows.iter(), &[]),
+            &mut open,
+        );
         assert_eq!(open.get("run-after-u"), Some(&true));
         assert_eq!(open.get("run-after-u-process-b"), Some(&true));
     }
@@ -1111,11 +1200,58 @@ mod tests {
             None,
         );
         let mut open = HashMap::new();
-        rows[1].reveal("c", &mut open);
+        rows[1].reveal(
+            "c",
+            &super::tools::ToolIndex::project(rows.iter(), &[]),
+            &mut open,
+        );
         assert_eq!(open.get("run-after-u-process-tool-b"), Some(&true));
         assert_eq!(open.get("group-tool-b"), Some(&true));
         assert!(!open.contains_key("group-tool-a"));
     }
+    #[test]
+    fn locating_cross_run_results_reveals_the_call_owner_and_group() {
+        for boundary in ["user", "compaction"] {
+            let mut call = message("call", "assistant");
+            call.value["content"] = serde_json::json!([{"type":"toolCall","id":"one","name":"read","arguments":{"path":"a.rs"}}]);
+            let mut result = message("result", "toolResult");
+            result.value["toolCallId"] = "one".into();
+            result.value["toolName"] = "read".into();
+            let rows = project_rows(
+                vec![
+                    message("u", "user"),
+                    call,
+                    message("boundary", boundary),
+                    result,
+                ],
+                None,
+            );
+            let tools = super::tools::ToolIndex::project(rows.iter(), &[]);
+            let owner = rows
+                .iter()
+                .position(|row| row.entries.iter().any(|id| id == "call"))
+                .unwrap();
+            let result_row = rows
+                .iter()
+                .position(|row| row.entries.iter().any(|id| id == "result"))
+                .unwrap();
+            assert_ne!(owner, result_row);
+            let mut open = HashMap::new();
+            assert_eq!(
+                super::reveal_entry(rows.iter(), &tools, "result", &mut open),
+                Some(owner)
+            );
+            assert_eq!(open.get(&rows[owner].id), Some(&true));
+            assert_eq!(open.get("group-tool-one"), Some(&true));
+            assert!(!open.contains_key(&rows[result_row].id));
+            // Non-tool history nodes still locate their chronological row.
+            assert_eq!(
+                super::reveal_entry(rows.iter(), &tools, "boundary", &mut open),
+                Some(2)
+            );
+        }
+    }
+
     #[test]
     fn steering_does_not_collapse_an_earlier_part_of_the_active_run() {
         let first = message("a", "assistant");
@@ -1178,12 +1314,20 @@ mod tests {
         );
         let mut open = HashMap::new();
         for row in &rows {
-            row.reveal("c", &mut open);
+            row.reveal(
+                "c",
+                &super::tools::ToolIndex::project(rows.iter(), &[]),
+                &mut open,
+            );
         }
         assert!(open.is_empty());
         open.clear();
         for row in &rows {
-            row.reveal("u", &mut open);
+            row.reveal(
+                "u",
+                &super::tools::ToolIndex::project(rows.iter(), &[]),
+                &mut open,
+            );
         }
         assert!(open.is_empty());
     }

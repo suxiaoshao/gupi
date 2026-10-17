@@ -2,7 +2,6 @@
 use super::forms::{Slot, Snapshot};
 use gupi_resources::pi_settings::Change;
 use gupi_resources::pi_settings::Document;
-use gupi_resources::pi_settings::Leaf;
 use serde_json::Value;
 use serde_json::json;
 
@@ -10,6 +9,7 @@ use serde_json::json;
 pub(in super::super) enum Page {
     Conversation,
     Network,
+    Tools,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -29,6 +29,31 @@ pub(super) enum Field {
     MaxRetries,
     BaseDelay,
     MaxDelay,
+    Extensions,
+    Skills,
+    Prompts,
+    Themes,
+    DefaultTools,
+    CodemodeMode,
+    CodemodeBudget,
+    ShellPath,
+    ShellPrefix,
+    NpmCommand,
+    Telemetry,
+    ProjectTrust,
+    ModelThinking,
+    ModelOverrides,
+    BudgetMinimal,
+    BudgetLow,
+    BudgetMedium,
+    BudgetHigh,
+    CacheWarming,
+    Transport,
+    HttpTimeout,
+    WebsocketTimeout,
+    ProviderTimeout,
+    ProviderRetries,
+    ProviderDelay,
 }
 
 /// How a field is edited.
@@ -41,6 +66,11 @@ pub(super) enum Kind {
     /// A non-negative integer.
     Count,
     Text,
+    List,
+    RawList,
+    Timeout,
+    ThinkingMap,
+    CompactionMap,
 }
 
 /// Pi 1.1.0 thinking levels, in order.
@@ -49,7 +79,7 @@ pub(super) const THINKING_LEVELS: &[&str] =
 pub(super) const DELIVERY: &[&str] = &["one-at-a-time", "all"];
 
 impl Field {
-    pub(super) const ALL: [Self; 15] = [
+    pub(super) const ALL: [Self; 40] = [
         Self::Model,
         Self::Thinking,
         Self::ModelScope,
@@ -65,11 +95,61 @@ impl Field {
         Self::MaxRetries,
         Self::BaseDelay,
         Self::MaxDelay,
+        Self::Extensions,
+        Self::Skills,
+        Self::Prompts,
+        Self::Themes,
+        Self::DefaultTools,
+        Self::CodemodeMode,
+        Self::CodemodeBudget,
+        Self::ShellPath,
+        Self::ShellPrefix,
+        Self::NpmCommand,
+        Self::Telemetry,
+        Self::ProjectTrust,
+        Self::ModelThinking,
+        Self::ModelOverrides,
+        Self::BudgetMinimal,
+        Self::BudgetLow,
+        Self::BudgetMedium,
+        Self::BudgetHigh,
+        Self::CacheWarming,
+        Self::Transport,
+        Self::HttpTimeout,
+        Self::WebsocketTimeout,
+        Self::ProviderTimeout,
+        Self::ProviderRetries,
+        Self::ProviderDelay,
     ];
 
     /// The JSON leaves this field writes. The model writes provider and id.
-    pub(super) fn leaves(self) -> &'static [Leaf] {
+    pub(super) fn leaves(self) -> &'static [&'static [&'static str]] {
         match self {
+            Self::Extensions => &[&["extensions"]],
+            Self::Skills => &[&["skills"]],
+            Self::Prompts => &[&["prompts"]],
+            Self::Themes => &[&["themes"]],
+            Self::DefaultTools => &[&["defaultTools"]],
+            Self::CodemodeMode => &[&["codemode", "mode"]],
+            Self::CodemodeBudget => &[&["codemode", "inlineBudget"]],
+            Self::ShellPath => &[&["shellPath"]],
+            Self::ShellPrefix => &[&["shellCommandPrefix"]],
+            Self::NpmCommand => &[&["npmCommand"]],
+            Self::Telemetry => &[&["enableInstallTelemetry"]],
+            Self::ProjectTrust => &[&["defaultProjectTrust"]],
+            Self::ModelThinking => &[&["modelThinkingLevels"]],
+            Self::ModelOverrides => &[&["compaction", "modelOverrides"]],
+            Self::BudgetMinimal => &[&["thinkingBudgets", "minimal"]],
+            Self::BudgetLow => &[&["thinkingBudgets", "low"]],
+            Self::BudgetMedium => &[&["thinkingBudgets", "medium"]],
+            Self::BudgetHigh => &[&["thinkingBudgets", "high"]],
+            Self::CacheWarming => &[&["cacheWarming"]],
+            Self::Transport => &[&["transport"]],
+            Self::HttpTimeout => &[&["httpIdleTimeoutMs"]],
+            Self::WebsocketTimeout => &[&["websocketConnectTimeoutMs"]],
+            Self::ProviderTimeout => &[&["retry", "provider", "timeoutMs"]],
+            Self::ProviderRetries => &[&["retry", "provider", "maxRetries"]],
+            Self::ProviderDelay => &[&["retry", "provider", "maxRetryDelayMs"]],
             Self::Model => &[&["defaultProvider"], &["defaultModel"]],
             Self::Thinking => &[&["defaultThinkingLevel"]],
             Self::ModelScope => &[&["enabledModels"]],
@@ -90,6 +170,28 @@ impl Field {
 
     pub(super) fn page(self) -> Page {
         match self {
+            Self::Extensions | Self::Skills | Self::Prompts | Self::Themes => Page::Tools,
+            Self::DefaultTools => Page::Tools,
+            Self::CodemodeMode => Page::Tools,
+            Self::CodemodeBudget => Page::Tools,
+            Self::ShellPath => Page::Tools,
+            Self::ShellPrefix => Page::Tools,
+            Self::NpmCommand => Page::Tools,
+            Self::Telemetry => Page::Tools,
+            Self::ProjectTrust => Page::Tools,
+            Self::ModelThinking => Page::Conversation,
+            Self::ModelOverrides => Page::Conversation,
+            Self::BudgetMinimal => Page::Conversation,
+            Self::BudgetLow => Page::Conversation,
+            Self::BudgetMedium => Page::Conversation,
+            Self::BudgetHigh => Page::Conversation,
+            Self::CacheWarming => Page::Conversation,
+            Self::Transport => Page::Network,
+            Self::HttpTimeout => Page::Network,
+            Self::WebsocketTimeout => Page::Network,
+            Self::ProviderTimeout => Page::Network,
+            Self::ProviderRetries => Page::Network,
+            Self::ProviderDelay => Page::Network,
             Self::Proxy | Self::Retry | Self::MaxRetries | Self::BaseDelay | Self::MaxDelay => {
                 Page::Network
             }
@@ -99,6 +201,28 @@ impl Field {
 
     pub(super) fn kind(self) -> Kind {
         match self {
+            Self::Extensions | Self::Skills | Self::Prompts | Self::Themes => Kind::RawList,
+            Self::DefaultTools => Kind::List,
+            Self::CodemodeMode => Kind::Choice(&["on", "only"]),
+            Self::CodemodeBudget => Kind::Count,
+            Self::ShellPath => Kind::Text,
+            Self::ShellPrefix => Kind::Text,
+            Self::NpmCommand => Kind::Text,
+            Self::Telemetry => Kind::Bool,
+            Self::ProjectTrust => Kind::Choice(&["ask", "always", "never"]),
+            Self::ModelThinking => Kind::ThinkingMap,
+            Self::ModelOverrides => Kind::CompactionMap,
+            Self::BudgetMinimal => Kind::Count,
+            Self::BudgetLow => Kind::Count,
+            Self::BudgetMedium => Kind::Count,
+            Self::BudgetHigh => Kind::Count,
+            Self::CacheWarming => Kind::Choice(&["off", "streaming", "idle"]),
+            Self::Transport => Kind::Choice(&["auto", "sse", "websocket", "websocket-cached"]),
+            Self::HttpTimeout => Kind::Timeout,
+            Self::WebsocketTimeout => Kind::Timeout,
+            Self::ProviderTimeout => Kind::Count,
+            Self::ProviderRetries => Kind::Count,
+            Self::ProviderDelay => Kind::Count,
             Self::Model => Kind::Model,
             Self::ModelScope => Kind::ModelScope,
             Self::Thinking => Kind::Choice(THINKING_LEVELS),
@@ -113,14 +237,42 @@ impl Field {
         }
     }
 
+    pub(super) const RESOURCE_PATHS: [Self; 4] =
+        [Self::Extensions, Self::Skills, Self::Prompts, Self::Themes];
+    pub(super) fn is_resource_paths(self) -> bool {
+        Self::RESOURCE_PATHS.contains(&self)
+    }
+
     /// Pi reads this field from the global file only.
     pub(super) fn is_global_only(self) -> bool {
-        self == Self::Proxy
+        matches!(self, Self::Proxy | Self::ProjectTrust | Self::CacheWarming)
     }
 
     /// Pi 1.1.0 defaults, per leaf. `None` means unset (automatic).
     fn default(self) -> Option<Value> {
         Some(match self {
+            Self::Extensions | Self::Skills | Self::Prompts | Self::Themes => return None,
+            Self::DefaultTools => return None,
+            Self::CodemodeMode => json!("on"),
+            Self::CodemodeBudget => json!(3000),
+            Self::ShellPath => return None,
+            Self::ShellPrefix => return None,
+            Self::NpmCommand => return None,
+            Self::Telemetry => json!(true),
+            Self::ProjectTrust => json!("ask"),
+            Self::ModelThinking => return None,
+            Self::ModelOverrides => return None,
+            Self::BudgetMinimal => return None,
+            Self::BudgetLow => return None,
+            Self::BudgetMedium => return None,
+            Self::BudgetHigh => return None,
+            Self::CacheWarming => json!("streaming"),
+            Self::Transport => json!("auto"),
+            Self::HttpTimeout => json!(300000),
+            Self::WebsocketTimeout => return None,
+            Self::ProviderTimeout => return None,
+            Self::ProviderRetries => return None,
+            Self::ProviderDelay => json!(60000),
             Self::Model | Self::Proxy | Self::ModelScope => return None,
             Self::Thinking => json!("medium"),
             Self::Compaction | Self::AutoResize | Self::Retry => json!(true),
@@ -175,8 +327,9 @@ impl Files {
     }
 
     /// The value one leaf inherits when the edited scope does not set it.
-    fn inherited(&self, field: Field, leaf: Leaf) -> (Option<Value>, Source) {
-        if self.project.is_some()
+    fn inherited(&self, field: Field, leaf: &[&str]) -> (Option<Value>, Source) {
+        if !field.is_resource_paths()
+            && self.project.is_some()
             && let Some(value) = self.global.get(leaf)
         {
             return (Some(value.clone()), Source::Global);
@@ -216,6 +369,34 @@ impl Files {
         }
     }
 
+    /// A resource switch must not advance the conflict base of a dirty raw array.
+    pub(super) fn preserve_dirty_resource_bases(
+        &mut self,
+        previous: &Self,
+        current: &Snapshot,
+        baseline: &Snapshot,
+    ) {
+        let mut root = self.edited().root().clone();
+        for field in Field::RESOURCE_PATHS {
+            if current.pending(field, baseline) {
+                let key = field.leaves()[0][0];
+                match previous.edited().get(&[key]) {
+                    Some(value) => {
+                        root.insert(key.to_owned(), value.clone());
+                    }
+                    None => {
+                        root.remove(key);
+                    }
+                }
+            }
+        }
+        let document = Document::from_object(root);
+        match &mut self.project {
+            Some(project) => *project = document,
+            None => self.global = document,
+        }
+    }
+
     /// Changes compare typed scope values, but retain raw file values as the conflict base.
     pub(super) fn changes(
         &self,
@@ -229,8 +410,20 @@ impl Files {
             if page.is_some_and(|page| field.page() != page) || !current.pending(field, baseline) {
                 continue;
             }
-            for (leaf, value) in field.leaves().iter().zip(current.value(field)) {
-                if matches!(value, Slot::Invalid(_)) {
+            if field.is_global_only() && self.project.is_some() {
+                continue;
+            }
+            let values = current.leaf_values(field);
+            let previous = baseline.leaf_values(field);
+            for leaf in values
+                .keys()
+                .chain(previous.keys())
+                .collect::<std::collections::BTreeSet<_>>()
+            {
+                let value = values.get(leaf).unwrap_or(&Slot::Unset);
+                if previous.get(leaf).unwrap_or(&Slot::Unset) == value
+                    || matches!(value, Slot::Invalid(_))
+                {
                     continue;
                 }
                 let base = edited.get(leaf).cloned();
@@ -245,8 +438,14 @@ impl Files {
 }
 
 /// Parses a non-negative integer as typed by the user.
+pub(super) const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+
 pub(super) fn parse_count(text: &str) -> Option<Value> {
-    text.trim().parse::<u64>().ok().map(Value::from)
+    text.trim()
+        .parse::<u64>()
+        .ok()
+        .filter(|n| *n <= MAX_SAFE_INTEGER)
+        .map(Value::from)
 }
 
 /// Displays a JSON value in a text field.

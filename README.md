@@ -55,14 +55,16 @@ brew uninstall --cask suxiaoshao/tap/gupi
 
 ### Download Gupi
 
-| Platform | Download v0.1.5 | Installation |
+| Platform | Download v0.1.6 | Installation |
 | --- | --- | --- |
-| macOS · Apple silicon | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.5/Gupi_0.1.5_aarch64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.5/Gupi_0.1.5_aarch64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
-| macOS · Intel | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.5/Gupi_0.1.5_x86_64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.5/Gupi_0.1.5_x86_64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
-| Windows · x64 | [English MSI](https://github.com/suxiaoshao/gupi/releases/download/v0.1.5/Gupi_0.1.5_x64_en-US.msi) · [All installer languages](https://github.com/suxiaoshao/gupi/releases/tag/v0.1.5) | Run the MSI, complete the installation, and open Gupi from the Start menu. |
-| Linux · x64 Debian/Ubuntu | [deb](https://github.com/suxiaoshao/gupi/releases/download/v0.1.5/Gupi_0.1.5_amd64.deb) | Run `sudo apt install ./Gupi_0.1.5_amd64.deb`, then launch Gupi in a graphical desktop session. |
+| macOS · Apple silicon | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_aarch64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_aarch64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
+| macOS · Intel | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_x86_64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_x86_64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
+| Windows · x64 | [English MSI](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_x64_en-US.msi) · [All installer languages](https://github.com/suxiaoshao/gupi/releases/tag/v0.1.6) | Run the MSI, complete the installation, and open Gupi from the Start menu. |
+| Linux · x64 Debian/Ubuntu | [deb](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_amd64.deb) | Run `sudo apt install ./Gupi_0.1.6_amd64.deb`, then launch Gupi in a graphical desktop session. |
 
 macOS packages require macOS 11 or later and are signed with Developer ID and notarized by Apple. Windows installers are not yet Authenticode-signed, so Windows may show an unknown publisher. Linux packages are also unsigned. The release includes `SHA256SUMS` for checking downloaded files.
+
+Windows MSI packages from 0.1.6 include the Visual C++ runtime for both direct and WinGet installation. If an older release fails to start with a missing `VCRUNTIME140.dll` or error `0xc0000135`, upgrade to 0.1.6 or install Microsoft's [x64 Visual C++ Redistributable](https://aka.ms/vc14/vc_redist.x64.exe), then reopen Gupi. Previously published installers have not been replaced.
 
 <details>
 <summary>Build from source or create local packages</summary>
@@ -178,6 +180,8 @@ The preview supports syntax highlighting, line numbers, selection, copying, sear
 
 Wide windows show conversation, source and navigator side by side. Narrow windows let you switch between conversation and source while keeping the composer available. Drag dividers to adjust the layout. Files and conversation history share the navigator's tabs.
 
+After an agent reply, expand its file-change card to inspect the recorded edits as read-only diffs. Repeated edits to the same file are composed where possible; unsupported chains fall back to individual operations. These cards describe recorded `edit`/`write` tool calls, not a Git diff or changes made through shell commands, and provide no rollback action.
+
 Use arrow keys to navigate the file tree and **Enter** to open a file. **Cmd/Ctrl+F** searches the focused source editor, composer or message area. Text previews are limited to 1 MiB and 20,000 lines; unsupported encodings, binary files and oversized files show an explanation.
 
 On Windows and Linux, application menus and window controls occupy the top row; conversation and page actions sit below it. Drag the blank area in the top row to move the window. macOS uses its system menu bar. Upgrading from 0.1.3 resets old window-position and pane-width preferences once; subsequent layout choices are saved.
@@ -236,7 +240,7 @@ Temporary conversations are useful for a translation, a short explanation, or an
 
 Personal prompt templates can become shortcut tasks using selected text, clipboard input, or a screenshot, with an optional model and thinking level for that task.
 
-For screenshot input on macOS and Windows, Gupi freezes the display under the pointer before you select a region. Releasing the drag crops that frame and automatically submits it with the task template. Escape or right-click cancels without sending. On macOS, Gupi requests Screen Recording permission when you first capture. If access is denied, enable Gupi in System Settings → Privacy & Security → Screen Recording and retry; restart Gupi if macOS requests it.
+For screenshot input on macOS and Windows, Gupi freezes all displays before you select a region, with overlays covering each full display. Releasing the drag crops the selected frame and automatically submits it with the task template. Escape or right-click cancels without sending. On macOS, Gupi requests Screen Recording permission when you first capture. If access is denied, enable Gupi in System Settings → Privacy & Security → Screen Recording and retry; restart Gupi if macOS requests it.
 
 **Temporary conversation history is not saved.** These conversations cannot currently be converted into persistent sessions. Their workspaces may contain files generated by tools; use the session's Trash action or the cleanup control in General settings when those files are no longer needed.
 
@@ -249,6 +253,8 @@ These settings require **Pi 1.1.0 or later**. Check `pi --version` and update Pi
 Open **Settings → Pi** for connection, conversation, network and resource settings. Use the scope menu to choose **Global** or a project folder. The conversation's **Project Pi settings…** action opens its working directory directly; selecting a folder does not grant trust or create configuration files.
 
 **Conversation** includes the default model/thinking level, model scope, compaction, message queues and image handling. **Network** includes retries and a global Pi HTTP proxy; the proxy does not change Gupi's network requests. **Connection** controls Gupi's Pi executable separately.
+
+With Pi 1.2.0 or later, **Tools & environment** edits default tools, Codemode, shell/command options, installation telemetry and the global default project-trust policy. Conversation settings include per-model thinking and compaction overrides; network settings include timeouts and provider-specific retries. The startup tool preview follows Pi's configuration rules and does not restrict what extensions or MCP may enable.
 
 Values show their source: default, global or project. A project inherits global values unless it overrides them. Field menus let you set an explicit project value or restore inheritance. Changes remain drafts until you choose **Save** for that page; leaving with unsaved changes offers Save, Discard or Cancel. If another program changed the same field, reload before editing again. Saving preserves unrelated settings.
 
@@ -267,11 +273,19 @@ New conversations use the default model if it matches the scope; otherwise they 
 The **Packages**, **Skills**, and **Prompts** pages share the selected global/project scope:
 
 - Under **Packages → Browse**, search npm packages tagged `pi-package`, select one to inspect its published details and declared resources, then install it into the chosen scope. You can also install from a known source. These operations run through Pi; inspecting a package does not install it.
-- View installed packages without registry access. Global packages support updates; project packages currently support installation/removal. Inherited global packages and project filtering deltas are read-only in the project view.
+- View installed packages without registry access. Global packages support updates; project packages currently support installation/removal. Inherited global packages and direct editing of package-filter arrays remain read-only in the project view.
 - Create or edit your own Skills, prompt templates, `SYSTEM.md` and `APPEND_SYSTEM.md` in the selected scope. Project files live under `.pi/`; personal resources come from `PI_CODING_AGENT_DIR` (normally `~/.pi/agent`) and personal `~/.agents/skills`.
-- Inspect resource origins, disabled states and project/global groups. Package-owned and external files are read-only; project extensions, themes and explicit resource paths are displayed without executing them. Switch to Global to enable/disable personal resources; editing project path/filter rules is not yet supported.
+- Inspect resource origins, disabled states and project/global groups. Package-owned and external file contents are read-only; project extensions, themes and explicit resource paths are displayed without executing them. Switch to Global to enable/disable personal resources.
 
-Browsing contacts the npm registry. At narrow widths, package details replace the list and provide a Back action; at wider widths, drag the divider to adjust the detail area. After external changes, refresh the page and reconnect conversations that need to load the changes. Provider/authentication management and MCP configuration remain outside these settings pages.
+Browsing contacts the npm registry. At narrow widths, package details replace the list and provide a Back action; at wider widths, drag the divider to adjust the detail area. After external changes, refresh the page and reconnect conversations that need to load the changes.
+
+Under **Tools & environment → Resource paths**, edit the current scope's ordered `extensions`, `skills`, `prompts` and `themes` arrays. Missing keys and explicit empty lists remain distinct; these arrays are not shown as merged inheritance. Project-owned resources and resources from project packages support enable/disable switches. Inherited global resources and project package-filter editing remain read-only.
+
+### Model providers and MCP files
+
+With Pi 1.2.0 or later, **Pi → Models & providers** edits the global `models.json`, including provider definitions, models and model overrides. **Pi → MCP** edits the global or project `mcp.json`: add stdio/HTTP servers or project overrides of global servers. Pi loads project MCP configuration only for trusted projects.
+
+These pages edit the files as written rather than previewing effective merged settings. Stage changes in the entry dialog, then save the page to write the file. Existing credential values are never displayed; use Replace or Remove. `${NAME}` and `!command` values are stored without evaluation. Saving `models.json` removes comments and normalizes formatting. MCP conflict detection rereads before saving but cannot lock out concurrent Pi writes. Start a new Pi session to load changes. Authentication/OAuth login and MCP connection-status management are not included.
 
 ## Shortcuts and settings
 
@@ -311,7 +325,7 @@ Choose **Gupi → Check for updates…**, or open **Settings → About → Updat
 
 On macOS, choose **Download and install…** when a new version is available, then follow the update window. Use **Show update progress…** to bring that window back. Before installation, Gupi saves drafts, closes Pi connections, and restarts into the new version. Downloads begin only when you choose. Skipping a version stops automatic reminders for that version; you can still check and install it manually.
 
-Windows 0.1.0/0.1.1 installations may detect an update but show only **Release notes and downloads**, without the install button. Manually download and run the new MSI in your installed language to receive the installation-recognition fix introduced in 0.1.2. The complete Windows native upgrade path still requires device verification.
+Windows in-app installation is currently unavailable. Quit Gupi, download the latest MSI in your installed language from the release page, and run it to upgrade manually. Version checks and release/download links remain available. WinGet distribution is still pending community inclusion.
 
 While settings are being saved, **Download and install…** is disabled. Settings changes are disabled while the update window is open and become available again when it closes and any pending save finishes.
 
@@ -328,7 +342,7 @@ If the install button is unavailable, use the release page or your original pack
 | Build fails on macOS | Verify that full Xcode is selected and `xcrun metal --version` succeeds. |
 | Notifications do not appear on macOS | Use an application bundle and enable notifications in macOS settings; Focus can also suppress delivery. |
 
-**Check Pi** verifies the executable version, not your model account; Pi manages accounts, credentials, and model requests. Advanced Pi fields, complete message queues and arbitrary TUI extension interfaces do not yet have corresponding graphical controls.
+**Check Pi** verifies the executable version, not your model account; Pi manages accounts, credentials, and model requests. Gupi does not reproduce every terminal extension interface.
 
 ### Data and diagnostics
 

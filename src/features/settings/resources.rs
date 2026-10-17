@@ -481,6 +481,13 @@ impl ResourcesView {
                         self.after_save = None;
                     }
                 }
+                if matches!(change, Change::Toggle(..))
+                    && result.is_ok()
+                    && origin == self.active()
+                    && let Some(config) = &self.pi_config
+                {
+                    config.update(cx, |config, cx| config.refresh_resource_paths(cx));
+                }
                 let mut args = fluent_bundle::FluentArgs::new();
                 let target = match origin.read(cx).target() {
                     Target::Project(cwd) => format!("{} — {target}", cwd.display()),
@@ -553,6 +560,23 @@ impl ResourcesView {
             this.sync_scope(window, cx)
         });
         self._subscriptions.push(observe);
+        let saved = cx.subscribe(
+            &pi_config,
+            |this, _, event: &super::pi_config::PiConfigEvent, cx| {
+                let super::pi_config::PiConfigEvent::ResourcePathsSaved(scope) = event;
+                let controller = match scope {
+                    Scope::Global => Some(this.controller.clone()),
+                    Scope::Project(cwd) => this
+                        .projects
+                        .get(cwd)
+                        .map(|project| project.controller.clone()),
+                };
+                if let Some(controller) = controller {
+                    controller.update(cx, |owner, cx| owner.refresh(cx));
+                }
+            },
+        );
+        self._subscriptions.push(saved);
         self.pi_config = Some(pi_config);
         self.sync_scope(window, cx);
     }
@@ -650,6 +674,20 @@ impl ResourcesView {
         } else {
             self.controller.clone()
         }
+    }
+
+    fn can_toggle(&self, resource: &Resource, row: Row, cx: &App) -> bool {
+        row != Row::Inherited
+            && !self
+                .owner_of(row)
+                .read(cx)
+                .catalog()
+                .data()
+                .is_some_and(|catalog| {
+                    catalog.packages.iter().any(|package| {
+                        resource.package.as_ref() == Some(&package.source) && package.is_delta()
+                    })
+                })
     }
 
     fn resource_enabled(&self, resource: &Resource, row: Row, cx: &App) -> bool {
@@ -831,7 +869,7 @@ impl ResourcesView {
     }
 
     fn change(&mut self, change: Change, cx: &mut Context<Self>) {
-        let controller = self.controller.clone();
+        let controller = self.active().clone();
         self.change_in(&controller, change, cx);
     }
 

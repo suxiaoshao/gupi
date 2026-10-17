@@ -64,6 +64,8 @@ brew uninstall --cask suxiaoshao/tap/gupi
 
 macOS packages require macOS 11 or later and are signed with Developer ID and notarized by Apple. Windows installers are not yet Authenticode-signed, so Windows may show an unknown publisher. Linux packages are also unsigned. The release includes `SHA256SUMS` for checking downloaded files.
 
+If an existing Windows release fails to start with a missing `VCRUNTIME140.dll` or error `0xc0000135`, install Microsoft's [x64 Visual C++ Redistributable](https://aka.ms/vc14/vc_redist.x64.exe), then reopen Gupi. MSI packages built from the current source include the runtime for both direct and WinGet installation; this does not change previously published installers.
+
 <details>
 <summary>Build from source or create local packages</summary>
 

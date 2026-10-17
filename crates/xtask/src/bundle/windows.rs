@@ -16,16 +16,32 @@ use crate::error::{Result, XtaskError};
 /// dependencies. Never copy a developer machine's System32 runtime into an MSI.
 #[cfg(target_os = "windows")]
 pub(crate) fn prepare_runtime_resources(
+    staging: &Path,
     settings: &mut tauri_bundler::BundleSettings,
 ) -> Result<()> {
     let redist = runtime_redist_root()?;
-    let files = runtime_files(&redist)?;
+    stage_runtime_resources(&redist, staging, settings)
+}
+
+fn stage_runtime_resources(
+    redist: &Path,
+    staging: &Path,
+    settings: &mut tauri_bundler::BundleSettings,
+) -> Result<()> {
+    let files = runtime_files(redist)?;
+    // tauri-utils normalizes resource paths by dropping Windows drive prefixes.
+    // CI checks out on D: while Visual Studio is installed on C:, so resources
+    // must be staged on the workspace drive before entering the bundler.
+    fs::create_dir_all(staging)?;
     let resources = settings.resources_map.get_or_insert_default();
     for file in files {
         let name = file.file_name().expect("runtime file has a name");
+        let staged = staging.join(name);
+        fs::copy(&file, &staged)?;
+        #[cfg(target_os = "windows")]
         info!(source = %file.display(), "bundling app-local Visual C++ runtime");
         resources.insert(
-            file.to_string_lossy().into_owned(),
+            staged.to_string_lossy().into_owned(),
             name.to_string_lossy().into_owned(),
         );
     }
@@ -122,6 +138,27 @@ pub(crate) fn install_windows_artifact(artifacts: &[PathBuf]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_resources_resolve_from_the_workspace_drive() {
+        let redist = tempfile::tempdir().unwrap();
+        let crt = redist.path().join("x64/Microsoft.VC143.CRT");
+        fs::create_dir_all(&crt).unwrap();
+        fs::write(crt.join("vcruntime140.dll"), b"official runtime fixture").unwrap();
+        // On CI the system temp directory is on C: and the workspace is on D:.
+        let staging = tempfile::tempdir_in(std::env::current_dir().unwrap()).unwrap();
+        let mut settings = tauri_bundler::BundleSettings::default();
+        stage_runtime_resources(redist.path(), staging.path(), &mut settings).unwrap();
+        let resources = settings.resources_map.as_ref().unwrap();
+        let mut resolved = tauri_utils::resources::ResourcePaths::from_map(resources, true).iter();
+        let resource = resolved.next().unwrap().unwrap();
+        assert_eq!(resource.target(), Path::new("vcruntime140.dll"));
+        assert_eq!(
+            fs::read(resource.path()).unwrap(),
+            b"official runtime fixture"
+        );
+        assert!(resolved.next().is_none());
+    }
 
     #[test]
     fn runtime_payload_uses_x64_crt_family_only() {

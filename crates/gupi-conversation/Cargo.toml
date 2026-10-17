@@ -17,7 +17,7 @@ pi-rpc.workspace = true
 
 # Background tasks and Pi subprocess I/O.
 smol = "2.0.2"
-tokio = { version = "1.53.2", features = [
+tokio = { version = "1.53.3", features = [
   "process",
   "io-util",
   "time",
@@ -31,13 +31,13 @@ base64 = "0.23.1"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
 markdown = "1.0.0"
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
+serde_json = "1.0.154"
 sonic-rs = "0.5.10"
 tempfile = "3.27.0"
 time = { version = "0.3.55", features = ["parsing", "formatting", "local-offset"] }
-toml = "1.1.6"
+toml = "1.1.8"
 trash = "5.2.9"
-uuid = { version = "1.27.0", features = ["v4", "v5"] }
+uuid = { version = "1.28.0", features = ["v4", "v5"] }
 
 # Localization and diagnostics.
 tracing = "0.1.44"

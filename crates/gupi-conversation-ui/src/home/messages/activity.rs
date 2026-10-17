@@ -1,7 +1,7 @@
 //! Pi content projection for the conversation activity stream.
-use std::collections::HashMap;
-use std::collections::HashSet;
 use std::ops::Range;
+
+use super::tools::ToolIndex;
 
 use gupi_conversation::tool_presentation::ToolKind;
 use gupi_conversation::tool_presentation::read_path;
@@ -9,7 +9,6 @@ use gupi_conversation::tool_presentation::skill_name;
 use serde_json::Value;
 
 use gupi_conversation::conversation::ToolActivity;
-use gupi_conversation::conversation::ToolExecution;
 use gupi_conversation::history::DisplayMessage;
 
 pub(super) struct RunContent {
@@ -67,7 +66,7 @@ pub(super) enum ActivityBlock<'a> {
 }
 
 #[derive(Clone, PartialEq)]
-pub(super) struct Tool {
+pub(in crate::home) struct Tool {
     pub id: String,
     pub entries: Vec<String>,
     pub name: String,
@@ -77,7 +76,7 @@ pub(super) struct Tool {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum ToolStatus {
+pub(in crate::home) enum ToolStatus {
     Running,
     Complete,
     Failed,
@@ -136,6 +135,10 @@ impl RunContent {
     }
 
     pub fn project(messages: &[DisplayMessage], live: &[ToolActivity], active: bool) -> Self {
+        Self::project_indexed(messages, active, &ToolIndex::local(messages, live, active))
+    }
+
+    pub fn project_indexed(messages: &[DisplayMessage], active: bool, tools: &ToolIndex) -> Self {
         let last = messages.iter().rposition(|m| m.role() != "custom");
         let answer = last.filter(|&i| {
             let m = &messages[i];
@@ -168,19 +171,6 @@ impl RunContent {
             m.value["stopReason"] == "stop" || (!active && m.value.get("stopReason").is_none())
         });
         let interrupted = run_outcome(messages) != RunOutcome::Complete;
-        let results: HashMap<_, _> = messages
-            .iter()
-            .filter(|m| m.role() == "toolResult")
-            .filter_map(|m| m.value["toolCallId"].as_str().map(|id| (id, m)))
-            .collect();
-        let live: HashMap<_, _> = live.iter().map(|tool| (tool.id.as_str(), tool)).collect();
-        let call_ids: HashSet<_> = messages
-            .iter()
-            .filter_map(|m| m.value["content"].as_array())
-            .flatten()
-            .filter(|part| part["type"] == "toolCall")
-            .filter_map(|part| part["id"].as_str())
-            .collect();
         let mut activities = vec![];
         let mut sections = vec![];
         let mut process_start = 0;
@@ -198,26 +188,9 @@ impl RunContent {
                 continue;
             }
             if m.role() == "toolResult" {
-                let call_id = m.value["toolCallId"].as_str();
-                if call_id.is_some_and(|id| call_ids.contains(id)) {
-                    append_status(
-                        &mut sections,
-                        &mut process_start,
-                        activities.len(),
-                        index,
-                        m,
-                    );
-                    continue;
+                if let Some(tool) = tools.at(m, None) {
+                    activities.push(Activity::Tool(tool.clone()));
                 }
-                // Partial/compacted history can legitimately lack the call.
-                activities.push(Activity::Tool(Tool {
-                    id: format!("tool-{}", call_id.unwrap_or(&m.id)),
-                    entries: m.entry.iter().cloned().collect(),
-                    name: m.value["toolName"].as_str().unwrap_or("tool").to_owned(),
-                    args: None,
-                    result: m.value.clone(),
-                    status: result_status(m),
-                }));
                 append_status(
                     &mut sections,
                     &mut process_start,
@@ -232,52 +205,9 @@ impl RunContent {
                     let id = format!("part-{}-{i}", m.id);
                     match part["type"].as_str() {
                         Some("toolCall") => {
-                            let call_id = part["id"].as_str();
-                            let result = call_id.and_then(|id| results.get(id)).copied();
-                            let update = call_id.and_then(|id| live.get(id)).copied();
-                            let mut entries: Vec<_> = m.entry.iter().cloned().collect();
-                            entries.extend(result.and_then(|m| m.entry.clone()));
-                            let (tool_result, status) = if let Some(result) = result {
-                                (result.value.clone(), result_status(result))
-                            } else if let Some(update) = update {
-                                match &update.execution {
-                                    ToolExecution::Running(output) => (
-                                        output.clone(),
-                                        if active {
-                                            ToolStatus::Running
-                                        } else {
-                                            ToolStatus::Unfinished
-                                        },
-                                    ),
-                                    ToolExecution::Complete(output) => {
-                                        (output.clone(), ToolStatus::Complete)
-                                    }
-                                    ToolExecution::Failed(output) => {
-                                        (output.clone(), ToolStatus::Failed)
-                                    }
-                                }
-                            } else {
-                                (
-                                    Value::Null,
-                                    if active {
-                                        ToolStatus::Running
-                                    } else {
-                                        ToolStatus::Unfinished
-                                    },
-                                )
-                            };
-                            activities.push(Activity::Tool(Tool {
-                                id: format!("tool-{}", call_id.unwrap_or(&id)),
-                                entries,
-                                name: update.map(|tool| tool.name.clone()).unwrap_or_else(|| {
-                                    part["name"].as_str().unwrap_or("tool").to_owned()
-                                }),
-                                args: update
-                                    .map(|tool| tool.args.clone())
-                                    .or_else(|| part.get("arguments").cloned()),
-                                result: tool_result,
-                                status,
-                            }));
+                            if let Some(tool) = tools.at(m, Some(i)) {
+                                activities.push(Activity::Tool(tool.clone()));
+                            }
                         }
                         Some("text" | "thinking") => {
                             let thinking = part["type"] == "thinking";
@@ -392,14 +322,6 @@ fn has_calls(message: &Value) -> bool {
         .is_some_and(|parts| parts.iter().any(|p| p["type"] == "toolCall"))
 }
 
-fn result_status(result: &DisplayMessage) -> ToolStatus {
-    if result.value["isError"] == true {
-        ToolStatus::Failed
-    } else {
-        ToolStatus::Complete
-    }
-}
-
 impl Tool {
     pub fn kind(&self) -> ToolKind {
         ToolKind::classify(&self.name, self.args.as_ref())
@@ -423,6 +345,7 @@ impl Tool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gupi_conversation::conversation::ToolExecution;
     use gupi_conversation::session_catalog::text_content;
     use serde_json::json;
 

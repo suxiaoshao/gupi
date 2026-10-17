@@ -3,18 +3,24 @@
 //! The files on disk stay authoritative. Drafts live here until a page is
 //! saved; each save re-reads the file inside Pi's lock and writes only the
 //! changed leaves.
+mod advanced;
+mod advanced_controls;
 mod fields;
 mod forms;
 mod inputs;
+mod lists;
+mod map_controls;
+mod model_maps;
 mod model_scope;
 mod page;
+mod resource_paths;
 
 pub(super) use fields::Page;
 pub(super) use page::request_scope;
 
 use fields::Field;
 use fields::Files;
-use forms::{ConversationDraft, NetworkDraft, Slot, Snapshot};
+use forms::{ConversationDraft, NetworkDraft, Slot, Snapshot, ToolsDraft};
 use gpui_form::Form;
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::searchable_list::SearchableListItem;
@@ -84,8 +90,14 @@ impl SearchableListItem for ModelItem {
     }
 }
 
+pub(super) enum PiConfigEvent {
+    ResourcePathsSaved(Scope),
+}
+impl EventEmitter<PiConfigEvent> for PiConfig {}
+
 pub(super) struct PiConfig {
     applied_pi: Entity<PiProbeController>,
+    pub(super) file_pages: Entity<super::config_files::FilePages>,
     agent: Result<PathBuf, String>,
     scope: Scope,
     /// Projects opened or chosen in this session, offered by the scope menu.
@@ -98,10 +110,16 @@ pub(super) struct PiConfig {
     trust: Option<Trust>,
     conversation: Entity<Form<ConversationDraft>>,
     network: Entity<Form<NetworkDraft>>,
-    /// Projection of the loaded file, also the baseline of both forms.
+    tools: Entity<Form<ToolsDraft>>,
+    /// Projection of the loaded file, also the baseline of all three forms.
     baseline: Snapshot,
     inputs: BTreeMap<Field, inputs::Adapter>,
+    custom_tool: Entity<gpui_kit::component::input::InputState>,
+    custom_tool_open: bool,
+    resource_inputs: BTreeMap<Field, resource_paths::EntryInput>,
     conflicts: Vec<Field>,
+    conflict_leaves: Vec<pi_settings::Leaf>,
+    map_inputs: std::collections::HashMap<map_controls::MapInputKey, map_controls::MapAdapter>,
     error: Option<String>,
     saving: Option<Task<()>>,
     leave_after_save: Option<AfterSave>,
@@ -109,10 +127,14 @@ pub(super) struct PiConfig {
     models: Models,
     model_picker: Entity<SelectState<SearchableVec<ModelItem>>>,
     scope_picker: Entity<SelectState<SearchableVec<ModelItem>>>,
+    map_pickers: BTreeMap<Field, Entity<SelectState<SearchableVec<ModelItem>>>>,
+    map_picker_items: BTreeMap<Field, Vec<ModelItem>>,
     rows: std::collections::HashMap<model_scope::RowKey, model_scope::Adapter>,
     /// The model key last projected into `model_picker`.
     synced_model: Option<Option<(String, String)>>,
     file_task: Option<Task<()>>,
+    resource_refreshing: bool,
+    resource_refresh_pending: bool,
     model_task: Option<Task<()>>,
     model_instance: Option<gupi_pi_runtime::InstanceId>,
     _subscriptions: Vec<Subscription>,
@@ -152,12 +174,58 @@ impl PiConfig {
             });
         let conversation = cx.new(|_| Form::new(ConversationDraft::default()));
         let network = cx.new(|_| Form::new(NetworkDraft::default()));
+        let tools = cx.new(|_| Form::new(ToolsDraft::default()));
+        let tools_sub = cx.observe(&tools, |_, _, cx| cx.notify());
         let conversation_sub = cx.observe(&conversation, |_, _, cx| cx.notify());
         let network_sub = cx.observe(&network, |_, _, cx| cx.notify());
         let applied_sub = cx.observe(&applied_pi, |_, _, cx| cx.notify());
+        let mut map_pickers = BTreeMap::new();
+        let mut map_subscriptions = Vec::new();
+        for field in [Field::ModelThinking, Field::ModelOverrides] {
+            let picker = cx.new(|cx| {
+                SelectState::new(SearchableVec::new(vec![]), None, window, cx).searchable(true)
+            });
+            map_subscriptions.push(cx.subscribe_in(
+                &picker,
+                window,
+                move |this, picker, event, window, cx| {
+                    if let SelectEvent::<SearchableVec<ModelItem>>::Confirm(Some((provider, id))) =
+                        event
+                    {
+                        this.add_map_model(field, &format!("{provider}/{id}"), cx);
+                        picker.update(cx, |picker, cx| picker.set_selected_index(None, window, cx));
+                    }
+                },
+            ));
+            map_pickers.insert(field, picker);
+        }
+        let custom_tool = cx.new(|cx| gpui_kit::component::input::InputState::new(window, cx));
+        let custom_tool_sub =
+            cx.subscribe_in(&custom_tool, window, |this, _, event, window, cx| {
+                if matches!(
+                    event,
+                    gpui_kit::component::input::InputEvent::PressEnter { .. }
+                ) {
+                    this.finish_custom_tool(window, cx);
+                }
+            });
+        let file_pages = cx.new(super::config_files::FilePages::new);
+        let file_pages_sub = cx.observe(&file_pages, |_, _, cx| cx.notify());
+        let mut subscriptions = vec![
+            file_pages_sub,
+            custom_tool_sub,
+            picker_sub,
+            scope_sub,
+            applied_sub,
+            conversation_sub,
+            network_sub,
+            tools_sub,
+        ];
+        subscriptions.extend(map_subscriptions);
         cx.on_release(|this, cx| this.cancel_model_query(cx))
             .detach();
         Self {
+            file_pages,
             applied_pi,
             agent: pi_resources::agent_dir().map_err(|e| e.to_string()),
             scope: Scope::Global,
@@ -168,9 +236,15 @@ impl PiConfig {
             trust: None,
             conversation,
             network,
+            tools,
             baseline: Snapshot::default(),
             inputs: BTreeMap::new(),
+            custom_tool,
+            custom_tool_open: false,
+            resource_inputs: BTreeMap::new(),
             conflicts: Vec::new(),
+            conflict_leaves: Vec::new(),
+            map_inputs: std::collections::HashMap::new(),
             error: None,
             saving: None,
             leave_after_save: None,
@@ -178,28 +252,29 @@ impl PiConfig {
             models: Models::Idle,
             model_picker,
             scope_picker,
+            map_pickers,
+            map_picker_items: BTreeMap::new(),
             rows: std::collections::HashMap::new(),
             synced_model: None,
             file_task: None,
+            resource_refreshing: false,
+            resource_refresh_pending: false,
             model_task: None,
             model_instance: None,
-            _subscriptions: vec![
-                picker_sub,
-                scope_sub,
-                applied_sub,
-                conversation_sub,
-                network_sub,
-            ],
+            _subscriptions: subscriptions,
         }
     }
 
     #[cfg(test)]
-    pub(super) fn set_agent_for_test(&mut self, agent: PathBuf) {
+    pub(super) fn set_agent_for_test(&mut self, agent: PathBuf, cx: &mut App) {
+        self.file_pages
+            .update(cx, |files, _| files.set_agent_for_test(agent.clone()));
         self.agent = Ok(agent);
     }
 
     /// Re-reads the files when the Pi area is shown, unless drafts are open.
     pub(super) fn activate(&mut self, cx: &mut Context<Self>) {
+        self.file_pages.update(cx, |files, cx| files.activate(cx));
         if !self.has_unsaved(cx) && !self.is_saving() {
             self.reload(cx);
         }
@@ -241,11 +316,14 @@ impl PiConfig {
     }
 
     pub(super) fn has_unsaved(&self, cx: &App) -> bool {
-        self.conversation.read(cx).is_dirty() || self.network.read(cx).is_dirty()
+        self.conversation.read(cx).is_dirty()
+            || self.network.read(cx).is_dirty()
+            || self.tools.read(cx).is_dirty()
+            || self.file_pages.read(cx).dirty()
     }
 
     pub(super) fn needs_leave_guard(&self, cx: &App) -> bool {
-        self.has_unsaved(cx) || self.is_saving()
+        self.has_unsaved(cx) || self.is_saving() || self.file_pages.read(cx).busy()
     }
 
     fn is_saving(&self) -> bool {
@@ -282,28 +360,60 @@ impl PiConfig {
             return;
         }
         self.cancel_model_query(cx);
+        self.file_pages
+            .update(cx, |files, cx| files.set_scope(scope.clone(), cx));
         self.scope = scope;
         self.conversation
             .update(cx, |form, cx| form.rebase(ConversationDraft::default(), cx));
         self.network
             .update(cx, |form, cx| form.rebase(NetworkDraft::default(), cx));
+        self.custom_tool_open = false;
+        self.resource_inputs.clear();
+        self.tools
+            .update(cx, |form, cx| form.rebase(ToolsDraft::default(), cx));
         self.baseline = Snapshot::default();
         self.rows.clear();
+        self.map_inputs.clear();
         self.models = Models::Idle;
+        self.map_picker_items.clear();
         self.reload(cx);
     }
 
     /// Re-reads the files. Drafts are kept so the user can compare and save
     /// again after a conflict.
     pub(super) fn reload(&mut self, cx: &mut Context<Self>) {
+        self.reload_files(false, cx);
+    }
+
+    pub(super) fn refresh_resource_paths(&mut self, cx: &mut Context<Self>) {
+        if self.is_saving() {
+            self.resource_refresh_pending = true;
+            return;
+        }
+        self.reload_files(true, cx);
+    }
+
+    fn reload_files(&mut self, preserve_arrays: bool, cx: &mut Context<Self>) {
         if self.is_saving() {
             return;
         }
         self.generation += 1;
+        self.custom_tool_open = false;
+        self.map_inputs
+            .retain(|key, _| matches!(key, map_controls::MapInputKey::Local(_, _)));
         self.conflicts.clear();
+        self.conflict_leaves.clear();
         self.error = None;
-        self.files = Load::Loading;
-        self.trust = None;
+        let previous = match &self.files {
+            Load::Ready(files) if preserve_arrays => Some(files.clone()),
+            _ => None,
+        };
+        self.resource_refreshing = preserve_arrays;
+        if !preserve_arrays {
+            self.resource_refresh_pending = false;
+            self.files = Load::Loading;
+            self.trust = None;
+        }
         let generation = self.generation;
         let agent = self.agent.clone();
         let scope = self.scope.clone();
@@ -327,8 +437,16 @@ impl PiConfig {
                 if this.generation != generation {
                     return;
                 }
+                this.resource_refreshing = false;
                 match result {
-                    Ok((files, trust)) => {
+                    Ok((mut files, trust)) => {
+                        if let Some(previous) = &previous {
+                            files.preserve_dirty_resource_bases(
+                                previous,
+                                &this.snapshot(cx),
+                                &this.baseline,
+                            );
+                        }
                         let next = Snapshot::project(files.edited());
                         let since = this.baseline.clone();
                         this.reconcile(next, &since, cx);
@@ -345,7 +463,7 @@ impl PiConfig {
     }
 
     fn snapshot(&self, cx: &App) -> Snapshot {
-        Snapshot::read(&self.conversation, &self.network, cx)
+        Snapshot::read(&self.conversation, &self.network, &self.tools, cx)
     }
 
     fn set_values(&mut self, field: Field, values: Vec<Slot<Value>>, cx: &mut Context<Self>) {
@@ -354,15 +472,26 @@ impl PiConfig {
         }
         let mut snapshot = self.snapshot(cx);
         snapshot.set(field, values);
-        snapshot.install_field(field, &self.conversation, &self.network, cx);
+        self.retire_advanced_controls(field);
+        snapshot.install_field(field, &self.conversation, &self.network, &self.tools, cx);
         self.error = None;
         cx.notify();
     }
 
     fn clear_draft(&mut self, field: Field, cx: &mut Context<Self>) {
+        self.retire_advanced_controls(field);
         self.baseline
-            .install_field(field, &self.conversation, &self.network, cx);
+            .install_field(field, &self.conversation, &self.network, &self.tools, cx);
         cx.notify();
+    }
+
+    fn retire_advanced_controls(&mut self, field: Field) {
+        if matches!(field, Field::DefaultTools | Field::NpmCommand) {
+            self.custom_tool_open = false;
+        }
+        if field == Field::ModelOverrides {
+            self.map_inputs.clear();
+        }
     }
 
     fn pending(&self, field: Field, cx: &App) -> bool {
@@ -398,6 +527,7 @@ impl PiConfig {
         match page {
             Page::Conversation => self.conversation.read(cx).is_dirty(),
             Page::Network => self.network.read(cx).is_dirty(),
+            Page::Tools => self.tools.read(cx).is_dirty(),
         }
     }
 
@@ -408,11 +538,17 @@ impl PiConfig {
         if page.is_none_or(|p| p == Page::Conversation) {
             self.conversation.update(cx, |f, cx| f.reset(cx));
             self.rows.clear();
+            self.map_inputs.clear();
         }
         if page.is_none_or(|p| p == Page::Network) {
             self.network.update(cx, |f, cx| f.reset(cx));
         }
+        if page.is_none_or(|p| p == Page::Tools) {
+            self.custom_tool_open = false;
+            self.tools.update(cx, |f, cx| f.reset(cx));
+        }
         self.conflicts.clear();
+        self.conflict_leaves.clear();
         self.error = None;
         cx.notify();
     }
@@ -421,6 +557,7 @@ impl PiConfig {
         let merged = Snapshot::merge(&self.snapshot(cx), &next, since);
         if self.baseline.conversation != next.conversation {
             self.rows.clear();
+            self.map_inputs.clear();
             self.conversation.update(cx, |form, cx| {
                 form.rebase(next.conversation.clone(), cx);
                 if merged.conversation != next.conversation {
@@ -433,6 +570,15 @@ impl PiConfig {
                 form.rebase(next.network.clone(), cx);
                 if merged.network != next.network {
                     form.replace(merged.network, cx);
+                }
+            });
+        }
+        if self.baseline.tools != next.tools {
+            self.custom_tool_open = false;
+            self.tools.update(cx, |form, cx| {
+                form.rebase(next.tools.clone(), cx);
+                if merged.tools != next.tools {
+                    form.replace(merged.tools, cx);
                 }
             });
         }
@@ -479,12 +625,32 @@ impl PiConfig {
             };
             prepared.network = snapshot.into_parts().1;
         }
+        if page.is_none_or(|p| p == Page::Tools) {
+            let result = self.tools.update(cx, |form, cx| form.prepare(cx));
+            let Ok(snapshot) = result else {
+                self.error = Some(t(cx, "pi-settings-invalid"));
+                cx.notify();
+                return;
+            };
+            prepared.tools = snapshot.into_parts().1;
+        }
         let changes = files.changes(&prepared, &self.baseline, page);
+        let paths_saved = changes.iter().any(|change| {
+            Field::RESOURCE_PATHS
+                .iter()
+                .any(|field| change.leaf() == field.leaves()[0])
+        });
         let mut since = self.baseline.clone();
         for field in Field::ALL {
             if page.is_none_or(|p| field.page() == p) {
                 since.set(field, prepared.value(field));
             }
+        }
+        // A read started by a switch must not install a pre-save document afterwards.
+        if self.resource_refreshing {
+            self.file_task = None;
+            self.resource_refreshing = false;
+            self.resource_refresh_pending = true;
         }
         let scope = self.scope.clone();
         let agent = agent.clone();
@@ -492,6 +658,7 @@ impl PiConfig {
         let task = cx.background_spawn(async move { scope.commit(&agent, &changes) });
         self.error = None;
         self.conflicts.clear();
+        self.conflict_leaves.clear();
         self.saving = Some(cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
             let next = this.update(cx, |this, cx| {
@@ -501,8 +668,29 @@ impl PiConfig {
                     this.leave_after_save = None;
                     return None;
                 }
+                if std::mem::take(&mut this.resource_refresh_pending) {
+                    let config = cx.entity().downgrade();
+                    cx.defer(move |cx| {
+                        let _ = config.update(cx, |this, cx| this.refresh_resource_paths(cx));
+                    });
+                }
                 match result {
-                    Ok(document) => {
+                    Ok(mut document) => {
+                        if page.is_some_and(|p| p != Page::Tools)
+                            && let Load::Ready(previous) = &this.files
+                        {
+                            let mut next_files = previous.clone();
+                            match &mut next_files.project {
+                                Some(project) => *project = document,
+                                None => next_files.global = document,
+                            }
+                            next_files.preserve_dirty_resource_bases(
+                                previous,
+                                &this.snapshot(cx),
+                                &this.baseline,
+                            );
+                            document = next_files.edited().clone();
+                        }
                         let next = Snapshot::project(&document);
                         this.reconcile(next, &since, cx);
                         if let Load::Ready(files) = &mut this.files {
@@ -511,12 +699,27 @@ impl PiConfig {
                                 None => files.global = document,
                             }
                         }
+                        if paths_saved {
+                            cx.emit(PiConfigEvent::ResourcePathsSaved(this.scope.clone()));
+                        }
                         return this.leave_after_save.take().or(then);
                     }
                     Err(pi_settings::Error::Conflict(leaves)) => {
+                        this.conflict_leaves = leaves.clone();
                         this.conflicts = Field::ALL
                             .into_iter()
-                            .filter(|field| field.leaves().iter().any(|l| leaves.contains(l)))
+                            .filter(|field| {
+                                field.leaves().iter().any(|l| {
+                                    leaves.iter().any(|leaf| {
+                                        leaf.len() >= l.len()
+                                            && leaf
+                                                .iter()
+                                                .take(l.len())
+                                                .map(String::as_str)
+                                                .eq(l.iter().copied())
+                                    })
+                                })
+                            })
                             .collect();
                         this.error = Some(t(cx, "pi-settings-conflict"));
                     }
@@ -543,12 +746,30 @@ impl PiConfig {
         window: &mut Window,
         cx: &mut App,
     ) {
+        let files = this.read(cx).file_pages.clone();
+        let this = this.clone();
+        super::config_files::FilePages::confirm_leave(
+            &files,
+            Box::new(move |window, cx| {
+                Self::confirm_settings_leave(&this, proceed, window, cx);
+            }),
+            window,
+            cx,
+        );
+    }
+
+    fn confirm_settings_leave(
+        this: &Entity<Self>,
+        proceed: impl FnOnce(&mut Window, &mut App) + 'static,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
         if this.read(cx).is_saving() {
             let target = this.clone();
             this.update(cx, |this, _| {
                 if this.leave_after_save.is_none() {
                     this.leave_after_save = Some(Box::new(move |window, cx| {
-                        Self::confirm_leave(&target, proceed, window, cx);
+                        Self::confirm_settings_leave(&target, proceed, window, cx);
                     }));
                 }
             });

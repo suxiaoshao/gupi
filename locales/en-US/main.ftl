@@ -934,3 +934,205 @@ pi-model-scope-unrestricted = Unrestricted
 pi-model-scope-unrestricted-project = Unrestricted (overrides global)
 pi-model-scope-blank = Patterns cannot be blank.
 pi-model-scope-malformed = This value must be an array of strings. Correct it in the settings file.
+
+conversation-edited-files = { $count ->
+    [one] { $count } file edited
+   *[other] { $count } files edited
+    }
+conversation-edit-write = Write
+conversation-edit-error = Error
+conversation-written-content = Written content
+conversation-edit-operation = Operation { $index }
+conversation-edit-more-files = { $count ->
+    [one] Show { $count } more file
+   *[other] Show { $count } more files
+    }
+conversation-edit-less-files = Show fewer files
+conversation-edit-more-operations = { $count ->
+    [one] Show { $count } more operation
+   *[other] Show { $count } more operations
+    }
+conversation-edit-previous-operations = Previous operations
+conversation-edit-stats-tooltip = Net added and removed lines from combined recorded edit patches. Writes and files that could not be combined are excluded; this is not a complete workspace diff.
+conversation-edit-file-label = { $path } — { $state }
+conversation-edit-operation-stats-tooltip = Added and removed lines in this recorded patch.
+conversation-edit-uncombined = Could not combine; showing operations
+
+# Advanced Pi settings
+settings-page-pi-tools = Tools & environment
+pi-group-tools = Tools
+pi-group-shell = Shell
+pi-group-package-command = Package manager
+pi-group-privacy-trust = Privacy & trust
+pi-group-advanced = Advanced
+pi-group-provider = Provider-level retries
+pi-field-default-tools = Default tools
+pi-field-codemode-mode = Codemode mode
+pi-field-codemode-budget = Declaration budget
+pi-field-shell-path = Shell path
+pi-field-shell-prefix = Command prefix
+pi-field-npm-command = npm command
+pi-field-telemetry = Installation telemetry
+pi-field-project-trust = Default project trust
+pi-field-model-thinking = Per-model thinking levels
+pi-field-model-overrides = Per-model compaction
+pi-field-budget-minimal = Minimal
+pi-field-budget-low = Low
+pi-field-budget-medium = Medium
+pi-field-budget-high = High
+pi-field-cache-warming = Cache warming
+pi-field-transport = Transport
+pi-field-http-timeout = HTTP idle timeout (ms)
+pi-field-websocket-timeout = WebSocket connection timeout (ms)
+pi-field-provider-timeout = Request timeout (ms)
+pi-field-provider-retries = Retry attempts
+pi-field-provider-delay = Maximum retry delay (ms)
+pi-timeout-disabled = Off
+pi-tools-startup-help = Extensions and MCP may enable additional tools. This is not a security restriction or a live tool list.
+pi-map-add-model = Add model
+pi-map-remove-local = Remove local override
+pi-model-thinking-help = Explicit levels and saved sessions take precedence at startup; switching models uses this value. A thinking suffix in the model scope takes precedence.
+pi-model-overrides-help = Each token value inherits independently. Only changed leaves are saved.
+pi-trust-always-title = Trust projects by default?
+pi-trust-always-body = Pi will trust projects without an applicable decision, load their settings and execute project extensions. Existing explicit decisions and trust extensions still take precedence.
+pi-telemetry-env-on = PI_TELEMETRY overrides this preference: enabled
+pi-telemetry-env-off = PI_TELEMETRY overrides this preference: disabled
+pi-codemode-help = Codemode settings require the enabled built-in codemode extension and an active codemode tool.
+pi-thinking-budget-help = Only applies to providers and models that support token budgets.
+pi-cache-warming-help = Warming requests incur usage.
+pi-telemetry-help = Controls installation telemetry, not update checks or all analytics.
+pi-provider-retry-help = Pi recommends keeping this at 0.
+pi-trust-always-confirm = Trust by default
+pi-choice-ask = Ask
+pi-choice-always = Always trust
+pi-choice-never = Never trust
+pi-choice-codemode-on = Direct tools and Codemode
+pi-choice-codemode-only = Codemode only
+pi-choice-streaming = During streaming
+pi-choice-idle = Also while idle
+pi-choice-auto = Automatic
+
+pi-thinking-budgets = Thinking budgets (tokens)
+pi-model-unavailable-short = Unavailable
+pi-models-unavailable = Couldn’t load models
+pi-map-model = Model
+pi-map-reserve = Reserve tokens
+pi-map-keep = Keep recent tokens
+pi-map-token-action = { $field }: { $action }
+pi-tools-add = Add
+pi-tools-custom = Custom…
+pi-tool-remove = Remove { $tool }
+pi-tools-preview = At startup: { $tools }
+pi-npm-invalid = Enter a command with balanced quotes and a nonempty first argument.
+pi-timeout-off = Disabled
+pi-npm-help = Shell quoting preserves spaces and empty arguments.
+pi-budget-input = { $level } thinking budget (tokens)
+
+pi-group-resource-paths = Resource paths
+pi-field-resource-extensions = Extensions
+pi-field-resource-skills = Skills
+pi-field-resource-prompts = Prompts
+pi-field-resource-themes = Themes
+pi-resource-paths-help = Raw entries in this scope’s file, in order.
+pi-resource-unsupported = Unsupported format · read-only
+pi-resource-absent = Key absent
+pi-resource-empty = Empty array []
+pi-resource-up = Move up
+pi-resource-down = Move down
+pi-resource-remove = Remove entry
+pi-resource-add = Add
+pi-resource-clear = Clear array []
+pi-resource-remove-key = Remove key
+pi-resource-entry-actions = Entry actions
+
+# Pi configuration files
+pi-files-models = Models & providers
+pi-files-mcp = MCP
+pi-files-startup-only = Pi reads this file when a new session starts. Existing sessions are not reloaded.
+pi-files-global-only = This file is global only. Choose the global scope to edit it.
+pi-files-comments = Saving removes comments from this file.
+pi-files-add = Add…
+pi-files-edit = Edit…
+pi-files-delete = Delete
+pi-files-override = Override
+pi-files-definition = Full definition
+pi-files-disabled = Disabled
+pi-files-duplicate = This name conflicts with an existing entry.
+pi-files-invalid = Could not read or save this entry. Check its fields and the configuration file.
+pi-files-secret-set = Set · keep
+pi-files-secret-keep = Keep
+pi-files-secret-replace = Replace with new value
+pi-files-secret-remove = Remove
+pi-files-name = Name
+pi-files-key = Key
+pi-files-model = Model
+pi-files-add-model = Add model
+pi-files-on = On
+pi-files-off = Off
+
+# Structured configuration editor
+pi-files-label-name = Display name
+pi-files-label-id = Model ID
+pi-files-label-baseUrl = Base URL
+pi-files-label-api = API
+pi-files-label-apiKey = API key
+pi-files-label-authHeader = Authorization header
+pi-files-label-oauth = OAuth
+pi-files-label-compat = Compatibility
+pi-files-label-models = Models
+pi-files-label-modelOverrides = Model overrides
+pi-files-label-enabled = Enabled
+pi-files-label-exposure = Exposure
+pi-files-label-type = Transport
+pi-files-label-description = Description
+pi-files-label-command = Command
+pi-files-label-url = URL
+pi-files-label-cwd = Working directory
+pi-files-label-timeout = Timeout
+pi-files-label-toolExposure = Tool exposure
+pi-files-label-args = Arguments
+pi-files-label-env = Environment variables
+pi-files-label-headers = Headers
+pi-files-label-clientId = Client ID
+pi-files-label-clientSecret = Client secret
+pi-files-label-callbackPort = Callback port
+pi-files-label-callbackUrl = Callback URL
+pi-files-label-scope = Scopes
+pi-files-label-clientName = Client name
+pi-files-label-clientRegistration = Client registration
+pi-files-label-authServerMetadataUrl = Authorization metadata URL
+pi-files-label-provider = Provider
+pi-files-label-reasoning = Reasoning
+pi-files-label-contextWindow = Context window
+pi-files-label-maxTokens = Maximum output tokens
+pi-files-label-input = Input modalities
+pi-files-label-cost = Cost
+pi-files-label-thinkingLevelMap = Thinking level map
+pi-files-label-inputLimits = Input limits
+pi-files-label-promptCache = Prompt cache
+pi-files-label-samplingParams = Sampling parameters
+pi-files-label-samplingParamsByThinkingLevel = Sampling by thinking level
+pi-files-label-autoEnableCodemode = Automatically enable Codemode
+pi-files-providers = Providers
+pi-files-servers = MCP servers
+pi-files-automation = Codemode
+pi-files-empty = No entries
+pi-files-basic = Basic
+pi-files-connection = Connection
+pi-files-exposure-section = Exposure
+pi-files-authentication = Authentication
+pi-files-advanced = Advanced
+pi-files-back = Back
+pi-files-stage = Stage changes
+pi-files-secret-present = Set
+pi-files-add-value = New value
+pi-files-confirm-add = Add
+pi-files-definition-kind = Definition
+pi-files-provider-summary =
+    { $models ->
+        [one] { $models } model
+       *[other] { $models } models
+    } · { $overrides ->
+        [one] { $overrides } override
+       *[other] { $overrides } overrides
+    }

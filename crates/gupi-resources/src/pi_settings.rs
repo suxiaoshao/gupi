@@ -14,7 +14,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 /// A dotted path to one JSON leaf, such as `["compaction", "enabled"]`.
-pub type Leaf = &'static [&'static str];
+pub type Leaf = Vec<String>;
 
 /// Which `settings.json` a page edits.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -91,13 +91,13 @@ impl Document {
     pub fn exists(&self) -> bool {
         self.exists
     }
-    pub fn get(&self, leaf: Leaf) -> Option<&Value> {
+    pub fn get<S: AsRef<str>>(&self, leaf: &[S]) -> Option<&Value> {
         let (last, parents) = leaf.split_last()?;
         let mut object = &self.root;
         for key in parents {
-            object = object.get(*key)?.as_object()?;
+            object = object.get(key.as_ref())?.as_object()?;
         }
-        object.get(*last)
+        object.get(last.as_ref())
     }
     pub fn root(&self) -> &Map<String, Value> {
         &self.root
@@ -114,11 +114,15 @@ pub struct Change {
 }
 
 impl Change {
-    pub fn new(leaf: Leaf, base: Option<Value>, next: Option<Value>) -> Self {
-        Self { leaf, base, next }
+    pub fn new<S: AsRef<str>>(leaf: &[S], base: Option<Value>, next: Option<Value>) -> Self {
+        Self {
+            leaf: leaf.iter().map(|s| s.as_ref().to_owned()).collect(),
+            base,
+            next,
+        }
     }
-    pub fn leaf(&self) -> Leaf {
-        self.leaf
+    pub fn leaf(&self) -> &[String] {
+        &self.leaf
     }
 }
 
@@ -143,26 +147,74 @@ pub fn commit(path: &Path, changes: &[Change]) -> Result<Document, Error> {
 
 fn commit_locked(path: &Path, changes: &[Change], mut lock: Lock) -> Result<Document, Error> {
     let mut document = load(path)?;
-    let conflicts: Vec<Leaf> = changes
-        .iter()
-        .filter(|change| document.get(change.leaf) != change.base.as_ref())
-        .map(|change| change.leaf)
-        .collect();
-    if !conflicts.is_empty() {
-        return Err(Error::Conflict(conflicts));
-    }
+    apply_changes(&mut document, changes, false)?;
     if changes.is_empty() {
         return Ok(document);
-    }
-    for change in changes {
-        match &change.next {
-            Some(value) => set(&mut document.root, change.leaf, value.clone())?,
-            None => remove(&mut document.root, change.leaf),
-        }
     }
     write(path, &mut lock, &document.root)?;
     document.exists = true;
     Ok(document)
+}
+
+/// The shared leaf transaction, independent of file parsing and locking.
+/// File editors retain empty parents and compare object insertion order.
+pub(crate) fn apply_changes(
+    document: &mut Document,
+    changes: &[Change],
+    ordered: bool,
+) -> Result<(), Error> {
+    let conflicts: Vec<Leaf> = changes
+        .iter()
+        .filter(|change| {
+            if ordered {
+                !ordered_eq(document.get(&change.leaf), change.base.as_ref())
+            } else {
+                document.get(&change.leaf) != change.base.as_ref()
+            }
+        })
+        .map(|change| change.leaf.clone())
+        .collect();
+    if !conflicts.is_empty() {
+        return Err(Error::Conflict(conflicts));
+    }
+    for change in changes {
+        match &change.next {
+            Some(value) => set(&mut document.root, &change.leaf, value.clone())?,
+            None if ordered => remove_leaf(&mut document.root, &change.leaf),
+            None => remove(&mut document.root, &change.leaf),
+        }
+    }
+    Ok(())
+}
+
+/// JSON equality including the insertion order of every object.
+pub fn ordered_eq(left: Option<&Value>, right: Option<&Value>) -> bool {
+    match (left, right) {
+        (Some(Value::Object(a)), Some(Value::Object(b))) => {
+            a.len() == b.len()
+                && a.iter()
+                    .zip(b)
+                    .all(|((ak, av), (bk, bv))| ak == bk && ordered_eq(Some(av), Some(bv)))
+        }
+        (Some(Value::Array(a)), Some(Value::Array(b))) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| ordered_eq(Some(a), Some(b)))
+        }
+        _ => left == right,
+    }
+}
+
+fn remove_leaf(object: &mut Map<String, Value>, leaf: &[String]) {
+    match leaf {
+        [] => {}
+        [last] => {
+            object.shift_remove(last);
+        }
+        [first, rest @ ..] => {
+            if let Some(child) = object.get_mut(first).and_then(Value::as_object_mut) {
+                remove_leaf(child, rest);
+            }
+        }
+    }
 }
 
 /// Rewrites the file under Pi's lock; `change` sees the latest contents.
@@ -191,35 +243,35 @@ fn lock_error(path: &Path, error: io::Error) -> Error {
     }
 }
 
-fn set(root: &mut Map<String, Value>, leaf: Leaf, value: Value) -> Result<(), Error> {
+fn set(root: &mut Map<String, Value>, leaf: &[String], value: Value) -> Result<(), Error> {
     let Some((last, parents)) = leaf.split_last() else {
         return Ok(());
     };
     let mut object = root;
     for key in parents {
         object = object
-            .entry(*key)
+            .entry(key.clone())
             .or_insert_with(|| Value::Object(Map::new()))
             .as_object_mut()
             .ok_or_else(|| Error::Write(format!("{} is not an object", leaf.join("."))))?;
     }
-    object.insert((*last).to_owned(), value);
+    object.insert(last.clone(), value);
     Ok(())
 }
 
 /// Deletes a leaf and any parent objects that the deletion left empty.
-fn remove(object: &mut Map<String, Value>, leaf: Leaf) {
+fn remove(object: &mut Map<String, Value>, leaf: &[String]) {
     match leaf {
         [] => {}
         [last] => {
-            object.shift_remove(*last);
+            object.shift_remove(last);
         }
         [first, rest @ ..] => {
-            if let Some(child) = object.get_mut(*first).and_then(Value::as_object_mut) {
+            if let Some(child) = object.get_mut(first).and_then(Value::as_object_mut) {
                 let had = !child.is_empty();
                 remove(child, rest);
                 if had && child.is_empty() {
-                    object.shift_remove(*first);
+                    object.shift_remove(first);
                 }
             }
         }

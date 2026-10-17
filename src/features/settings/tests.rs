@@ -169,6 +169,7 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
         gupi_settings::theme::init(cx);
         gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
     });
+    let agent = tempfile::tempdir().unwrap();
     let pages = super::layout::DOMAIN_PAGES
         .into_iter()
         .flat_map(|(domain, count)| (0..count).map(move |page| (domain, page)));
@@ -192,6 +193,10 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
                     window,
                     cx,
                 )
+            });
+            let config = settings.read(cx).pi_config.clone();
+            config.update(cx, |config, cx| {
+                config.set_agent_for_test(agent.path().to_owned(), cx)
             });
             let resources = settings.read(cx).resources.read(cx).controller.clone();
             resources.update(cx, |owner, _| {

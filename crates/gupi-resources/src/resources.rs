@@ -68,6 +68,7 @@ pub struct ResourceController {
     catalog: refresh::Operation<Catalog, Error, Task<()>>,
     mutation: Mutation,
     shutting_down: bool,
+    refresh_pending: bool,
 }
 pub enum ResourceEvent {
     CatalogChanged,
@@ -100,6 +101,7 @@ impl ResourceController {
             catalog: refresh::Operation::new(),
             mutation: Mutation::Idle,
             shutting_down: false,
+            refresh_pending: false,
         }
     }
     pub fn target(&self) -> &Target {
@@ -111,22 +113,32 @@ impl ResourceController {
     /// Stop reads and new requests while retaining mutations until they settle.
     pub fn shutdown(&mut self) {
         self.shutting_down = true;
+        self.refresh_pending = false;
         self.catalog.transition(Cancel);
     }
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
+        if self.busy() && !self.shutting_down {
+            self.refresh_pending = true;
+            return;
+        }
         self.refresh_after(None, cx);
     }
     fn refresh_after(&mut self, change: Option<Change>, cx: &mut Context<Self>) {
         if self.shutting_down || self.busy() {
             return;
         }
-        let previous = change.as_ref().and_then(|_| self.catalog.data().cloned());
+        let previous = if self.refresh_pending {
+            None
+        } else {
+            change.as_ref().and_then(|_| self.catalog.data().cloned())
+        };
+        self.refresh_pending = false;
         let environment = gupi_pi_runtime::environment(cx);
         let target = self.target.clone();
         let worker = Tokio::spawn(cx, async move {
             if let (Some(change), Some(mut catalog)) = (change, previous) {
                 match change {
-                    Change::Toggle(resource, enabled) => {
+                    Change::Toggle(resource, enabled) if target == Target::Global => {
                         for item in &mut catalog.resources {
                             if item.path == resource.path {
                                 item.enabled = enabled;
@@ -174,6 +186,9 @@ impl ResourceController {
                 if changed {
                     cx.emit(ResourceEvent::CatalogChanged);
                 }
+                if owner.refresh_pending {
+                    owner.refresh(cx);
+                }
                 cx.notify();
             });
         });
@@ -191,7 +206,7 @@ impl ResourceController {
         let Some(root) = self.catalog.data().map(|c| c.root.clone()) else {
             return;
         };
-        // Project scope accepts file edits and scoped package commands only.
+        // Project scope accepts its own file edits, toggles and package commands.
         let project = match &self.target {
             Target::Global => None,
             Target::Project(cwd) => Some(cwd.clone()),
@@ -199,7 +214,10 @@ impl ResourceController {
         if project.is_some()
             && !matches!(
                 change,
-                Change::Save { .. } | Change::Delete(_) | Change::Package { .. }
+                Change::Save { .. }
+                    | Change::Delete(_)
+                    | Change::Package { .. }
+                    | Change::Toggle(..)
             )
         {
             return;
@@ -253,9 +271,10 @@ impl ResourceController {
                             .is_some_and(|cwd| !io::project_owns(cwd, path))
                     };
                     match change {
-                        Change::Toggle(resource, active) => {
-                            io::set_enabled(&root, &resource, active)
-                        }
+                        Change::Toggle(resource, active) => match &project {
+                            Some(cwd) => io::set_project_enabled(cwd, &resource, active),
+                            None => io::set_enabled(&root, &resource, active),
+                        },
                         Change::RegisterSkill(path) => io::register_skill(&root, &path),
                         Change::Save {
                             path,

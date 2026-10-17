@@ -39,6 +39,14 @@ Windows `--install` opens the English MSI, falling back to another MSI if Englis
 
 ## Bundle resources
 
+Windows MSVC builds enable `target-feature=+crt-static` in `.cargo/config.toml`. The main application and update helper statically link the CRT, so direct MSI and WinGet installations do not need a separate VC++ Redistributable installation. MSI packages no longer copy CRT DLLs from Visual Studio. Native dependencies built from source must use the same CRT linkage; prebuilt DLLs must be checked separately.
+
+Build from the workspace so Cargo reads this configuration. `RUSTFLAGS` and `CARGO_ENCODED_RUSTFLAGS` override Cargo's configured flags; if supplying either, preserve `-C target-feature=+crt-static` for Windows MSVC builds. Runtime security fixes require updating the build tools, rebuilding and releasing Gupi. Microsoft runtime components retain their applicable license terms; see [Redistributing Visual C++ files](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files).
+
+For Windows dependency validation, inspect all packaged EXE/DLL imports (including delay imports) and ensure none require the redistributable CRT DLLs. Use separate fresh Windows Sandbox instances for direct MSI and WinGet local-manifest installation. Record the absence of system CRT DLLs before and after installation, ensure WinGet preparation does not install a global runtime, and check that the Gupi installation contains no CRT DLLs. Verify application startup and the helper's UTF-8 JSON `ready` handshake. EOF before the `install` commitment cancels safely and does not validate the full upgrade flow.
+
+Do not replace already published installers with rebuilt bytes under the same version. Older releases without a bundled runtime still need Microsoft's [x64 VC++ Redistributable](https://aka.ms/vc14/vc_redist.x64.exe) or a corrected release.
+
 xtask derives iconsets and ICO files from `build-assets/icon/app-icon.png` in temporary directories. It compiles the seven macOS icon themes when the installed Xcode supports them, with the existing ordinary-icon fallback. Localization resources map the nine declared application locales to macOS `.lproj` directories and WiX cultures; Windows exports one MSI per culture.
 
 The minimum macOS bundle version defaults to 11.0 and follows `MACOSX_DEPLOYMENT_TARGET` when configured. The workflow sets it to 11.0 for both architectures. The Liquid Glass icon compilation target is separate from the application's minimum OS version.

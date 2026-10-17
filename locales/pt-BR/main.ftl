@@ -933,3 +933,205 @@ pi-model-scope-unrestricted = Sem restrições
 pi-model-scope-unrestricted-project = Sem restrições (substitui o global)
 pi-model-scope-blank = Os padrões não podem estar vazios.
 pi-model-scope-malformed = O valor deve ser uma lista de strings. Corrija-o no arquivo de configurações.
+
+conversation-edited-files = { $count ->
+    [one] { $count } arquivo editado
+   *[other] { $count } arquivos editados
+    }
+conversation-edit-write = Gravação
+conversation-edit-error = Erro
+conversation-written-content = Conteúdo gravado
+conversation-edit-operation = Operação { $index }
+conversation-edit-more-files = { $count ->
+    [one] Mostrar mais { $count } arquivo
+   *[other] Mostrar mais { $count } arquivos
+    }
+conversation-edit-less-files = Mostrar menos arquivos
+conversation-edit-more-operations = { $count ->
+    [one] Mostrar mais { $count } operação
+   *[other] Mostrar mais { $count } operações
+    }
+conversation-edit-previous-operations = Operações anteriores
+conversation-edit-stats-tooltip = Linhas líquidas adicionadas e removidas dos patches registrados combinados. Gravações e arquivos que não podem ser combinados são excluídos; não é uma comparação completa do espaço de trabalho.
+conversation-edit-file-label = { $path } — { $state }
+conversation-edit-operation-stats-tooltip = Linhas adicionadas e removidas neste patch registrado.
+conversation-edit-uncombined = Não foi possível combinar; exibindo operações
+
+# Advanced Pi settings
+settings-page-pi-tools = Ferramentas e ambiente
+pi-group-tools = Ferramentas
+pi-group-shell = Shell
+pi-group-package-command = Gerenciador de pacotes
+pi-group-privacy-trust = Privacidade e confiança
+pi-group-advanced = Avançado
+pi-group-provider = Novas tentativas do provedor
+pi-field-default-tools = Ferramentas padrão
+pi-field-codemode-mode = Modo Codemode
+pi-field-codemode-budget = Orçamento de declarações
+pi-field-shell-path = Caminho do shell
+pi-field-shell-prefix = Prefixo do comando
+pi-field-npm-command = Comando npm
+pi-field-telemetry = Telemetria de instalação
+pi-field-project-trust = Confiança padrão do projeto
+pi-field-model-thinking = Níveis de raciocínio por modelo
+pi-field-model-overrides = Compactação por modelo
+pi-field-budget-minimal = Mínimo
+pi-field-budget-low = Baixo
+pi-field-budget-medium = Médio
+pi-field-budget-high = Alto
+pi-field-cache-warming = Pré-aquecimento do cache
+pi-field-transport = Transporte
+pi-field-http-timeout = Tempo ocioso HTTP (ms)
+pi-field-websocket-timeout = Tempo de conexão WebSocket (ms)
+pi-field-provider-timeout = Tempo limite da solicitação (ms)
+pi-field-provider-retries = Número de tentativas
+pi-field-provider-delay = Espera máxima de nova tentativa (ms)
+pi-timeout-disabled = Desativar
+pi-tools-startup-help = Extensões e MCP podem ativar mais ferramentas. Não é uma restrição de segurança nem uma lista em tempo real.
+pi-map-add-model = Adicionar modelo
+pi-map-remove-local = Remover substituição local
+pi-model-thinking-help = Na inicialização, o nível explícito e a sessão têm prioridade; ao trocar de modelo, este valor é usado. Um sufixo de raciocínio tem prioridade.
+pi-model-overrides-help = Cada valor de tokens é herdado separadamente. Apenas os campos alterados são salvos.
+pi-trust-always-title = Confiar nos projetos por padrão?
+pi-trust-always-body = O Pi confiará em projetos sem decisão aplicável, carregará configurações e executará extensões. Decisões explícitas e extensões de confiança continuam prioritárias.
+pi-telemetry-env-on = PI_TELEMETRY substitui esta preferência: ativado
+pi-telemetry-env-off = PI_TELEMETRY substitui esta preferência: desativado
+pi-codemode-help = As configurações de codemode requerem a extensão integrada codemode e a ferramenta codemode ativadas.
+pi-thinking-budget-help = Aplica-se apenas a provedores e modelos com suporte a orçamentos de tokens.
+pi-cache-warming-help = Solicitações de pré-aquecimento geram consumo.
+pi-telemetry-help = Controla a telemetria de instalação, não as atualizações nem todas as análises.
+pi-provider-retry-help = Pi recomenda manter 0.
+pi-trust-always-confirm = Confiar por padrão
+pi-choice-ask = Perguntar
+pi-choice-always = Sempre confiar
+pi-choice-never = Nunca confiar
+pi-choice-codemode-on = Ferramentas diretas e Codemode
+pi-choice-codemode-only = Somente Codemode
+pi-choice-streaming = Durante a transmissão
+pi-choice-idle = Também em repouso
+pi-choice-auto = Automático
+
+pi-thinking-budgets = Orçamentos de raciocínio (tokens)
+pi-model-unavailable-short = Indisponível
+pi-models-unavailable = Não foi possível carregar a lista de modelos
+pi-map-model = Modelo
+pi-map-reserve = Tokens reservados
+pi-map-keep = Tokens recentes
+pi-map-token-action = { $field }: { $action }
+pi-tools-add = Adicionar
+pi-tools-custom = Personalizado…
+pi-tool-remove = Remover { $tool }
+pi-tools-preview = Ao iniciar: { $tools }
+pi-npm-invalid = Digite um comando com aspas fechadas e o primeiro argumento não vazio.
+pi-timeout-off = Desativado
+pi-npm-help = As aspas do shell preservam espaços e argumentos vazios.
+pi-budget-input = Orçamento de raciocínio { $level } (tokens)
+
+pi-group-resource-paths = Caminhos de recursos
+pi-field-resource-extensions = Extensões
+pi-field-resource-skills = Habilidades
+pi-field-resource-prompts = Prompts
+pi-field-resource-themes = Temas
+pi-resource-paths-help = Entradas originais do arquivo deste escopo, em ordem.
+pi-resource-unsupported = Formato não compatível · somente leitura
+pi-resource-absent = Chave ausente
+pi-resource-empty = Array vazio []
+pi-resource-up = Mover para cima
+pi-resource-down = Mover para baixo
+pi-resource-remove = Remover entrada
+pi-resource-add = Adicionar
+pi-resource-clear = Esvaziar array []
+pi-resource-remove-key = Remover chave
+pi-resource-entry-actions = Ações da entrada
+
+# Pi configuration files
+pi-files-models = Modelos e provedores
+pi-files-mcp = MCP
+pi-files-startup-only = O Pi lê este arquivo ao iniciar uma nova sessão. As sessões existentes não são recarregadas.
+pi-files-global-only = Este arquivo é apenas global. Selecione o escopo global para editá-lo.
+pi-files-comments = Salvar remove os comentários do arquivo.
+pi-files-add = Adicionar…
+pi-files-edit = Editar…
+pi-files-delete = Excluir
+pi-files-override = Substituição
+pi-files-definition = Definição completa
+pi-files-disabled = Desativado
+pi-files-duplicate = Este nome entra em conflito com uma entrada existente.
+pi-files-invalid = Não foi possível ler ou salvar esta entrada. Verifique os campos e o arquivo de configuração.
+pi-files-secret-set = Definido · manter
+pi-files-secret-keep = Manter
+pi-files-secret-replace = Substituir por novo valor
+pi-files-secret-remove = Remover
+pi-files-name = Nome
+pi-files-key = Chave
+pi-files-model = Modelo
+pi-files-add-model = Adicionar modelo
+pi-files-on = Ativado
+pi-files-off = Desativado
+
+# Structured configuration editor
+pi-files-label-name = Nome de exibição
+pi-files-label-id = ID do modelo
+pi-files-label-baseUrl = URL base
+pi-files-label-api = API
+pi-files-label-apiKey = Chave de API
+pi-files-label-authHeader = Cabeçalho de autorização
+pi-files-label-oauth = OAuth
+pi-files-label-compat = Compatibilidade
+pi-files-label-models = Modelos
+pi-files-label-modelOverrides = Substituições de modelos
+pi-files-label-enabled = Ativado
+pi-files-label-exposure = Exposição
+pi-files-label-type = Transporte
+pi-files-label-description = Descrição
+pi-files-label-command = Comando
+pi-files-label-url = URL
+pi-files-label-cwd = Diretório de trabalho
+pi-files-label-timeout = Tempo limite
+pi-files-label-toolExposure = Exposição de ferramentas
+pi-files-label-args = Argumentos
+pi-files-label-env = Variáveis de ambiente
+pi-files-label-headers = Cabeçalhos
+pi-files-label-clientId = ID do cliente
+pi-files-label-clientSecret = Segredo do cliente
+pi-files-label-callbackPort = Porta de retorno
+pi-files-label-callbackUrl = URL de retorno
+pi-files-label-scope = Permissões
+pi-files-label-clientName = Nome do cliente
+pi-files-label-clientRegistration = Registro do cliente
+pi-files-label-authServerMetadataUrl = URL de metadados de autorização
+pi-files-label-provider = Provedor
+pi-files-label-reasoning = Raciocínio
+pi-files-label-contextWindow = Janela de contexto
+pi-files-label-maxTokens = Tokens máximos de saída
+pi-files-label-input = Tipos de entrada
+pi-files-label-cost = Custo
+pi-files-label-thinkingLevelMap = Mapa de níveis de pensamento
+pi-files-label-inputLimits = Limites de entrada
+pi-files-label-promptCache = Cache de prompts
+pi-files-label-samplingParams = Parâmetros de amostragem
+pi-files-label-samplingParamsByThinkingLevel = Amostragem por nível de pensamento
+pi-files-label-autoEnableCodemode = Ativar Codemode automaticamente
+pi-files-providers = Provedores
+pi-files-servers = Servidores MCP
+pi-files-automation = Codemode
+pi-files-empty = Nenhuma entrada
+pi-files-basic = Informações básicas
+pi-files-connection = Conexão
+pi-files-exposure-section = Exposição
+pi-files-authentication = Autenticação
+pi-files-advanced = Avançado
+pi-files-back = Voltar
+pi-files-stage = Preparar alterações
+pi-files-secret-present = Definido
+pi-files-add-value = Novo valor
+pi-files-confirm-add = Adicionar
+pi-files-definition-kind = Definição
+pi-files-provider-summary =
+    { $models ->
+        [one] { $models } modelo
+       *[other] { $models } modelos
+    } · { $overrides ->
+        [one] { $overrides } substituição
+       *[other] { $overrides } substituições
+    }

@@ -24,7 +24,7 @@ base64 = "0.23.1"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
 ignore = "0.4.33"
 markdown = "1.0.0"
-serde_json = "1.0.151"
+serde_json = "1.0.154"
 time = { version = "0.3.55", features = ["parsing", "formatting", "local-offset"] }
 url = "2.5.8"
 

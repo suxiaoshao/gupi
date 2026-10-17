@@ -46,7 +46,10 @@ pub fn run(args: BundleArgs) -> Result<()> {
     let updater_key = crate::updater::public_key()?;
 
     #[cfg(target_os = "windows")]
-    windows::prepare_runtime_resources(&mut bundle_settings)?;
+    windows::prepare_runtime_resources(
+        &project_dir.join("target/xtask-runtime").join(target),
+        &mut bundle_settings,
+    )?;
 
     #[cfg(target_os = "macos")]
     macos::prepare_bundle_settings(&mut bundle_settings, &localizations)?;

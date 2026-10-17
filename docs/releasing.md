@@ -39,6 +39,14 @@ Windows `--install` opens the English MSI, falling back to another MSI if Englis
 
 ## Bundle resources
 
+Windows MSI packages include the x64 Visual C++ CRT DLL family beside `gupi.exe` and, when enabled, `gupi-update-helper.exe`. Direct MSI and WinGet installations use the same app-local runtime payload; no separate VC++ Redistributable installation is needed for these newly built packages. Windows supplies the Universal CRT.
+
+xtask reads `VCToolsRedistDir` when set by an MSVC developer shell. Otherwise it uses `vswhere` to locate the latest C++ build tools and reads `VC/Auxiliary/Build/Microsoft.VCRedistVersion.default.txt`. It packages only DLLs from `x64/Microsoft.VC*.CRT`, including companion runtime DLLs, and fails if the CRT directory is missing, ambiguous, or lacks `vcruntime140.dll`. When selecting a non-default compiler toolset, build in its developer shell so the compiler and redistribution files match. Do not source these files from System32 or third-party DLL download sites.
+
+These Microsoft runtime files retain their redistribution terms; see [Redistributing Visual C++ files](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files). App-local runtime servicing belongs to Gupi: update the build tools and rebuild/release the MSI for runtime security fixes. Do not replace already published installers with rebuilt bytes under the same version. Existing published packages without the runtime need Microsoft's [x64 VC++ Redistributable](https://aka.ms/vc14/vc_redist.x64.exe) or a later corrected release.
+
+For Windows dependency validation, use a fresh Windows Sandbox, record the system runtime state before installing, and test both direct MSI installation and WinGet installation from the generated local manifest. Preparing WinGet may itself add runtime dependencies; record the state again afterwards. Inspect the installed runtime files and final EXE/DLL dependencies, verify application startup, and test the helper's UTF-8 JSON `ready` handshake. EOF before the `install` commitment cancels safely and does not validate the full upgrade flow.
+
 xtask derives iconsets and ICO files from `build-assets/icon/app-icon.png` in temporary directories. It compiles the seven macOS icon themes when the installed Xcode supports them, with the existing ordinary-icon fallback. Localization resources map the nine declared application locales to macOS `.lproj` directories and WiX cultures; Windows exports one MSI per culture.
 
 The minimum macOS bundle version defaults to 11.0 and follows `MACOSX_DEPLOYMENT_TARGET` when configured. The workflow sets it to 11.0 for both architectures. The Liquid Glass icon compilation target is separate from the application's minimum OS version.

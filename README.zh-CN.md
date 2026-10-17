@@ -64,6 +64,8 @@ Gupi 带有内置更新功能，`--greedy` 会将它的 Cask 纳入 Homebrew 升
 
 macOS 安装包要求 macOS 11 或更高版本，已使用 Developer ID 签名并通过 Apple 公证。Windows 安装包尚未做 Authenticode 签名，系统可能显示“未知发布者”；Linux 包也未签名。Release 中提供 `SHA256SUMS`，用于校验下载文件。
 
+如果已有 Windows 发行版启动时提示缺少 `VCRUNTIME140.dll` 或错误 `0xc0000135`，请安装微软官方 [x64 Visual C++ 运行库](https://aka.ms/vc14/vc_redist.x64.exe)，再打开 Gupi。当前源码构建的 MSI 已包含运行库，直接安装和 WinGet 安装均可使用；此前已发布的安装包不会因此改变。
+
 <details>
 <summary>从源码运行或创建本地安装包</summary>
 

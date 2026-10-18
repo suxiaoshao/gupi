@@ -1,3 +1,4 @@
+mod auth;
 mod config_files;
 mod global_keys;
 mod keys;
@@ -66,6 +67,7 @@ pub(crate) struct SettingsView {
     navigation: (usize, usize),
     domain: layout::Domain,
     pi_config: Entity<pi_config::PiConfig>,
+    auth: Entity<auth::AuthPage>,
     language: Entity<ComboboxState<SearchableVec<LanguageItem>>>,
     updates: Entity<super::updates::UpdatesView>,
 }
@@ -214,6 +216,7 @@ impl SettingsView {
         });
         let controller_sub = cx.observe(&controller, |_, _, cx| cx.notify());
         Self {
+            auth: cx.new(|_| auth::AuthPage::new(controller.clone())),
             updates: cx.new(|cx| super::updates::UpdatesView::new(controller.clone(), cx)),
             focus_handle,
             form,

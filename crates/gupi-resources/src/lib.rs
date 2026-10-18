@@ -7,3 +7,6 @@ pub mod pi_config_files;
 pub mod pi_resources;
 pub mod pi_settings;
 pub mod resources;
+
+pub mod pi_auth;
+mod pi_lock;

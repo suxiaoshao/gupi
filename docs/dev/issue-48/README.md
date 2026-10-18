@@ -1,6 +1,6 @@
 # Pi 供应商认证（Gupi #48）
 
-状态：Ready（架构师评审通过，待用户 review）。
+状态：实施步骤 1–4 已实现，本地自动检查通过；原生交互验证尚未完成。
 
 依据：Pi v1.2.0（本地 `/Users/sushao/Documents/code/pi`，用 `git show v1.2.0:<path>` 核对），路径相对 `packages/coding-agent/src/`，`ai/` 指 `packages/ai/src/`。`models.json` 与 `mcp.json` 的文件编辑已由 [#48 + #51 文件编辑](../issue-48-51/README.md) 完成，本文只覆盖 [Gupi #48](https://github.com/suxiaoshao/gupi/issues/48) 的剩余部分：全局 `auth.json`。
 
@@ -15,7 +15,7 @@ Pi 设置新增“认证”页，只有全局作用域：
 
 **用户已确认的决定**：
 
-- Gupi 直接写 `auth.json`，遵循 Pi 的文件锁与写入方式；同时向 Pi 上游提出结构化认证接口的需求（草稿另行准备，由用户决定是否提交）。
+- Gupi 直接写 `auth.json`，遵循 Pi 的文件锁与写入方式。
 - 凭据只存在 Pi 的 `auth.json`，权限沿用 Pi 现有行为；不使用系统钥匙串，不迁移，不复制到 Gupi 配置。
 - 供应商 OAuth 登录暂缓：Gupi 显示状态并提供注销，登录引导用户在 Pi 终端执行 `/login <provider>`；不模拟 TUI 按键，不引入 JS 桥接。
 - 保存后不自动重连会话，页面说明更改在新会话中完整生效。
@@ -109,7 +109,6 @@ Pi 设置新增“认证”页，只有全局作用域：
 2. `gupi-resources` 或 `gupi-pi-runtime`（按现有 Pi 命令启动代码的归属放置）：`auth check` 调用与白名单解析、超时。
 3. `src/features/settings`：认证页、列表、添加/替换对话框、确认与检查状态；接入设置搜索关键词。
 4. 九种语言文案。
-5. Pi 上游需求草稿：提供商枚举（含认证能力）、通过 stdin/RPC 载荷设置与移除 API Key、基于 `AuthInteraction` 的 RPC 登录与取消、批量状态；凭据不进 argv，错误脱敏。
 
 ## 验证
 
@@ -124,3 +123,18 @@ Pi 设置新增“认证”页，只有全局作用域：
 **原生界面**：worker 用 `script/gupi-ui-gallery` 临时配置和伪造的 `auth.json` 检查列表、添加、替换、移除、注销确认、复制登录命令、检查结果显示，浅色/深色各一次；确认无障碍文本不含凭据。不读取、不修改真实 Pi 凭据，不发起 OAuth。
 
 **检查命令**：`cargo fmt --all -- --check`、`cargo clippy -p gupi --all-targets --locked -- -D warnings`，以及 `cargo test -p gupi -p gupi-resources --locked`。
+
+## 验证与传输澄清
+
+- 经架构师核对 Pi v1.2.0，供应商 ID 无 ASCII 语法限制。存储查找、替换与移除保留完整 ID；手填只要求非空、单行，不允许控制字符及 Unicode 行分隔符，不静默 trim。
+- Pi 会在消费 `--provider` 的值之前扫描认证开关。检查入口拒绝 `--credentials`、`--json`、`--no-refresh`、`--min-expiry` 这四个精确 ID，以及控制字符、行分隔符或 trim 后改变的 ID，不启动子进程；这些凭据仍可设置和移除。
+- `/login` 是 Pi TUI 指令，内部空格不做 shell 转义；无法安全完整表示的 ID 复制 `/login`，提示在 Pi 终端选择供应商。
+
+## 实现与验证结果
+
+- `gupi-resources::pi_auth` 提供凭据元数据投影、SHA-256 不透明条目修订、单供应商即时写入和删除；共享目录锁提升至 `pi_lock`。严格 JSON/BOM、私有新建权限、锁内重读、原地写入和同步保持 Pi 的约定。
+- 设置新增仅全局的“认证”页，紧随“模型与供应商”：列表与候选、密码输入、替换和移除确认、OAuth 注销与复制登录指令、按需检查、重新读取及本地化错误。九种语言均新增 46 个同名文案键，插值变量核对一致。
+- `cargo fmt --all -- --check`、`cargo clippy -p gupi --all-targets --locked -- -D warnings`、`git diff --check` 通过。`cargo test -p gupi -p gupi-resources --locked` 通过：Gupi 115 项、resources 67 项，失败 0；资源测试覆盖存储、冲突、权限、符号链接、锁、脱敏、协议及危险供应商 ID 不启动进程；生产编辑器交互测试确认空值不能提交、输入的 API Key 不进入无障碍 value、替换保留 env。
+- 最终测试显式使用临时 Pi 目录；认证页的测试构造器没有默认用户目录，布局测试注入临时路径。首次测试调用遗漏目录环境变量（本地时间 01:49:58 开始，01:50:16 以 130 退出），随后重跑。源码追踪显示当时新增认证页只可能在布局测试中触发 auth/models 读取，未点击认证操作；不能创建 auth 文件或锁、写入/删除凭据或启动认证检查。未取得系统访问轨迹，不能确认该读取是否实际执行。
+- 原生尝试使用 `script/gupi-ui-gallery --prepare-only --keep` 创建的临时配置、伪造 auth/models 与假 Pi 检查进程，功能构建可启动，最终代码的 `cargo build -p gupi --locked` 通过。CUA 两次超时；macOS 原生后备只能识别进程、菜单和 CoreGraphics 窗口，AX 树递归返回 application，窗口截图失败。因此列表、添加、替换、移除、注销、复制、检查结果的浅色/深色原生交互和原生无障碍脱敏均未取得通过结论，不能由自动测试代替。未发起 OAuth。
+- 与架构师确认的 ID 校验/传输澄清见上节。按用户新决定，删除上游需求草稿及其计划条目，不创建或提交上游请求。

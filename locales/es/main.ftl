@@ -1135,3 +1135,51 @@ pi-files-provider-summary =
         [one] { $overrides } sobrescritura
        *[other] { $overrides } sobrescrituras
     }
+
+# Pi provider authentication
+pi-auth-title = Autenticación
+pi-auth-help = Las credenciales se guardan en auth.json de Pi. Los cambios se aplican por completo en sesiones nuevas. Gupi no reconecta ni sincroniza las listas de modelos de las sesiones existentes.
+pi-auth-add = Añadir clave API…
+pi-auth-replace = Reemplazar clave API…
+pi-auth-api-key = Clave API
+pi-auth-oauth = OAuth
+pi-auth-unknown = Desconocido
+pi-auth-missing = Sin credenciales guardadas
+pi-auth-set = Ya configurada
+pi-auth-empty = No hay proveedores guardados. Añade una clave API para empezar.
+pi-auth-provider = ID del proveedor
+pi-auth-key-placeholder = Introduce una clave API nueva
+pi-auth-candidates = Elegir proveedor…
+pi-auth-check = Comprobar configuración
+pi-auth-checking = Comprobando configuración
+pi-auth-ready = Pi encontró una configuración de credenciales utilizable. Esto no valida el token.
+pi-auth-not-ready = Pi no encontró una configuración de credenciales utilizable.
+pi-auth-invalid = Pi indicó una configuración no válida.
+pi-auth-check-failed = No se pudo comprobar la configuración.
+pi-auth-provider-not-found = Proveedor no encontrado.
+pi-auth-not-configured = Credenciales sin configurar.
+pi-auth-not-available = Credenciales no disponibles.
+pi-auth-invalid-state = Pi no pudo leer el estado de autenticación.
+pi-auth-copy-login = Copiar comando de inicio de sesión
+pi-auth-login-help = Comando copiado. Ejecútalo en la terminal de Pi para volver a iniciar sesión.
+pi-auth-oauth-help = Solo se muestra el registro local. Pi puede intentar renovar las credenciales al usarlas. Vuelve a iniciar sesión si es necesario.
+pi-auth-expired = La fecha de vencimiento registrada ya pasó
+pi-auth-expires = Vencimiento registrado: { $time }
+pi-auth-remove = Eliminar credenciales…
+pi-auth-logout = Cerrar sesión…
+pi-auth-remove-title = ¿Eliminar las credenciales de «{ $provider }»?
+pi-auth-logout-title = ¿Cerrar la sesión de «{ $provider }»?
+pi-auth-remove-help = Solo se eliminan las credenciales locales. Los tokens del servidor no se revocan. Las variables de entorno o apiKey en models.json pueden seguir autenticando.
+pi-auth-remove-env = También se eliminarán los valores de entorno y configuración del proveedor.
+pi-auth-remove-confirm = Eliminar
+pi-auth-logout-confirm = Cerrar sesión
+pi-auth-replace-title = ¿Reemplazar las credenciales de «{ $provider }»?
+pi-auth-replace-help = Se reemplazará toda la credencial guardada, incluidos tokens y campos desconocidos, por una clave API.
+pi-auth-replace-confirm = Reemplazar
+pi-auth-read-error = No se pudo leer auth.json.
+pi-auth-parse-error = auth.json debe contener un objeto JSON válido. La edición está desactivada.
+pi-auth-busy = auth.json está ocupado. Inténtalo de nuevo.
+pi-auth-conflict = Este proveedor cambió en el disco. Recarga e inténtalo de nuevo.
+pi-auth-write-error = No se pudo escribir auth.json. Recarga para comprobar el estado actual.
+pi-auth-input-error = Introduce un ID de proveedor y una clave API no vacía.
+pi-auth-login-select-help = Comando copiado. Ejecuta /login en la terminal de Pi y elige el proveedor.

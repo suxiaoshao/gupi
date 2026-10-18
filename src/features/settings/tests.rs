@@ -194,6 +194,9 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
                     cx,
                 )
             });
+            settings.read(cx).auth.clone().update(cx, |auth, _| {
+                auth.set_agent_for_test(agent.path().to_owned());
+            });
             let config = settings.read(cx).pi_config.clone();
             config.update(cx, |config, cx| {
                 config.set_agent_for_test(agent.path().to_owned(), cx)

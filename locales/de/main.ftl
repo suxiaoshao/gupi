@@ -1136,3 +1136,51 @@ pi-files-provider-summary =
         [one] { $overrides } Überschreibung
        *[other] { $overrides } Überschreibungen
     }
+
+# Pi provider authentication
+pi-auth-title = Authentifizierung
+pi-auth-help = Zugangsdaten liegen in Pis auth.json. Änderungen gelten vollständig in neuen Sitzungen. Gupi verbindet bestehende Sitzungen nicht neu und synchronisiert deren Modelllisten nicht.
+pi-auth-add = API-Schlüssel hinzufügen…
+pi-auth-replace = API-Schlüssel ersetzen…
+pi-auth-api-key = API-Schlüssel
+pi-auth-oauth = OAuth
+pi-auth-unknown = Unbekannt
+pi-auth-missing = Keine gespeicherten Zugangsdaten
+pi-auth-set = Bereits gesetzt
+pi-auth-empty = Keine Anbieter gespeichert. Fügen Sie einen API-Schlüssel hinzu.
+pi-auth-provider = Anbieter-ID
+pi-auth-key-placeholder = Neuen API-Schlüssel eingeben
+pi-auth-candidates = Anbieter auswählen…
+pi-auth-check = Konfiguration prüfen
+pi-auth-checking = Konfiguration wird geprüft
+pi-auth-ready = Pi hat eine verwendbare Zugangskonfiguration gefunden. Das Token wurde nicht validiert.
+pi-auth-not-ready = Pi hat keine verwendbare Zugangskonfiguration gefunden.
+pi-auth-invalid = Pi meldet eine ungültige Konfiguration.
+pi-auth-check-failed = Konfiguration konnte nicht geprüft werden.
+pi-auth-provider-not-found = Anbieter nicht gefunden.
+pi-auth-not-configured = Keine Zugangsdaten konfiguriert.
+pi-auth-not-available = Zugangsdaten nicht verfügbar.
+pi-auth-invalid-state = Pi konnte den Authentifizierungsstatus nicht lesen.
+pi-auth-copy-login = Anmeldebefehl kopieren
+pi-auth-login-help = Anmeldebefehl kopiert. Führen Sie ihn im Pi-Terminal aus, um sich erneut anzumelden.
+pi-auth-oauth-help = Nur lokaler Eintrag. Pi versucht die Zugangsdaten bei Verwendung möglicherweise zu erneuern. Melden Sie sich bei Bedarf erneut an.
+pi-auth-expired = Gespeicherter Ablaufzeitpunkt überschritten
+pi-auth-expires = Gespeicherter Ablauf: { $time }
+pi-auth-remove = Zugangsdaten entfernen…
+pi-auth-logout = Abmelden…
+pi-auth-remove-title = Zugangsdaten für „{ $provider }“ entfernen?
+pi-auth-logout-title = Von „{ $provider }“ abmelden?
+pi-auth-remove-help = Nur lokale Zugangsdaten werden gelöscht. Server-Tokens werden nicht widerrufen. Umgebungsvariablen oder apiKey in models.json können weiterhin authentifizieren.
+pi-auth-remove-env = Umgebungs- und Konfigurationswerte des Anbieters werden ebenfalls entfernt.
+pi-auth-remove-confirm = Entfernen
+pi-auth-logout-confirm = Abmelden
+pi-auth-replace-title = Zugangsdaten für „{ $provider }“ ersetzen?
+pi-auth-replace-help = Der gesamte Eintrag einschließlich Tokens und unbekannter Felder wird durch einen API-Schlüssel ersetzt.
+pi-auth-replace-confirm = Ersetzen
+pi-auth-read-error = auth.json konnte nicht gelesen werden.
+pi-auth-parse-error = auth.json muss ein gültiges JSON-Objekt enthalten. Bearbeitung ist deaktiviert.
+pi-auth-busy = auth.json ist gesperrt. Versuchen Sie es erneut.
+pi-auth-conflict = Dieser Anbieter wurde auf dem Datenträger geändert. Laden Sie die Datei neu.
+pi-auth-write-error = auth.json konnte nicht geschrieben werden. Laden Sie den aktuellen Stand neu.
+pi-auth-input-error = Geben Sie eine Anbieter-ID und einen nicht leeren API-Schlüssel ein.
+pi-auth-login-select-help = Anmeldebefehl kopiert. Führen Sie /login im Pi-Terminal aus und wählen Sie den Anbieter.

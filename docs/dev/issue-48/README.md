@@ -1,6 +1,6 @@
 # Pi 供应商认证（Gupi #48）
 
-状态：Draft（待架构师评审与用户 review）。
+状态：Ready（架构师评审通过，待用户 review）。
 
 依据：Pi v1.2.0（本地 `/Users/sushao/Documents/code/pi`，用 `git show v1.2.0:<path>` 核对），路径相对 `packages/coding-agent/src/`，`ai/` 指 `packages/ai/src/`。`models.json` 与 `mcp.json` 的文件编辑已由 [#48 + #51 文件编辑](../issue-48-51/README.md) 完成，本文只覆盖 [Gupi #48](https://github.com/suxiaoshao/gupi/issues/48) 的剩余部分：全局 `auth.json`。
 

@@ -12,6 +12,8 @@ pub(super) struct Editor {
     key: Entity<InputState>,
     fixed: bool,
     error: Option<Error>,
+    waiting: bool,
+    confirming: bool,
     _subscriptions: Vec<Subscription>,
 }
 impl Editor {
@@ -29,7 +31,7 @@ impl Editor {
         };
         let fixed = entry.is_some();
         let name = entry.map(|e| e.provider().to_owned()).unwrap_or_default();
-        let editor = cx.new(|cx| {
+        let editor = cx.new(|cx: &mut Context<Self>| {
             let provider = cx.new(|cx| {
                 InputState::new(window, cx)
                     .default_value(name)
@@ -43,6 +45,25 @@ impl Editor {
             let subscriptions = vec![
                 cx.subscribe(&provider, |_, _, _: &InputEvent, cx| cx.notify()),
                 cx.subscribe(&key, |_, _, _: &InputEvent, cx| cx.notify()),
+                cx.subscribe_in(
+                    owner,
+                    window,
+                    |this, _, result: &WriteFinished, window, cx| {
+                        if !this.waiting {
+                            return;
+                        }
+                        this.waiting = false;
+                        match result.0 {
+                            Ok(()) => {
+                                this.key
+                                    .update(cx, |input, cx| input.set_value("", window, cx));
+                                window.close_dialog(cx);
+                            }
+                            Err(error) => this.error = Some(error),
+                        }
+                        cx.notify();
+                    },
+                ),
             ];
             Self {
                 owner: owner.clone(),
@@ -51,12 +72,30 @@ impl Editor {
                 key,
                 fixed,
                 error: None,
+                waiting: false,
+                confirming: false,
                 _subscriptions: subscriptions,
             }
         });
         window.open_dialog(cx, move |dialog, _, cx| {
             let submit = editor.clone();
+            let cancel = editor.clone();
             dialog
+                .overlay_closable(false)
+                .close_button(!editor.read(cx).waiting)
+                .on_cancel(move |_, _, cx| {
+                    cancel.update(cx, |this, cx| {
+                        if this.waiting {
+                            return false;
+                        }
+                        if this.confirming {
+                            this.confirming = false;
+                            cx.notify();
+                            return false;
+                        }
+                        true
+                    })
+                })
                 .title(t(
                     cx,
                     if fixed {
@@ -73,7 +112,10 @@ impl Editor {
         });
     }
 
-    fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn save(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+        if self.waiting || self.owner.read(cx).saving.is_some() {
+            return;
+        }
         let provider = self.provider.read(cx).value().to_string();
         if (!self.fixed && !pi_auth::valid_provider(&provider))
             || self.key.read(cx).value().is_empty()
@@ -83,50 +125,25 @@ impl Editor {
             return;
         }
         let entry = self.baseline.entry(&provider);
-        let file = self.baseline.clone();
-        let owner = self.owner.clone();
-        let key = self.key.read(cx).value().to_string();
-        self.key
-            .update(cx, |input, cx| input.set_value("", window, cx));
-        window.close_dialog(cx);
-        if matches!(entry.kind(), Kind::OAuth | Kind::Unknown) {
-            window.open_dialog(cx, move |dialog, _, cx| {
-                let save = (
-                    owner.clone(),
-                    file.clone(),
-                    provider.clone(),
-                    entry.revision(),
-                    key.clone(),
-                );
-                let mut args = fluent_bundle::FluentArgs::new();
-                args.set("provider", provider.clone());
-                dialog
-                    .title(t_with_args(cx, "pi-auth-replace-title", &args))
-                    .child(t(cx, "pi-auth-replace-help"))
-                    .footer(super::super::dialog_buttons(
-                        "pi-auth-replace-confirm",
-                        false,
-                        false,
-                        cx,
-                    ))
-                    .on_ok(move |_, _, cx| {
-                        save.0.update(cx, |this, cx| {
-                            this.commit(
-                                save.1.clone(),
-                                save.2.clone(),
-                                save.3.clone(),
-                                Some(save.4.clone()),
-                                cx,
-                            )
-                        });
-                        true
-                    })
-            });
-        } else {
-            owner.update(cx, |this, cx| {
-                this.commit(file, provider, entry.revision(), Some(key), cx)
-            });
+        if matches!(entry.kind(), Kind::OAuth | Kind::Unknown) && !self.confirming {
+            self.confirming = true;
+            self.error = None;
+            cx.notify();
+            return;
         }
+        let key = self.key.read(cx).value().to_string();
+        self.waiting = true;
+        self.error = None;
+        self.owner.update(cx, |this, cx| {
+            this.commit(
+                self.baseline.clone(),
+                provider,
+                entry.revision(),
+                Some(key),
+                cx,
+            )
+        });
+        cx.notify();
     }
 }
 impl Render for Editor {
@@ -140,22 +157,33 @@ impl Render for Editor {
                         Input::new(&self.provider)
                             .id("auth-provider")
                             .aria_label(t(cx, "pi-auth-provider"))
-                            .readonly(self.fixed),
+                            .readonly(self.fixed || self.confirming)
+                            .disabled(self.waiting),
                     ),
                 )
                 .child(
                     Field::new().label(t(cx, "pi-auth-api-key")).child(
                         Input::new(&self.key)
                             .id("auth-key")
-                            .aria_label(t(cx, "pi-auth-api-key")),
+                            .aria_label(t(cx, "pi-auth-api-key"))
+                            .readonly(self.confirming)
+                            .disabled(self.waiting),
                     ),
                 ),
         );
-        if !self.fixed && !candidates.is_empty() {
+        if self.confirming {
+            let mut args = fluent_bundle::FluentArgs::new();
+            args.set("provider", self.provider.read(cx).value().to_string());
+            body = body
+                .child(t_with_args(cx, "pi-auth-replace-title", &args))
+                .child(t(cx, "pi-auth-replace-help"));
+        }
+        if !self.fixed && !self.confirming && !candidates.is_empty() {
             body = body.child(
                 Button::new("auth-candidates")
                     .small()
                     .label(t(cx, "pi-auth-candidates"))
+                    .disabled(self.waiting)
                     .dropdown_menu(move |menu, _, _| {
                         let mut menu = menu;
                         for name in &candidates {
@@ -193,11 +221,15 @@ impl Render for Editor {
                     .child(t(cx, error_key(error))),
             );
         }
+        if self.waiting {
+            body = body.child(t(cx, "pi-settings-loading"));
+        }
         body.child(
             DialogFooter::new()
                 .child(
                     Button::new("auth-cancel")
                         .label(t(cx, "action-cancel"))
+                        .disabled(self.waiting)
                         .on_click(|_, window, cx| {
                             window
                                 .dispatch_action(Box::new(gpui_kit::component::dialog::Cancel), cx)
@@ -206,8 +238,15 @@ impl Render for Editor {
                 .child(
                     Button::new("auth-save")
                         .primary()
-                        .label(t(cx, "pi-settings-save"))
-                        .disabled(self.key.read(cx).value().is_empty())
+                        .label(t(
+                            cx,
+                            if self.confirming {
+                                "pi-auth-replace-confirm"
+                            } else {
+                                "pi-settings-save"
+                            },
+                        ))
+                        .disabled(self.waiting || self.key.read(cx).value().is_empty())
                         .on_click(cx.listener(|this, _, window, cx| this.save(window, cx))),
                 ),
         )

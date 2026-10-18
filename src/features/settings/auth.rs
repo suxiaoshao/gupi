@@ -18,6 +18,9 @@ use gupi_settings::{
 };
 use std::{collections::HashMap, path::PathBuf};
 
+struct WriteFinished(Result<(), Error>);
+impl EventEmitter<WriteFinished> for AuthPage {}
+
 pub(super) struct AuthPage {
     agent: Option<PathBuf>,
     file: Option<File>,
@@ -116,6 +119,7 @@ impl AuthPage {
             let result = worker.await;
             let _ = this.update(cx, |this, cx| {
                 this.saving = None;
+                let outcome = result.as_ref().map(|_| ()).map_err(|error| *error);
                 match result {
                     Ok(file) => {
                         this.file = Some(file);
@@ -123,9 +127,11 @@ impl AuthPage {
                     }
                     Err(e) => this.error = Some(e),
                 }
+                cx.emit(WriteFinished(outcome));
                 cx.notify()
             });
         }));
+        self.error = None;
         cx.notify();
     }
     fn check(&mut self, provider: String, cx: &mut Context<Self>) {
@@ -236,6 +242,18 @@ impl AuthPage {
                     .text_sm()
                     .text_color(cx.theme().muted_foreground)
                     .child(t(cx, "pi-auth-empty")),
+            );
+        }
+        if file
+            .entries()
+            .iter()
+            .any(|entry| entry.kind() == Kind::OAuth)
+        {
+            body = body.child(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(t(cx, "pi-auth-oauth-help")),
             );
         }
         for name in &self.names {
@@ -382,14 +400,6 @@ impl AuthPage {
                         .text_sm()
                         .text_color(cx.theme().muted_foreground)
                         .child(text),
-                );
-            }
-            if entry.kind() == Kind::OAuth {
-                content = content.child(
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(t(cx, "pi-auth-oauth-help")),
                 );
             }
             if self.checking.contains_key(name) {

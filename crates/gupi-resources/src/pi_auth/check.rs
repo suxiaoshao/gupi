@@ -80,25 +80,37 @@ pub async fn check(
     {
         return None;
     }
-    let mut cmd = tokio::process::Command::new(command);
-    cmd.args([
-        "auth",
-        "check",
-        "--provider",
-        provider,
-        "--json",
-        "--no-refresh",
-    ])
-    .envs(variables)
-    .stdin(Stdio::null())
-    .stderr(Stdio::null())
-    .stdout(Stdio::piped())
-    .kill_on_drop(true);
-    let output = tokio::time::timeout(Duration::from_secs(10), cmd.output())
+    let command = command.to_owned();
+    let resolve_variables = variables.clone();
+    let attempt = async move {
+        let executable = tokio::task::spawn_blocking(move || {
+            pi_rpc::probe::resolve_command_with_env(&command, &resolve_variables)
+        })
         .await
         .ok()?
         .ok()?;
-    parse(provider, output.status.code(), &output.stdout)
+        let mut cmd = tokio::process::Command::new(executable);
+        cmd.args([
+            "auth",
+            "check",
+            "--provider",
+            provider,
+            "--json",
+            "--no-refresh",
+        ])
+        .envs(variables)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
+        .kill_on_drop(true);
+        #[cfg(windows)]
+        cmd.creation_flags(0x08000000);
+        let output = cmd.output().await.ok()?;
+        parse(provider, output.status.code(), &output.stdout)
+    };
+    tokio::time::timeout(Duration::from_secs(10), attempt)
+        .await
+        .ok()?
 }
 #[cfg(test)]
 mod tests {
@@ -229,5 +241,35 @@ mod process_tests {
         )
         .unwrap();
         assert!(check(script.to_str().unwrap(), "p", vec![]).await.is_none());
+    }
+}
+
+#[cfg(all(test, unix))]
+mod resolution_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt as _;
+    #[tokio::test]
+    async fn command_lookup_uses_snapshot_path_and_missing_commands_do_not_spawn() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("pi-auth-snapshot-fixture");
+        std::fs::write(
+            &script,
+            "#!/bin/sh\nprintf '%s' '{\"provider\":\"p\",\"status\":\"ready\"}'\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let env = vec![(OsString::from("PATH"), dir.path().as_os_str().to_owned())];
+        assert_eq!(
+            check("pi-auth-snapshot-fixture", "p", env.clone())
+                .await
+                .unwrap()
+                .status(),
+            CheckStatus::Ready
+        );
+        assert!(
+            check("pi-auth-does-not-exist-fixture", "p", env)
+                .await
+                .is_none()
+        );
     }
 }

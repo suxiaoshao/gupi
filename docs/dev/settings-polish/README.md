@@ -68,7 +68,7 @@
 
 `script/gupi-ui-gallery` 把 `HOME` 指向私有临时根目录，使 `~/.agents/skills` 等基于主目录的发现也落在临时数据上（`crates/gupi-resources/src/resources.rs:173`）；同时设置配置、日志、数据、Pi 与会话目录。不改应用的发现规则。
 
-macOS 临时 bundle 使用唯一标识及原生 bootstrap。工具通过绝对路径 `/usr/bin/cc` 编译 bootstrap；它检查必需的 fixture 目录，切换到 project-a，以绝对路径和静态环境白名单 `execve` 内部 gupi-bin，并转发参数；缺目录、chdir 或 execve 失败即退出，不合并宿主环境。Info.plist 的 LSEnvironment 仅保留为冗余元数据，不作为隔离保证。直接启动和 Launch Services 重启都须观察最终 GUI 进程的可执行文件、cwd 和覆盖变量，确认后才绑定 CUA。
+macOS 临时 bundle 使用与真实应用不同的固定标识 `top.sushao.gupi.ui-gallery.isolated` 及原生 bootstrap。该固定标识由用户批准，便于 Computer Use 的一次性授权；每次运行的临时路径与隔离环境仍各自独立。工具通过绝对路径 `/usr/bin/cc` 编译 bootstrap；它检查必需的 fixture 目录，切换到 project-a，以绝对路径和静态环境白名单 `execve` 内部 gupi-bin，并转发参数；缺目录、chdir 或 execve 失败即退出，不合并宿主环境。Info.plist 的 LSEnvironment 仅保留为冗余元数据，不作为隔离保证。直接启动和 Launch Services 重启都须观察最终 GUI 进程的可执行文件、cwd 和覆盖变量，确认后才绑定 CUA。
 
 ### 7. 认证页行点击（用户已确认）
 
@@ -112,10 +112,14 @@ Cargo 仍报告既有第三方 `block 0.1.6` future-incompatibility 提示，不
 
 新增回归覆盖 Skill 完整说明、正文读取失败时说明保留、实际键盘翻页与 Tab 离开、操作区位于滚动区上方；语言原始值与语言切换后的控件名称；录制控件包含命令、绑定和状态；资源命名对新建/已有文件的不同规则。认证现有回归已按直接行操作更新。
 
-原生验证限制：此前走查是问题来源，不能作为此次修正的验收。此次 protected Gallery 通过 `open -n` 启动和退出后的再次启动，均验证最终 gupi-bin 的可执行文件、project-a cwd、临时 HOME、GUPI_CONFIG_DIR / GUPI_LOG_DIR / GUPI_DATA_DIR、PI_CODING_AGENT_DIR / PI_CODING_AGENT_SESSION_DIR。随后 CUA 返回 `Computer Use was not approved to use Gupi UI Gallery`，未尝试改名或换标识绕过拒绝；修正后的 zh-CN 默认尺寸、德语 800×600、主题及原生 AX 逐项复查尚未执行，暂无此次有效 UI 截图。启动证据与 fixture 位于 `/tmp/gupi-settings-polish-20261019`（verified-launches.jsonl）。
+原生验证限制：此前走查是问题来源，不能作为此次修正的验收。此次 protected Gallery 通过 `open -n` 启动和退出后的再次启动，均验证最终 gupi-bin 的可执行文件、project-a cwd、临时 HOME、GUPI_CONFIG_DIR / GUPI_LOG_DIR / GUPI_DATA_DIR、PI_CODING_AGENT_DIR / PI_CODING_AGENT_SESSION_DIR。随机标识阶段 CUA 返回 `Computer Use was not approved to use Gupi UI Gallery`，未尝试改名或换标识绕过拒绝；修正后的 zh-CN 默认尺寸、德语 800×600、主题及原生 AX 逐项复查尚未执行，暂无此次有效 UI 截图。启动证据与 fixture 位于 `/tmp/gupi-settings-polish-20261019`（verified-launches.jsonl）。
 
 ### 隔离事件与修复
 
 验证中曾出现临时 Gallery 进程已退出后，CUA 按 bundle 路径重新启动时未继承环境；发现真实配置路径后立即停止 UI 操作并终止该精确 fixture 进程，未用工具打开真实 Pi / .agents 文件。协调者仅用 stat 检查：真实 Pi auth 的 13:35:36 时间与用户 Pi 进程启动一致，models/mcp/settings 更早；真实 Gupi 配置仅 instance.json 在 15:16:32 被此次未隔离重启写入，其他条目未变。这些时间信息不证明运行时没有读取。
 
 后续 `open -n` 证明仅写 LSEnvironment 仍会忽略隔离变量，已在 CUA 前发现并终止精确进程；shell bootstrap 被 Launch Services 以 -54 拒绝（仅记录该次观察，不推断普遍限制）。按架构师确认改为上述原生 bootstrap 后，实际启动与重启的最终 GUI 环境/cwd 均通过验证；后续仍按唯一 bundle 路径绑定并复核，不凭源码宣称覆盖所有 CUA 重启路径。
+
+### 固定 Gallery 标识后的复核
+
+按用户批准，将每次随机的 CFBundleIdentifier 改为固定的 `top.sushao.gupi.ui-gallery.isolated`，应用名仍为 `Gupi UI Gallery`，保留原生 execve bootstrap 和冗余 LSEnvironment。停止旧 fixture PID 98433 后，以临时 HOME/Pi 环境重新执行 `cargo build -p gupi --locked`，通过；更新 bundle 并通过 `open -n` 启动最终 GUI PID 2757。绑定 CUA 前已用 ps 与 cwd 检查确认最终可执行文件为该临时 bundle 的 gupi-bin、工作目录为 project-a，且 HOME 与全部 GUPI/Pi/会话覆盖变量匹配 fixture。实际绑定仍返回 `Computer Use was not approved to use Gupi UI Gallery`；已停止原生尝试，未换别名重试，待用户在 Codex 中授权上述固定应用后继续。此轮没有新增 UI 验收覆盖或截图。

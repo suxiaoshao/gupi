@@ -111,7 +111,7 @@ Pi session 是 JSONL 文件，首行是 session header，后续消息与元数�
 
 当前运行展示与验证见[实施说明](runtime-display-plan.md)；旧差异调研已由实现覆盖，不再作为待办。
 
-在仓库根目录运行 `node script/gupi-runtime-gallery --no-build`，使用当前 `target/debug/gupi`；省略 `--no-build` 会先构建。脚本创建隔离配置、Pi agent/session 目录与测试项目，直接启动原有 Gupi 可执行文件，不创建或注册新的 `.app`。`--prepare-only` 只准备环境，不启动窗口。退出后保留临时目录，路径在终端输出，便于检查会话文件。
+在仓库根目录运行 `cargo run -p xtask --locked -- gallery runtime --no-build`，使用当前 `target/debug/gupi`；省略 `--no-build` 会先构建。启动器创建隔离 HOME、配置/数据、Pi agent/session 目录与测试项目，直接启动原有 Gupi 可执行文件，不创建或注册新的 `.app`。`--prepare-only` 只准备环境，不启动窗口。退出后保留临时目录，路径在终端输出，便于检查会话文件。
 
 默认模型是 **Runtime Gallery · 慢速运行**。发送任意文字会重播以下完整场景：慢速思考、过程说明、ls、第一份 SKILL.md 读取、find/grep、write/edit、bash、通用工具的进度更新，再进入第二轮思考、过程说明、另一份 SKILL.md 读取、报告读取/修改、bash 和进度检查，最后输出最终回答。工具实际操作测试项目的文件；每次执行前暂停 2.5 秒，通用工具每 2 秒更新进度。中间回答的 stopReason 为 toolUse，只有末条是 stop。
 

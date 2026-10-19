@@ -1,6 +1,6 @@
 # 设置页布局、无障碍与文案修正
 
-状态：步骤 1–7 已实现并完成隔离原生复查；组件自带的设置搜索占位翻译按用户决定暂缓。
+状态：步骤 1–8 已实现并完成要求的验证；组件自带的设置搜索占位翻译按用户决定暂缓。
 
 来源：#75 合并前对全部设置页的原生走查（zh-CN 960×740、德语 800×600，浅色/深色，全局/项目作用域）和代码审查。认证页与模型页的同类问题已在 #75 修复，本文只覆盖其余现有页面。依据为 [GPUI Kit Design Guides](../../../.agents/skills/gpui-kit-design-guides/references/design-guides.md) 的 Forms and settings、Responsive desktop windows、Spatial grammar、Components and composition、Interface language 与 Accessibility checklist。Pi 规则依据 Pi v1.2.0（本地 `/Users/sushao/Documents/code/pi`，路径相对 `packages/coding-agent/src/`）。
 
@@ -66,13 +66,29 @@
 
 ### 6. 测试工具隔离
 
-`script/gupi-ui-gallery` 把 `HOME` 指向私有临时根目录，使 `~/.agents/skills` 等基于主目录的发现也落在临时数据上（`crates/gupi-resources/src/resources.rs:173`）；同时设置配置、日志、数据、Pi 与会话目录。不改应用的发现规则。
+`cargo run -p xtask --locked -- gallery ui` 把 `HOME` 指向私有临时根目录，使 `~/.agents/skills` 等基于主目录的发现也落在临时数据上（`crates/gupi-resources/src/resources.rs:173`）；同时设置配置、日志、数据、Pi 与会话目录。不改应用的发现规则。
 
 macOS 临时 bundle 恢复原先成功连接的固定标识 `top.sushao.gupi.ui-gallery`，保留原生 bootstrap。标识与真实应用不同；每次运行的临时路径与隔离环境仍各自独立。工具通过绝对路径 `/usr/bin/cc` 编译 bootstrap；它检查必需的 fixture 目录，切换到 project-a，以绝对路径和静态环境白名单 `execve` 内部 gupi-bin，并转发参数；缺目录、chdir 或 execve 失败即退出，不合并宿主环境。Info.plist 的 LSEnvironment 仅保留为冗余元数据，不作为隔离保证。通过 bundle 入口启动和 Launch Services 重启均须观察最终 GUI 进程的可执行文件、cwd 和覆盖变量，确认后才绑定 CUA。用户明确将手动执行内部 gupi-bin 排除在隔离范围外；不修改应用源码，不声称内部二进制具有独立隔离守卫。
 
 ### 7. 认证页行点击（用户已确认）
 
 点击供应商行直接打开该行最常用的操作，不再弹出与行尾菜单重复的操作对话框：API Key 行打开替换，未存储的行打开设置，OAuth 行打开注销确认，无法识别的行打开替换编辑器，填写掩码新密钥后在保存时沿用既有的整条替换确认。检查、复制登录命令、跳转等其余操作留在行尾菜单；可用操作与文案由同一处定义，行与菜单共用。行的无障碍名称说明该操作。
+
+### 8. Gallery 迁入 xtask（用户已确认，本 PR）
+
+起因：#76 的 Codex 审查指出 UI gallery 的退出与 `--cleanup` 依赖未声明的 `lsof`。用户决定不在 `flake.nix` 补依赖，而把两个 gallery 迁入 xtask，在本 PR 完成。
+
+目标：`script/gupi-ui-gallery`（Python）和 `script/gupi-runtime-gallery`（Node）改为 xtask 子命令并删除原脚本。Python、Node 不再作为 gallery 启动器的解释器；Pi 仍需其自身运行时，Pi wrapper 仍由 `/bin/sh` 执行，macOS UI bootstrap 仍需 `/usr/bin/cc`。
+
+gallery 是开发测试工具，清理保持简单（用户决定）：不做全系统进程扫描或权限相关的完整性判定。
+
+- 隔离：临时根目录 0700；`HOME`、`GUPI_CONFIG_DIR`、`GUPI_LOG_DIR`、`GUPI_DATA_DIR`、`PI_CODING_AGENT_DIR`、`PI_CODING_AGENT_SESSION_DIR` 指向临时目录；UI gallery 使用固定环境白名单；不读写真实 `~/.pi`、`~/.agents` 或 Gupi 配置；`environment.json` 不写入继承的敏感变量。Runtime gallery 同样施加这些覆盖（原脚本未隔离 `HOME`、`GUPI_DATA_DIR`），参数、案例、faux provider 和退出后保留目录不变。
+- macOS UI gallery：固定标识 `top.sushao.gupi.ui-gallery`；bundle 可执行入口仍是只用白名单环境 `execve` 内部 gupi-bin 的原生 bootstrap（Launch Services 会忽略 LSEnvironment）。手动运行内部二进制不在隔离范围内。
+- 退出清理：UI gallery 由 xtask 等待自己启动的进程结束后删除本次临时目录，`--keep` 时保留；runtime gallery 退出后始终保留目录。
+- 显式清理：`--cleanup ROOT_NAME...` 只处理临时目录下当前用户所有、具有 fixture 结构的直属目录，`--exclude` 优先；若有正在运行的进程，其可执行文件位于该目录内（被重新启动的 gallery 本体），则保留并提示，否则删除。删除不跟随 symlink，不终止进程。仍有其他 Gallery bundle 时拒绝启动的规则保留。
+- Windows 不在范围内：明确报错退出。
+
+实现复用 xtask 已有依赖；新依赖写完整版本号。同步更新开发索引中的入口和前置说明、本文第 6 节与“当前 Gallery 生命周期修正”中的 Python 实现细节，以及当前使用说明中的旧脚本路径；历史验证记录不改。
 
 ## 实施顺序
 
@@ -83,11 +99,13 @@ macOS 临时 bundle 恢复原先成功连接的固定标识 `top.sushao.gupi.ui-
 5. 用词与确认文案，九种语言。
 6. gallery 隔离 `HOME`。
 7. 认证页行点击。
+8. Gallery 迁入 xtask，删除原脚本。
 
 ## 验证
 
 - 受影响的界面回归：德语最小宽度下各页主要操作的边界在窗口内、焦点/标签可达；菜单勾号；模板任务对话框无多余焦点；资源命名按类型处理（提示词模板含空白时拒绝新建；Skill 不合推荐规则时只警告、仍可创建；已有资源照常管理）。
 - 原生：worker 用隔离的 gallery（临时 `HOME`、Pi、配置目录与假 Pi）复查走查表中每一项，德语 800×600 与 zh-CN 默认尺寸各一次、各取一种主题；检查无障碍名称。
+- Gallery 迁移：xtask 的 clippy；macOS 上直接启动与 bundle `open -n` 重新打开均在绑定 CUA 前确认最终 GUI 进程的可执行文件、cwd 与覆盖变量；正常退出后目录被删除、`--keep` 后 `--cleanup` 删除、运行中的 gallery 目录被保留；`gallery runtime --prepare-only` 与一次启动；在本机 OrbStack NixOS 虚拟机的 `nix develop` 中用一次性 fixture 跑一次 `--cleanup`。
 - 检查命令：`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`、`cargo test --workspace --locked`（隔离 `HOME` 与 Pi 目录）。
 
 ## 已确认的实现澄清
@@ -140,10 +158,17 @@ fixture 结束核对（native-final-hashes.json）：auth.json、models.json、�
 
 固定 `.isolated` 标识尝试仍遇到 CUA 未授权；恢复原始固定 `top.sushao.gupi.ui-gallery` 并清理已批准的旧 bundle、创建新路径后，按精确 bundle 路径绑定成功。不能把先前失败仅归因于随机标识。最终 GUI 的可执行文件、project-a cwd 和六个 HOME/GUPI/Pi/会话覆盖变量均在 CUA 绑定前验证；证据为 verified-launches.jsonl。
 
-### 当前 Gallery 生命周期修正
+### 旧启动器的目录清理
 
-用户批准恢复原始固定标识 `top.sushao.gupi.ui-gallery`，并同意删除先前列明的 14 个闲置临时根目录，运行中的 0w4b4sua 在替代环境准备好后再停止和删除。工具增加显式 `--cleanup ROOT_NAME...` 和 `--exclude ROOT_NAME`，仅处理明确列出的已批准集合；仅枚举同一规范化临时父目录的直属、当前用户所有且具有预期 fixture 结构的目录；检查完整进程参数与 cwd/可执行文件元数据，发现运行引用或检查不完整就保留；删除前复核所有者、目录类型与设备/inode，通过已打开的父目录 fd 切换目录，再使用防 symlink 替换的相对路径 rmtree（兼容本机 Python 无 rmtree dir_fd 参数）。清理不终止进程。
+已实际删除用户逐项批准的 14 个闲置根目录，明确排除 0w4b4sua；备份假 fixture 后停止自己的 PID 2757，再单独删除该根目录。每次删除前复核无可见存活引用，未停止其他进程。日志为 cleanup-approved.log、cleanup-own.log。当时的新 fixture 通过 --keep 保留以供复查；没有把未列明根目录纳入删除授权。该历史清理记录由旧 Python 启动器完成，当前清理规则见第 8 节。
 
-普通启动不隐式删除保留或预备环境；若仍有其他 Gallery bundle，则拒绝再启动并提示先显式清理。正常退出时同样检查有无重开 GUI 或残留子进程再删除本次目录，`--keep` 保留本次 fixture，后续显式清理才可移除。进程检查是保守保护，仍有并发启动与删除间的竞争窗口；不将其称为并发安全协议。
+### Gallery 迁入 xtask 的实现与验证
 
-已实际删除用户逐项批准的 14 个闲置根目录，明确排除 0w4b4sua；备份假 fixture 后停止自己的 PID 2757，再单独删除该根目录。每次删除前复核无可见存活引用，未停止其他进程。日志为 cleanup-approved.log、cleanup-own.log。当前新 fixture 通过 --keep 保留以供复查；没有把未列明根目录纳入删除授权。此流程只提供保守检查，不消除并发启动竞争。
+步骤 8 实现为 `gallery ui` / `gallery runtime`；原有选项和离线案例保留，删除两份解释器启动脚本。共享临时目录、配置与 Pi wrapper；新增直接依赖仅为已锁定版本的 libc 0.2.190（Unix 所有者判断）与 sysinfo 0.31.4（只请求用户/可执行文件字段）。按用户更新后的开发工具规则，没有三态完整性判定、cwd/argv 扫描或原生身份适配层。UI 在自己启动的子进程结束后清理（Linux 也将 UI 可执行文件复制到 fixture，便于同一可执行路径检查识别运行实例），Runtime 始终保留；显式清理保留仍在该根目录内执行的 Gallery，不终止进程。
+
+- `cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` 通过；`cargo test --workspace --locked`：440 通过、0 失败、2 个既有忽略项，24 组；其中 xtask 12 通过。均使用临时 HOME/Pi/session 目录。
+- macOS 最终版本直接启动成功，绑定 CUA 前核对 gupi-bin、project-a cwd 和六个 HOME/GUPI/Pi/会话覆盖变量；正常 Cmd+Q 后本次目录实际删除。
+- `--keep` 退出后目录保留；同一 bundle 经 `open -n` 重启，重新核对最终进程环境/cwd 后成功绑定 CUA。运行中 `--cleanup` 保留根目录；关闭自己的重启实例后显式清理实际删除。另验证 `--exclude` 优先保留，随后不排除时删除。
+- Runtime `--prepare-only --changes` 核对配置、原有 faux-provider wrapper 参数与八个显式环境覆盖，environment.json 无继承变量；默认 runtime 案例实际启动一次，核对其 xtask 父进程、项目 cwd 和全部覆盖后终止自己的 fixture 进程。目录按约定保留，未运行完整慢速模型回合。
+- macOS 使用假 Pi 和一次性配置，不读取真实 Pi、.agents 或 Gupi 文件；生产清理不调用 ps/lsof。验证脚本仅为核对目标 fixture 的环境/cwd 使用这两个本机工具，不构成 Gallery 的运行依赖。证据与日志位于 `/tmp/gupi-xtask-gallery-verification`，包括 launches.jsonl、ui-auto-final.log、ui-keep-final.log、ui-running-final.log、ui-cleanup-final.log、runtime-prepared.log 与 runtime-verified.json；有效 CUA 连接证据在会话内。最终清理也删除了本 worker 旧的 _1x8zzv4 和本轮预备 YjhzDd 两个自有 fixture（old-own-fixtures-cleanup.log），未删除其他人的目录；本轮 UI bundle 均已退出并清理，Runtime 的目录按约定保留。
+- Linux：OrbStack NixOS VM 的 `/tmp/gupi-xtask-migration-44cQhF/repo` 源码副本，在原有 flake 的 `nix develop` / Rust 1.99.0 环境中构建通过，xtask 10 项现有测试通过。正式 `gallery ui --cleanup` 删除 VM 本地一次性 fixture，--exclude 和未列出的根目录均保留；日志为该 VM 临时根下的 final-build.log、cleanup-probe.log。所有 HOME/Pi/session 与 probe 都在 VM 本地 `/tmp`，未读取挂载的 macOS 主目录数据，未改变 VM 系统配置。

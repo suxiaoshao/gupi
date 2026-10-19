@@ -1,4 +1,4 @@
-// Explicitly loaded by script/gupi-runtime-gallery; never installed globally.
+// Explicitly loaded by cargo run -p xtask --locked -- gallery runtime; never installed globally.
 import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -10,7 +10,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 export default function (pi) {
-  if (!process.env.GUPI_RUNTIME_PROJECT) throw new Error("Use script/gupi-runtime-gallery to load this fixture.");
+  if (!process.env.GUPI_RUNTIME_PROJECT) throw new Error("Use cargo run -p xtask --locked -- gallery runtime to load this fixture.");
   const project = realpathSync(process.env.GUPI_RUNTIME_PROJECT);
   const provider = "gupi-runtime";
   const faux = fauxProvider({

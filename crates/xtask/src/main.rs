@@ -3,6 +3,7 @@ mod cli;
 mod cmd;
 mod context;
 mod error;
+mod gallery;
 mod manifest;
 mod release;
 mod updater;
@@ -24,6 +25,7 @@ fn main() {
     let cli = cli::Cli::parse();
     let result = match cli.command {
         cli::Commands::Bundle(args) => bundle::run(args),
+        cli::Commands::Gallery { command } => gallery::run(command),
         cli::Commands::Release { command } => release::run(command),
         cli::Commands::Updater { command } => updater::run(command),
     };

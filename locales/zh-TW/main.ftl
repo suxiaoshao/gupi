@@ -1167,7 +1167,7 @@ pi-auth-parse-error = auth.json 必須是有效的 JSON 物件，目前禁止編
 pi-auth-busy = auth.json 忙碌中，請稍後再試。
 pi-auth-conflict = 此供應商的憑證已在磁碟上變更，請重新讀取後再試。
 pi-auth-write-error = 無法寫入 auth.json，請重新讀取以檢查目前狀態。
-pi-auth-input-error = 請輸入供應商 ID 和非空白的 API Key。
+pi-auth-input-error = 請選擇供應商或輸入非空的單行 ID，並填寫 API Key。
 pi-auth-login-select-help = 已複製登入指令。請在 Pi 終端機中執行 /login 並選擇供應商。
 
 # Authentication and model provider settings
@@ -1176,3 +1176,6 @@ pi-files-manage-auth = 在驗證頁管理
 pi-files-api-key-auth-help = 驗證頁存在已儲存憑證時，Pi 不會改用此處的 apiKey。已儲存憑證不代表驗證有效。
 pi-auth-models-help = 已儲存憑證會影響 Pi 對 models.json 中 apiKey 的使用；實際驗證由 Pi 按供應商規則處理。
 pi-auth-edit-models = 在模型與供應商中編輯
+
+pi-provider-empty-id = 〈空 ID〉
+pi-auth-check-unavailable = Pi 無法檢查此供應商 ID。

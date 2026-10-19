@@ -1183,7 +1183,7 @@ pi-auth-parse-error = auth.json doit contenir un objet JSON valide. La modificat
 pi-auth-busy = auth.json est occupé. Réessayez.
 pi-auth-conflict = Ce fournisseur a changé sur le disque. Rechargez puis réessayez.
 pi-auth-write-error = Impossible d’écrire auth.json. Rechargez pour vérifier l’état actuel.
-pi-auth-input-error = Saisissez un ID de fournisseur et une clé API non vide.
+pi-auth-input-error = Choisissez un fournisseur ou saisissez un ID non vide sur une seule ligne, puis une clé API.
 pi-auth-login-select-help = Commande copiée. Exécutez /login dans le terminal Pi et choisissez le fournisseur.
 
 # Authentication and model provider settings
@@ -1192,3 +1192,6 @@ pi-files-manage-auth = Gérer dans Authentification
 pi-files-api-key-auth-help = Si des identifiants sont enregistrés dans Authentification, Pi n’utilise pas cet apiKey en secours. Des identifiants enregistrés ne garantissent pas une authentification valide.
 pi-auth-models-help = Les identifiants enregistrés influencent l’utilisation de apiKey dans models.json. Pi gère l’authentification selon les règles du fournisseur.
 pi-auth-edit-models = Modifier dans Modèles et fournisseurs
+
+pi-provider-empty-id = ⟨ID vide⟩
+pi-auth-check-unavailable = Pi ne peut pas vérifier cet ID de fournisseur.

@@ -1,5 +1,5 @@
 //! Whitelisted protocol only: subprocess output and stderr never reach callers.
-use super::addressable_provider;
+use super::checkable_provider;
 use serde_json::Value;
 use std::{ffi::OsString, process::Stdio, time::Duration};
 use tokio::io::AsyncReadExt as _;
@@ -77,12 +77,7 @@ pub async fn check(
 ) -> Option<Check> {
     // Pi scans these flags before consuming --provider's following value.
     // In particular, passing --credentials would opt into credential output.
-    if !addressable_provider(provider)
-        || matches!(
-            provider,
-            "--credentials" | "--json" | "--no-refresh" | "--min-expiry"
-        )
-    {
+    if !checkable_provider(provider) {
         return None;
     }
     let command = command.to_owned();
@@ -188,6 +183,7 @@ mod transport_tests {
             .unwrap();
             std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
             for provider in [
+                "",
                 "--credentials",
                 "--json",
                 "--no-refresh",

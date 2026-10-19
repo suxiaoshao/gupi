@@ -139,7 +139,7 @@ impl AuthPage {
         cx.notify();
     }
     fn check(&mut self, provider: String, cx: &mut Context<Self>) {
-        if self.checking.contains_key(&provider) {
+        if !pi_auth::checkable_provider(&provider) || self.checking.contains_key(&provider) {
             return;
         }
         let command = self
@@ -328,7 +328,7 @@ impl AuthPage {
                                     .ghost()
                                     .w_full()
                                     .min_w_0()
-                                    .accessibility_label(name.clone())
+                                    .accessibility_label(super::provider_label(name, cx))
                                     .disabled(busy)
                                     .child(
                                         h_flex()
@@ -343,7 +343,7 @@ impl AuthPage {
                                                     .font_family(
                                                         cx.theme().mono_font_family.clone(),
                                                     )
-                                                    .child(name.clone()),
+                                                    .child(super::provider_name(name, cx)),
                                             )
                                             .child(
                                                 div()
@@ -444,16 +444,27 @@ impl AuthPage {
                                         let popup = popup.item(
                                             PopupMenuItem::new(t(cx, "pi-auth-check"))
                                                 .disabled(
-                                                    menu.0
-                                                        .read(cx)
-                                                        .checking
-                                                        .contains_key(menu.1.provider()),
+                                                    !pi_auth::checkable_provider(menu.1.provider())
+                                                        || menu
+                                                            .0
+                                                            .read(cx)
+                                                            .checking
+                                                            .contains_key(menu.1.provider()),
                                                 )
                                                 .on_click(move |_, _, cx| {
                                                     check.0.update(cx, |this, cx| {
                                                         this.check(check.1.provider().into(), cx)
                                                     })
                                                 }),
+                                        );
+                                        let popup = popup.when(
+                                            !pi_auth::checkable_provider(menu.1.provider()),
+                                            |popup| {
+                                                popup.item(PopupMenuItem::label(t(
+                                                    cx,
+                                                    "pi-auth-check-unavailable",
+                                                )))
+                                            },
                                         );
                                         if menu.1.kind() != Kind::Missing {
                                             popup.item(
@@ -644,7 +655,10 @@ impl AuthPage {
             body = body.child(
                 Button::new("auth-check")
                     .label(t(cx, "pi-auth-check"))
-                    .disabled(owner.read(cx).checking.contains_key(entry.provider()))
+                    .disabled(
+                        !pi_auth::checkable_provider(entry.provider())
+                            || owner.read(cx).checking.contains_key(entry.provider()),
+                    )
                     .on_click(move |_, w, cx| {
                         w.close_dialog(cx);
                         check
@@ -652,6 +666,18 @@ impl AuthPage {
                             .update(cx, |this, cx| this.check(check.1.provider().into(), cx))
                     }),
             );
+            if !pi_auth::checkable_provider(entry.provider()) {
+                body = body.child(
+                    div()
+                        .id("auth-check-unavailable")
+                        .debug_selector(|| "auth-check-unavailable".into())
+                        .role(Role::Label)
+                        .aria_label(t(cx, "pi-auth-check-unavailable"))
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(t(cx, "pi-auth-check-unavailable")),
+                );
+            }
             if entry.kind() != Kind::Missing {
                 body = body.child(
                     Button::new("auth-delete")
@@ -670,7 +696,9 @@ impl AuthPage {
                         }),
                 );
             }
-            dialog.title(entry.provider().to_owned()).child(body)
+            dialog
+                .title(super::provider_name(entry.provider(), cx))
+                .child(body)
         });
     }
     fn copy_login(entry: &Entry, window: &mut Window, cx: &mut App) {
@@ -701,17 +729,21 @@ impl AuthPage {
         window.open_dialog(cx, move |dialog, _, cx| {
             let save = (owner.clone(), entry.clone(), file.clone());
             let mut args = fluent_bundle::FluentArgs::new();
-            args.set("provider", entry.provider().to_owned());
+            args.set("provider", super::provider_label(entry.provider(), cx));
             dialog
-                .title(t_with_args(
-                    cx,
-                    if entry.kind() == Kind::OAuth {
-                        "pi-auth-logout-title"
-                    } else {
-                        "pi-auth-remove-title"
-                    },
-                    &args,
-                ))
+                .title(
+                    div()
+                        .when(entry.provider().is_empty(), |view| view.italic())
+                        .child(t_with_args(
+                            cx,
+                            if entry.kind() == Kind::OAuth {
+                                "pi-auth-logout-title"
+                            } else {
+                                "pi-auth-remove-title"
+                            },
+                            &args,
+                        )),
+                )
                 .child(t(cx, "pi-auth-remove-help"))
                 .when(entry.has_env(), |d| d.child(t(cx, "pi-auth-remove-env")))
                 .footer(super::dialog_buttons(

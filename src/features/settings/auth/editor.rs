@@ -13,7 +13,8 @@ pub(super) struct Editor {
     baseline: File,
     provider: Entity<InputState>,
     key: Entity<InputState>,
-    fixed: bool,
+    fixed: Option<Entry>,
+    selected: Option<Entry>,
     origin: Option<WeakFocusHandle>,
     fallback: WeakFocusHandle,
     error: Option<Error>,
@@ -39,13 +40,21 @@ impl Editor {
         let closed_origin = origin.clone();
         let closed_fallback = fallback.clone();
         let closed_owner = owner.downgrade();
-        let fixed = entry.is_some();
-        let name = entry.map(|e| e.provider().to_owned()).unwrap_or_default();
+        let fixed = entry;
+        let name = fixed
+            .as_ref()
+            .map(|e| e.provider().to_owned())
+            .unwrap_or_default();
+        let is_fixed = fixed.is_some();
         let editor = cx.new(|cx: &mut Context<Self>| {
             let provider = cx.new(|cx| {
                 InputState::new(window, cx)
-                    .default_value(name)
-                    .placeholder(t(cx, "pi-auth-provider"))
+                    .default_value(name.clone())
+                    .placeholder(if is_fixed && name.is_empty() {
+                        super::super::provider_label("", cx)
+                    } else {
+                        t(cx, "pi-auth-provider")
+                    })
             });
             let key = cx.new(|cx| {
                 InputState::new(window, cx)
@@ -53,7 +62,19 @@ impl Editor {
                     .placeholder(t(cx, "pi-auth-key-placeholder"))
             });
             let subscriptions = vec![
-                cx.subscribe(&provider, |_, _, _: &InputEvent, cx| cx.notify()),
+                cx.subscribe_in(
+                    &provider,
+                    window,
+                    |this, _, event: &InputEvent, window, cx| {
+                        if matches!(event, InputEvent::Change) && this.fixed.is_none() {
+                            this.selected = None;
+                            this.provider.update(cx, |input, cx| {
+                                input.set_placeholder(t(cx, "pi-auth-provider"), window, cx)
+                            });
+                        }
+                        cx.notify();
+                    },
+                ),
                 cx.subscribe(&key, |_, _, _: &InputEvent, cx| cx.notify()),
                 cx.subscribe_in(
                     owner,
@@ -88,6 +109,7 @@ impl Editor {
                 provider,
                 key,
                 fixed,
+                selected: None,
                 origin,
                 fallback,
                 error: None,
@@ -129,14 +151,25 @@ impl Editor {
                         true
                     })
                 })
-                .title(t(
-                    cx,
-                    if fixed {
-                        "pi-auth-replace"
-                    } else {
-                        "pi-auth-add"
-                    },
-                ))
+                .title({
+                    let entry = editor.read(cx).resolved_entry(cx);
+                    h_flex()
+                        .gap_2()
+                        .child(t(
+                            cx,
+                            if is_fixed {
+                                "pi-auth-replace"
+                            } else {
+                                "pi-auth-add"
+                            },
+                        ))
+                        .when(
+                            entry
+                                .as_ref()
+                                .is_some_and(|entry| entry.provider().is_empty()),
+                            |title| title.child(super::super::provider_name("", cx)),
+                        )
+                })
                 .child(editor.clone())
                 .on_ok(move |_, window, cx| {
                     submit.update(cx, |this, cx| this.save(window, cx));
@@ -145,19 +178,48 @@ impl Editor {
         });
     }
 
+    fn resolved_entry(&self, cx: &App) -> Option<Entry> {
+        self.fixed
+            .clone()
+            .or_else(|| self.selected.clone())
+            .or_else(|| {
+                let value = self.provider.read(cx).value();
+                pi_auth::valid_provider(&value).then(|| self.baseline.entry(&value))
+            })
+    }
+    fn select_provider(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        // The locked InputState::set_value explicitly does not emit Change.
+        // Real edits do emit Change and clear the selected identity above.
+        self.selected = Some(self.baseline.entry(&id));
+        self.provider.update(cx, |input, cx| {
+            input.set_value(id.clone(), window, cx);
+            input.set_placeholder(
+                if id.is_empty() {
+                    super::super::provider_label("", cx)
+                } else {
+                    t(cx, "pi-auth-provider")
+                },
+                window,
+                cx,
+            );
+        });
+        cx.notify();
+    }
     fn save(&mut self, _: &mut Window, cx: &mut Context<Self>) {
         if self.waiting || self.owner.read(cx).saving.is_some() {
             return;
         }
-        let provider = self.provider.read(cx).value().to_string();
-        if (!self.fixed && !pi_auth::valid_provider(&provider))
-            || self.key.read(cx).value().is_empty()
-        {
+        let Some(entry) = self.resolved_entry(cx) else {
+            self.error = Some(Error::Invalid);
+            cx.notify();
+            return;
+        };
+        if self.key.read(cx).value().is_empty() {
             self.error = Some(Error::Invalid);
             cx.notify();
             return;
         }
-        let entry = self.baseline.entry(&provider);
+        let provider = entry.provider().to_owned();
         if matches!(entry.kind(), Kind::OAuth | Kind::Unknown) && !self.confirming {
             self.confirming = true;
             self.error = None;
@@ -182,16 +244,25 @@ impl Editor {
 impl Render for Editor {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let candidates = self.owner.read(cx).names.clone();
-        let provider = self.provider.clone();
+        let editor = cx.entity().downgrade();
+        let entry = self.resolved_entry(cx);
+        let empty_id = entry
+            .as_ref()
+            .is_some_and(|entry| entry.provider().is_empty());
         let mut provider_input = InputGroup::new("auth-provider-group")
             .input(
                 Input::new(&self.provider)
                     .id("auth-provider")
-                    .aria_label(t(cx, "pi-auth-provider")),
+                    .aria_label(if empty_id {
+                        super::super::provider_label("", cx)
+                    } else {
+                        t(cx, "pi-auth-provider")
+                    })
+                    .when(empty_id, |input| input.italic()),
             )
-            .readonly(self.fixed || self.confirming)
+            .readonly(self.fixed.is_some() || self.confirming)
             .disabled(self.waiting);
-        if !self.fixed && !self.confirming && !candidates.is_empty() {
+        if self.fixed.is_none() && !self.confirming && !candidates.is_empty() {
             provider_input = provider_input.addon(
                 InputGroupAddon::new("candidates")
                     .align(InputGroupAddonAlignment::InlineEnd)
@@ -202,18 +273,19 @@ impl Render for Editor {
                             .icon(IconName::ChevronDown)
                             .accessibility_label(t(cx, "pi-auth-candidates"))
                             .disabled(self.waiting)
-                            .dropdown_menu(move |menu, _, _| {
+                            .dropdown_menu(move |menu, _, cx| {
                                 let mut menu = menu;
                                 for name in &candidates {
-                                    let input = provider.clone();
+                                    let editor = editor.clone();
                                     let value = name.clone();
-                                    menu = menu.item(PopupMenuItem::new(name.clone()).on_click(
-                                        move |_, w, cx| {
-                                            input.update(cx, |input, cx| {
-                                                input.set_value(value.clone(), w, cx)
-                                            })
-                                        },
-                                    ));
+                                    menu = menu.item(
+                                        PopupMenuItem::new(super::super::provider_label(name, cx))
+                                            .on_click(move |_, w, cx| {
+                                                let _ = editor.update(cx, |editor, cx| {
+                                                    editor.select_provider(value.clone(), w, cx)
+                                                });
+                                            }),
+                                    );
                                 }
                                 menu
                             }),
@@ -239,16 +311,22 @@ impl Render for Editor {
         );
         if self.confirming {
             let mut args = fluent_bundle::FluentArgs::new();
-            args.set("provider", self.provider.read(cx).value().to_string());
+            let entry = entry.as_ref().expect("confirmation has a provider");
+            args.set(
+                "provider",
+                super::super::provider_label(entry.provider(), cx),
+            );
             body = body
-                .child(t_with_args(cx, "pi-auth-replace-title", &args))
+                .child(
+                    div()
+                        .when(empty_id, |view| view.italic())
+                        .child(t_with_args(cx, "pi-auth-replace-title", &args)),
+                )
                 .child(t(cx, "pi-auth-replace-help"));
         }
-        if self
-            .baseline
-            .entry(self.provider.read(cx).value().as_str())
-            .kind()
-            != Kind::Missing
+        if entry
+            .as_ref()
+            .is_some_and(|entry| entry.kind() != Kind::Missing)
         {
             body = body.child(
                 div()
@@ -289,7 +367,9 @@ impl Render for Editor {
                                 "pi-settings-save"
                             },
                         ))
-                        .disabled(self.waiting || self.key.read(cx).value().is_empty())
+                        .disabled(
+                            self.waiting || entry.is_none() || self.key.read(cx).value().is_empty(),
+                        )
                         .on_click(cx.listener(|this, _, window, cx| this.save(window, cx))),
                 ),
         )

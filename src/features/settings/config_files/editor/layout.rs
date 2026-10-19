@@ -387,12 +387,16 @@ impl EntryEditor {
                 .text_sm()
                 .child(t(cx, "pi-files-name"))
                 .into_any_element(),
-            Input::new(&self.name)
-                .small()
-                .w_full()
-                .disabled(self.editing)
-                .aria_label(t(cx, "pi-files-name"))
-                .into_any_element(),
+            if self.kind == Kind::Models && self.editing && self.name.read(cx).value().is_empty() {
+                super::super::super::provider_name("", cx).into_any_element()
+            } else {
+                Input::new(&self.name)
+                    .small()
+                    .w_full()
+                    .disabled(self.editing)
+                    .aria_label(t(cx, "pi-files-name"))
+                    .into_any_element()
+            },
             div().w_6().flex_shrink_0().into_any_element(),
         );
         let mut basic = vec![name];

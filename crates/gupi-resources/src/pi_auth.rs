@@ -22,7 +22,7 @@ pub enum Error {
     Conflict,
     #[error("could not write credentials")]
     Write,
-    #[error("invalid provider or empty API key")]
+    #[error("empty API key")]
     Invalid,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -113,6 +113,16 @@ pub fn addressable_provider(provider: &str) -> bool {
     valid_provider(provider) && provider.trim() == provider
 }
 
+/// Auth CLI argument parsing reserves these tokens before reading --provider.
+/// TUI login suffixes have different rules; use addressable_provider for those.
+pub fn checkable_provider(provider: &str) -> bool {
+    addressable_provider(provider)
+        && !matches!(
+            provider,
+            "--credentials" | "--json" | "--no-refresh" | "--min-expiry"
+        )
+}
+
 impl File {
     pub fn load(path: &Path) -> Result<Self, Error> {
         // Normalize without resolving symlinks, matching Pi's realpath:false lock.
@@ -150,7 +160,7 @@ impl File {
         expected: &Revision,
         key: Option<&str>,
     ) -> Result<Self, Error> {
-        if provider.is_empty() || key == Some("") {
+        if key == Some("") {
             return Err(Error::Invalid);
         }
         let parent = self.path.parent().ok_or(Error::Write)?;

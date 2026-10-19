@@ -1183,7 +1183,7 @@ pi-auth-parse-error = auth.json muss ein gültiges JSON-Objekt enthalten. Bearbe
 pi-auth-busy = auth.json ist gesperrt. Versuchen Sie es erneut.
 pi-auth-conflict = Dieser Anbieter wurde auf dem Datenträger geändert. Laden Sie die Datei neu.
 pi-auth-write-error = auth.json konnte nicht geschrieben werden. Laden Sie den aktuellen Stand neu.
-pi-auth-input-error = Geben Sie eine Anbieter-ID und einen nicht leeren API-Schlüssel ein.
+pi-auth-input-error = Wählen Sie einen Anbieter oder geben Sie eine nicht leere, einzeilige ID und einen API-Schlüssel ein.
 pi-auth-login-select-help = Anmeldebefehl kopiert. Führen Sie /login im Pi-Terminal aus und wählen Sie den Anbieter.
 
 # Authentication and model provider settings
@@ -1192,3 +1192,6 @@ pi-files-manage-auth = Unter Authentifizierung verwalten
 pi-files-api-key-auth-help = Bei gespeicherten Zugangsdaten unter Authentifizierung greift Pi nicht auf diesen apiKey zurück. Gespeicherte Zugangsdaten bedeuten nicht, dass die Authentifizierung gültig ist.
 pi-auth-models-help = Gespeicherte Zugangsdaten beeinflussen die Verwendung von apiKey in models.json. Pi authentifiziert nach den Regeln des Anbieters.
 pi-auth-edit-models = Unter Modelle und Anbieter bearbeiten
+
+pi-provider-empty-id = ⟨Leere ID⟩
+pi-auth-check-unavailable = Pi kann diese Anbieter-ID nicht prüfen.

@@ -1160,7 +1160,7 @@ pi-auth-parse-error = auth.json은 유효한 JSON 객체여야 합니다. 편집
 pi-auth-busy = auth.json이 사용 중입니다. 다시 시도하세요.
 pi-auth-conflict = 이 공급자가 디스크에서 변경되었습니다. 다시 불러온 후 시도하세요.
 pi-auth-write-error = auth.json을 저장할 수 없습니다. 다시 불러와 현재 상태를 확인하세요.
-pi-auth-input-error = 공급자 ID와 비어 있지 않은 API 키를 입력하세요.
+pi-auth-input-error = 공급자를 선택하거나 비어 있지 않은 한 줄 ID와 API 키를 입력하세요.
 pi-auth-login-select-help = 명령을 복사했습니다. Pi 터미널에서 /login을 실행하고 공급자를 선택하세요.
 
 # Authentication and model provider settings
@@ -1169,3 +1169,6 @@ pi-files-manage-auth = 인증 페이지에서 관리
 pi-files-api-key-auth-help = 인증 페이지에 저장된 인증 정보가 있으면 Pi는 이 apiKey로 대체하지 않습니다. 인증 정보가 저장되어 있어도 인증이 유효하다는 뜻은 아닙니다.
 pi-auth-models-help = 저장된 인증 정보는 Pi의 models.json 내 apiKey 사용에 영향을 줍니다. 실제 인증은 Pi가 공급자 규칙에 따라 처리합니다.
 pi-auth-edit-models = 모델 및 공급자에서 편집
+
+pi-provider-empty-id = 〈빈 ID〉
+pi-auth-check-unavailable = Pi는 이 공급자 ID를 확인할 수 없습니다.

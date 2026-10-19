@@ -532,3 +532,21 @@ fn dialog_buttons(
                 }),
         )
 }
+
+// Presentation only: raw provider IDs remain map, element and navigation keys.
+fn provider_label(provider: &str, cx: &App) -> String {
+    if provider.is_empty() {
+        t(cx, "pi-provider-empty-id")
+    } else {
+        provider.to_owned()
+    }
+}
+fn provider_name(provider: &str, cx: &App) -> Stateful<Div> {
+    let name = provider_label(provider, cx);
+    div()
+        .id(SharedString::from(format!("provider-name-{provider}")))
+        .role(Role::Label)
+        .aria_label(name.clone())
+        .when(provider.is_empty(), |view| view.italic())
+        .child(name)
+}

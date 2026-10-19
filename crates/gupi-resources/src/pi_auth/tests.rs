@@ -194,3 +194,61 @@ fn provider_identity_is_preserved_verbatim() {
         assert_eq!(file.entry(name).kind(), Kind::Missing);
     }
 }
+
+#[test]
+fn empty_ids_support_set_replace_remove_and_preserve_other_entries() {
+    let (_dir, path, mut file) = fixture(r#"{"Empty ID":{"type":"api_key","key":"sibling"}}"#);
+    assert!(!valid_provider(""));
+    assert!(!addressable_provider(""));
+    assert!(!checkable_provider(""));
+    file = file
+        .commit("", &file.entry("").revision(), Some("first"))
+        .unwrap();
+    file = file
+        .commit("", &file.entry("").revision(), Some("second"))
+        .unwrap();
+    assert_eq!(read(&path).unwrap()[""]["key"], "second");
+    assert!(matches!(
+        file.commit("", &file.entry("").revision(), Some("")),
+        Err(Error::Invalid)
+    ));
+    file.commit("", &file.entry("").revision(), None).unwrap();
+    let root = read(&path).unwrap();
+    assert!(!root.contains_key(""));
+    assert_eq!(root["Empty ID"]["key"], "sibling");
+    for kind in ["oauth", "future"] {
+        fs::write(
+            &path,
+            serde_json::json!({"":{"type":kind,"private":"old"}}).to_string(),
+        )
+        .unwrap();
+        let file = File::load(&path).unwrap();
+        file.commit("", &file.entry("").revision(), Some("new"))
+            .unwrap();
+        assert_eq!(
+            read(&path).unwrap()[""],
+            serde_json::json!({"type":"api_key","key":"new"})
+        );
+    }
+}
+#[test]
+fn empty_id_revisions_distinguish_missing_and_changed_entries() {
+    for (before, after) in [
+        (r#"{}"#, r#"{"":{"type":"api_key","key":"new"}}"#),
+        (
+            r#"{"":{"type":"api_key","key":"old"}}"#,
+            r#"{"":{"type":"api_key","key":"new"}}"#,
+        ),
+        (r#"{"":{"type":"api_key","key":"old"}}"#, r#"{}"#),
+    ] {
+        let (_dir, path, file) = fixture(before);
+        fs::write(&path, after).unwrap();
+        for key in [Some("replacement"), None] {
+            assert!(matches!(
+                file.commit("", &file.entry("").revision(), key),
+                Err(Error::Conflict)
+            ));
+            assert_eq!(fs::read_to_string(&path).unwrap(), after);
+        }
+    }
+}

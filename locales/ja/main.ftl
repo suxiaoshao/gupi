@@ -1160,7 +1160,7 @@ pi-auth-parse-error = auth.json は有効な JSON オブジェクトである必
 pi-auth-busy = auth.json は使用中です。再試行してください。
 pi-auth-conflict = このプロバイダーはディスク上で変更されました。再読み込みして再試行してください。
 pi-auth-write-error = auth.json に書き込めませんでした。再読み込みして現在の状態を確認してください。
-pi-auth-input-error = プロバイダー ID と空ではない API キーを入力してください。
+pi-auth-input-error = プロバイダーを選ぶか、空でない単一行の ID と API キーを入力してください。
 pi-auth-login-select-help = コマンドをコピーしました。Pi のターミナルで /login を実行し、プロバイダーを選択してください。
 
 # Authentication and model provider settings
@@ -1169,3 +1169,6 @@ pi-files-manage-auth = 認証ページで管理
 pi-files-api-key-auth-help = 認証ページに認証情報が保存されている場合、Pi はこの apiKey にフォールバックしません。保存済みでも認証が有効とは限りません。
 pi-auth-models-help = 保存済みの認証情報は models.json の apiKey の使用に影響します。実際の認証は Pi がプロバイダーの規則に従って処理します。
 pi-auth-edit-models = モデルとプロバイダーで編集
+
+pi-provider-empty-id = 〈空の ID〉
+pi-auth-check-unavailable = Pi はこのプロバイダー ID を確認できません。

@@ -596,7 +596,11 @@ impl FilePages {
                             .small()
                             .flex_1()
                             .min_w_0()
-                            .accessibility_label(name.clone())
+                            .accessibility_label(if kind == Kind::Models {
+                                super::provider_label(&name, cx)
+                            } else {
+                                name.clone()
+                            })
                             .disabled(busy)
                             .when(kind == Kind::Models, |row| row.h_auto().py_1())
                             .child({
@@ -609,7 +613,11 @@ impl FilePages {
                                     .w_full()
                                     .text_left()
                                     .truncate()
-                                    .child(name.clone());
+                                    .child(if kind == Kind::Models {
+                                        super::provider_name(&name, cx).into_any_element()
+                                    } else {
+                                        div().child(name.clone()).into_any_element()
+                                    });
                                 let metadata = h_flex()
                                     .min_w_0()
                                     .flex_wrap()

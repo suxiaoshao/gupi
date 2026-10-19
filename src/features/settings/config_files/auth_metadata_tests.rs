@@ -138,8 +138,8 @@ async fn credential_links_use_leave_guard_and_only_change_pages(cx: &mut TestApp
     });
     let dir = tempfile::tempdir().unwrap();
     let models = dir.path().join("models.json");
-    std::fs::write(&models, r#"{"providers":{"p":{}}}"#).unwrap();
-    std::fs::write(dir.path().join("auth.json"), r#"{"p":{"type":"api_key","key":"fixture-only"},"orphan":{"type":"api_key","key":"fixture-only"}}"#).unwrap();
+    std::fs::write(&models, r#"{"providers":{"":{}}}"#).unwrap();
+    std::fs::write(dir.path().join("auth.json"), r#"{"":{"type":"api_key","key":"fixture-only"},"orphan":{"type":"api_key","key":"fixture-only"}}"#).unwrap();
     let mut settings = None;
     let (_, cx) = cx.add_window_view(|window, cx| {
         let form = cx.new(|_| gpui_form::Form::new(gupi_settings::config::AppConfig::default()));
@@ -184,15 +184,17 @@ async fn credential_links_use_leave_guard_and_only_change_pages(cx: &mut TestApp
     let files = settings.read_with(cx, |this, cx| this.pi_config.read(cx).file_pages.clone());
     cx.update(|window, cx| window.render_frame(cx));
     cx.run_until_parked();
+    assert!(files.read_with(cx, |this, _| this.has_stored_credentials("")));
+    assert!(cx.debug_bounds("file-auth-").is_some());
     files.update(cx, |this, cx| {
-        let mut entry = this.models.file.as_ref().unwrap().entry("p").unwrap();
+        let mut entry = this.models.file.as_ref().unwrap().entry("").unwrap();
         entry
             .set(&["baseUrl".into()], Some(serde_json::json!("unsaved")))
             .unwrap();
-        this.models.edit("p".into(), Some(entry));
+        this.models.edit("".into(), Some(entry));
         cx.notify();
     });
-    cx.update(|window, cx| window.click("file-menu-p", cx));
+    cx.update(|window, cx| window.click("file-menu-", cx));
     cx.simulate_keystrokes("down enter");
     cx.run_until_parked();
     cx.update(|window, cx| {
@@ -204,7 +206,7 @@ async fn credential_links_use_leave_guard_and_only_change_pages(cx: &mut TestApp
         assert_eq!(this.navigation.1, super::super::layout::MODELS_PAGE)
     });
     assert!(files.read_with(cx, |this, _| this.models.dirty()));
-    cx.update(|window, cx| window.click("file-menu-p", cx));
+    cx.update(|window, cx| window.click("file-menu-", cx));
     cx.simulate_keystrokes("down enter");
     cx.run_until_parked();
     cx.update(|window, cx| window.click("file-discard", cx));
@@ -216,7 +218,7 @@ async fn credential_links_use_leave_guard_and_only_change_pages(cx: &mut TestApp
     cx.update(|window, cx| {
         window.render_frame(cx);
         assert!(!window.has_active_dialog(cx));
-        window.click("auth-menu-p", cx);
+        window.click("auth-menu-", cx);
     });
     cx.simulate_keystrokes("down enter");
     cx.run_until_parked();
@@ -227,6 +229,6 @@ async fn credential_links_use_leave_guard_and_only_change_pages(cx: &mut TestApp
     assert!(!files.read_with(cx, |this, _| this.models.dirty()));
     assert_eq!(
         std::fs::read_to_string(&models).unwrap(),
-        r#"{"providers":{"p":{}}}"#
+        r#"{"providers":{"":{}}}"#
     );
 }

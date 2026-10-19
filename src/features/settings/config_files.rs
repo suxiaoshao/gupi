@@ -378,64 +378,84 @@ impl FilePages {
             IconName::Server
         })
         .resettable(false)
-        .title_suffix(move |window, cx| {
-            if kind == Kind::Models {
-                let owner = h.downgrade();
-                window.use_keyed_state("models-page-auth-metadata-entry", cx, |window, cx| {
-                    window.defer(cx, move |_, cx| {
-                        let _ = owner.update(cx, |this, cx| this.refresh_auth(cx));
-                    });
-                });
-            }
-            let e = h.clone();
-            let dirty = h.read(cx).draft(kind).dirty();
-            let busy = h.read(cx).busy();
-            h_flex()
-                .gap_2()
-                .child(config.update(cx, |this, cx| this.render_scope(cx)))
-                .when(dirty, |row| {
-                    row.child(
-                        Button::new("file-reset")
-                            .small()
-                            .label(t(cx, "pi-settings-discard"))
-                            .disabled(busy)
-                            .on_click({
-                                let e = e.clone();
-                                move |_, _, cx| {
-                                    e.update(cx, |this, cx| {
-                                        let draft = this.draft_mut(kind);
-                                        draft.edits.clear();
-                                        draft.auto = None;
-                                        cx.notify()
-                                    })
-                                }
-                            }),
-                    )
-                    .child(
-                        Button::new("file-save-page")
-                            .small()
-                            .primary()
-                            .label(t(cx, "pi-settings-save"))
-                            .disabled(busy)
-                            .on_click({
-                                let e = e.clone();
-                                move |_, w, cx| {
-                                    e.update(cx, |this, cx| this.save(Some(kind), None, w, cx))
-                                }
-                            }),
-                    )
-                })
-                .child(
-                    Button::new("file-reload")
-                        .small()
-                        .ghost()
-                        .icon(IconName::RotateCw)
-                        .accessibility_label(t(cx, "pi-settings-reload"))
-                        .disabled(busy || dirty)
-                        .on_click(move |_, _, cx| e.update(cx, |this, cx| this.reload(cx))),
-                )
-                .into_any_element()
-        })
+        .group(
+            SettingGroup::new()
+                .border_0()
+                .p_0()
+                .item(SettingItem::render(move |_, window, cx| {
+                    if kind == Kind::Models {
+                        let owner = h.downgrade();
+                        window.use_keyed_state(
+                            "models-page-auth-metadata-entry",
+                            cx,
+                            |window, cx| {
+                                window.defer(cx, move |_, cx| {
+                                    let _ = owner.update(cx, |this, cx| this.refresh_auth(cx));
+                                });
+                            },
+                        );
+                    }
+                    let e = h.clone();
+                    let dirty = h.read(cx).draft(kind).dirty();
+                    let busy = h.read(cx).busy();
+                    v_flex()
+                        .w_full()
+                        .min_w_0()
+                        .gap_2()
+                        .child(config.update(cx, |this, cx| this.render_scope(cx)))
+                        .child(
+                            h_flex()
+                                .gap_2()
+                                .flex_wrap()
+                                .when(dirty, |row| {
+                                    row.child(
+                                        Button::new("file-reset")
+                                            .small()
+                                            .label(t(cx, "pi-settings-discard"))
+                                            .disabled(busy)
+                                            .on_click({
+                                                let e = e.clone();
+                                                move |_, _, cx| {
+                                                    e.update(cx, |this, cx| {
+                                                        let draft = this.draft_mut(kind);
+                                                        draft.edits.clear();
+                                                        draft.auto = None;
+                                                        cx.notify()
+                                                    })
+                                                }
+                                            }),
+                                    )
+                                    .child(
+                                        Button::new("file-save-page")
+                                            .small()
+                                            .primary()
+                                            .label(t(cx, "pi-settings-save"))
+                                            .disabled(busy)
+                                            .on_click({
+                                                let e = e.clone();
+                                                move |_, w, cx| {
+                                                    e.update(cx, |this, cx| {
+                                                        this.save(Some(kind), None, w, cx)
+                                                    })
+                                                }
+                                            }),
+                                    )
+                                })
+                                .child(
+                                    Button::new("file-reload")
+                                        .small()
+                                        .ghost()
+                                        .icon(IconName::RotateCw)
+                                        .accessibility_label(t(cx, "pi-settings-reload"))
+                                        .disabled(busy || dirty)
+                                        .on_click(move |_, _, cx| {
+                                            e.update(cx, |this, cx| this.reload(cx))
+                                        }),
+                                ),
+                        )
+                        .into_any_element()
+                })),
+        )
         .group(
             SettingGroup::new().item(SettingItem::render(move |_, window, cx| {
                 e.update(cx, |this, cx| this.render_page(kind, window, cx))
@@ -478,41 +498,33 @@ impl FilePages {
         let draft = self.draft(kind);
         let mut body = v_flex().w_full().min_w_0().max_w(rems(56.)).gap_2();
         let add = cx.entity();
-        body = body.child(
-            h_flex()
-                .w_full()
-                .items_start()
-                .gap_2()
-                .child(
-                    v_flex()
-                        .flex_1()
-                        .min_w_0()
-                        .gap_1()
-                        .child(div().text_sm().font_weight(FontWeight::SEMIBOLD).child(t(
-                            cx,
-                            if kind == Kind::Models {
-                                "pi-files-providers"
-                            } else {
-                                "pi-files-servers"
-                            },
-                        )))
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(t(cx, "pi-files-startup-only")),
-                        ),
-                )
-                .child(
-                    Button::new("file-add")
-                        .small()
-                        .label(t(cx, "pi-files-add"))
-                        .disabled(self.busy() || self.loading.is_some() || draft.names().is_err())
-                        .on_click(move |_, window, cx| {
-                            Self::open_editor(&add, kind, None, window, cx)
-                        }),
-                ),
-        );
+        body = body.child(super::management_header(
+            div()
+                .text_sm()
+                .font_weight(FontWeight::SEMIBOLD)
+                .child(t(
+                    cx,
+                    if kind == Kind::Models {
+                        "pi-files-providers"
+                    } else {
+                        "pi-files-servers"
+                    },
+                ))
+                .into_any_element(),
+            Some(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(t(cx, "pi-files-startup-only"))
+                    .into_any_element(),
+            ),
+            Button::new("file-add")
+                .small()
+                .label(t(cx, "pi-files-add"))
+                .disabled(self.busy() || self.loading.is_some() || draft.names().is_err())
+                .on_click(move |_, window, cx| Self::open_editor(&add, kind, None, window, cx))
+                .into_any_element(),
+        ));
         if self.loading.is_some() {
             return body.child(t(cx, "pi-settings-loading")).into_any_element();
         }

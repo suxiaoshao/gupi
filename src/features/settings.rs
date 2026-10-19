@@ -19,13 +19,13 @@ use gpui_kit::component::Disableable;
 use gpui_kit::component::Sizable as _;
 use gpui_kit::component::button::Button;
 use gpui_kit::component::button::ButtonVariants;
-use gpui_kit::component::combobox::ComboboxEvent;
 use gpui_kit::component::combobox::ComboboxState;
 use gpui_kit::component::h_flex;
 use gpui_kit::component::input::Input;
 use gpui_kit::component::input::InputEvent;
 use gpui_kit::component::input::InputState;
 use gpui_kit::component::searchable_list::SearchableVec;
+use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::v_flex;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -75,7 +75,7 @@ pub(crate) struct SettingsView {
     domain: layout::Domain,
     pi_config: Entity<pi_config::PiConfig>,
     auth: Entity<auth::AuthPage>,
-    language: Entity<ComboboxState<SearchableVec<LanguageItem>>>,
+    language: Entity<SelectState<SearchableVec<LanguageItem>>>,
     updates: Entity<super::updates::UpdatesView>,
 }
 impl SettingsView {
@@ -154,8 +154,13 @@ impl SettingsView {
                 );
             }
         });
-        let language = cx
-            .new(|cx| ComboboxState::new(language_items(cx), vec![], window, cx).searchable(true));
+        let selected_language = controller.read(cx).preferences(cx).language;
+        let language = cx.new(|cx| {
+            let mut control =
+                SelectState::new(language_items(cx), None, window, cx).searchable(true);
+            control.set_selected_value(&selected_language, window, cx);
+            control
+        });
         let pi_form = controller.read(cx).pi_form().clone();
         let pi_input = cx.new(|cx| {
             InputState::new(window, cx)
@@ -192,8 +197,7 @@ impl SettingsView {
         let guard = controller.clone();
         let language_sub = cx.subscribe_in(&language, window, move |_, _, event, _, cx| {
             if !guard.read(cx).busy(cx)
-                && let ComboboxEvent::Confirm(values) = event
-                && let Some(value) = values.first()
+                && let SelectEvent::Confirm(Some(value)) = event
             {
                 guard.update(cx, |owner, cx| {
                     owner.set_preference(PreferenceChange::Language(*value), cx)
@@ -206,7 +210,7 @@ impl SettingsView {
                 let items = language_items(cx);
                 this.language.update(cx, |control, cx| {
                     control.set_items(items, window, cx);
-                    control.set_selected_values(&[selected], window, cx);
+                    control.set_selected_value(&selected, window, cx);
                 });
                 cx.notify();
             });
@@ -291,7 +295,7 @@ impl SettingsView {
     fn refresh_language(&self, window: &mut Window, cx: &mut Context<Self>) {
         let selected = self.controller.read(cx).preferences(cx).language;
         self.language.update(cx, |control, cx| {
-            control.set_selected_values(&[selected], window, cx)
+            control.set_selected_value(&selected, window, cx)
         });
         cx.notify();
     }
@@ -404,6 +408,9 @@ impl SettingsView {
                 )
                 .child(
                     h_flex()
+                        .w_full()
+                        .min_w_0()
+                        .flex_wrap()
                         .gap_2()
                         .child(
                             Button::new("reload-config")
@@ -549,4 +556,26 @@ fn provider_name(provider: &str, cx: &App) -> Stateful<Div> {
         .aria_label(name.clone())
         .when(provider.is_empty(), |view| view.italic())
         .child(name)
+}
+
+// Settings-local presentation only. Owners retain actions, state and focus IDs.
+fn management_header(
+    heading: AnyElement,
+    description: Option<AnyElement>,
+    actions: AnyElement,
+) -> Div {
+    v_flex()
+        .w_full()
+        .min_w_0()
+        .gap_2()
+        .child(
+            h_flex()
+                .w_full()
+                .min_w_0()
+                .items_start()
+                .gap_2()
+                .child(div().flex_1().min_w_0().child(heading))
+                .child(div().flex_shrink_0().child(actions)),
+        )
+        .children(description)
 }

@@ -11,7 +11,7 @@ settings-path-help = 留空以自動尋找 pi，或填寫可執行檔的絕對�
 settings-theme = 外觀
 settings-language = 語言
 settings-save-pi = 儲存 Pi 路徑
-settings-reload = 從磁碟重讀
+settings-reload = 重新讀取
 settings-write-current = 將已套用設定寫回磁碟（保留草稿）
 theme-system = 跟隨系統
 theme-light = 淺色
@@ -149,7 +149,7 @@ conversation-submit = 提交
 conversation-input = 輸入消息
 conversation-model = 模型
 conversation-load-options = 連接 Pi 以加載可用模型
-conversation-thinking = 思考強度
+conversation-thinking = 思考等級
 conversation-unknown = 暫不可用
 conversation-context = 當前執行分支上下文
 conversation-auto-compaction = 自動壓縮
@@ -268,11 +268,11 @@ conversation-history-calls = 工具調用
 conversation-history-failed = 執行失敗
 conversation-history-stopped = 已中斷
 conversation-history-empty = 無正文回復
-composer-model-thinking = 模型與思考程度
-composer-model-refresh = 刷新模型與思考檔位
+composer-model-thinking = 模型與思考等級
+composer-model-refresh = 重新讀取模型與思考等級
 composer-thinking-unavailable = 不支持思考調節
 composer-model-loading = 正在讀取模型列表…
-composer-thinking-loading = 正在讀取思考檔位…
+composer-thinking-loading = 正在讀取思考等級…
 composer-model-confirming = 正在確認模型設定…
 composer-stats-loading = 正在讀取用量…
 composer-stats-retry = 重新讀取用量
@@ -372,20 +372,19 @@ settings-key-unbound = 未設定快速鍵
 settings-key-recording = 按下快速鍵，Esc 取消
 settings-key-conflict = 快速鍵衝突或無效
 settings-key-invalid = 請輸入有效的快速鍵；留空表示取消綁定
-settings-resource-refresh = 重新讀取資源
+settings-resource-refresh = 重新讀取
 settings-resource-reload-help = 僅管理個人資源。修改後，請手動刷新需要更新的對話。
 settings-resource-working = 正在處理…
 settings-resource-pi-required = 請先在 Pi 設定中儲存並檢查可用的 Pi 指令。
-settings-resource-invalid-name = 名稱只能包含英文字母、數字、連字符或下划線。
+settings-resource-invalid-name = 請輸入合法檔名，不可包含路徑分隔符號。
 settings-resource-register = 添加本地
 settings-resource-create = 創建
-settings-resource-name-help = 新資源名稱：英文字母、數字、連字符或下划線。
 settings-resource-empty = 沒有匹配的資源。
 settings-resource-delete = 移到廢紙簍
 settings-resource-save = 儲存正文
 shortcut-save-task = 儲存
 settings-resource-loading = 正在讀取正文…
-settings-resource-confirm-remove = 確認移除此項？刪除檔案僅將所選檔案移到廢紙簍，不會刪除整個目錄。
+settings-resource-confirm-remove = 僅將所選檔案移至垃圾桶，保留所在目錄。
 settings-package-install = 安裝包
 settings-package-update = 更新
 settings-package-remove = 移除
@@ -396,14 +395,14 @@ settings-package-prompts = 範本 { $count }
 settings-package-themes = 主題 { $count }
 settings-skill-search = 搜尋 Skill 名稱、說明、路徑或來源
 settings-skill-collapse = 收起
-settings-resource-edit = 編輯
+settings-resource-edit = 編輯…
 settings-about-gupi = 版本
 settings-about-pi = 版本
 settings-about-path = 實際路徑
 settings-about-status = 檢查狀態
 settings-about-unavailable = 尚未取得
 settings-editor-discard = 放棄未儲存的正文修改嗎？
-settings-package-confirm-remove = 從所選 Pi 範圍中移除此套件？本機套件只取消註冊，保留來源目錄。
+settings-package-confirm-remove = 從所選 Pi 作用域移除；本機來源目錄會保留。
 settings-package-heading = 已安裝包
 settings-extension-heading = 獨立擴展
 settings-template-heading = 指令範本
@@ -417,7 +416,7 @@ settings-pi-unsaved = 路徑尚未儲存；檢查僅驗證當前輸入，不會�
 settings-pi-saved = 當前路徑已儲存。檢查可重新確認 Pi 是否可用。
 settings-resource-location = 顯示位置
 settings-package-source = 包來源
-settings-package-empty = 尚未安裝個人 Pi 包。
+settings-package-empty = 未找到此套件宣告的資源。
 settings-resource-name = 名稱
 settings-resource-none = 尚無此類個人資源。
 settings-resource-view = 查看
@@ -458,8 +457,8 @@ image-preview-zoom-in = 放大
 image-preview-zoom-out = 縮小
 shortcut-global = 全局快速鍵
 shortcut-launcher = 臨時視窗
-shortcut-add = 添加範本任務
-shortcut-edit = 編輯範本任務
+shortcut-add = 添加範本任務…
+shortcut-edit = 編輯範本任務…
 shortcut-delete = 刪除範本任務
 shortcut-name = 名稱
 shortcut-template = 指令範本
@@ -689,7 +688,7 @@ screenshot-permission-required = 截圖需要螢幕錄製權限。請在「系�
 files-title = 檔案
 files-panel = 右側面板
 files-close = 關閉面板
-files-refresh = 重新整理檔案
+files-refresh = 重新讀取
 files-preview = 預覽
 files-readonly = 唯讀
 files-wrap = 自動換行
@@ -812,7 +811,7 @@ packages-page = 第 { $page } 頁
 packages-page-empty = 本頁無符合條件的套件。
 packages-close = 關閉詳細資料
 packages-local-unavailable = 本機套件資訊無法使用，請重新整理資源後再操作。
-packages-refresh-details = 重新整理詳細資訊
+packages-refresh-details = 重新讀取
 
 ## Pi settings
 settings-domain-label = 設定區域
@@ -1021,7 +1020,7 @@ pi-budget-input = { $level }思考預算（token）
 
 pi-group-resource-paths = 資源路徑
 pi-field-resource-extensions = 擴充功能
-pi-field-resource-skills = 技能
+pi-field-resource-skills = Skill
 pi-field-resource-prompts = 提示詞
 pi-field-resource-themes = 主題
 pi-resource-paths-help = 目前範圍檔案中的原始項目，依序儲存。
@@ -1179,3 +1178,34 @@ pi-auth-edit-models = 在模型與供應商中編輯
 
 pi-provider-empty-id = 〈空 ID〉
 pi-auth-check-unavailable = Pi 無法檢查此供應商 ID。
+
+settings-skill-name-help = 目錄名稱。Pi 建議使用小寫字母、數字和單個連字號，最長 64 字元。
+
+settings-skill-name-warning = 名稱不符合 Pi 建議規則，仍可建立。此處不驗證 SKILL.md 中的 name。
+
+settings-prompt-name-help = 用於 /名稱 呼叫；不可包含空白。
+
+settings-prompt-invalid-name = 請輸入合法檔名，不可包含空白或路徑分隔符號。
+
+shortcut-add-title = 新增範本任務
+
+shortcut-edit-title = 編輯範本任務
+
+shortcut-options-failed = 無法讀取範本或模型選項，請檢查 Pi 連線後重試。
+
+pi-auth-row-action = { $provider }: { $action }
+
+pi-auth-add-title = 新增 API Key
+
+pi-auth-replace-editor-title = 取代 API Key
+
+temporary-clean-title = 清理已釋放的工作目錄？
+
+settings-package-remove-title = 移除「{ $name }」？
+
+settings-resource-delete-title = 將「{ $name }」移至垃圾桶？
+
+shortcut-delete-title = 刪除範本任務「{ $name }」？
+
+settings-key-control-label = { $command }: { $binding }
+settings-key-control-recording = { $command }: { $binding } — { $state }

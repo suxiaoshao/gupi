@@ -2,10 +2,7 @@ use super::*;
 use gpui_kit::component::combobox::Combobox;
 use gpui_kit::component::form::field;
 use gpui_kit::component::form::v_form;
-use gpui_kit::component::input::Textarea;
-use gpui_kit::component::input::TextareaState;
 use gpui_kit::component::searchable_list::SearchableListItem;
-use gupi_conversation_ui::composer::Composer;
 use gupi_conversation_ui::home::pickers::Picker;
 use gupi_conversation_ui::home::pickers::PickerEvent;
 use gupi_conversation_ui::home::pickers::Projection;
@@ -58,19 +55,27 @@ fn choices(
 }
 pub(super) fn open(
     definition: ShortcutTask,
+    creating: bool,
     controller: Entity<ConfigController>,
     window: &mut Window,
     cx: &mut App,
 ) {
     let editor = cx.new(|cx| Editor::new(definition, controller, window, cx));
-    window.open_dialog(cx, move |dialog, _, cx| {
+    window.open_dialog(cx, move |dialog, window, cx| {
         let save = editor.clone();
         let cancel = editor.clone();
         let busy = editor.read(cx).controller.read(cx).busy(cx);
         let loading = editor.read(cx).loading;
         dialog
-            .title(t(cx, "shortcut-edit"))
-            .width(px(560.))
+            .title(t(
+                cx,
+                if creating {
+                    "shortcut-add-title"
+                } else {
+                    "shortcut-edit-title"
+                },
+            ))
+            .width(window.rem_size() * 35.)
             .overlay_closable(false)
             .child(editor.clone())
             .close_button(!busy)
@@ -92,7 +97,6 @@ struct Editor {
     template: Choices,
     source: Choices,
     picker: Entity<Picker>,
-    composer: Entity<TextareaState>,
     model: Option<ModelChoice>,
     thinking: Option<String>,
     levels: Vec<String>,
@@ -102,6 +106,7 @@ struct Editor {
     saving: Option<Shortcuts>,
     error: Option<String>,
     loading: bool,
+    options_failed: bool,
     query: Option<gupi_pi_runtime::InstanceId>,
     client: Option<Client>,
     task: Option<Task<()>>,
@@ -115,7 +120,6 @@ impl Editor {
         cx: &mut Context<Self>,
     ) -> Self {
         let name = cx.new(|cx| InputState::new(window, cx).default_value(definition.name.clone()));
-        let composer = cx.new(|cx| TextareaState::new(window, cx).auto_grow(2, 8));
         let template_path = definition.template.to_string_lossy().into_owned();
         let template = choices(
             if template_path.is_empty() {
@@ -208,7 +212,6 @@ impl Editor {
             template,
             source,
             picker,
-            composer,
             levels: vec![],
             default_thinking: String::new(),
             models: vec![],
@@ -216,6 +219,7 @@ impl Editor {
             saving: None,
             error: None,
             loading: false,
+            options_failed: false,
             query: None,
             client: None,
             task: None,
@@ -277,6 +281,7 @@ impl Editor {
         self.client = None;
         self.loading = true;
         self.error = None;
+        self.options_failed = false;
         let command = cx
             .try_global::<crate::app::temporary::Temporary>()
             .and_then(|t| t.command.clone());
@@ -288,8 +293,8 @@ impl Editor {
                     self.query = Some(id);
                     Some(id)
                 }
-                Err(e) => {
-                    self.error = Some(e.to_string());
+                Err(_) => {
+                    self.options_failed = true;
                     None
                 }
             }
@@ -331,7 +336,9 @@ impl Editor {
                             s.set_selected_values(&[selected_template], window, cx);
                         });
                     }
-                    Err(e) => this.error = Some(e.to_string()),
+                    Err(_) => {
+                        this.options_failed = true;
+                    }
                 }
                 cx.notify();
             });
@@ -369,7 +376,9 @@ impl Editor {
                         this.models = models;
                         this.load_levels(window, cx);
                     }
-                    Err(e) => this.error = Some(e),
+                    Err(_) => {
+                        this.options_failed = true;
+                    }
                 }
                 this.sync_picker(window, cx);
                 cx.notify();
@@ -411,7 +420,9 @@ impl Editor {
                     Ok(levels) => {
                         this.levels = levels.levels;
                     }
-                    Err(e) => this.error = Some(e),
+                    Err(_) => {
+                        this.options_failed = true;
+                    }
                 }
                 this.sync_picker(window, cx);
                 cx.notify();
@@ -422,6 +433,7 @@ impl Editor {
         if self.controller.read(cx).busy(cx) || self.loading {
             return false;
         }
+        self.error = None;
         let mut definition = self.definition.clone();
         definition.name = self.name.read(cx).value().trim().into();
         let Some(template) = self
@@ -512,22 +524,32 @@ impl Render for Editor {
                         ),
                     )
                     .child(
-                        field().label(t(cx, "composer-model-thinking")).child(
-                            Composer::new(
-                                "task-composer",
-                                Textarea::new(&self.composer)
-                                    .aria_label(t(cx, "conversation-input")),
-                                self.picker.clone(),
-                            )
-                            .build()
-                            .readonly(true),
-                        ),
+                        field()
+                            .label(t(cx, "composer-model-thinking"))
+                            .child(self.picker.clone()),
                     ),
             )
             .children(
                 self.error
                     .as_ref()
-                    .map(|e| div().text_color(cx.theme().danger).child(e.clone())),
+                    .map(|error| div().text_color(cx.theme().danger).child(error.clone())),
             )
+            .when(self.options_failed, |view| {
+                view.child(
+                    v_flex()
+                        .gap_2()
+                        .child(
+                            div()
+                                .text_color(cx.theme().danger)
+                                .child(t(cx, "shortcut-options-failed")),
+                        )
+                        .child(
+                            Button::new("retry-task-options")
+                                .label(t(cx, "action-retry"))
+                                .disabled(disabled)
+                                .on_click(cx.listener(|this, _, window, cx| this.load(window, cx))),
+                        ),
+                )
+            })
     }
 }

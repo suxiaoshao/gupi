@@ -311,7 +311,24 @@ pub fn register_skill(root: &Path, path: &Path) -> Result<(), Error> {
         Ok(())
     })
 }
+/// Pi recommends these skill directory names but still loads other safe names.
+pub fn recommended_skill_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && !name.starts_with('-')
+        && !name.ends_with('-')
+        && !name.contains("--")
+        && name
+            .bytes()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+}
 pub fn create_path(root: &Path, kind: Kind, name: &str) -> Result<PathBuf, Error> {
+    // This is a create-only rule: existing prompt files remain editable.
+    if kind == Kind::Prompt && name.chars().any(char::is_whitespace) {
+        return Err(Error(
+            "Prompt template names cannot contain whitespace".into(),
+        ));
+    }
     let name = name.trim();
     if name.is_empty()
         || matches!(name, "." | "..")

@@ -11,7 +11,7 @@ settings-path-help = 留空以自动查找 pi，或填写可执行文件的绝�
 settings-theme = 外观
 settings-language = 语言
 settings-save-pi = 保存 Pi 路径
-settings-reload = 从磁盘重读
+settings-reload = 重新读取
 settings-write-current = 将已应用设置写回磁盘（保留草稿）
 theme-system = 跟随系统
 theme-light = 浅色
@@ -149,7 +149,7 @@ conversation-submit = 提交
 conversation-input = 输入消息
 conversation-model = 模型
 conversation-load-options = 连接 Pi 以加载可用模型
-conversation-thinking = 思考强度
+conversation-thinking = 思考等级
 conversation-unknown = 暂不可用
 conversation-context = 当前执行分支上下文
 conversation-auto-compaction = 自动压缩
@@ -268,11 +268,11 @@ conversation-history-calls = 工具调用
 conversation-history-failed = 执行失败
 conversation-history-stopped = 已中断
 conversation-history-empty = 无正文回复
-composer-model-thinking = 模型与思考程度
-composer-model-refresh = 刷新模型与思考档位
+composer-model-thinking = 模型与思考等级
+composer-model-refresh = 重新读取模型与思考等级
 composer-thinking-unavailable = 不支持思考调节
 composer-model-loading = 正在读取模型列表…
-composer-thinking-loading = 正在读取思考档位…
+composer-thinking-loading = 正在读取思考等级…
 composer-model-confirming = 正在确认模型设置…
 composer-stats-loading = 正在读取用量…
 composer-stats-retry = 重新读取用量
@@ -300,7 +300,7 @@ history-level-all-description = 全部：包括设置变化、标签和自定义
 history-scope-all = 全部分支
 history-scope-branch = 仅此分支
 history-model-change = 模型变更
-history-thinking-change = 思考级别变更
+history-thinking-change = 思考等级变更
 history-session-info = 会话信息变更
 history-label-change = 标签变更
 history-custom-record = 自定义记录
@@ -372,20 +372,19 @@ settings-key-unbound = 未设置快捷键
 settings-key-recording = 按下快捷键，Esc 取消
 settings-key-conflict = 快捷键冲突或无效
 settings-key-invalid = 请输入有效的快捷键；留空表示取消绑定
-settings-resource-refresh = 重新读取资源
+settings-resource-refresh = 重新读取
 settings-resource-reload-help = 仅管理个人资源。修改后，请手动刷新需要更新的会话。
 settings-resource-working = 正在处理…
 settings-resource-pi-required = 请先在 Pi 设置中保存并检查可用的 Pi 命令。
-settings-resource-invalid-name = 名称只能包含英文字母、数字、连字符或下划线。
+settings-resource-invalid-name = 请输入合法文件名，不可包含路径分隔符。
 settings-resource-register = 添加本地
 settings-resource-create = 创建
-settings-resource-name-help = 新资源名称：英文字母、数字、连字符或下划线。
 settings-resource-empty = 没有匹配的资源。
 settings-resource-delete = 移到废纸篓
 settings-resource-save = 保存正文
 shortcut-save-task = 保存
 settings-resource-loading = 正在读取正文…
-settings-resource-confirm-remove = 确认移除此项？删除文件仅将所选文件移到废纸篓，不会删除整个目录。
+settings-resource-confirm-remove = 仅将所选文件移到废纸篓，保留所在目录。
 settings-package-install = 安装包
 settings-package-update = 更新
 settings-package-remove = 移除
@@ -396,14 +395,14 @@ settings-package-prompts = 模板 { $count }
 settings-package-themes = 主题 { $count }
 settings-skill-search = 搜索 Skill 名称、说明、路径或来源
 settings-skill-collapse = 收起
-settings-resource-edit = 编辑
+settings-resource-edit = 编辑…
 settings-about-gupi = 版本
 settings-about-pi = 版本
 settings-about-path = 实际路径
 settings-about-status = 检查状态
 settings-about-unavailable = 尚未取得
 settings-editor-discard = 放弃未保存的正文修改吗？
-settings-package-confirm-remove = 从所选 Pi 作用域中移除此包？本地包只取消注册，保留来源目录。
+settings-package-confirm-remove = 从所选 Pi 作用域中移除；本地来源目录会保留。
 settings-package-heading = 已安装包
 settings-extension-heading = 独立扩展
 settings-template-heading = 命令模板
@@ -417,7 +416,7 @@ settings-pi-unsaved = 路径尚未保存；检查仅验证当前输入，不会�
 settings-pi-saved = 当前路径已保存。检查可重新确认 Pi 是否可用。
 settings-resource-location = 显示位置
 settings-package-source = 包来源
-settings-package-empty = 尚未安装个人 Pi 包。
+settings-package-empty = 未发现此包声明的资源。
 settings-resource-name = 名称
 settings-resource-none = 尚无此类个人资源。
 settings-resource-view = 查看
@@ -458,8 +457,8 @@ image-preview-zoom-in = 放大
 image-preview-zoom-out = 缩小
 shortcut-global = 全局快捷键
 shortcut-launcher = 临时窗口
-shortcut-add = 添加模板任务
-shortcut-edit = 编辑模板任务
+shortcut-add = 添加模板任务…
+shortcut-edit = 编辑模板任务…
 shortcut-delete = 删除模板任务
 shortcut-name = 名称
 shortcut-template = 命令模板
@@ -689,7 +688,7 @@ screenshot-permission-required = 截图需要屏幕录制权限。请在“系�
 files-title = 文件
 files-panel = 右侧面板
 files-close = 关闭面板
-files-refresh = 刷新文件
+files-refresh = 重新读取
 files-preview = 预览
 files-readonly = 只读
 files-wrap = 自动换行
@@ -812,7 +811,7 @@ packages-page = 第 { $page } 页
 packages-page-empty = 本页无符合条件的包。
 packages-close = 关闭详情
 packages-local-unavailable = 本地包信息不可用，请刷新资源后再操作。
-packages-refresh-details = 刷新详情
+packages-refresh-details = 重新读取
 
 ## Pi settings
 settings-domain-label = 设置区域
@@ -1021,7 +1020,7 @@ pi-budget-input = { $level }思考预算（token）
 
 pi-group-resource-paths = 资源路径
 pi-field-resource-extensions = 扩展
-pi-field-resource-skills = 技能
+pi-field-resource-skills = Skill
 pi-field-resource-prompts = 提示词
 pi-field-resource-themes = 主题
 pi-resource-paths-help = 当前作用域文件中的原始条目，按顺序保存。
@@ -1179,3 +1178,34 @@ pi-auth-edit-models = 在模型与供应商中编辑
 
 pi-provider-empty-id = 〈空 ID〉
 pi-auth-check-unavailable = Pi 无法检查此供应商 ID。
+
+settings-skill-name-help = 目录名。Pi 建议使用小写字母、数字和单个连字符，最长 64 字符。
+
+settings-skill-name-warning = 名称不符合 Pi 推荐规则，仍可创建。此处不校验 SKILL.md 中的 name。
+
+settings-prompt-name-help = 用于 /名称 调用；不可包含空白。
+
+settings-prompt-invalid-name = 请输入合法文件名，不可包含空白或路径分隔符。
+
+shortcut-add-title = 添加模板任务
+
+shortcut-edit-title = 编辑模板任务
+
+shortcut-options-failed = 无法读取模板或模型选项，请检查 Pi 连接后重试。
+
+pi-auth-row-action = { $provider }: { $action }
+
+pi-auth-add-title = 添加 API Key
+
+pi-auth-replace-editor-title = 替换 API Key
+
+temporary-clean-title = 清理已释放的工作目录？
+
+settings-package-remove-title = 移除“{ $name }”？
+
+settings-resource-delete-title = 将“{ $name }”移到废纸篓？
+
+shortcut-delete-title = 删除模板任务“{ $name }”？
+
+settings-key-control-label = { $command }: { $binding }
+settings-key-control-recording = { $command }: { $binding } — { $state }

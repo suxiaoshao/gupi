@@ -415,10 +415,10 @@ impl ResourcesView {
                 .border_t_1()
                 .border_color(cx.theme().border)
                 .debug_selector(|| "template-preview-content".into());
-            if preview.is_running() {
+            if preview.content.is_running() {
                 content = content.child(gpui_kit::component::spinner::Spinner::new().small());
             }
-            if let Some(error) = preview.problem() {
+            if let Some(error) = preview.content.problem() {
                 content = content.child(
                     div()
                         .text_sm()
@@ -426,7 +426,7 @@ impl ResourcesView {
                         .child(error.to_string()),
                 );
             }
-            if let Some(text) = preview.data() {
+            if let Some(text) = preview.content.data() {
                 content = content.child(TextView::markdown(
                     id("markdown"),
                     preview_body(text).to_owned(),

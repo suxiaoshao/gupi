@@ -11,13 +11,13 @@ settings-path-help = Deixe em branco para localizar pi automaticamente ou inform
 settings-theme = Aparência
 settings-language = Idioma
 settings-save-pi = Salvar caminho do Pi
-settings-reload = Recarregar do disco
+settings-reload = Recarregar
 settings-write-current = Gravar no disco as configurações aplicadas (manter o rascunho)
 theme-system = Sistema
 theme-light = Claro
 theme-dark = Escuro
 language-system = Sistema
-language-english = Inglês
+language-english = English
 language-chinese = 简体中文
 recovery-config-title = A configuração precisa de atenção
 recovery-startup-title = Não foi possível iniciar o Gupi
@@ -268,8 +268,8 @@ conversation-history-calls = Chamadas de ferramentas
 conversation-history-failed = A execução falhou
 conversation-history-stopped = Interrompida
 conversation-history-empty = Resposta sem texto
-composer-model-thinking = Modelo e raciocínio
-composer-model-refresh = Atualizar modelos e níveis de raciocínio
+composer-model-thinking = Modelo e nível de raciocínio
+composer-model-refresh = Recarregar modelos e níveis de raciocínio
 composer-thinking-unavailable = Não compatível
 composer-model-loading = Carregando modelos…
 composer-thinking-loading = Carregando níveis de raciocínio…
@@ -372,20 +372,19 @@ settings-key-unbound = Nenhum atalho atribuído
 settings-key-recording = Pressione um atalho ou Esc para cancelar
 settings-key-conflict = Atalho inválido ou em conflito
 settings-key-invalid = Informe um atalho válido ou deixe vazio para desatribuir
-settings-resource-refresh = Atualizar recursos
+settings-resource-refresh = Recarregar
 settings-resource-reload-help = Somente recursos pessoais. Recarregue as sessões existentes manualmente para aplicar as alterações.
 settings-resource-working = Em andamento…
 settings-resource-pi-required = Salve e verifique um executável do Pi válido nas configurações do Pi primeiro.
-settings-resource-invalid-name = Os nomes podem conter letras, números, hífens e sublinhados.
+settings-resource-invalid-name = Use um nome de arquivo válido sem separadores de caminho.
 settings-resource-register = Adicionar local
 settings-resource-create = Criar
-settings-resource-name-help = Nome do novo recurso: letras, números, hífens ou sublinhados.
 settings-resource-empty = Nenhum recurso encontrado.
 settings-resource-delete = Mover para a Lixeira
 settings-resource-save = Salvar texto
 shortcut-save-task = Salvar
 settings-resource-loading = Lendo texto…
-settings-resource-confirm-remove = Remover este item? A exclusão move somente o arquivo selecionado para a Lixeira; a pasta é mantida.
+settings-resource-confirm-remove = Somente o arquivo selecionado vai para a lixeira; a pasta é mantida.
 settings-package-install = Instalar pacote
 settings-package-update = Atualizar
 settings-package-remove = Remover
@@ -396,14 +395,14 @@ settings-package-prompts = Prompts { $count }
 settings-package-themes = Temas { $count }
 settings-skill-search = Buscar habilidades por nome, descrição, caminho ou origem
 settings-skill-collapse = Recolher
-settings-resource-edit = Editar
+settings-resource-edit = Editar…
 settings-about-gupi = Versão
 settings-about-pi = Versão
 settings-about-path = Caminho resolvido
 settings-about-status = Status da verificação
 settings-about-unavailable = Ainda indisponível
 settings-editor-discard = Descartar alterações de texto não salvas?
-settings-package-confirm-remove = Remover este pacote do escopo Pi selecionado? Pacotes locais são apenas desregistrados; suas pastas de origem são mantidas.
+settings-package-confirm-remove = Remove o pacote do escopo Pi selecionado. As pastas de origem locais são mantidas.
 settings-package-heading = Pacotes instalados
 settings-extension-heading = Extensões independentes
 settings-template-heading = Modelos de comando
@@ -417,7 +416,7 @@ settings-pi-unsaved = Caminho não salvo. A verificação valida a entrada atual
 settings-pi-saved = O caminho atual está salvo. Verifique novamente para confirmar que o Pi está disponível.
 settings-resource-location = Mostrar local
 settings-package-source = Origem do pacote
-settings-package-empty = Nenhum pacote pessoal do Pi instalado.
+settings-package-empty = Nenhum recurso declarado foi encontrado neste pacote.
 settings-resource-name = Nome
 settings-resource-none = Ainda não há recursos pessoais deste tipo.
 settings-resource-view = Visualizar
@@ -458,8 +457,8 @@ image-preview-zoom-in = Ampliar
 image-preview-zoom-out = Reduzir
 shortcut-global = Atalhos globais
 shortcut-launcher = Janela temporária
-shortcut-add = Adicionar tarefa de modelo
-shortcut-edit = Editar tarefa de modelo
+shortcut-add = Adicionar tarefa de modelo…
+shortcut-edit = Editar tarefa de modelo…
 shortcut-delete = Excluir tarefa de modelo
 shortcut-name = Nome
 shortcut-template = Modelo de comando
@@ -688,7 +687,7 @@ screenshot-permission-required = É necessária permissão para gravar a tela. P
 files-title = Arquivos
 files-panel = Painel direito
 files-close = Fechar painel
-files-refresh = Atualizar arquivos
+files-refresh = Recarregar
 files-preview = Prévia
 files-readonly = Somente leitura
 files-wrap = Quebrar linhas
@@ -811,7 +810,7 @@ packages-page = Página { $page }
 packages-page-empty = Nenhum pacote correspondente nesta página.
 packages-close = Fechar detalhes
 packages-local-unavailable = As informações dos pacotes locais estão indisponíveis. Atualize os recursos para habilitar as ações dos pacotes.
-packages-refresh-details = Atualizar detalhes
+packages-refresh-details = Recarregar
 
 ## Pi settings
 settings-domain-label = Área de configurações
@@ -906,7 +905,7 @@ settings-system-use-global = Usar o global
 settings-system-use-global-title = Voltar a usar { $file } global?
 settings-system-use-global-body = O arquivo do projeto vai para a lixeira e o Pi volta a usar o arquivo global.
 settings-editor-changed = O arquivo mudou depois de aberto, então não foi salvo. Leia de novo para descartar estas edições, ou cancele.
-settings-editor-reload = Ler de novo
+settings-editor-reload = Recarregar
 settings-editor-unsaved-title = Salvar as alterações em { $file }?
 settings-editor-unsaved-body = As alterações de texto ainda não foram salvas.
 
@@ -1106,11 +1105,11 @@ pi-files-label-contextWindow = Janela de contexto
 pi-files-label-maxTokens = Tokens máximos de saída
 pi-files-label-input = Tipos de entrada
 pi-files-label-cost = Custo
-pi-files-label-thinkingLevelMap = Mapa de níveis de pensamento
+pi-files-label-thinkingLevelMap = Mapa de níveis de raciocínio
 pi-files-label-inputLimits = Limites de entrada
 pi-files-label-promptCache = Cache de prompts
 pi-files-label-samplingParams = Parâmetros de amostragem
-pi-files-label-samplingParamsByThinkingLevel = Amostragem por nível de pensamento
+pi-files-label-samplingParamsByThinkingLevel = Amostragem por nível de raciocínio
 pi-files-label-autoEnableCodemode = Ativar Codemode automaticamente
 pi-files-providers = Provedores
 pi-files-servers = Servidores MCP
@@ -1194,3 +1193,34 @@ pi-auth-edit-models = Editar em Modelos e provedores
 
 pi-provider-empty-id = ⟨ID vazio⟩
 pi-auth-check-unavailable = O Pi não pode verificar este ID de provedor.
+
+settings-skill-name-help = Nome da pasta. O Pi recomenda minúsculas, dígitos e hífens simples, com até 64 caracteres.
+
+settings-skill-name-warning = Este nome não segue as recomendações do Pi; a criação continua permitida. O campo name em SKILL.md não é validado aqui.
+
+settings-prompt-name-help = Usado como /nome. Espaços em branco não são permitidos.
+
+settings-prompt-invalid-name = Use um nome de arquivo válido sem espaços em branco nem separadores de caminho.
+
+shortcut-add-title = Adicionar tarefa de modelo
+
+shortcut-edit-title = Editar tarefa de modelo
+
+shortcut-options-failed = Não foi possível carregar modelos ou suas opções. Verifique a conexão com o Pi e tente novamente.
+
+pi-auth-row-action = { $provider }: { $action }
+
+pi-auth-add-title = Adicionar chave de API
+
+pi-auth-replace-editor-title = Substituir chave de API
+
+temporary-clean-title = Limpar diretórios de trabalho liberados?
+
+settings-package-remove-title = Remover “{ $name }”?
+
+settings-resource-delete-title = Mover “{ $name }” para a lixeira?
+
+shortcut-delete-title = Excluir a tarefa de modelo “{ $name }”?
+
+settings-key-control-label = { $command }: { $binding }
+settings-key-control-recording = { $command }: { $binding } — { $state }

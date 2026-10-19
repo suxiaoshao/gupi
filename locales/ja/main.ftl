@@ -11,7 +11,7 @@ settings-path-help = 空欄にすると pi を自動検索します。引数な�
 settings-theme = 外観
 settings-language = 言語
 settings-save-pi = Pi のパスを保存
-settings-reload = ディスクから再読み込み
+settings-reload = 再読み込み
 settings-write-current = 適用中の設定をディスクに書き込む（編集中の内容は保持）
 theme-system = システム
 theme-light = ライト
@@ -263,7 +263,7 @@ conversation-history-failed = 実行に失敗
 conversation-history-stopped = 中断
 conversation-history-empty = テキストのない返信
 composer-model-thinking = モデルと思考レベル
-composer-model-refresh = モデルと思考レベルを更新
+composer-model-refresh = モデルと思考レベルを再読み込み
 composer-thinking-unavailable = 非対応
 composer-model-loading = モデルを読み込み中…
 composer-thinking-loading = 思考レベルを読み込み中…
@@ -365,20 +365,19 @@ settings-key-unbound = ショートカットが割り当てられていません
 settings-key-recording = ショートカットを押してください（Esc でキャンセル）
 settings-key-conflict = ショートカットが競合しているか、無効です
 settings-key-invalid = 有効なショートカットを入力するか、空欄にして割り当てを解除してください
-settings-resource-refresh = リソースを更新
+settings-resource-refresh = 再読み込み
 settings-resource-reload-help = 個人用リソースのみです。変更を適用するには既存のセッションを手動で再読み込みしてください。
 settings-resource-working = 処理中…
 settings-resource-pi-required = まず Pi の設定で、Pi の実行ファイルを保存して動作確認してください。
-settings-resource-invalid-name = 名前には英字、数字、ハイフン、アンダースコアを使用できます。
+settings-resource-invalid-name = パス区切り文字を含まない有効なファイル名を入力してください。
 settings-resource-register = ローカルに追加
 settings-resource-create = 作成
-settings-resource-name-help = 新しいリソース名：英字、数字、ハイフン、アンダースコア。
 settings-resource-empty = 一致するリソースはありません。
 settings-resource-delete = ゴミ箱に移動
 settings-resource-save = テキストを保存
 shortcut-save-task = 保存
 settings-resource-loading = テキストを読み込み中…
-settings-resource-confirm-remove = この項目を削除しますか？ファイルだけをゴミ箱に移動し、フォルダーは残します。
+settings-resource-confirm-remove = 選択したファイルだけをゴミ箱に移動し、ディレクトリは残します。
 settings-package-install = パッケージをインストール
 settings-package-update = 更新
 settings-package-remove = 削除
@@ -389,14 +388,14 @@ settings-package-prompts = テンプレート { $count}
 settings-package-themes = テーマ { $count}
 settings-skill-search = 名前、説明、パス、取得元でスキルを検索
 settings-skill-collapse = 折りたたむ
-settings-resource-edit = 編集
+settings-resource-edit = 編集…
 settings-about-gupi = バージョン
 settings-about-pi = バージョン
 settings-about-path = 解決済みのパス
 settings-about-status = 確認状況
 settings-about-unavailable = まだ利用できません
 settings-editor-discard = 保存されていないテキストの変更を破棄しますか？
-settings-package-confirm-remove = 選択した Pi のスコープからこのパッケージを削除しますか？ローカルパッケージは登録のみ解除され、ソースフォルダーは保持されます。
+settings-package-confirm-remove = 選択した Pi スコープから削除します。ローカルのソースフォルダーは残ります。
 settings-package-heading = インストール済みパッケージ
 settings-extension-heading = 単独の拡張機能
 settings-template-heading = コマンドテンプレート
@@ -410,7 +409,7 @@ settings-pi-unsaved = パスは未保存です。確認すると現在の入力�
 settings-pi-saved = 現在のパスは保存されています。Pi が利用できることをもう一度確認してください。
 settings-resource-location = 場所を表示
 settings-package-source = パッケージの取得元
-settings-package-empty = 個人用の Pi パッケージはインストールされていません。
+settings-package-empty = このパッケージで宣言されたリソースは見つかりません。
 settings-resource-name = 名前
 settings-resource-none = この種類の個人用リソースはまだありません。
 settings-resource-view = 表示
@@ -451,8 +450,8 @@ image-preview-zoom-in = 拡大
 image-preview-zoom-out = 縮小
 shortcut-global = グローバルショートカット
 shortcut-launcher = 一時ウィンドウ
-shortcut-add = テンプレートタスクを追加
-shortcut-edit = テンプレートタスクを編集
+shortcut-add = テンプレートタスクを追加…
+shortcut-edit = テンプレートタスクを編集…
 shortcut-delete = テンプレートタスクを削除
 shortcut-name = 名前
 shortcut-template = コマンドテンプレート
@@ -682,7 +681,7 @@ screenshot-permission-required = スクリーンショットには画面収録�
 files-title = ファイル
 files-panel = 右パネル
 files-close = パネルを閉じる
-files-refresh = ファイルを更新
+files-refresh = 再読み込み
 files-preview = プレビュー
 files-readonly = 読み取り専用
 files-wrap = 折り返し
@@ -805,7 +804,7 @@ packages-page = { $page } ページ
 packages-page-empty = このページに条件に一致するパッケージはありません。
 packages-close = 詳細を閉じる
 packages-local-unavailable = ローカルパッケージ情報を取得できません。操作するにはリソースを再読み込みしてください。
-packages-refresh-details = 詳細を再読み込み
+packages-refresh-details = 再読み込み
 
 ## Pi settings
 settings-domain-label = 設定の領域
@@ -1172,3 +1171,34 @@ pi-auth-edit-models = モデルとプロバイダーで編集
 
 pi-provider-empty-id = 〈空の ID〉
 pi-auth-check-unavailable = Pi はこのプロバイダー ID を確認できません。
+
+settings-skill-name-help = ディレクトリ名。Pi の推奨は小文字、数字、単独のハイフンで、64 文字以内です。
+
+settings-skill-name-warning = Pi の推奨形式ではありませんが、作成できます。SKILL.md 内の name はここでは検証しません。
+
+settings-prompt-name-help = /名前 で呼び出します。空白は使用できません。
+
+settings-prompt-invalid-name = 空白やパス区切り文字を含まない有効なファイル名を入力してください。
+
+shortcut-add-title = テンプレートタスクを追加
+
+shortcut-edit-title = テンプレートタスクを編集
+
+shortcut-options-failed = テンプレートまたはモデルの選択肢を読み込めませんでした。Pi の接続を確認して再試行してください。
+
+pi-auth-row-action = { $provider }: { $action }
+
+pi-auth-add-title = API キーを追加
+
+pi-auth-replace-editor-title = API キーを置換
+
+temporary-clean-title = 解放済みの作業ディレクトリを整理しますか？
+
+settings-package-remove-title = 「{ $name }」を削除しますか？
+
+settings-resource-delete-title = 「{ $name }」をゴミ箱に移動しますか？
+
+shortcut-delete-title = テンプレートタスク「{ $name }」を削除しますか？
+
+settings-key-control-label = { $command }: { $binding }
+settings-key-control-recording = { $command }: { $binding } — { $state }

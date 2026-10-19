@@ -193,41 +193,52 @@ impl AuthPage {
         let add_anchor = add_focus.clone();
         let add = cx.entity();
         let reload = add.clone();
-        let mut body = v_flex().w_full().min_w_0().max_w(rems(56.)).gap_2().child(
-            h_flex()
+        let mut body =
+            v_flex()
                 .w_full()
-                .items_start()
+                .min_w_0()
+                .max_w(rems(56.))
                 .gap_2()
-                .child(
+                .child(super::management_header(
                     div()
-                        .flex_1()
-                        .min_w_0()
                         .text_sm()
                         .font_weight(FontWeight::SEMIBOLD)
-                        .child(t(cx, "pi-files-providers")),
-                )
-                .child(
-                    div().id("auth-add-focus").track_focus(&add_focus).child(
-                        Button::new("auth-add")
-                            .small()
-                            .label(t(cx, "pi-auth-add"))
-                            .disabled(busy || self.file.is_none())
-                            .on_click(move |_, w, cx| {
-                                Self::focus_trigger(&add_anchor, &add_anchor, w, cx);
-                                editor::Editor::open(&add, None, add_anchor.downgrade(), w, cx)
-                            }),
-                    ),
-                )
-                .child(
-                    Button::new("auth-reload")
-                        .small()
-                        .ghost()
-                        .icon(IconName::RotateCw)
-                        .accessibility_label(t(cx, "pi-settings-reload"))
-                        .disabled(busy)
-                        .on_click(move |_, _, cx| reload.update(cx, |this, cx| this.reload(cx))),
-                ),
-        );
+                        .child(t(cx, "pi-files-providers"))
+                        .into_any_element(),
+                    None,
+                    h_flex()
+                        .gap_2()
+                        .child(
+                            div().id("auth-add-focus").track_focus(&add_focus).child(
+                                Button::new("auth-add")
+                                    .small()
+                                    .label(t(cx, "pi-auth-add"))
+                                    .disabled(busy || self.file.is_none())
+                                    .on_click(move |_, w, cx| {
+                                        Self::focus_trigger(&add_anchor, &add_anchor, w, cx);
+                                        editor::Editor::open(
+                                            &add,
+                                            None,
+                                            add_anchor.downgrade(),
+                                            w,
+                                            cx,
+                                        )
+                                    }),
+                            ),
+                        )
+                        .child(
+                            Button::new("auth-reload")
+                                .small()
+                                .ghost()
+                                .icon(IconName::RotateCw)
+                                .accessibility_label(t(cx, "pi-settings-reload"))
+                                .disabled(busy)
+                                .on_click(move |_, _, cx| {
+                                    reload.update(cx, |this, cx| this.reload(cx))
+                                }),
+                        )
+                        .into_any_element(),
+                ));
         if busy {
             body = body.child(
                 div()
@@ -328,7 +339,7 @@ impl AuthPage {
                                     .ghost()
                                     .w_full()
                                     .min_w_0()
-                                    .accessibility_label(super::provider_label(name, cx))
+                                    .accessibility_label(Self::row_label(&entry, cx))
                                     .disabled(busy)
                                     .child(
                                         h_flex()
@@ -354,7 +365,7 @@ impl AuthPage {
                                     )
                                     .on_click(move |_, w, cx| {
                                         Self::focus_trigger(&row_anchor, &row_fallback, w, cx);
-                                        Self::open_actions(
+                                        Self::activate_primary(
                                             &open.0,
                                             open.1.clone(),
                                             row_fallback.downgrade(),
@@ -405,42 +416,36 @@ impl AuthPage {
                                                 )
                                             },
                                         );
-                                        let popup = if menu.1.kind() != Kind::OAuth {
-                                            popup.item(
-                                                PopupMenuItem::new(t(
-                                                    cx,
-                                                    if menu.1.kind() == Kind::Missing {
-                                                        "pi-auth-add"
-                                                    } else {
-                                                        "pi-auth-replace"
-                                                    },
-                                                ))
-                                                .on_click(move |_, w, cx| {
-                                                    let edit = edit.clone();
-                                                    let focus = edit_focus.clone();
-                                                    let fallback = edit_fallback.clone();
-                                                    w.defer(cx, move |w, cx| {
-                                                        Self::focus_trigger(
-                                                            &focus, &fallback, w, cx,
-                                                        );
-                                                        editor::Editor::open(
-                                                            &edit.0,
-                                                            Some(edit.1),
-                                                            fallback.downgrade(),
-                                                            w,
-                                                            cx,
-                                                        )
-                                                    });
-                                                }),
-                                            )
-                                        } else {
-                                            popup.item(
-                                                PopupMenuItem::new(t(cx, "pi-auth-copy-login"))
-                                                    .on_click(move |_, w, cx| {
-                                                        Self::copy_login(&login.1, w, cx)
-                                                    }),
-                                            )
-                                        };
+                                        let popup = popup.item(
+                                            PopupMenuItem::new(t(
+                                                cx,
+                                                Self::primary_label(menu.1.kind()),
+                                            ))
+                                            .on_click(move |_, w, cx| {
+                                                let edit = edit.clone();
+                                                let focus = edit_focus.clone();
+                                                let fallback = edit_fallback.clone();
+                                                w.defer(cx, move |w, cx| {
+                                                    Self::focus_trigger(&focus, &fallback, w, cx);
+                                                    Self::activate_primary(
+                                                        &edit.0,
+                                                        edit.1,
+                                                        fallback.downgrade(),
+                                                        w,
+                                                        cx,
+                                                    );
+                                                });
+                                            }),
+                                        );
+                                        let popup =
+                                            popup.when(menu.1.kind() == Kind::OAuth, |popup| {
+                                                popup.item(
+                                                    PopupMenuItem::new(t(cx, "pi-auth-copy-login"))
+                                                        .on_click(move |_, w, cx| {
+                                                            Self::copy_login(&login.1, w, cx)
+                                                        }),
+                                                )
+                                            });
                                         let popup = popup.item(
                                             PopupMenuItem::new(t(cx, "pi-auth-check"))
                                                 .disabled(
@@ -466,7 +471,7 @@ impl AuthPage {
                                                 )))
                                             },
                                         );
-                                        if menu.1.kind() != Kind::Missing {
+                                        if matches!(menu.1.kind(), Kind::ApiKey | Kind::Unknown) {
                                             popup.item(
                                                 PopupMenuItem::new(t(
                                                     cx,
@@ -607,99 +612,31 @@ impl AuthPage {
         }
         body.into_any_element()
     }
-    fn open_actions(
+    fn primary_label(kind: Kind) -> &'static str {
+        match kind {
+            Kind::Missing => "pi-auth-add",
+            Kind::OAuth => "pi-auth-logout",
+            Kind::ApiKey | Kind::Unknown => "pi-auth-replace",
+        }
+    }
+    fn row_label(entry: &Entry, cx: &App) -> String {
+        let mut args = fluent_bundle::FluentArgs::new();
+        args.set("provider", super::provider_label(entry.provider(), cx));
+        args.set("action", t(cx, Self::primary_label(entry.kind())));
+        t_with_args(cx, "pi-auth-row-action", &args)
+    }
+    fn activate_primary(
         owner: &Entity<Self>,
         entry: Entry,
         fallback: WeakFocusHandle,
         window: &mut Window,
         cx: &mut App,
     ) {
-        let owner = owner.clone();
-        window.open_dialog(cx, move |dialog, _, cx| {
-            let edit = (owner.clone(), entry.clone());
-            let edit_fallback = fallback.clone();
-            let remove = edit.clone();
-            let check = edit.clone();
-            let login = entry.clone();
-            let mut body = v_flex().gap_2().child(t(cx, kind_key(entry.kind())));
-            if entry.kind() != Kind::OAuth {
-                body = body.child(
-                    Button::new("auth-edit")
-                        .label(t(
-                            cx,
-                            if entry.kind() == Kind::Missing {
-                                "pi-auth-add"
-                            } else {
-                                "pi-auth-replace"
-                            },
-                        ))
-                        .on_click(move |_, w, cx| {
-                            w.close_dialog(cx);
-                            editor::Editor::open(
-                                &edit.0,
-                                Some(edit.1.clone()),
-                                edit_fallback.clone(),
-                                w,
-                                cx,
-                            )
-                        }),
-                );
-            }
-            if entry.kind() == Kind::OAuth {
-                body = body.child(
-                    Button::new("auth-login")
-                        .label(t(cx, "pi-auth-copy-login"))
-                        .on_click(move |_, w, cx| Self::copy_login(&login, w, cx)),
-                );
-            }
-            body = body.child(
-                Button::new("auth-check")
-                    .label(t(cx, "pi-auth-check"))
-                    .disabled(
-                        !pi_auth::checkable_provider(entry.provider())
-                            || owner.read(cx).checking.contains_key(entry.provider()),
-                    )
-                    .on_click(move |_, w, cx| {
-                        w.close_dialog(cx);
-                        check
-                            .0
-                            .update(cx, |this, cx| this.check(check.1.provider().into(), cx))
-                    }),
-            );
-            if !pi_auth::checkable_provider(entry.provider()) {
-                body = body.child(
-                    div()
-                        .id("auth-check-unavailable")
-                        .debug_selector(|| "auth-check-unavailable".into())
-                        .role(Role::Label)
-                        .aria_label(t(cx, "pi-auth-check-unavailable"))
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(t(cx, "pi-auth-check-unavailable")),
-                );
-            }
-            if entry.kind() != Kind::Missing {
-                body = body.child(
-                    Button::new("auth-delete")
-                        .danger()
-                        .label(t(
-                            cx,
-                            if entry.kind() == Kind::OAuth {
-                                "pi-auth-logout"
-                            } else {
-                                "pi-auth-remove"
-                            },
-                        ))
-                        .on_click(move |_, w, cx| {
-                            w.close_dialog(cx);
-                            Self::confirm_remove(&remove.0, remove.1.clone(), w, cx)
-                        }),
-                );
-            }
-            dialog
-                .title(super::provider_name(entry.provider(), cx))
-                .child(body)
-        });
+        if entry.kind() == Kind::OAuth {
+            Self::confirm_remove(owner, entry, window, cx);
+        } else {
+            editor::Editor::open(owner, Some(entry), fallback, window, cx);
+        }
     }
     fn copy_login(entry: &Entry, window: &mut Window, cx: &mut App) {
         let addressable = pi_auth::addressable_provider(entry.provider());

@@ -244,8 +244,11 @@ impl SettingsView {
                     t(cx, "settings-app-language"),
                     SettingField::render(move |_, _, cx| {
                         this.update(cx, |this, cx| {
-                            gpui_kit::component::combobox::Combobox::new(&this.language)
-                                .w(px(220.))
+                            Select::new(&this.language)
+                                .id("settings-language")
+                                .w_full()
+                                .max_w(rems(14.))
+                                .accessibility_label(t(cx, "settings-app-language"))
                                 .cleanable(false)
                                 .disabled(this.controller.read(cx).busy(cx))
                                 .into_any_element()
@@ -293,7 +296,7 @@ impl SettingsView {
                                         .on_click(|_, window, cx| {
                                             window.open_dialog(cx, |dialog, _, cx| {
                                                 dialog
-                                                    .title(t(cx, "temporary-clean-released"))
+                                                    .title(t(cx, "temporary-clean-title"))
                                                     .child(t(cx, "temporary-clean-help"))
                                                     .footer(dialog_buttons(
                                                         "temporary-clean",
@@ -466,19 +469,18 @@ impl SettingsView {
                     Kind::Skill => IconName::BookOpen,
                     _ => IconName::FileText,
                 })
-                .title_suffix(move |_, cx| {
-                    let scope = scope.update(cx, |config, cx| config.render_scope(cx));
-                    h_flex()
-                        .gap_2()
-                        .items_center()
-                        .child(scope)
-                        .child(
-                            header
+                .group(
+                    SettingGroup::new()
+                        .border_0()
+                        .p_0()
+                        .item(SettingItem::render(move |_, _, cx| {
+                            let scope = scope.update(cx, |config, cx| config.render_scope(cx));
+                            let toolbar = header
                                 .update(cx, |view, cx| view.render_header(kind, cx))
-                                .unwrap_or_else(|_| div().into_any_element()),
-                        )
-                        .into_any_element()
-                });
+                                .unwrap_or_else(|_| div().into_any_element());
+                            management_header(scope, Some(toolbar), div().into_any_element())
+                        })),
+                );
             if self.resources.read(cx).has_status(kind, cx) {
                 page = page.group(SettingGroup::new().item(section(
                     resources::Section::Overview,
@@ -574,7 +576,8 @@ impl SettingsView {
                     let tooltip = value.clone();
                     div()
                         .id(key)
-                        .max_w(px(320.))
+                        .max_w(rems(20.))
+                        .min_w_0()
                         .text_sm()
                         .truncate()
                         .child(value.clone())
@@ -599,6 +602,9 @@ impl SettingsView {
                         t(cx, "settings-diagnostics"),
                         SettingField::render(|_, _, cx| {
                             h_flex()
+                                .w_full()
+                                .min_w_0()
+                                .flex_wrap()
                                 .gap_2()
                                 .child(
                                     Button::new("diagnostics-copy")
@@ -746,8 +752,13 @@ impl SettingsView {
                     .checked(selected)
                     .disabled(busy)
                     .accessibility_label(t(cx, icon.label()))
+                    .tooltip(move |window, cx| {
+                        gpui_kit::component::tooltip::Tooltip::new(t(cx, icon.label()))
+                            .build(window, cx)
+                    })
                     .p_2()
-                    .w_24()
+                    .w(rems(7.))
+                    .min_h(rems(7.5))
                     .rounded(cx.theme().radius)
                     .border_1()
                     .border_color(if selected {
@@ -768,14 +779,23 @@ impl SettingsView {
                             .child(img(SharedString::from(icon.preview())).size_10())
                             .child(
                                 h_flex()
+                                    .w_full()
+                                    .items_start()
                                     .gap_1()
-                                    .child(div().text_sm().child(t(cx, icon.label())))
-                                    .when(selected, |row| {
-                                        row.child(
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .text_sm()
+                                            .line_clamp(2)
+                                            .child(t(cx, icon.label())),
+                                    )
+                                    .child(div().w_4().flex_shrink_0().when(selected, |slot| {
+                                        slot.child(
                                             gpui_kit::component::Icon::new(IconName::Check)
                                                 .size_4(),
                                         )
-                                    }),
+                                    })),
                             ),
                     ),
             );

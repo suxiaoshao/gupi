@@ -1,13 +1,44 @@
 use super::*;
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::component::collapsible::Collapsible;
 use gpui_kit::component::group_box::GroupBox;
 use gpui_kit::component::group_box::GroupBoxVariants;
 use gpui_kit::component::menu::ContextMenuExt;
 use gpui_kit::component::menu::DropdownMenu;
+use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::component::setting::SettingItem;
 use gpui_kit::component::tag::Tag;
 use gpui_kit::component::text::TextView;
 use gpui_kit::component::tooltip::Tooltip;
+
+// These handles belong to the same expanded preview as its asynchronous content.
+pub(super) struct Preview {
+    pub content: refresh::Operation<String, io::Error, Task<()>>,
+    pub focus: FocusHandle,
+    pub scroll: ScrollHandle,
+}
+
+gpui_kit::actions!(skill_preview, [PageUp, PageDown, Start, End]);
+struct PreviewKeys;
+impl Global for PreviewKeys {}
+pub(super) fn init(cx: &mut App) {
+    if !cx.has_global::<PreviewKeys>() {
+        cx.bind_keys([
+            KeyBinding::new("pageup", PageUp, Some("SkillPreview")),
+            KeyBinding::new("pagedown", PageDown, Some("SkillPreview")),
+            KeyBinding::new("home", Start, Some("SkillPreview")),
+            KeyBinding::new("end", End, Some("SkillPreview")),
+        ]);
+        cx.set_global(PreviewKeys);
+    }
+}
+fn scroll_preview(handle: &ScrollHandle, pages: f32, window: &mut Window) {
+    let mut offset = handle.offset();
+    offset.y =
+        (offset.y - handle.bounds().size.height * pages).clamp(-handle.max_offset().y, px(0.));
+    handle.set_offset(offset);
+    window.refresh();
+}
 
 impl ResourcesView {
     pub(super) fn filtered_skills(&self, cx: &App) -> Vec<Resource> {
@@ -174,6 +205,7 @@ impl ResourcesView {
                 card.child(
                     div()
                         .text_sm()
+                        .line_clamp(3)
                         .text_color(cx.theme().muted_foreground)
                         .child(resource.description.clone()),
                 )
@@ -196,10 +228,21 @@ impl ResourcesView {
                 .min_w_0()
                 .gap_2()
                 .debug_selector(|| "skill-preview-content".into());
-            if preview.is_running() {
+            if !resource.description.is_empty() {
+                content = content.child(
+                    div()
+                        .id(ElementId::NamedChild(id.clone(), "description".into()))
+                        .role(Role::Paragraph)
+                        .aria_label(resource.description.clone())
+                        .test_support()
+                        .text_sm()
+                        .child(resource.description.clone()),
+                );
+            }
+            if preview.content.is_running() {
                 content = content.child(gpui_kit::component::spinner::Spinner::new().small());
             }
-            if let Some(error) = preview.problem() {
+            if let Some(error) = preview.content.problem() {
                 content = content.child(
                     div()
                         .text_sm()
@@ -207,13 +250,41 @@ impl ResourcesView {
                         .child(error.to_string()),
                 );
             }
-            if let Some(text) = preview.data() {
+            if let Some(text) = preview.content.data() {
                 content = content.child(TextView::markdown(
                     ElementId::NamedChild(id.clone(), "markdown".into()),
                     preview_body(text).to_owned(),
                 ));
             }
-            card = card.content(content);
+            let scroll = preview.scroll.clone();
+            let up = scroll.clone();
+            let down = scroll.clone();
+            let start = scroll.clone();
+            let end = scroll.clone();
+            card = card.content(
+                content
+                    .id(ElementId::NamedChild(id.clone(), "preview-scroll".into()))
+                    .test_support()
+                    .h(rems(20.))
+                    .w_full()
+                    .border_1()
+                    .rounded_md()
+                    .border_color(cx.theme().border)
+                    .focus(|style| style.border_color(cx.theme().ring))
+                    .track_focus(&preview.focus)
+                    .key_context("SkillPreview")
+                    .on_action(move |_: &PageUp, window, _| scroll_preview(&up, -1., window))
+                    .on_action(move |_: &PageDown, window, _| scroll_preview(&down, 1., window))
+                    .on_action(move |_: &Start, window, _| {
+                        scroll_preview(&start, f32::NEG_INFINITY, window)
+                    })
+                    .on_action(move |_: &End, window, _| {
+                        scroll_preview(&end, f32::INFINITY, window)
+                    })
+                    .overflow_y_scroll()
+                    .track_scroll(&scroll)
+                    .vertical_scrollbar(&scroll),
+            );
         }
         div()
             .id(ElementId::NamedChild(id.clone(), "card".into()))
@@ -250,6 +321,136 @@ mod tests {
         assert_eq!(preview_body("---\r\nname: demo\r\n---\r\n# Body"), "# Body");
         assert_eq!(preview_body("# Body\n---\ntext"), "# Body\n---\ntext");
         assert_eq!(preview_body("---\nunfinished"), "---\nunfinished");
+    }
+
+    struct PreviewFixture {
+        owner: gpui_kit::Entity<super::ResourcesView>,
+        resource: super::Resource,
+    }
+    impl gpui_kit::Render for PreviewFixture {
+        fn render(
+            &mut self,
+            _: &mut gpui_kit::Window,
+            cx: &mut gpui_kit::Context<Self>,
+        ) -> impl gpui_kit::IntoElement {
+            self.owner.update(cx, |view, cx| {
+                view.render_skill(&self.resource, Row::Global, cx)
+            })
+        }
+    }
+
+    #[gpui_kit::test]
+    async fn expanded_skill_keeps_full_description_actions_and_keyboard_scroll(
+        cx: &mut TestAppContext,
+    ) {
+        use gpui_kit::ElementId;
+        use gpui_kit::test::TestWindowExt as _;
+        cx.executor().allow_parking();
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            gpui_tokio::init(cx);
+            crate::app::init_capability_hosts(cx);
+            app_theme::init(cx);
+            gupi_settings::theme::init(cx);
+            gupi_settings::i18n::apply(AppLanguage::English, cx);
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("SKILL.md");
+        let description = "Complete description stays available beyond the summary. ".repeat(35);
+        let text = format!(
+            "---\nname: review\ndescription: {description}\n---\n{}",
+            "Body paragraph.\n\n".repeat(60)
+        );
+        std::fs::write(&path, &text).unwrap();
+        let mut resource = super::Resource::new(
+            super::Kind::Skill,
+            path.clone(),
+            dir.path().to_owned(),
+            "review".into(),
+        );
+        resource.description = description.clone();
+        resource.editable = true;
+        let mut owner = None;
+        let (_, cx) = cx.add_window_view(|window, cx| {
+            let form = cx.new(|_| Form::new(AppConfig::default()));
+            let config = cx.new(|cx| ConfigController::new(&form, cx));
+            let probe = cx.new(|_| PiProbeController::new());
+            let resources = cx.new(|cx| super::ResourcesView::new(config, probe, window, cx));
+            owner = Some(resources.clone());
+            let fixture = cx.new(|_| PreviewFixture {
+                owner: resources,
+                resource: resource.clone(),
+            });
+            Root::new(fixture, window, cx)
+        });
+        let owner = owner.unwrap();
+        let key = owner.update(cx, |view, cx| {
+            let key = view.preview_key(&resource, Row::Global, cx);
+            view.toggle_preview(key.clone(), cx);
+            key
+        });
+        cx.condition(&owner, |view, _| !view.previews[&key].content.is_running())
+            .await;
+        let id = std::sync::Arc::new(key.element_id());
+        cx.update(|window, cx| {
+            window.render_frame(cx);
+            assert_eq!(
+                window
+                    .find(ElementId::NamedChild(id.clone(), "description".into()))
+                    .label(),
+                Some(description.as_str())
+            );
+            let preview = owner.read(cx).previews.get(&key).unwrap();
+            let scroll = preview.scroll.clone();
+            let focus = preview.focus.clone();
+            window.focus(&focus, cx);
+            window.render_frame(cx);
+            assert!(scroll.max_offset().y > gpui_kit::px(0.));
+            window.press("pagedown", cx);
+            assert!(
+                scroll.offset().y < gpui_kit::px(0.),
+                "PageDown must scroll the focused preview"
+            );
+            window.press("home", cx);
+            assert_eq!(scroll.offset().y, gpui_kit::px(0.));
+            let actions = window
+                .find(ElementId::NamedChild(id.clone(), "actions".into()))
+                .bounds();
+            let content = window
+                .find(ElementId::NamedChild(id.clone(), "preview-scroll".into()))
+                .bounds();
+            assert!(
+                actions.bottom() <= content.top(),
+                "actions stay outside and above scrolling content"
+            );
+            assert!(
+                window
+                    .find(ElementId::NamedChild(id.clone(), "actions".into()))
+                    .visible()
+            );
+            window.press("tab", cx);
+            assert!(
+                !owner.read(cx).previews[&key]
+                    .focus
+                    .contains_focused(window, cx),
+                "Tab can leave the region"
+            );
+        });
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        std::fs::remove_file(&path).unwrap();
+        owner.update(cx, |view, cx| view.load_preview(key.clone(), cx));
+        cx.condition(&owner, |view, _| !view.previews[&key].content.is_running())
+            .await;
+        cx.update(|window, cx| {
+            window.render_frame(cx);
+            assert!(owner.read(cx).previews[&key].content.problem().is_some());
+            assert_eq!(
+                window
+                    .find(ElementId::NamedChild(id.clone(), "description".into()))
+                    .label(),
+                Some(description.as_str())
+            );
+        });
     }
 
     #[gpui_kit::test]

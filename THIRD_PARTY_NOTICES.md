@@ -2,7 +2,7 @@
 
 ## Microsoft Visual C++ runtime (Windows packages)
 
-Windows MSI packages include unmodified x64 Visual C++ CRT DLLs from the Visual Studio redistributable directory. These Microsoft components are distributed under their applicable Microsoft license terms, not Gupi's MIT license. See [Redistributing Visual C++ files](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files) for the redistribution documentation.
+Windows binaries statically link Microsoft Visual C++ runtime components. These Microsoft components are distributed under their applicable Microsoft license terms, not Gupi's MIT license. See [Redistributing Visual C++ files](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files) for the redistribution documentation.
 
 ## Pi logo and derived visual assets
 

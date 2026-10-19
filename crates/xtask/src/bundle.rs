@@ -9,7 +9,7 @@ mod linux;
 #[cfg(target_os = "macos")]
 pub mod macos;
 pub mod settings;
-#[cfg(any(target_os = "windows", test))]
+#[cfg(target_os = "windows")]
 pub mod windows;
 
 use crate::cli::{BundleArgs, MacosSigning};
@@ -44,12 +44,6 @@ pub fn run(args: BundleArgs) -> Result<()> {
     let product_name = package_settings.product_name.clone();
     let version = package_settings.version.clone();
     let updater_key = crate::updater::public_key()?;
-
-    #[cfg(target_os = "windows")]
-    windows::prepare_runtime_resources(
-        &project_dir.join("target/xtask-runtime").join(target),
-        &mut bundle_settings,
-    )?;
 
     #[cfg(target_os = "macos")]
     macos::prepare_bundle_settings(&mut bundle_settings, &localizations)?;

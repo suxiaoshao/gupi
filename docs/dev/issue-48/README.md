@@ -201,3 +201,10 @@ Pi 设置新增“认证”页，只有全局作用域：
 - `cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`、`git diff --check` 通过；`cargo test -p gupi -p gupi-resources --locked` 通过：Gupi 120 项、resources 71 项，失败 0。HOME 与 Pi/session 目录均指向 `/tmp/gupi-part1-verification` 内隔离目录。九种语言的新键与修改键各出现一次，键名与插值字段对齐。Cargo 仍提示既有第三方 `block 0.1.6` 的未来兼容警告，不影响上述检查成功。
 - 新增存储回归覆盖空 ID 设置/替换/移除、仅空 key 拒绝、OAuth/未知条目整条替换、missing/changed/removed revision 冲突及相邻条目保留。生产 GPUI 交互回归覆盖占位与真实名称的不同 AX/元素身份、不可检查原因、掩码输入、未知条目确认、移除、空手填拒绝、models-only 空候选程序填入保留身份、真实编辑后失效和重新选择，以及精确 `/login` 回退；模型编辑、凭据标记和带未保存草稿保护的双向跳转也使用空 ID 验证。检查进程回归确认空 ID 与四个保留开关等均不启动假 Pi。
 - 本轮按架构师澄清不新增原生 CUA 会话；以上新增界面结论来自生产 GPUI 自动交互测试。未打开或修改真实 Pi 文件，没有启动真实 Pi/OAuth。
+
+### 关联导航回归的观察边界
+
+- 一次 Linux 自动测试在取消离开保护后，第二次菜单关联操作没有显示确认；最终快照没有菜单或对话框，模型行仍在。本机原测试经过 200 个 GPUI 调度种子未复现，不能据此认定是产品焦点缺陷，也不能认定只是测试调度问题。
+- 临时有序追踪覆盖菜单焦点/高亮、关联项 handler、事件接收、延迟导航、离开保护 busy/dirty 和取消。两次菜单使用不同的新实体与焦点句柄，初始无选中，Down 后目标项选中；两次均依次到达 handler → 接收 → 延迟导航 → `busy=false / dirty=true` → 打开确认，取消仅一次。临时追踪已删除，证据日志在 `/tmp/gupi-menu-ordered-trace.log`；原测试种子日志在 `/tmp/gupi-menu-seeds-before.log`。源码确认该取消路径使用同步 close_dialog，不走 Auth 的焦点锚点或 Root 延迟动画恢复；点击助手本身会绘制，不能将缺少额外绘制视作已证实原因。
+- 导航语义测试改为打开真实菜单，核对作用域内项的名称后按 ID 点击，验证取消保留草稿、重新操作后放弃及双向跳转。独立键盘回归保留点击打开 → 菜单就绪/焦点断言 → 单独 Down → 目标高亮断言 → 单独 Enter → 确认断言；取消后也确认弹层已消失、草稿仍脏且非忙碌。使用完成帧和确定的观察，不加 sleep、重试或生产焦点改动。这是测试规格收紧，不是对原始瞬态失败根因的证明。
+- 两条路径各 200 个调度种子通过；最终隔离 `cargo test -p gupi -p gupi-resources --locked` 通过（121 + 71，失败 0）。格式、workspace/all-targets/all-features Clippy（locked、deny warnings）、diff 检查通过。HOME/Pi/session 继续指向 `/tmp/gupi-part1-verification`，未运行原生 CUA、未访问真实 Pi。原 Linux 失败根因仍未决，需要后续 Linux 运行的分阶段断言证据。

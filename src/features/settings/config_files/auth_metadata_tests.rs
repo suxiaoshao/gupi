@@ -129,6 +129,13 @@ impl Render for NavigationHost {
 }
 #[gpui_kit::test]
 async fn credential_links_use_leave_guard_and_only_change_pages(cx: &mut TestAppContext) {
+    credential_link_flow(cx, false).await;
+}
+#[gpui_kit::test]
+async fn credential_link_keyboard_reopens_after_cancel(cx: &mut TestAppContext) {
+    credential_link_flow(cx, true).await;
+}
+async fn credential_link_flow(cx: &mut TestAppContext, keyboard: bool) {
     cx.update(|cx| {
         gpui_kit::init(cx);
         crate::app::init_capability_hosts(cx);
@@ -194,8 +201,7 @@ async fn credential_links_use_leave_guard_and_only_change_pages(cx: &mut TestApp
         this.models.edit("".into(), Some(entry));
         cx.notify();
     });
-    cx.update(|window, cx| window.click("file-menu-", cx));
-    cx.simulate_keystrokes("down enter");
+    invoke_credential_link(cx, "file-menu-", "Manage in Authentication", keyboard);
     cx.run_until_parked();
     cx.update(|window, cx| {
         assert!(window.has_active_dialog(cx));
@@ -205,11 +211,21 @@ async fn credential_links_use_leave_guard_and_only_change_pages(cx: &mut TestApp
     settings.read_with(cx, |this, _| {
         assert_eq!(this.navigation.1, super::super::layout::MODELS_PAGE)
     });
-    assert!(files.read_with(cx, |this, _| this.models.dirty()));
-    cx.update(|window, cx| window.click("file-menu-", cx));
-    cx.simulate_keystrokes("down enter");
+    assert!(files.read_with(cx, |this, _| this.models.dirty() && !this.busy()));
+    cx.update(|window, cx| {
+        window.render_frame(cx);
+        assert!(!window.has_active_dialog(cx));
+        assert!(window.try_find("popup-menu").is_none());
+    });
+    invoke_credential_link(cx, "file-menu-", "Manage in Authentication", keyboard);
     cx.run_until_parked();
-    cx.update(|window, cx| window.click("file-discard", cx));
+    cx.update(|window, cx| {
+        assert!(
+            window.has_active_dialog(cx),
+            "the selected credential link must enter the leave guard again"
+        );
+        window.click("file-discard", cx);
+    });
     cx.run_until_parked();
     settings.read_with(cx, |this, _| {
         assert_eq!(this.navigation.1, super::super::layout::AUTH_PAGE)
@@ -218,9 +234,8 @@ async fn credential_links_use_leave_guard_and_only_change_pages(cx: &mut TestApp
     cx.update(|window, cx| {
         window.render_frame(cx);
         assert!(!window.has_active_dialog(cx));
-        window.click("auth-menu-", cx);
     });
-    cx.simulate_keystrokes("down enter");
+    invoke_credential_link(cx, "auth-menu-", "Edit in Models & providers", keyboard);
     cx.run_until_parked();
     settings.read_with(cx, |this, _| {
         assert_eq!(this.navigation.1, super::super::layout::MODELS_PAGE)
@@ -231,4 +246,39 @@ async fn credential_links_use_leave_guard_and_only_change_pages(cx: &mut TestApp
         std::fs::read_to_string(&models).unwrap(),
         r#"{"providers":{"":{}}}"#
     );
+}
+
+// The navigation contract names a command, not a relative highlight position.
+// Keep the actual dropdown path; the keyboard variant separately checks focus
+// and highlight before confirming, so a dispatch regression fails at its source.
+fn invoke_credential_link(
+    cx: &mut gpui_kit::VisualTestContext,
+    trigger: &str,
+    label: &str,
+    keyboard: bool,
+) {
+    cx.update(|window, cx| window.click(gpui_kit::SharedString::from(trigger.to_owned()), cx));
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        window.render_frame(cx);
+        assert_eq!(window.find("popup-menu").focused(), Some(true));
+        assert_eq!(
+            window.within("popup-menu").find(0usize).label(),
+            Some(label)
+        );
+        if keyboard {
+            assert_eq!(
+                window.within("popup-menu").find(0usize).selected(),
+                Some(false)
+            );
+            window.press("down", cx);
+            assert_eq!(
+                window.within("popup-menu").find(0usize).selected(),
+                Some(true)
+            );
+            window.press("enter", cx);
+        } else {
+            window.within("popup-menu").click(0usize, cx);
+        }
+    });
 }

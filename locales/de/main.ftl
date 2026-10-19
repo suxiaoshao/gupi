@@ -1184,3 +1184,10 @@ pi-auth-conflict = Dieser Anbieter wurde auf dem Datenträger geändert. Laden S
 pi-auth-write-error = auth.json konnte nicht geschrieben werden. Laden Sie den aktuellen Stand neu.
 pi-auth-input-error = Geben Sie eine Anbieter-ID und einen nicht leeren API-Schlüssel ein.
 pi-auth-login-select-help = Anmeldebefehl kopiert. Führen Sie /login im Pi-Terminal aus und wählen Sie den Anbieter.
+
+# Authentication and model provider settings
+pi-files-auth-stored = Zugangsdaten unter Authentifizierung gespeichert
+pi-files-manage-auth = Unter Authentifizierung verwalten
+pi-files-api-key-auth-help = Bei gespeicherten Zugangsdaten unter Authentifizierung greift Pi nicht auf diesen apiKey zurück. Gespeicherte Zugangsdaten bedeuten nicht, dass die Authentifizierung gültig ist.
+pi-auth-models-help = Gespeicherte Zugangsdaten beeinflussen die Verwendung von apiKey in models.json. Pi authentifiziert nach den Regeln des Anbieters.
+pi-auth-edit-models = Unter Modelle und Anbieter bearbeiten

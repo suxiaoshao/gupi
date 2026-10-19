@@ -1184,3 +1184,10 @@ pi-auth-conflict = Ce fournisseur a changé sur le disque. Rechargez puis réess
 pi-auth-write-error = Impossible d’écrire auth.json. Rechargez pour vérifier l’état actuel.
 pi-auth-input-error = Saisissez un ID de fournisseur et une clé API non vide.
 pi-auth-login-select-help = Commande copiée. Exécutez /login dans le terminal Pi et choisissez le fournisseur.
+
+# Authentication and model provider settings
+pi-files-auth-stored = Identifiants enregistrés dans Authentification
+pi-files-manage-auth = Gérer dans Authentification
+pi-files-api-key-auth-help = Si des identifiants sont enregistrés dans Authentification, Pi n’utilise pas cet apiKey en secours. Des identifiants enregistrés ne garantissent pas une authentification valide.
+pi-auth-models-help = Les identifiants enregistrés influencent l’utilisation de apiKey dans models.json. Pi gère l’authentification selon les règles du fournisseur.
+pi-auth-edit-models = Modifier dans Modèles et fournisseurs

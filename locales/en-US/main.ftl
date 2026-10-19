@@ -1184,3 +1184,10 @@ pi-auth-conflict = This provider changed on disk. Reload and try again.
 pi-auth-write-error = Could not write auth.json. Reload to inspect the current state.
 pi-auth-input-error = Enter a provider ID and a nonempty API key.
 pi-auth-login-select-help = Login command copied. Run /login in the Pi terminal and select the provider.
+
+# Authentication and model provider settings
+pi-files-auth-stored = Credentials stored in Authentication
+pi-files-manage-auth = Manage in Authentication
+pi-files-api-key-auth-help = When credentials are stored in Authentication, Pi does not fall back to this apiKey. Stored credentials do not mean authentication is valid.
+pi-auth-models-help = Stored credentials affect how Pi uses apiKey in models.json. Pi handles authentication according to provider rules.
+pi-auth-edit-models = Edit in Models & providers

@@ -29,6 +29,8 @@ pub(super) const DOMAIN_PAGES: [(Domain, usize); 2] = [(Domain::Gupi, 5), (Domai
 pub(super) const PI_PAGE: usize = 0;
 pub(super) const CONVERSATION_PAGE: usize = 1;
 pub(super) const PACKAGES_PAGE: usize = 7;
+pub(super) const MODELS_PAGE: usize = 4;
+pub(super) const AUTH_PAGE: usize = 5;
 
 impl SettingsView {
     /// Settings selection lives in the component's keyed state; a new key
@@ -40,6 +42,37 @@ impl SettingsView {
         }
         self.navigation = (self.navigation.0 + 1, page_ix);
         cx.notify();
+    }
+
+    pub(super) fn navigate_credentials(
+        &mut self,
+        page: CredentialPage,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let this = cx.entity().downgrade();
+        let resources = self.resources.clone();
+        let config = self.pi_config.clone();
+        window.defer(cx, move |window, cx| {
+            confirm_unsaved(
+                resources,
+                config,
+                move |_, cx| {
+                    let _ = this.update(cx, |this, cx| {
+                        this.open_page(
+                            Domain::Pi,
+                            match page {
+                                CredentialPage::Models => MODELS_PAGE,
+                                CredentialPage::Auth => AUTH_PAGE,
+                            },
+                            cx,
+                        )
+                    });
+                },
+                window,
+                cx,
+            );
+        });
     }
 
     /// Switches area from the page bar. Leaving Pi asks about unsaved drafts.

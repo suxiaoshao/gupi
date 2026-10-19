@@ -20,11 +20,13 @@ use std::{collections::HashMap, path::PathBuf};
 
 struct WriteFinished(Result<(), Error>);
 impl EventEmitter<WriteFinished> for AuthPage {}
+impl EventEmitter<super::CredentialPage> for AuthPage {}
 
 pub(super) struct AuthPage {
     agent: Option<PathBuf>,
     file: Option<File>,
     names: Vec<String>,
+    model_names: Vec<String>,
     error: Option<Error>,
     loading: Option<Task<()>>,
     saving: Option<Task<()>>,
@@ -41,6 +43,7 @@ impl AuthPage {
             agent: None,
             file: None,
             names: vec![],
+            model_names: vec![],
             error: None,
             loading: None,
             saving: None,
@@ -76,6 +79,7 @@ impl AuthPage {
             let (auth, models) = worker.await;
             let _ = this.update(cx, |this, cx| {
                 this.loading = None;
+                this.model_names = models.clone();
                 match auth {
                     Ok(file) => {
                         this.names = file
@@ -201,7 +205,8 @@ impl AuthPage {
                             div()
                                 .text_sm()
                                 .text_color(cx.theme().muted_foreground)
-                                .child(t(cx, "pi-auth-help")),
+                                .child(t(cx, "pi-auth-help"))
+                                .child(t(cx, "pi-auth-models-help")),
                         ),
                 )
                 .child(
@@ -312,6 +317,24 @@ impl AuthPage {
                                     let check = menu.clone();
                                     let remove = menu.clone();
                                     let login = menu.clone();
+                                    let navigate = menu.0.clone();
+                                    let popup = popup.when(
+                                        menu.0
+                                            .read(cx)
+                                            .model_names
+                                            .iter()
+                                            .any(|name| name == menu.1.provider()),
+                                        |popup| {
+                                            popup.item(
+                                                PopupMenuItem::new(t(cx, "pi-auth-edit-models"))
+                                                    .on_click(move |_, _, cx| {
+                                                        navigate.update(cx, |_, cx| {
+                                                            cx.emit(super::CredentialPage::Models)
+                                                        })
+                                                    }),
+                                            )
+                                        },
+                                    );
                                     let popup = if menu.1.kind() != Kind::OAuth {
                                         popup.item(
                                             PopupMenuItem::new(t(

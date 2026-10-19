@@ -1,6 +1,6 @@
 # Pi 供应商认证（Gupi #48）
 
-状态：实施步骤 1–4 已实现，本地自动检查通过；原生交互验证尚未完成。
+状态：实施步骤 1–5 已实现，本地自动检查通过；原生交互验证尚未完成。
 
 依据：Pi v1.2.0（本地 `/Users/sushao/Documents/code/pi`，用 `git show v1.2.0:<path>` 核对），路径相对 `packages/coding-agent/src/`，`ai/` 指 `packages/ai/src/`。`models.json` 与 `mcp.json` 的文件编辑已由 [#48 + #51 文件编辑](../issue-48-51/README.md) 完成，本文只覆盖 [Gupi #48](https://github.com/suxiaoshao/gupi/issues/48) 的剩余部分：全局 `auth.json`。
 
@@ -146,8 +146,8 @@ Pi 设置新增“认证”页，只有全局作用域：
 ## 实现与验证结果
 
 - `gupi-resources::pi_auth` 提供凭据元数据投影、SHA-256 不透明条目修订、单供应商即时写入和删除；共享目录锁提升至 `pi_lock`。严格 JSON/BOM、私有新建权限、锁内重读、原地写入和同步保持 Pi 的约定。
-- 设置新增仅全局的“认证”页，紧随“模型与供应商”：列表与候选、密码输入、替换和移除确认、OAuth 注销与复制登录指令、按需检查、重新读取及本地化错误。九种语言均新增 46 个同名文案键，插值变量核对一致。
-- `cargo fmt --all -- --check`、`cargo clippy -p gupi --all-targets --locked -- -D warnings`、`git diff --check` 通过。`cargo test -p gupi -p gupi-resources --locked` 通过：Gupi 115 项、resources 68 项，失败 0；资源测试覆盖存储、冲突、权限、符号链接、锁、脱敏、协议及危险供应商 ID 不启动进程；生产编辑器交互测试确认空值不能提交、输入的 API Key 不进入无障碍 value、替换保留 env。
+- 设置新增仅全局的“认证”页，紧随“模型与供应商”：列表与候选、密码输入、替换和移除确认、OAuth 注销与复制登录指令、按需检查、重新读取及本地化错误。九种语言均补齐认证与两页关联文案，插值变量核对一致。
+- `cargo fmt --all -- --check`、`cargo clippy -p gupi --all-targets --locked -- -D warnings`、`git diff --check` 通过。`cargo test -p gupi -p gupi-resources --locked` 通过：Gupi 117 项、resources 68 项，失败 0；资源测试覆盖存储、冲突、权限、符号链接、锁、脱敏、协议及危险供应商 ID 不启动进程；生产编辑器交互测试确认空值不能提交、输入的 API Key 不进入无障碍 value、替换保留 env。
 - 最终测试显式使用临时 Pi 目录；认证页的测试构造器没有默认用户目录，布局测试注入临时路径。首次测试调用遗漏目录环境变量（本地时间 01:49:58 开始，01:50:16 以 130 退出），随后重跑。源码追踪显示当时新增认证页只可能在布局测试中触发 auth/models 读取，未点击认证操作；不能创建 auth 文件或锁、写入/删除凭据或启动认证检查。未取得系统访问轨迹，不能确认该读取是否实际执行。
 - 原生尝试使用 `script/gupi-ui-gallery --prepare-only --keep` 创建的临时配置、伪造 auth/models 与假 Pi 检查进程，功能构建可启动，最终代码的 `cargo build -p gupi --locked` 通过。CUA 两次超时；macOS 原生后备只能识别进程、菜单和 CoreGraphics 窗口，AX 树递归返回 application，窗口截图失败。因此列表、添加、替换、移除、注销、复制、检查结果的浅色/深色原生交互和原生无障碍脱敏均未取得通过结论，不能由自动测试代替。未发起 OAuth。
 - 与架构师确认的 ID 校验/传输澄清见上节。按用户新决定，删除上游需求草稿及其计划条目，不创建或提交上游请求。
@@ -157,4 +157,11 @@ Pi 设置新增“认证”页，只有全局作用域：
 - 认证检查复用 Pi probe 的可执行文件解析，按运行时快照 PATH 查找（包含 Windows PATHEXT），Windows 采用 CREATE_NO_WINDOW；解析失败不启动进程。
 - API Key 编辑器持有写入期间的输入与状态，成功后才清空并关闭；失败在对话框内显示并保留密钥，可直接重试。OAuth/未知条目的整条替换确认在同一对话框中完成，避免切换弹层丢失输入。
 - OAuth 的本地记录与刷新说明在供应商组中只显示一次。
-- 本轮复测：格式、Clippy（Gupi all-targets，deny warnings）及 Gupi/resources 测试通过（115 + 68，失败 0）。新增快照 PATH/缺失命令回归，编辑器回归验证 Busy 后原输入重试、取消确认保留输入与成功后关闭；测试均显式隔离 Pi 目录。Windows 原生运行未验证，原生界面覆盖限制沿用上文记录。
+- 本轮复测：格式、Clippy（Gupi all-targets，deny warnings）及 Gupi/resources 测试通过（117 + 68，失败 0）。新增快照 PATH/缺失命令回归，编辑器回归验证 Busy 后原输入重试、取消确认保留输入与成功后关闭；测试均显式隔离 Pi 目录。Windows 原生运行未验证，原生界面覆盖限制沿用上文记录。
+
+### 两页关联
+
+- 模型页通过 `pi_auth` 元数据生成“认证页已存凭据”标记，读取失败隐藏标记且不妨碍编辑；认证页保留 models.json 来源名单，仅对这些行提供反向入口。两处菜单只发出导航意图，由设置壳沿用离开保护后切页，不自动打开编辑器或改变草稿。
+- 模型页标题使用稳定的 keyed entry sentinel，仅以弱句柄延迟请求独立的认证元数据刷新，普通同页重绘不轮询；初始载入与显式重新读取合并在途请求，代际标记防止旧结果覆盖新目标。页面过滤或重挂载可能触发额外元数据读取，不重载文件草稿。
+- 已按批准文案补充模型 apiKey 字段说明、认证页组说明和两处导航，九种语言保持键与变量一致。
+- 本轮格式检查、Clippy（Gupi all-targets，deny warnings）和隔离测试通过：Gupi 117 项、resources 68 项，失败 0；新增两个生产界面交互回归，覆盖首次进入/同页重绘/侧栏离开再进入/显式重新读取、认证写入后标记刷新、无效认证文件不阻止模型编辑、模型草稿保留，以及双向菜单跳转和取消离开保护。五个关联文案键在九种语言中均已核对，中文采用批准原文。本轮未追加原生验证。

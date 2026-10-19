@@ -188,6 +188,14 @@ impl EntryEditor {
         let control = v_flex()
             .gap_1()
             .child(control)
+            .when(self.kind == Kind::Models && path == ["apiKey"], |col| {
+                col.child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(t(cx, "pi-files-api-key-auth-help")),
+                )
+            })
             .when(self.invalid.contains_key(&path), |col| {
                 col.child(
                     div()

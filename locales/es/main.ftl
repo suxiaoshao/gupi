@@ -1183,3 +1183,10 @@ pi-auth-conflict = Este proveedor cambió en el disco. Recarga e inténtalo de n
 pi-auth-write-error = No se pudo escribir auth.json. Recarga para comprobar el estado actual.
 pi-auth-input-error = Introduce un ID de proveedor y una clave API no vacía.
 pi-auth-login-select-help = Comando copiado. Ejecuta /login en la terminal de Pi y elige el proveedor.
+
+# Authentication and model provider settings
+pi-files-auth-stored = Credenciales guardadas en Autenticación
+pi-files-manage-auth = Gestionar en Autenticación
+pi-files-api-key-auth-help = Si hay credenciales guardadas en Autenticación, Pi no recurre a este apiKey. Las credenciales guardadas no garantizan una autenticación válida.
+pi-auth-models-help = Las credenciales guardadas afectan al uso de apiKey en models.json. Pi gestiona la autenticación según las reglas del proveedor.
+pi-auth-edit-models = Editar en Modelos y proveedores

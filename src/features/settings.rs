@@ -41,6 +41,12 @@ use gupi_settings::i18n::t;
 use preferences::LanguageItem;
 use preferences::language_items;
 
+#[derive(Clone, Copy)]
+enum CredentialPage {
+    Models,
+    Auth,
+}
+
 pub(crate) struct SettingsView {
     focus_handle: FocusHandle,
     pub form: Entity<Form<AppConfig>>,
@@ -215,8 +221,24 @@ impl SettingsView {
             this.refresh_language(window, cx)
         });
         let controller_sub = cx.observe(&controller, |_, _, cx| cx.notify());
+        let auth = cx.new(|_| auth::AuthPage::new(controller.clone()));
+        let files = pi_config.read(cx).file_pages.clone();
+        let auth_navigation = cx.subscribe_in(
+            &auth,
+            window,
+            |this, _, page: &CredentialPage, window, cx| {
+                this.navigate_credentials(*page, window, cx);
+            },
+        );
+        let files_navigation = cx.subscribe_in(
+            &files,
+            window,
+            |this, _, page: &CredentialPage, window, cx| {
+                this.navigate_credentials(*page, window, cx);
+            },
+        );
         Self {
-            auth: cx.new(|_| auth::AuthPage::new(controller.clone())),
+            auth,
             updates: cx.new(|cx| super::updates::UpdatesView::new(controller.clone(), cx)),
             focus_handle,
             form,
@@ -227,6 +249,8 @@ impl SettingsView {
             _binding: binding,
             _pi_binding: pi_binding,
             _subscriptions: vec![
+                auth_navigation,
+                files_navigation,
                 pi_config_sub,
                 temporary_sub,
                 resources_sub,

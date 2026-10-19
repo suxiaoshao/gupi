@@ -1168,3 +1168,10 @@ pi-auth-conflict = 此供应商的凭据已在磁盘上更改，请重新读取�
 pi-auth-write-error = 无法写入 auth.json，请重新读取以检查当前状态。
 pi-auth-input-error = 请输入供应商 ID 和非空 API Key。
 pi-auth-login-select-help = 已复制登录命令。请在 Pi 终端中执行 /login 并选择供应商。
+
+# Authentication and model provider settings
+pi-files-auth-stored = 认证页已存凭据
+pi-files-manage-auth = 在认证页管理
+pi-files-api-key-auth-help = 认证页存在已存凭据时，Pi 不回退使用此处的 apiKey。已存凭据不代表认证有效。
+pi-auth-models-help = 已存凭据会影响 Pi 对 models.json 中 apiKey 的使用；实际认证由 Pi 按供应商规则处理。
+pi-auth-edit-models = 在模型与供应商中编辑

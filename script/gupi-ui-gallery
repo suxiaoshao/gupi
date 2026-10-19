@@ -10,6 +10,52 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
+
+
+def c_string(value):
+    if "\0" in value:
+        raise ValueError("Gallery paths and environment cannot contain NUL")
+    # Fixed-width octal escapes represent UTF-8 bytes without C escape ambiguity.
+    return '"' + "".join(f"\\{byte:03o}" for byte in value.encode("utf-8")) + '"'
+
+
+def build_bootstrap(root, env, executable, bootstrap):
+    required = [root / name for name in ["config", "logs", "data", "agent", "sessions", "project-a"]]
+    directories = ",\n".join(c_string(str(path)) for path in required)
+    environment = ",\n".join(c_string(f"{key}={value}") for key, value in env.items())
+    source = root / "gallery-bootstrap.c"
+    source.write_text("""#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <unistd.h>
+static const char *directories[] = {""" + directories + """, NULL};
+static char *const environment[] = {""" + environment + """, NULL};
+int main(int argc, char **argv) {
+    struct stat info;
+    for (const char **path = directories; *path; ++path) {
+        if (stat(*path, &info) != 0 || !S_ISDIR(info.st_mode)) {
+            fputs("gallery: required fixture directory unavailable\\n", stderr);
+            return 1;
+        }
+    }
+    if (chdir(""" + c_string(str(root / "project-a")) + """) != 0) {
+        perror("gallery: chdir");
+        return 1;
+    }
+    char **arguments = calloc((size_t)argc + 1, sizeof(char *));
+    if (!arguments) { perror("gallery: arguments"); return 1; }
+    arguments[0] = """ + c_string(str(executable)) + """;
+    for (int index = 1; index < argc; ++index) arguments[index] = argv[index];
+    execve(arguments[0], arguments, environment);
+    perror("gallery: execve");
+    return 127;
+}
+""")
+    source.chmod(0o600)
+    subprocess.run(["/usr/bin/cc", "-Os", "-Wall", "-Wextra", "-Werror",
+                    str(source), "-o", str(bootstrap)], check=True)
+    bootstrap.chmod(0o700)
 
 
 def main():
@@ -29,7 +75,8 @@ def main():
     if not args.prepare_only and not binary.is_file():
         parser.error(f"Gupi build not found: {binary}")
     root = Path(tempfile.mkdtemp(prefix="gupi-ui-gallery-"))
-    for name in ["config", "logs", "agent", "sessions", "project-a", "project-b"]:
+    root.chmod(0o700)
+    for name in ["config", "logs", "data", "agent", "sessions", "project-a", "project-b"]:
         (root / name).mkdir()
     # Shared by the UI and its Pi children so catalog discovery stays isolated.
     env = {key: os.environ[key] for key in [
@@ -40,6 +87,7 @@ def main():
         "HOME": str(root),
         "GUPI_CONFIG_DIR": str(root / "config"),
         "GUPI_LOG_DIR": str(root / "logs"),
+        "GUPI_DATA_DIR": str(root / "data"),
         "PI_CODING_AGENT_DIR": str(root / "agent"),
         "PI_CODING_AGENT_SESSION_DIR": str(root / "sessions"),
     })
@@ -64,10 +112,19 @@ def main():
         # from an installed Gupi. This is not a distribution bundle.
         bundle = root / "Gupi UI Gallery.app/Contents"
         (bundle / "MacOS").mkdir(parents=True)
-        shutil.copy2(binary, bundle / "MacOS/gupi")
+        executable = bundle / "MacOS/gupi-bin"
+        shutil.copy2(binary, executable)
+        executable.chmod(0o700)
+        # A native bootstrap keeps both direct and Launch Services starts on
+        # the explicit allowlist, even where LSEnvironment is ignored.
+        bootstrap = bundle / "MacOS/gupi"
+        build_bootstrap(root, env, executable, bootstrap)
         (bundle / "Info.plist").write_bytes(plistlib.dumps({
             "CFBundleExecutable": "gupi",
-            "CFBundleIdentifier": "top.sushao.gupi.ui-gallery",
+            "CFBundleIdentifier": f"top.sushao.gupi.ui-gallery.{uuid.uuid4().hex}",
+            # Redundant metadata; the executable bootstrap enforces isolation.
+            # Some Launch Services paths ignore LSEnvironment.
+            "LSEnvironment": env,
             "CFBundleName": "Gupi UI Gallery",
             "CFBundlePackageType": "APPL",
             "CFBundleVersion": "1",

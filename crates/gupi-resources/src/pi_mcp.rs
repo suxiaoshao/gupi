@@ -5,6 +5,9 @@ use serde_json::Value;
 use std::{
     collections::HashSet, ffi::OsString, future::Future, pin::Pin, sync::Arc, time::Duration,
 };
+/// The environment may still be loading (e.g. the macOS login-shell PATH); it
+/// is awaited inside the operation's cancellation and deadline.
+pub type Variables = Pin<Box<dyn Future<Output = Vec<(OsString, OsString)>> + Send>>;
 use tokio::sync::watch;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -262,20 +265,20 @@ impl Drop for CancelOnDrop {
 /// Keeps cleanup alive even if the UI/awaiting future disappears. The inner
 /// Tokio task is detached on dropped JoinHandle, observes cancellation, and reaps.
 pub async fn run(
-    command: String,
+    command: OsString,
     action: Action,
     scope: Scope,
-    variables: Vec<(OsString, OsString)>,
+    variables: Variables,
     cancellation: Cancellation,
 ) -> Outcome {
     let deadline = action.deadline();
     run_with(command, action, scope, variables, cancellation, deadline).await
 }
 async fn run_with(
-    command: String,
+    command: OsString,
     action: Action,
     scope: Scope,
-    variables: Vec<(OsString, OsString)>,
+    variables: Variables,
     cancellation: Cancellation,
     deadline: Duration,
 ) -> Outcome {

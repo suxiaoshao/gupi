@@ -4,6 +4,7 @@ use gpui_kit::component::{dialog::DialogFooter, menu::PopupMenu};
 use gupi_resources::pi_mcp::{
     self, Action, Cancellation, Eligibility, Outcome, Report, Server, ServerScope, State,
 };
+use std::ffi::OsString;
 
 #[derive(Default)]
 pub(super) struct Mount(pub Cancellation);
@@ -86,7 +87,7 @@ impl FilePages {
     }
     pub(super) fn render_mcp_controls(
         &self,
-        command: Option<String>,
+        command: Option<OsString>,
         mount: Cancellation,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -242,7 +243,7 @@ impl FilePages {
         entity: &Entity<Self>,
         name: &str,
         eligibility: Eligibility,
-        command: Option<String>,
+        command: Option<OsString>,
         mount: Cancellation,
         disabled: bool,
         cx: &App,
@@ -291,7 +292,7 @@ impl FilePages {
     fn start_mcp(
         &mut self,
         action: Action,
-        command: String,
+        command: OsString,
         mount: Cancellation,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -311,15 +312,8 @@ impl FilePages {
         let is_login = matches!(action, Action::Login(_));
         let is_check = matches!(action, Action::Check);
         let worker = gpui_tokio::Tokio::spawn(cx, async move {
-            let snapshot = environment.load(false).await;
-            pi_mcp::run(
-                command,
-                action,
-                scope,
-                snapshot.variables().to_vec(),
-                cancellation,
-            )
-            .await
+            let variables = Box::pin(async move { environment.load(false).await.variables() });
+            pi_mcp::run(command, action, scope, variables, cancellation).await
         });
         // Detached owner task keeps stop/reap alive after page/window release.
         cx.spawn_in(window, async move |this, cx| {
@@ -368,7 +362,7 @@ impl FilePages {
         entity: &Entity<Self>,
         name: String,
         login: bool,
-        command: String,
+        command: OsString,
         mount: Cancellation,
         window: &mut Window,
         cx: &mut App,

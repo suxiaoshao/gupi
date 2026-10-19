@@ -1,14 +1,14 @@
-use super::{Action, Cancellation, Outcome, parse};
+use super::{Action, Cancellation, Outcome, Variables, parse};
 use crate::pi_settings::Scope;
 use std::{ffi::OsString, process::Stdio, time::Duration};
 use tokio::{io::AsyncReadExt as _, process::Command};
 mod containment;
 
 pub(super) async fn execute(
-    command: String,
+    command: OsString,
     action: Action,
     scope: Scope,
-    variables: Vec<(OsString, OsString)>,
+    variables: Variables,
     cancellation: Cancellation,
     duration: Duration,
 ) -> Outcome {
@@ -17,6 +17,7 @@ pub(super) async fn execute(
     };
     let deadline = tokio::time::Instant::now() + duration;
     let preparation = async {
+        let variables = variables.await;
         let (directory, temporary) = tokio::task::spawn_blocking(move || -> Option<_> {
             match scope {
                 Scope::Global => {
@@ -36,7 +37,7 @@ pub(super) async fn execute(
         .await
         .ok()?
         .ok()?;
-        Some((directory, temporary, executable))
+        Some((directory, temporary, executable, variables))
     };
     let prepared = tokio::select! {
         biased;
@@ -44,7 +45,7 @@ pub(super) async fn execute(
         _ = tokio::time::sleep_until(deadline) => return Outcome::TimedOut,
         value = preparation => value,
     };
-    let Some((directory, _temporary, executable)) = prepared else {
+    let Some((directory, _temporary, executable, variables)) = prepared else {
         return Outcome::Failed;
     };
     let mut command = Command::new(executable);

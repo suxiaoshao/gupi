@@ -123,16 +123,17 @@ fn cli_help_names_are_blocked_and_other_options_are_safely_positional() {
 mod subprocess {
     use super::*;
     use std::{os::unix::fs::PermissionsExt as _, path::Path, process::Stdio};
-    fn script(dir: &Path, body: &str) -> String {
+    fn script(dir: &Path, body: &str) -> OsString {
         let path = dir.join("fake-pi");
         std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
-        path.to_str().unwrap().into()
+        path.into_os_string()
     }
-    fn env(dir: &Path) -> Vec<(OsString, OsString)> {
-        ["HOME", "PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR"]
+    fn env(dir: &Path) -> Variables {
+        let variables: Vec<_> = ["HOME", "PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR"]
             .map(|name| (name.into(), dir.as_os_str().to_owned()))
-            .into()
+            .into();
+        Box::pin(std::future::ready(variables))
     }
     async fn until(path: &Path) {
         tokio::time::timeout(Duration::from_secs(3), async {
@@ -286,4 +287,33 @@ mod subprocess {
             );
         }
     }
+}
+#[tokio::test]
+async fn environment_loading_counts_toward_cancellation_and_deadline() {
+    let stalled = || -> Variables { Box::pin(std::future::pending()) };
+    let cancel = Cancellation::new();
+    let task = tokio::spawn(run_with(
+        "pi".into(),
+        Action::Check,
+        Scope::Global,
+        stalled(),
+        cancel.clone(),
+        Duration::from_secs(30),
+    ));
+    cancel.cancel();
+    let out = tokio::time::timeout(Duration::from_secs(3), task).await;
+    assert_eq!(out.unwrap().unwrap(), Outcome::Cancelled);
+    let out = tokio::time::timeout(
+        Duration::from_secs(3),
+        run_with(
+            "pi".into(),
+            Action::Check,
+            Scope::Global,
+            stalled(),
+            Cancellation::new(),
+            Duration::from_millis(50),
+        ),
+    )
+    .await;
+    assert_eq!(out.unwrap(), Outcome::TimedOut);
 }

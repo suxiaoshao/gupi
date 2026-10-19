@@ -503,7 +503,7 @@ impl FilePages {
     fn render_page_with_mcp(
         &mut self,
         kind: Kind,
-        context: (Option<String>, bool),
+        context: (Option<std::ffi::OsString>, bool),
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {

@@ -210,7 +210,7 @@ printf '%s' '{"servers":[{"name":"oauth","scope":"global","enabled":true,"state"
     });
     let owner = owner.unwrap();
     let mount = Cancellation::new();
-    let command = executable.to_string_lossy().into_owned();
+    let command = executable.into_os_string();
     cx.update(|window, cx| {
         assert!(
             owner
@@ -282,7 +282,7 @@ printf '%s' '{"servers":[{"name":"oauth","scope":"global","enabled":true,"state"
                 command,
                 Action::Login("--help".into()),
                 Scope::Global,
-                vec![],
+                Box::pin(std::future::ready(vec![])),
                 Cancellation::new(),
             ),
         )

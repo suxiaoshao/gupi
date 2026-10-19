@@ -149,14 +149,14 @@ impl AuthPage {
             .read(cx, |op| {
                 op.data()
                     .and_then(|d| d.configured())
-                    .map(|c| c.pi_executable().to_string_lossy().into_owned())
+                    .map(|c| c.pi_executable().as_os_str().to_owned())
             })
             .unwrap_or_else(|| "pi".into());
         let environment = gupi_pi_runtime::environment(cx);
         let name = provider.clone();
         let worker = gpui_tokio::Tokio::spawn(cx, async move {
-            let snapshot = environment.load(false).await;
-            pi_auth::check(&command, &name, snapshot.variables()).await
+            let variables = async move { environment.load(false).await.variables() };
+            pi_auth::check(&command, &name, variables).await
         });
         let name = provider.clone();
         let task = cx.spawn(async move |this, cx| {

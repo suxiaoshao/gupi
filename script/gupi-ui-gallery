@@ -37,6 +37,7 @@ def main():
         "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "SystemRoot",
     ] if key in os.environ}
     env.update({
+        "HOME": str(root),
         "GUPI_CONFIG_DIR": str(root / "config"),
         "GUPI_LOG_DIR": str(root / "logs"),
         "PI_CODING_AGENT_DIR": str(root / "agent"),

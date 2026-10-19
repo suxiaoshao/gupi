@@ -118,7 +118,13 @@ impl GlobalKeys {
                 cx.new(|cx| BindingInput::new(id.to_owned(), self.controller.clone(), window, cx))
             })
             .clone();
-        let row = h_flex().gap_2().items_center().child(input);
+        let row = h_flex()
+            .w_full()
+            .min_w_0()
+            .flex_wrap()
+            .gap_2()
+            .items_center()
+            .child(div().flex_1().min_w_0().child(input));
         if id.is_empty() {
             return row.into_any_element();
         }
@@ -197,7 +203,20 @@ impl GlobalKeys {
             let target = target.clone();
             let controller = controller.clone();
             dialog
-                .title(t(cx, "shortcut-delete"))
+                .title({
+                    let name = controller
+                        .read(cx)
+                        .preferences(cx)
+                        .shortcuts
+                        .tasks
+                        .iter()
+                        .find(|task| task.id == target)
+                        .map(|task| task.name.clone())
+                        .unwrap_or_default();
+                    let mut args = fluent_bundle::FluentArgs::new();
+                    args.set("name", name);
+                    gupi_settings::i18n::t_with_args(cx, "shortcut-delete-title", &args)
+                })
                 .footer(dialog_buttons(
                     "shortcut-delete",
                     false,
@@ -216,6 +235,7 @@ impl GlobalKeys {
         });
     }
     fn edit(&mut self, id: Option<String>, window: &mut Window, cx: &mut Context<Self>) {
+        let creating = id.is_none();
         let definition = id
             .and_then(|id| {
                 self.controller
@@ -232,7 +252,7 @@ impl GlobalKeys {
                 record.enabled = true;
                 record
             });
-        editor::open(definition, self.controller.clone(), window, cx);
+        editor::open(definition, creating, self.controller.clone(), window, cx);
     }
 }
 
@@ -383,30 +403,53 @@ impl Render for BindingInput {
         let recording = self.capture.is_some();
         let dirty = self.draft != self.saved;
         let has_value = !self.draft.is_empty();
-        let area = keys::key_area("binding-area", &self.focus, &self.draft, recording, cx)
-            .on_click(cx.listener(|this, _, window, cx| {
-                if this.capture.is_none() {
-                    this.record(window, cx);
-                }
-            }))
-            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                if this.capture.is_some() {
-                    return;
-                }
-                let dirty = this.draft != this.saved;
-                match event.keystroke.key.as_str() {
-                    "enter" if dirty => this.save(cx),
-                    "enter" | "space" => this.record(window, cx),
-                    "escape" if this.editing => this.cancel(cx),
-                    _ => return,
-                }
-                cx.stop_propagation();
-            }));
+        let command = if self.id.is_empty() {
+            t(cx, "shortcut-launcher")
+        } else {
+            self.controller
+                .read(cx)
+                .preferences(cx)
+                .shortcuts
+                .tasks
+                .iter()
+                .find(|task| task.id == self.id)
+                .map(|task| task.name.clone())
+                .unwrap_or_else(|| t(cx, "shortcut-name"))
+        };
+        let area = keys::key_area(
+            "binding-area",
+            &self.focus,
+            &self.draft,
+            &command,
+            recording,
+            cx,
+        )
+        .on_click(cx.listener(|this, _, window, cx| {
+            if this.capture.is_none() {
+                this.record(window, cx);
+            }
+        }))
+        .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+            if this.capture.is_some() {
+                return;
+            }
+            let dirty = this.draft != this.saved;
+            match event.keystroke.key.as_str() {
+                "enter" if dirty => this.save(cx),
+                "enter" | "space" => this.record(window, cx),
+                "escape" if this.editing => this.cancel(cx),
+                _ => return,
+            }
+            cx.stop_propagation();
+        }));
         v_flex()
             .gap_1()
             .items_end()
             .child(
                 h_flex()
+                    .w_full()
+                    .min_w_0()
+                    .flex_wrap()
                     .gap_2()
                     .items_center()
                     .when(dirty && !recording, |row| {
@@ -440,6 +483,7 @@ impl Render for BindingInput {
                         )
                         .child(
                             Button::new("confirm")
+                                .primary()
                                 .small()
                                 .icon(IconName::Check)
                                 .label(t(cx, "settings-key-confirm"))

@@ -11,7 +11,7 @@ settings-path-help = Leave empty to find pi automatically, or enter an absolute 
 settings-theme = Appearance
 settings-language = Language
 settings-save-pi = Save Pi path
-settings-reload = Reload from disk
+settings-reload = Reload
 settings-write-current = Write applied settings to disk (keep draft)
 theme-system = System
 theme-light = Light
@@ -268,8 +268,8 @@ conversation-history-calls = Tool calls
 conversation-history-failed = Execution failed
 conversation-history-stopped = Interrupted
 conversation-history-empty = Reply without text
-composer-model-thinking = Model and thinking
-composer-model-refresh = Refresh models and thinking levels
+composer-model-thinking = Model and thinking level
+composer-model-refresh = Reload models and thinking levels
 composer-thinking-unavailable = Not supported
 composer-model-loading = Loading models…
 composer-thinking-loading = Loading thinking levels…
@@ -372,20 +372,19 @@ settings-key-unbound = No shortcut assigned
 settings-key-recording = Press a shortcut, or Esc to cancel
 settings-key-conflict = Conflicting or invalid shortcut
 settings-key-invalid = Enter a valid shortcut, or leave empty to unbind
-settings-resource-refresh = Refresh resources
+settings-resource-refresh = Reload
 settings-resource-reload-help = Personal resources only. Reload existing sessions manually to apply changes.
 settings-resource-working = Working…
 settings-resource-pi-required = Save and check a working Pi executable in Pi settings first.
-settings-resource-invalid-name = Names may contain letters, digits, hyphens and underscores.
+settings-resource-invalid-name = Use a valid filename without path separators.
 settings-resource-register = Add local
 settings-resource-create = Create
-settings-resource-name-help = New resource name: letters, digits, hyphens or underscores.
 settings-resource-empty = No matching resources.
 settings-resource-delete = Move to trash
 settings-resource-save = Save text
 shortcut-save-task = Save
 settings-resource-loading = Reading text…
-settings-resource-confirm-remove = Remove this item? File deletion moves only the selected file to trash, keeping its directory.
+settings-resource-confirm-remove = Only the selected file moves to Trash; its directory is kept.
 settings-package-install = Install package
 settings-package-update = Update
 settings-package-remove = Remove
@@ -396,14 +395,14 @@ settings-package-prompts = Templates { $count }
 settings-package-themes = Themes { $count }
 settings-skill-search = Search skills by name, description, path or source
 settings-skill-collapse = Collapse
-settings-resource-edit = Edit
+settings-resource-edit = Edit…
 settings-about-gupi = Version
 settings-about-pi = Version
 settings-about-path = Resolved path
 settings-about-status = Probe status
 settings-about-unavailable = Not available yet
 settings-editor-discard = Discard unsaved text changes?
-settings-package-confirm-remove = Remove this package from the selected Pi scope? Local packages are only unregistered; their source folders are kept.
+settings-package-confirm-remove = Removes the package from the selected Pi scope. Local source folders are kept.
 settings-package-heading = Installed packages
 settings-extension-heading = Standalone extensions
 settings-template-heading = Command templates
@@ -418,6 +417,7 @@ settings-pi-saved = The current path is saved. Check again to verify Pi is avail
 settings-resource-location = Show location
 settings-package-source = Package source
 settings-package-empty = No personal Pi packages installed.
+settings-package-resources-empty = No declared resources were found in this package.
 settings-resource-name = Name
 settings-resource-none = No personal resources of this type yet.
 settings-resource-view = View
@@ -458,8 +458,8 @@ image-preview-zoom-in = Zoom in
 image-preview-zoom-out = Zoom out
 shortcut-global = Global shortcuts
 shortcut-launcher = Temporary window
-shortcut-add = Add template task
-shortcut-edit = Edit template task
+shortcut-add = Add template task…
+shortcut-edit = Edit template task…
 shortcut-delete = Delete template task
 shortcut-name = Name
 shortcut-template = Command template
@@ -556,13 +556,13 @@ icon-theme-pride = Rainbow
 icon-theme-ukraine = Ukraine
 icon-theme-ukraine-gradient = Ukraine gradient
 
-language-traditional-chinese = Traditional Chinese
-language-japanese = Japanese
-language-korean = Korean
-language-german = German
-language-french = French
-language-spanish = Spanish
-language-portuguese-brazil = Portuguese (Brazil)
+language-traditional-chinese = 繁體中文
+language-japanese = 日本語
+language-korean = 한국어
+language-german = Deutsch
+language-french = Français
+language-spanish = Español
+language-portuguese-brazil = Português (Brasil)
 menu-about = About Gupi
 menu-conversation = Conversation
 menu-edit = Edit
@@ -689,7 +689,7 @@ screenshot-permission-required = Screen recording access is required. Enable Gup
 files-title = Files
 files-panel = Right panel
 files-close = Close panel
-files-refresh = Refresh files
+files-refresh = Reload
 files-preview = Preview
 files-readonly = Readonly
 files-wrap = Wrap lines
@@ -812,7 +812,7 @@ packages-page = Page { $page }
 packages-page-empty = No matching packages on this page.
 packages-close = Close details
 packages-local-unavailable = Local package information is unavailable. Refresh resources to enable package actions.
-packages-refresh-details = Refresh details
+packages-refresh-details = Reload
 
 ## Pi settings
 settings-domain-label = Settings area
@@ -1195,3 +1195,34 @@ pi-auth-edit-models = Edit in Models & providers
 
 pi-provider-empty-id = ⟨Empty ID⟩
 pi-auth-check-unavailable = Pi cannot check this provider ID.
+
+settings-skill-name-help = Directory name. Pi recommends lowercase letters, digits and single hyphens, up to 64 characters.
+
+settings-skill-name-warning = This name is outside Pi’s recommendations; creation is still allowed. This does not validate the name in SKILL.md.
+
+settings-prompt-name-help = Used as /name. Whitespace is not allowed.
+
+settings-prompt-invalid-name = Use a valid filename without whitespace or path separators.
+
+shortcut-add-title = Add template task
+
+shortcut-edit-title = Edit template task
+
+shortcut-options-failed = Could not load template or model options. Check the Pi connection and retry.
+
+pi-auth-row-action = { $provider }: { $action }
+
+pi-auth-add-title = Add API key
+
+pi-auth-replace-editor-title = Replace API key
+
+temporary-clean-title = Clean released working directories?
+
+settings-package-remove-title = Remove “{ $name }”?
+
+settings-resource-delete-title = Move “{ $name }” to Trash?
+
+shortcut-delete-title = Delete template task “{ $name }”?
+
+settings-key-control-label = { $command }: { $binding }
+settings-key-control-recording = { $command }: { $binding } — { $state }

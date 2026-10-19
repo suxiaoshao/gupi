@@ -491,3 +491,80 @@ async fn auth_notifications_invalidate_settings(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(changes.get() > before);
 }
+
+#[gpui_kit::test]
+fn language_selection_keeps_its_raw_value_and_accessible_name_across_locales(
+    cx: &mut TestAppContext,
+) {
+    use gpui_kit::test::TestWindowExt as _;
+    use gupi_settings::config::{ConfigContents, ConfigData};
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        crate::app::init_capability_hosts(cx);
+        app_theme::init(cx);
+        gupi_settings::theme::init(cx);
+        gupi_settings::i18n::apply(AppLanguage::English, cx);
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let mut owner = None;
+    let (_, visual) = cx.add_window_view(|window, cx| {
+        let mut config = AppConfig::default();
+        config.language = AppLanguage::English;
+        let form = cx.new(|_| Form::new(config.clone()));
+        let controller =
+            cx.new(|cx| ConfigController::at_path(&form, Ok(dir.path().join("config.toml")), cx));
+        controller.update(cx, |this, cx| {
+            this.settle_for_test(
+                ConfigData::new(
+                    dir.path().join("config.toml"),
+                    ConfigContents::Configured(config),
+                ),
+                cx,
+            )
+        });
+        let draft = cx.new(|_| PiProbeController::new());
+        let applied = cx.new(|_| {
+            let mut probe = PiProbeController::new();
+            probe.stop();
+            probe
+        });
+        let settings = cx.new(|cx| {
+            SettingsView::new(
+                form,
+                controller,
+                draft,
+                applied,
+                cx.focus_handle(),
+                window,
+                cx,
+            )
+        });
+        owner = Some(settings.clone());
+        let host = cx.new(|_| SettingsPageFixture {
+            settings,
+            domain: super::layout::Domain::Gupi,
+            page: 0,
+        });
+        Root::new(host, window, cx)
+    });
+    let owner = owner.unwrap();
+    for locale in [
+        AppLanguage::English,
+        AppLanguage::German,
+        AppLanguage::Chinese,
+    ] {
+        visual.update(|_, cx| gupi_settings::i18n::apply(locale, cx));
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            window.render_frame(cx);
+            assert_eq!(
+                window.find("settings-language").label(),
+                Some(gupi_settings::i18n::t(cx, "settings-app-language").as_str())
+            );
+            assert_eq!(window.find("settings-language").value(), Some("English"));
+            owner.read(cx).language.read_with(cx, |state, _| {
+                assert_eq!(state.selected_value(), Some(&AppLanguage::English))
+            });
+        });
+    }
+}

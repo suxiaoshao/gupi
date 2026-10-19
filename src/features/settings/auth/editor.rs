@@ -46,6 +46,9 @@ impl Editor {
             .map(|e| e.provider().to_owned())
             .unwrap_or_default();
         let is_fixed = fixed.is_some();
+        let replacing = fixed
+            .as_ref()
+            .is_some_and(|entry| entry.kind() != Kind::Missing);
         let editor = cx.new(|cx: &mut Context<Self>| {
             let provider = cx.new(|cx| {
                 InputState::new(window, cx)
@@ -157,10 +160,10 @@ impl Editor {
                         .gap_2()
                         .child(t(
                             cx,
-                            if is_fixed {
-                                "pi-auth-replace"
+                            if replacing {
+                                "pi-auth-replace-editor-title"
                             } else {
-                                "pi-auth-add"
+                                "pi-auth-add-title"
                             },
                         ))
                         .when(

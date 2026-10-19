@@ -62,7 +62,7 @@
               rust
               pkgs.pkg-config
               pkgs.nodejs_24
-              pkgs.python3 # UI gallery and icon generation scripts.
+              pkgs.python3 # Icon generation scripts.
             ];
             # Selected-text support generates AppKit bindings on macOS.
             nativeBuildInputs = lib.optionals pkgs.stdenv.isDarwin [ pkgs.rustPlatform.bindgenHook ];

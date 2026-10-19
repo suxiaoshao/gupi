@@ -111,6 +111,7 @@ pub(super) fn key_area(
     id: impl Into<ElementId>,
     focus: &FocusHandle,
     value: &str,
+    command: &str,
     recording: bool,
     cx: &App,
 ) -> Stateful<Div> {
@@ -118,8 +119,34 @@ pub(super) fn key_area(
     h_flex()
         .id(id)
         .track_focus(focus)
-        .h_7()
-        .min_w(px(132.))
+        .role(Role::Button)
+        .aria_label({
+            let mut args = fluent_bundle::FluentArgs::new();
+            args.set("command", command);
+            args.set(
+                "binding",
+                if value.is_empty() {
+                    t(cx, "settings-key-unbound")
+                } else {
+                    value.to_owned()
+                },
+            );
+            args.set("state", t(cx, "settings-key-recording"));
+            gupi_settings::i18n::t_with_args(
+                cx,
+                if recording {
+                    "settings-key-control-recording"
+                } else {
+                    "settings-key-control-label"
+                },
+                &args,
+            )
+        })
+        .min_h_7()
+        .max_w_full()
+        .min_w_0()
+        .flex_wrap()
+        .min_w(rems(8.25))
         .px_2()
         .gap_1()
         .rounded(cx.theme().radius)
@@ -205,7 +232,7 @@ impl KeysView {
             .flex_wrap()
             .gap_2()
             .child(
-                div().flex_1().min_w(px(200.)).child(
+                div().flex_1().min_w(rems(12.5)).child(
                     Input::new(&search)
                         .prefix(gpui_kit::component::Icon::new(IconName::Search))
                         .when_some(key_query.as_ref(), |input, key| {
@@ -681,6 +708,7 @@ impl KeysView {
             ("key-area", index),
             &self.focus[index],
             &value,
+            &t(cx, command.label),
             recording,
             cx,
         )
@@ -709,6 +737,9 @@ impl KeysView {
             cx.stop_propagation();
         }));
         let row = h_flex()
+            .min_w_0()
+            .max_w_full()
+            .flex_wrap()
             .gap_2()
             .items_center()
             .justify_end()
@@ -755,6 +786,7 @@ impl KeysView {
                 )
                 .child(
                     Button::new(("key-confirm", index))
+                        .primary()
                         .small()
                         .icon(IconName::Check)
                         .label(t(cx, "settings-key-confirm"))
@@ -786,7 +818,7 @@ impl KeysView {
             .items_end()
             .map(|field| {
                 if options.layout() == Axis::Horizontal {
-                    field.max_w(px(460.))
+                    field.max_w(rems(28.75)).min_w_0()
                 } else {
                     field.w_full()
                 }
@@ -859,6 +891,48 @@ mod tests {
     use gupi_settings::config::ConfigData;
     use std::cell::Cell;
     use std::rc::Rc;
+
+    use super::{key_area, t};
+    use gpui_kit::{FocusHandle, Role};
+    struct RecordingFixture {
+        focus: FocusHandle,
+    }
+    impl Render for RecordingFixture {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            use gpui_kit::base::TestSupportExt as _;
+            key_area(
+                "recording-fixture",
+                &self.focus,
+                "ctrl-k",
+                "Fixture command",
+                true,
+                cx,
+            )
+            .test_support()
+        }
+    }
+    #[gpui_kit::test]
+    fn recording_accessibility_keeps_command_binding_and_recording_state(cx: &mut TestAppContext) {
+        use gpui_kit::test::TestWindowExt as _;
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            gupi_settings::i18n::apply(AppLanguage::English, cx);
+        });
+        let (_, visual) = cx.add_window_view(|window, cx| {
+            let host = cx.new(|cx| RecordingFixture {
+                focus: cx.focus_handle(),
+            });
+            Root::new(host, window, cx)
+        });
+        visual.update(|window, cx| {
+            window.render_frame(cx);
+            let item = window.find("recording-fixture");
+            assert_eq!(item.role(), Some(Role::Button));
+            let label = item.label().unwrap();
+            assert!(label.contains("Fixture command") && label.contains("ctrl-k"));
+            assert!(label.contains(&t(cx, "settings-key-recording")));
+        });
+    }
 
     gpui_kit::actions!(keys_test, [UnrelatedAction]);
 

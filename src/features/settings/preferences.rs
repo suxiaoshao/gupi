@@ -1,10 +1,10 @@
 use super::*;
 use gpui_kit::component::Sizable;
 use gpui_kit::component::ThemeMode as Mode;
-use gpui_kit::component::combobox::Combobox;
 use gpui_kit::component::form::field;
 use gpui_kit::component::form::v_form;
 use gpui_kit::component::searchable_list::SearchableListItem;
+use gpui_kit::component::select::Select;
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::prelude::FluentBuilder;
 use gupi_settings::i18n::ProbeFailureKey;
@@ -20,6 +20,16 @@ impl SearchableListItem for LanguageItem {
     type Value = AppLanguage;
     fn title(&self) -> SharedString {
         self.title.clone()
+    }
+    fn render(&self, _: &mut Window, _: &mut App) -> impl IntoElement {
+        div()
+            .id(SharedString::from(format!(
+                "language-option-{:?}",
+                self.value
+            )))
+            .role(Role::Label)
+            .aria_label(self.title.clone())
+            .child(self.title.clone())
     }
     fn value(&self) -> &AppLanguage {
         &self.value
@@ -90,7 +100,9 @@ impl SettingsView {
             .child(
                 v_form().child(
                     field().label(t(cx, "settings-language")).child(
-                        Combobox::new(&self.language)
+                        Select::new(&self.language)
+                            .id("settings-language")
+                            .accessibility_label(t(cx, "settings-app-language"))
                             .w_full()
                             .when(self.controller.read(cx).is_onboarding(cx), |control| {
                                 control.large()

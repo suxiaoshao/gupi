@@ -39,7 +39,10 @@ impl ResourcesView {
                             .to_string_lossy()
                             .into_owned(),
                     )
-                    .width(px(720.).min(window.viewport_size().width - px(32.)))
+                    .width(
+                        (window.rem_size() * 45.)
+                            .min(window.viewport_size().width - window.rem_size() * 2.),
+                    )
                     .overlay_closable(false)
                     .close_button(!busy)
                     .child(
@@ -93,7 +96,8 @@ impl ResourcesView {
                             })
                             .child(
                                 CodeEditor::new(&editor.input)
-                                    .h(px(400.).min(window.viewport_size().height * 0.5))
+                                    .h((window.rem_size() * 25.)
+                                        .min(window.viewport_size().height * 0.5))
                                     .readonly(!editor.editable)
                                     .disabled(busy),
                             ),

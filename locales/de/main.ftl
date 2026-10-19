@@ -11,13 +11,13 @@ settings-path-help = Leer lassen, damit pi automatisch gefunden wird, oder einen
 settings-theme = Erscheinungsbild
 settings-language = Sprache
 settings-save-pi = Pi-Pfad speichern
-settings-reload = Vom Datenträger neu laden
+settings-reload = Neu laden
 settings-write-current = Übernommene Einstellungen auf den Datenträger schreiben (Entwurf behalten)
 theme-system = System
 theme-light = Hell
 theme-dark = Dunkel
 language-system = System
-language-english = Englisch
+language-english = English
 language-chinese = 简体中文
 recovery-config-title = Konfiguration erfordert Aufmerksamkeit
 recovery-startup-title = Gupi konnte nicht gestartet werden
@@ -269,7 +269,7 @@ conversation-history-failed = Ausführung fehlgeschlagen
 conversation-history-stopped = Unterbrochen
 conversation-history-empty = Antwort ohne Text
 composer-model-thinking = Modell und Denkstufe
-composer-model-refresh = Modelle und Denkstufen aktualisieren
+composer-model-refresh = Modelle und Denkstufen neu laden
 composer-thinking-unavailable = Nicht unterstützt
 composer-model-loading = Modelle werden geladen …
 composer-thinking-loading = Denkstufen werden geladen …
@@ -372,20 +372,19 @@ settings-key-unbound = Kein Tastenkürzel zugewiesen
 settings-key-recording = Tastenkürzel drücken, Esc bricht ab
 settings-key-conflict = Widersprüchliches oder ungültiges Tastenkürzel
 settings-key-invalid = Gib ein gültiges Tastenkürzel ein oder lasse das Feld leer, um die Belegung zu entfernen.
-settings-resource-refresh = Ressourcen aktualisieren
+settings-resource-refresh = Neu laden
 settings-resource-reload-help = Nur persönliche Ressourcen. Lade bestehende Sitzungen manuell neu, damit die Änderungen wirksam werden.
 settings-resource-working = Wird bearbeitet …
 settings-resource-pi-required = Speichere zuerst unter Pi-Einstellungen ein funktionierendes Pi-Programm und prüfe es.
-settings-resource-invalid-name = Namen dürfen Buchstaben, Ziffern, Bindestriche und Unterstriche enthalten.
+settings-resource-invalid-name = Verwenden Sie einen gültigen Dateinamen ohne Pfadtrenner.
 settings-resource-register = Lokal hinzufügen
 settings-resource-create = Erstellen
-settings-resource-name-help = Neuer Ressourcenname: Buchstaben, Ziffern, Bindestriche oder Unterstriche.
 settings-resource-empty = Keine passenden Ressourcen.
 settings-resource-delete = In den Papierkorb verschieben
 settings-resource-save = Text speichern
 shortcut-save-task = Speichern
 settings-resource-loading = Text wird gelesen …
-settings-resource-confirm-remove = Dieses Element entfernen? Beim Löschen wird nur die ausgewählte Datei in den Papierkorb verschoben; ihr Ordner bleibt erhalten.
+settings-resource-confirm-remove = Nur die ausgewählte Datei wird in den Papierkorb verschoben; ihr Ordner bleibt erhalten.
 settings-package-install = Paket installieren
 settings-package-update = Aktualisieren
 settings-package-remove = Entfernen
@@ -396,14 +395,14 @@ settings-package-prompts = Vorlagen { $count }
 settings-package-themes = Designs { $count }
 settings-skill-search = Skills nach Name, Beschreibung, Pfad oder Quelle suchen
 settings-skill-collapse = Einklappen
-settings-resource-edit = Bearbeiten
+settings-resource-edit = Bearbeiten…
 settings-about-gupi = Version
 settings-about-pi = Version
 settings-about-path = Aufgelöster Pfad
 settings-about-status = Prüfstatus
 settings-about-unavailable = Noch nicht verfügbar
 settings-editor-discard = Nicht gespeicherte Textänderungen verwerfen?
-settings-package-confirm-remove = Dieses Paket aus dem ausgewählten Pi-Bereich entfernen? Lokale Pakete werden nur deregistriert; ihre Quellordner bleiben erhalten.
+settings-package-confirm-remove = Entfernt das Paket aus dem gewählten Pi-Bereich. Lokale Quellordner bleiben erhalten.
 settings-package-heading = Installierte Pakete
 settings-extension-heading = Eigenständige Erweiterungen
 settings-template-heading = Befehlvorlagen
@@ -418,6 +417,7 @@ settings-pi-saved = Der aktuelle Pfad ist gespeichert. Prüfe erneut, ob Pi verf
 settings-resource-location = Speicherort anzeigen
 settings-package-source = Paketquelle
 settings-package-empty = Keine persönlichen Pi-Pakete installiert.
+settings-package-resources-empty = Keine deklarierten Ressourcen in diesem Paket gefunden.
 settings-resource-name = Name
 settings-resource-none = Es sind noch keine persönlichen Ressourcen dieses Typs vorhanden.
 settings-resource-view = Anzeigen
@@ -458,8 +458,8 @@ image-preview-zoom-in = Bild vergrößern
 image-preview-zoom-out = Bild verkleinern
 shortcut-global = Globale Tastenkürzel
 shortcut-launcher = Temporäres Fenster
-shortcut-add = Vorlagenaufgabe hinzufügen
-shortcut-edit = Vorlagenaufgabe bearbeiten
+shortcut-add = Vorlagenaufgabe hinzufügen…
+shortcut-edit = Vorlagenaufgabe bearbeiten…
 shortcut-delete = Vorlagenaufgabe löschen
 shortcut-name = Name
 shortcut-template = Befehlvorlage
@@ -689,7 +689,7 @@ screenshot-permission-required = Für Screenshots ist die Erlaubnis zur Bildschi
 files-title = Dateien
 files-panel = Rechtes Panel
 files-close = Panel schließen
-files-refresh = Dateien aktualisieren
+files-refresh = Neu laden
 files-preview = Vorschau
 files-readonly = Schreibgeschützt
 files-wrap = Zeilenumbruch
@@ -812,7 +812,7 @@ packages-page = Seite { $page }
 packages-page-empty = Keine passenden Pakete auf dieser Seite.
 packages-close = Details schließen
 packages-local-unavailable = Lokale Paketinformationen sind nicht verfügbar. Aktualisieren Sie die Ressourcen, um Paketaktionen zu aktivieren.
-packages-refresh-details = Details aktualisieren
+packages-refresh-details = Neu laden
 
 ## Pi settings
 settings-domain-label = Einstellungsbereich
@@ -1195,3 +1195,34 @@ pi-auth-edit-models = Unter Modelle und Anbieter bearbeiten
 
 pi-provider-empty-id = ⟨Leere ID⟩
 pi-auth-check-unavailable = Pi kann diese Anbieter-ID nicht prüfen.
+
+settings-skill-name-help = Ordnername. Pi empfiehlt Kleinbuchstaben, Ziffern und einzelne Bindestriche, höchstens 64 Zeichen.
+
+settings-skill-name-warning = Dieser Name entspricht nicht den Pi-Empfehlungen; er kann trotzdem erstellt werden. Der name in SKILL.md wird hier nicht geprüft.
+
+settings-prompt-name-help = Aufruf über /Name. Leerraum ist nicht erlaubt.
+
+settings-prompt-invalid-name = Verwenden Sie einen gültigen Dateinamen ohne Leerraum oder Pfadtrenner.
+
+shortcut-add-title = Vorlagenaufgabe hinzufügen
+
+shortcut-edit-title = Vorlagenaufgabe bearbeiten
+
+shortcut-options-failed = Vorlagen- oder Modelloptionen konnten nicht geladen werden. Prüfen Sie die Pi-Verbindung und versuchen Sie es erneut.
+
+pi-auth-row-action = { $provider }: { $action }
+
+pi-auth-add-title = API-Schlüssel hinzufügen
+
+pi-auth-replace-editor-title = API-Schlüssel ersetzen
+
+temporary-clean-title = Freigegebene Arbeitsverzeichnisse bereinigen?
+
+settings-package-remove-title = „{ $name }“ entfernen?
+
+settings-resource-delete-title = „{ $name }“ in den Papierkorb verschieben?
+
+shortcut-delete-title = Vorlagenaufgabe „{ $name }“ löschen?
+
+settings-key-control-label = { $command }: { $binding }
+settings-key-control-recording = { $command }: { $binding } — { $state }

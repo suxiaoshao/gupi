@@ -7,7 +7,7 @@ description: Reproduce or verify GPUI desktop behavior when runtime evidence is 
 
 Choose a current local build and confirm the attached process belongs to it. Use `cargo run` or an existing matching build for ordinary UI work; use `cargo run -p xtask --locked -- bundle` outside Nix when testing packaging, bundled resources or OS launch behavior. Use a separate native target directory after Nix builds; see `docs/releasing.md`. With `cua_repl`, select the intended app path; bundle ID alone cannot distinguish installed and local copies.
 
-Real user data, credentials and live external operations need authorization. Gupi galleries are launched with `script/gupi-ui-gallery` and `script/gupi-runtime-gallery`; fixtures live in `tests/fixtures/`.
+Real user data, credentials and live external operations need authorization. Gupi galleries are launched with `cargo run -p xtask --locked -- gallery ui` and `cargo run -p xtask --locked -- gallery runtime`; fixtures live in `tests/fixtures/`.
 
 Reproduce the reported behavior or check the primary path needed for delivery. Use accessibility state for control behavior and screenshots for visual claims. Tool capture failures establish a limitation, not an application defect.
 

@@ -91,7 +91,7 @@ Pi 不需要与 Electron 使用同名顶层字段，但必须区分内部事件�
 
 工厂修复针对原样本中 13 条回答批量构造、共用时间戳的问题。新消息仍沿用角色+时间戳匹配；本次 RPC 接入另外按当前流关联 assistant 的结束消息，处理 faux 中止时改变时间戳的情况。这不宣称解决全部可能的生产碰撞。
 
-试用：仓库根目录执行 `node script/gupi-runtime-gallery --no-build`。使用刚构建的 target/debug/gupi，发送任意文字体验两轮过程；不创建新的 .app。
+试用：仓库根目录执行 `cargo run -p xtask --locked -- gallery runtime --no-build`。使用刚构建的 target/debug/gupi，发送任意文字体验两轮过程；不创建新的 .app。
 
 ## 实现范围与验证
 

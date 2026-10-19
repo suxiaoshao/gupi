@@ -461,3 +461,46 @@ fn toggles_refuse_unsupported_arrays_and_autoload_false_without_writing() {
         before
     );
 }
+
+#[test]
+fn names_keep_skill_recommendations_advisory_and_prompt_whitespace_create_only() {
+    let dir = tempfile::tempdir().unwrap();
+    for name in ["abc", "a-1", &"a".repeat(64)] {
+        assert!(recommended_skill_name(name));
+        assert!(create_path(dir.path(), Kind::Skill, name).is_ok());
+    }
+    for name in [
+        "中文",
+        "Upper_case",
+        "has space",
+        "-a",
+        "a-",
+        "a--b",
+        &"a".repeat(65),
+    ] {
+        assert!(!recommended_skill_name(name));
+        assert!(create_path(dir.path(), Kind::Skill, name).is_ok());
+    }
+    for name in [
+        "with space",
+        "leading ",
+        " trailing",
+        "ideographic\u{3000}space",
+        "nonbreak\u{a0}space",
+    ] {
+        assert!(create_path(dir.path(), Kind::Prompt, name).is_err());
+    }
+    for name in ["review", "中文", "Upper_case"] {
+        assert!(create_path(dir.path(), Kind::Prompt, name).is_ok());
+    }
+    for kind in [Kind::Skill, Kind::Prompt] {
+        for name in ["../escape", "a/b", "a\\b", "", "a\0b"] {
+            assert!(create_path(dir.path(), kind, name).is_err());
+        }
+    }
+    // Previously existing names remain editable through the ordinary save path.
+    let path = dir.path().join("prompts/old name.md");
+    write(&path, "old");
+    save_text(&path, "new", false, &Baseline::Text("old".into())).unwrap();
+    assert_eq!(fs::read_to_string(path).unwrap(), "new");
+}

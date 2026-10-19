@@ -11,13 +11,13 @@ settings-path-help = Laissez vide pour rechercher pi automatiquement, ou indique
 settings-theme = Apparence
 settings-language = Langue
 settings-save-pi = Enregistrer le chemin de Pi
-settings-reload = Recharger depuis le disque
+settings-reload = Recharger
 settings-write-current = Écrire les réglages appliqués sur le disque (conserver le brouillon)
 theme-system = Système
 theme-light = Clair
 theme-dark = Sombre
 language-system = Système
-language-english = Anglais
+language-english = English
 language-chinese = 简体中文
 recovery-config-title = La configuration nécessite votre attention
 recovery-startup-title = Gupi n’a pas pu démarrer
@@ -269,7 +269,7 @@ conversation-history-failed = Échec de l’exécution
 conversation-history-stopped = Interrompu
 conversation-history-empty = Réponse sans texte
 composer-model-thinking = Modèle et niveau de réflexion
-composer-model-refresh = Actualiser les modèles et les niveaux de réflexion
+composer-model-refresh = Recharger les modèles et niveaux de réflexion
 composer-thinking-unavailable = Non pris en charge
 composer-model-loading = Chargement des modèles…
 composer-thinking-loading = Chargement des niveaux de réflexion…
@@ -372,20 +372,19 @@ settings-key-unbound = Aucun raccourci attribué
 settings-key-recording = Saisissez un raccourci, Échap pour annuler
 settings-key-conflict = Raccourci en conflit ou invalide
 settings-key-invalid = Saisissez un raccourci valide ou laissez vide pour supprimer l’attribution.
-settings-resource-refresh = Actualiser les ressources
+settings-resource-refresh = Recharger
 settings-resource-reload-help = Ressources personnelles uniquement. Rechargez manuellement les sessions existantes pour appliquer les modifications.
 settings-resource-working = Opération en cours…
 settings-resource-pi-required = Enregistrez et vérifiez d’abord un exécutable Pi fonctionnel dans les réglages de Pi.
-settings-resource-invalid-name = Les noms peuvent contenir des lettres, des chiffres, des tirets et des traits de soulignement.
+settings-resource-invalid-name = Utilisez un nom de fichier valide sans séparateurs de chemin.
 settings-resource-register = Ajouter localement
 settings-resource-create = Créer
-settings-resource-name-help = Nouveau nom de ressource : lettres, chiffres, tirets ou traits de soulignement.
 settings-resource-empty = Aucune ressource correspondante.
 settings-resource-delete = Déplacer vers la corbeille
 settings-resource-save = Enregistrer le texte
 shortcut-save-task = Enregistrer
 settings-resource-loading = Lecture du texte…
-settings-resource-confirm-remove = Supprimer cet élément ? Seul le fichier sélectionné sera déplacé vers la corbeille ; son dossier sera conservé.
+settings-resource-confirm-remove = Seul le fichier sélectionné est déplacé dans la corbeille ; son dossier est conservé.
 settings-package-install = Installer le paquet
 settings-package-update = Mettre à jour
 settings-package-remove = Supprimer
@@ -396,14 +395,14 @@ settings-package-prompts = Modèles { $count }
 settings-package-themes = Thèmes { $count }
 settings-skill-search = Rechercher des compétences par nom, description, chemin ou source
 settings-skill-collapse = Réduire
-settings-resource-edit = Modifier
+settings-resource-edit = Modifier…
 settings-about-gupi = Version
 settings-about-pi = Version
 settings-about-path = Chemin résolu
 settings-about-status = État de la vérification
 settings-about-unavailable = Pas encore disponible
 settings-editor-discard = Abandonner les modifications de texte non enregistrées ?
-settings-package-confirm-remove = Supprimer ce paquet de la portée Pi sélectionnée ? Les paquets locaux sont uniquement désenregistrés ; leurs dossiers sources sont conservés.
+settings-package-confirm-remove = Retire le paquet de la portée Pi sélectionnée. Les dossiers sources locaux sont conservés.
 settings-package-heading = Paquets installés
 settings-extension-heading = Extensions autonomes
 settings-template-heading = Modèles de commandes
@@ -418,6 +417,7 @@ settings-pi-saved = Le chemin actuel est enregistré. Vérifiez à nouveau la di
 settings-resource-location = Afficher l’emplacement
 settings-package-source = Source du paquet
 settings-package-empty = Aucun paquet Pi personnel n’est installé.
+settings-package-resources-empty = Aucune ressource déclarée trouvée dans ce paquet.
 settings-resource-name = Nom
 settings-resource-none = Aucune ressource personnelle de ce type pour le moment.
 settings-resource-view = Afficher
@@ -458,8 +458,8 @@ image-preview-zoom-in = Agrandir l’image
 image-preview-zoom-out = Réduire l’image
 shortcut-global = Raccourcis globaux
 shortcut-launcher = Fenêtre temporaire
-shortcut-add = Ajouter une tâche modèle
-shortcut-edit = Modifier la tâche modèle
+shortcut-add = Ajouter une tâche modèle…
+shortcut-edit = Modifier la tâche modèle…
 shortcut-delete = Supprimer la tâche modèle
 shortcut-name = Nom
 shortcut-template = Modèle de commande
@@ -689,7 +689,7 @@ screenshot-permission-required = L’autorisation d’enregistrer l’écran est
 files-title = Fichiers
 files-panel = Panneau droit
 files-close = Fermer le panneau
-files-refresh = Actualiser les fichiers
+files-refresh = Recharger
 files-preview = Aperçu
 files-readonly = Lecture seule
 files-wrap = Retour à la ligne
@@ -812,7 +812,7 @@ packages-page = Page { $page }
 packages-page-empty = Aucun paquet correspondant sur cette page.
 packages-close = Fermer les détails
 packages-local-unavailable = Les informations des paquets locaux sont indisponibles. Actualisez les ressources pour activer les actions sur les paquets.
-packages-refresh-details = Actualiser les détails
+packages-refresh-details = Recharger
 
 ## Pi settings
 settings-domain-label = Zone des réglages
@@ -907,7 +907,7 @@ settings-system-use-global = Utiliser le global
 settings-system-use-global-title = Revenir au { $file } global ?
 settings-system-use-global-body = Le fichier du projet est placé dans la corbeille et Pi revient au fichier global.
 settings-editor-changed = Le fichier a changé après son ouverture : il n’a pas été enregistré. Relisez-le pour abandonner ces modifications, ou annulez.
-settings-editor-reload = Relire
+settings-editor-reload = Recharger
 settings-editor-unsaved-title = Enregistrer les modifications de { $file } ?
 settings-editor-unsaved-body = Vos modifications de texte ne sont pas encore enregistrées.
 
@@ -974,7 +974,7 @@ pi-field-shell-prefix = Préfixe de commande
 pi-field-npm-command = Commande npm
 pi-field-telemetry = Télémétrie d’installation
 pi-field-project-trust = Confiance par défaut des projets
-pi-field-model-thinking = Niveaux de raisonnement par modèle
+pi-field-model-thinking = Niveaux de réflexion par modèle
 pi-field-model-overrides = Compactage par modèle
 pi-field-budget-minimal = Minimal
 pi-field-budget-low = Faible
@@ -991,7 +991,7 @@ pi-timeout-disabled = Désactiver
 pi-tools-startup-help = Les extensions et MCP peuvent activer d’autres outils. Ce n’est ni une limite de sécurité ni une liste en temps réel.
 pi-map-add-model = Ajouter un modèle
 pi-map-remove-local = Supprimer la valeur locale
-pi-model-thinking-help = Au démarrage, le niveau explicite et la session priment ; changer de modèle utilise cette valeur. Un suffixe de raisonnement est prioritaire.
+pi-model-thinking-help = Au démarrage, le niveau explicite et la session priment ; changer de modèle utilise cette valeur. Un suffixe de réflexion est prioritaire.
 pi-model-overrides-help = Chaque valeur de tokens est héritée séparément. Seuls les champs modifiés sont enregistrés.
 pi-trust-always-title = Faire confiance aux projets par défaut ?
 pi-trust-always-body = Pi fera confiance aux projets sans décision applicable, chargera leurs réglages et exécutera leurs extensions. Les décisions explicites et extensions de confiance restent prioritaires.
@@ -1195,3 +1195,34 @@ pi-auth-edit-models = Modifier dans Modèles et fournisseurs
 
 pi-provider-empty-id = ⟨ID vide⟩
 pi-auth-check-unavailable = Pi ne peut pas vérifier cet ID de fournisseur.
+
+settings-skill-name-help = Nom du dossier. Pi recommande des minuscules, des chiffres et des traits d’union simples, sur 64 caractères maximum.
+
+settings-skill-name-warning = Ce nom ne suit pas les recommandations de Pi ; sa création reste possible. Le champ name de SKILL.md n’est pas vérifié ici.
+
+settings-prompt-name-help = Utilisé avec /nom. Les espaces ne sont pas autorisés.
+
+settings-prompt-invalid-name = Utilisez un nom de fichier valide sans espaces ni séparateurs de chemin.
+
+shortcut-add-title = Ajouter une tâche de modèle
+
+shortcut-edit-title = Modifier la tâche de modèle
+
+shortcut-options-failed = Impossible de charger les modèles ou leurs options. Vérifiez la connexion à Pi et réessayez.
+
+pi-auth-row-action = { $provider }: { $action }
+
+pi-auth-add-title = Ajouter une clé API
+
+pi-auth-replace-editor-title = Remplacer la clé API
+
+temporary-clean-title = Nettoyer les répertoires de travail libérés ?
+
+settings-package-remove-title = Retirer « { $name } » ?
+
+settings-resource-delete-title = Déplacer « { $name } » dans la corbeille ?
+
+shortcut-delete-title = Supprimer la tâche de modèle « { $name } » ?
+
+settings-key-control-label = { $command }: { $binding }
+settings-key-control-recording = { $command }: { $binding } — { $state }

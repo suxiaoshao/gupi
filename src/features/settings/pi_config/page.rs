@@ -255,11 +255,16 @@ impl PiConfig {
                 Page::Tools => IconName::Terminal,
             })
             .resettable(false)
-            .title_suffix(move |window, cx| {
-                header
-                    .update(cx, |this, cx| this.render_header(page, window, cx))
-                    .unwrap_or_else(|_| div().into_any_element())
-            });
+            .group(
+                SettingGroup::new()
+                    .border_0()
+                    .p_0()
+                    .item(SettingItem::render(move |_, window, cx| {
+                        header
+                            .update(cx, |this, cx| this.render_header(page, window, cx))
+                            .unwrap_or_else(|_| div().into_any_element())
+                    })),
+            );
         let config = this.read(cx);
         let status = config.status(cx);
         if status.is_some() || config.error.is_some() {
@@ -399,6 +404,8 @@ impl PiConfig {
         let current = self.scope.clone();
         let scope_menu = Button::new("pi-scope")
             .small()
+            .min_w_0()
+            .max_w(rems(16.))
             .outline()
             .label(scope_label)
             .dropdown_caret(true)
@@ -441,6 +448,9 @@ impl PiConfig {
             _ => None,
         };
         h_flex()
+            .w_full()
+            .min_w_0()
+            .flex_wrap()
             .gap_2()
             .items_center()
             .min_w_0()
@@ -519,32 +529,40 @@ impl PiConfig {
                 }
             });
         let _ = window;
-        h_flex()
-            .gap_2()
-            .items_center()
+        v_flex()
+            .w_full()
             .min_w_0()
+            .gap_2()
             .child(self.render_scope(cx))
-            .when(dirty && ready, |this| {
-                this.child(
-                    Button::new("pi-settings-discard")
-                        .small()
-                        .label(t(cx, "pi-settings-discard"))
-                        .disabled(saving)
-                        .on_click(cx.listener(move |this, _, _, cx| this.discard(Some(page), cx))),
-                )
-                .child(
-                    Button::new("pi-settings-save")
-                        .small()
-                        .primary()
-                        .label(t(cx, "pi-settings-save"))
-                        .loading(saving)
-                        .disabled(saving)
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.save(Some(page), None, window, cx)
-                        })),
-                )
-            })
-            .child(more)
+            .child(
+                h_flex()
+                    .flex_wrap()
+                    .gap_2()
+                    .items_center()
+                    .when(dirty && ready, |this| {
+                        this.child(
+                            Button::new("pi-settings-discard")
+                                .small()
+                                .label(t(cx, "pi-settings-discard"))
+                                .disabled(saving)
+                                .on_click(
+                                    cx.listener(move |this, _, _, cx| this.discard(Some(page), cx)),
+                                ),
+                        )
+                        .child(
+                            Button::new("pi-settings-save")
+                                .small()
+                                .primary()
+                                .label(t(cx, "pi-settings-save"))
+                                .loading(saving)
+                                .disabled(saving)
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.save(Some(page), None, window, cx)
+                                })),
+                        )
+                    })
+                    .child(more),
+            )
             .into_any_element()
     }
 
@@ -641,6 +659,8 @@ impl PiConfig {
         let conflict = self.conflicts.contains(&field);
         let invalid = self.invalid(field, cx);
         let top_aligned = field.is_resource_paths();
+        let stacked = matches!(field.kind(), Kind::Count | Kind::Timeout);
+
         v_flex()
             .w_full()
             .max_w(rems(56.))
@@ -649,10 +669,20 @@ impl PiConfig {
                 h_flex()
                     .gap_2()
                     .items_center()
+                    .when(stacked, |row| row.flex_col().items_start())
                     .when(top_aligned, |row| row.items_start())
                     .w_full()
                     .child(label)
-                    .child(h_flex().w_80().flex_shrink_0().justify_end().child(control))
+                    .child(
+                        h_flex()
+                            .min_w_0()
+                            .w_80()
+                            .max_w_full()
+                            .when(stacked, |row| row.w_full())
+                            .flex_shrink_0()
+                            .justify_end()
+                            .child(control),
+                    )
                     .child(if project && field.is_global_only() {
                         div().w_6().flex_shrink_0().into_any_element()
                     } else {

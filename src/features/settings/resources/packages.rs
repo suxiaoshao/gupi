@@ -278,6 +278,7 @@ impl ResourcesView {
                     div()
                         .id(id("name"))
                         .min_w_0()
+                        .flex_1()
                         .truncate()
                         .font_weight(FontWeight::MEDIUM)
                         .child(name)
@@ -290,6 +291,19 @@ impl ResourcesView {
                         .text_color(cx.theme().muted_foreground)
                         .child(version)
                 })),
+        );
+        heading = heading.child(
+            div()
+                .id(id("source"))
+                .min_w_0()
+                .text_xs()
+                .truncate()
+                .text_color(cx.theme().muted_foreground)
+                .child(source.clone())
+                .tooltip({
+                    let source = source.clone();
+                    move |window, cx| Tooltip::new(source.clone()).build(window, cx)
+                }),
         );
         if self.in_project_scope() {
             let other = if inherited {
@@ -483,6 +497,7 @@ impl ResourcesView {
                 .pt_3()
                 .border_t_1()
                 .border_color(cx.theme().border);
+            let mut has_resources = false;
             for (kind, label, icon) in RESOURCE_KINDS {
                 let resources: Vec<_> = catalog
                     .resources
@@ -492,6 +507,7 @@ impl ResourcesView {
                 if resources.is_empty() {
                     continue;
                 }
+                has_resources = true;
                 contents = contents.child(
                     v_flex()
                         .gap_2()
@@ -511,6 +527,14 @@ impl ResourcesView {
                                 cx,
                             )
                         })),
+                );
+            }
+            if !has_resources {
+                contents = contents.child(
+                    div()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(t(cx, "settings-package-resources-empty")),
                 );
             }
             card = card.content(contents);
@@ -712,6 +736,14 @@ impl ResourcesView {
 }
 
 pub(super) fn package_name(package: &io::Package) -> String {
+    if !package.source.starts_with("npm:") {
+        return package
+            .path
+            .file_name()
+            .filter(|name| !name.is_empty())
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| package.source.clone());
+    }
     let name = package
         .source
         .strip_prefix("npm:")

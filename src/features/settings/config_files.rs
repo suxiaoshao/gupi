@@ -378,64 +378,84 @@ impl FilePages {
             IconName::Server
         })
         .resettable(false)
-        .title_suffix(move |window, cx| {
-            if kind == Kind::Models {
-                let owner = h.downgrade();
-                window.use_keyed_state("models-page-auth-metadata-entry", cx, |window, cx| {
-                    window.defer(cx, move |_, cx| {
-                        let _ = owner.update(cx, |this, cx| this.refresh_auth(cx));
-                    });
-                });
-            }
-            let e = h.clone();
-            let dirty = h.read(cx).draft(kind).dirty();
-            let busy = h.read(cx).busy();
-            h_flex()
-                .gap_2()
-                .child(config.update(cx, |this, cx| this.render_scope(cx)))
-                .when(dirty, |row| {
-                    row.child(
-                        Button::new("file-reset")
-                            .small()
-                            .label(t(cx, "pi-settings-discard"))
-                            .disabled(busy)
-                            .on_click({
-                                let e = e.clone();
-                                move |_, _, cx| {
-                                    e.update(cx, |this, cx| {
-                                        let draft = this.draft_mut(kind);
-                                        draft.edits.clear();
-                                        draft.auto = None;
-                                        cx.notify()
-                                    })
-                                }
-                            }),
-                    )
-                    .child(
-                        Button::new("file-save-page")
-                            .small()
-                            .primary()
-                            .label(t(cx, "pi-settings-save"))
-                            .disabled(busy)
-                            .on_click({
-                                let e = e.clone();
-                                move |_, w, cx| {
-                                    e.update(cx, |this, cx| this.save(Some(kind), None, w, cx))
-                                }
-                            }),
-                    )
-                })
-                .child(
-                    Button::new("file-reload")
-                        .small()
-                        .ghost()
-                        .icon(IconName::RotateCw)
-                        .accessibility_label(t(cx, "pi-settings-reload"))
-                        .disabled(busy || dirty)
-                        .on_click(move |_, _, cx| e.update(cx, |this, cx| this.reload(cx))),
-                )
-                .into_any_element()
-        })
+        .group(
+            SettingGroup::new()
+                .border_0()
+                .p_0()
+                .item(SettingItem::render(move |_, window, cx| {
+                    if kind == Kind::Models {
+                        let owner = h.downgrade();
+                        window.use_keyed_state(
+                            "models-page-auth-metadata-entry",
+                            cx,
+                            |window, cx| {
+                                window.defer(cx, move |_, cx| {
+                                    let _ = owner.update(cx, |this, cx| this.refresh_auth(cx));
+                                });
+                            },
+                        );
+                    }
+                    let e = h.clone();
+                    let dirty = h.read(cx).draft(kind).dirty();
+                    let busy = h.read(cx).busy();
+                    v_flex()
+                        .w_full()
+                        .min_w_0()
+                        .gap_2()
+                        .child(config.update(cx, |this, cx| this.render_scope(cx)))
+                        .child(
+                            h_flex()
+                                .gap_2()
+                                .flex_wrap()
+                                .when(dirty, |row| {
+                                    row.child(
+                                        Button::new("file-reset")
+                                            .small()
+                                            .label(t(cx, "pi-settings-discard"))
+                                            .disabled(busy)
+                                            .on_click({
+                                                let e = e.clone();
+                                                move |_, _, cx| {
+                                                    e.update(cx, |this, cx| {
+                                                        let draft = this.draft_mut(kind);
+                                                        draft.edits.clear();
+                                                        draft.auto = None;
+                                                        cx.notify()
+                                                    })
+                                                }
+                                            }),
+                                    )
+                                    .child(
+                                        Button::new("file-save-page")
+                                            .small()
+                                            .primary()
+                                            .label(t(cx, "pi-settings-save"))
+                                            .disabled(busy)
+                                            .on_click({
+                                                let e = e.clone();
+                                                move |_, w, cx| {
+                                                    e.update(cx, |this, cx| {
+                                                        this.save(Some(kind), None, w, cx)
+                                                    })
+                                                }
+                                            }),
+                                    )
+                                })
+                                .child(
+                                    Button::new("file-reload")
+                                        .small()
+                                        .ghost()
+                                        .icon(IconName::RotateCw)
+                                        .accessibility_label(t(cx, "pi-settings-reload"))
+                                        .disabled(busy || dirty)
+                                        .on_click(move |_, _, cx| {
+                                            e.update(cx, |this, cx| this.reload(cx))
+                                        }),
+                                ),
+                        )
+                        .into_any_element()
+                })),
+        )
         .group(
             SettingGroup::new().item(SettingItem::render(move |_, window, cx| {
                 e.update(cx, |this, cx| this.render_page(kind, window, cx))
@@ -478,41 +498,33 @@ impl FilePages {
         let draft = self.draft(kind);
         let mut body = v_flex().w_full().min_w_0().max_w(rems(56.)).gap_2();
         let add = cx.entity();
-        body = body.child(
-            h_flex()
-                .w_full()
-                .items_start()
-                .gap_2()
-                .child(
-                    v_flex()
-                        .flex_1()
-                        .min_w_0()
-                        .gap_1()
-                        .child(div().text_sm().font_weight(FontWeight::SEMIBOLD).child(t(
-                            cx,
-                            if kind == Kind::Models {
-                                "pi-files-providers"
-                            } else {
-                                "pi-files-servers"
-                            },
-                        )))
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(t(cx, "pi-files-startup-only")),
-                        ),
-                )
-                .child(
-                    Button::new("file-add")
-                        .small()
-                        .label(t(cx, "pi-files-add"))
-                        .disabled(self.busy() || self.loading.is_some() || draft.names().is_err())
-                        .on_click(move |_, window, cx| {
-                            Self::open_editor(&add, kind, None, window, cx)
-                        }),
-                ),
-        );
+        body = body.child(super::management_header(
+            div()
+                .text_sm()
+                .font_weight(FontWeight::SEMIBOLD)
+                .child(t(
+                    cx,
+                    if kind == Kind::Models {
+                        "pi-files-providers"
+                    } else {
+                        "pi-files-servers"
+                    },
+                ))
+                .into_any_element(),
+            Some(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(t(cx, "pi-files-startup-only"))
+                    .into_any_element(),
+            ),
+            Button::new("file-add")
+                .small()
+                .label(t(cx, "pi-files-add"))
+                .disabled(self.busy() || self.loading.is_some() || draft.names().is_err())
+                .on_click(move |_, window, cx| Self::open_editor(&add, kind, None, window, cx))
+                .into_any_element(),
+        ));
         if self.loading.is_some() {
             return body.child(t(cx, "pi-settings-loading")).into_any_element();
         }
@@ -725,7 +737,7 @@ impl FilePages {
             .auto
             .clone()
             .unwrap_or_else(|| self.mcp.file.as_ref().and_then(File::auto_enable));
-        let label = match current {
+        let label = match current.as_ref() {
             None => t(cx, "pi-value-unset"),
             Some(Value::Bool(true)) => t(cx, "pi-files-on"),
             Some(Value::Bool(false)) => t(cx, "pi-files-off"),
@@ -735,14 +747,15 @@ impl FilePages {
         let menu_e = e.clone();
         let pending = self.mcp.auto.is_some();
         let busy = self.busy() || self.mcp.file.is_none();
-        h_flex()
+        v_flex()
             .w_full()
+            .min_w_0()
             .max_w(rems(56.))
             .gap_2()
-            .items_center()
             .child(
                 v_flex()
-                    .flex_1()
+                    .w_full()
+                    .min_w_0()
                     .gap_1()
                     .child(editor::field_label("autoEnableCodemode", cx))
                     .when(pending, |label| {
@@ -755,58 +768,81 @@ impl FilePages {
                     }),
             )
             .child(
-                Button::new("file-auto")
-                    .small()
-                    .outline()
-                    .w_80()
-                    .label(label)
-                    .dropdown_caret(true)
-                    .disabled(busy)
-                    .accessibility_label(t(cx, "pi-files-label-autoEnableCodemode"))
-                    .dropdown_menu(move |menu, _, cx| {
-                        [
-                            ("pi-value-unset", None),
-                            ("pi-files-on", Some(Value::Bool(true))),
-                            ("pi-files-off", Some(Value::Bool(false))),
-                        ]
-                        .into_iter()
-                        .fold(menu, |menu, (label, value)| {
-                            let e = e.clone();
-                            menu.item(PopupMenuItem::new(t(cx, label)).on_click(move |_, _, cx| {
-                                e.update(cx, |this, cx| this.set_auto(value.clone(), cx))
-                            }))
-                        })
-                    }),
-            )
-            .child(
-                Button::new("file-auto-menu")
-                    .w_6()
-                    .ghost()
-                    .xsmall()
-                    .icon(IconName::Ellipsis)
-                    .accessibility_label(t(cx, "pi-field-actions"))
-                    .disabled(busy)
-                    .dropdown_menu(move |menu, _, cx| {
-                        let e = menu_e.clone();
-                        let clear = menu_e.clone();
-                        menu.when(pending, |menu| {
-                            menu.item(PopupMenuItem::new(t(cx, "pi-menu-revert")).on_click(
-                                move |_, _, cx| {
-                                    e.update(cx, |this, cx| {
-                                        this.mcp.auto = None;
-                                        cx.notify()
-                                    })
-                                },
-                            ))
-                        })
-                        .item(
-                            PopupMenuItem::new(t(cx, "pi-value-unset")).on_click(
-                                move |_, _, cx| {
-                                    clear.update(cx, |this, cx| this.set_auto(None, cx))
-                                },
-                            ),
-                        )
-                    }),
+                h_flex()
+                    .w_full()
+                    .min_w_0()
+                    .gap_2()
+                    .child(
+                        Button::new("file-auto")
+                            .small()
+                            .outline()
+                            .flex_1()
+                            .min_w_0()
+                            .label(label)
+                            .dropdown_caret(true)
+                            .disabled(busy)
+                            .accessibility_label(t(cx, "pi-files-label-autoEnableCodemode"))
+                            .dropdown_menu(move |menu, _, cx| {
+                                let unknown =
+                                    current.as_ref().is_some_and(|value| !value.is_boolean());
+                                [
+                                    ("pi-value-unset", None),
+                                    ("pi-files-on", Some(Value::Bool(true))),
+                                    ("pi-files-off", Some(Value::Bool(false))),
+                                ]
+                                .into_iter()
+                                .fold(menu, |menu, (label, value)| {
+                                    let e = e.clone();
+                                    menu.item(
+                                        PopupMenuItem::new(t(cx, label))
+                                            .checked(value == current)
+                                            .on_click(move |_, _, cx| {
+                                                e.update(cx, |this, cx| {
+                                                    this.set_auto(value.clone(), cx)
+                                                })
+                                            }),
+                                    )
+                                })
+                                .when(unknown, |menu| {
+                                    menu.item(
+                                        PopupMenuItem::new(t(cx, "pi-resource-unsupported"))
+                                            .checked(true)
+                                            .disabled(true),
+                                    )
+                                })
+                            }),
+                    )
+                    .child(
+                        Button::new("file-auto-menu")
+                            .w_6()
+                            .flex_shrink_0()
+                            .ghost()
+                            .xsmall()
+                            .icon(IconName::Ellipsis)
+                            .accessibility_label(t(cx, "pi-field-actions"))
+                            .disabled(busy)
+                            .dropdown_menu(move |menu, _, cx| {
+                                let e = menu_e.clone();
+                                let clear = menu_e.clone();
+                                menu.when(pending, |menu| {
+                                    menu.item(PopupMenuItem::new(t(cx, "pi-menu-revert")).on_click(
+                                        move |_, _, cx| {
+                                            e.update(cx, |this, cx| {
+                                                this.mcp.auto = None;
+                                                cx.notify()
+                                            })
+                                        },
+                                    ))
+                                })
+                                .item(
+                                    PopupMenuItem::new(t(cx, "pi-value-unset")).on_click(
+                                        move |_, _, cx| {
+                                            clear.update(cx, |this, cx| this.set_auto(None, cx))
+                                        },
+                                    ),
+                                )
+                            }),
+                    ),
             )
             .into_any_element()
     }
@@ -959,6 +995,81 @@ mod tests {
             self.files
                 .update(cx, |files, cx| files.render_page(self.kind, window, cx))
         }
+    }
+    struct AutoMounted(gpui_kit::Entity<super::FilePages>);
+    impl gpui_kit::Render for AutoMounted {
+        fn render(
+            &mut self,
+            _: &mut gpui_kit::Window,
+            cx: &mut gpui_kit::Context<Self>,
+        ) -> impl gpui_kit::IntoElement {
+            use gpui_kit::{ParentElement as _, Styled as _};
+            gpui_kit::div()
+                .w_full()
+                .child(self.0.update(cx, |files, cx| files.render_auto(cx)))
+        }
+    }
+    #[gpui_kit::test]
+    fn codemode_choice_fits_and_preserves_unknown_until_explicit_selection(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        use gpui_kit::AppContext as _;
+        use gpui_kit::test::TestWindowExt as _;
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::German, cx);
+        });
+        let agent = tempfile::tempdir().unwrap();
+        let path = agent.path().join("mcp.json");
+        let original = r#"{"autoEnableCodemode":"future","mcpServers":{}}"#;
+        std::fs::write(&path, original).unwrap();
+        let mut owner = None;
+        let (_, cx) = cx.add_window_view(|window, cx| {
+            let files = cx.new(|cx| {
+                let mut files = super::FilePages::new(cx);
+                files.agent = Ok(agent.path().to_owned());
+                files.mcp.file = Some(File::load(Kind::Mcp, &path).unwrap());
+                files
+            });
+            owner = Some(files.clone());
+            let mounted = cx.new(|_| AutoMounted(files));
+            gpui_kit::component::Root::new(mounted, window, cx)
+        });
+        let owner = owner.unwrap();
+        cx.simulate_resize(gpui_kit::size(gpui_kit::px(800.), gpui_kit::px(600.)));
+        cx.update(|window, cx| {
+            window.render_frame(cx);
+            assert!(window.find("file-auto-menu").bounds().right() <= gpui_kit::px(800.));
+            window.click("file-auto", cx);
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            window.render_frame(cx);
+            assert_eq!(
+                window.within("popup-menu").find(3usize).label(),
+                Some("Nicht unterstütztes Format · schreibgeschützt")
+            );
+            window.within("popup-menu").click(3usize, cx);
+            assert_eq!(owner.read(cx).mcp.auto, None);
+            window.within("popup-menu").click(0usize, cx);
+        });
+        cx.run_until_parked();
+        owner.read_with(cx, |files, _| assert_eq!(files.mcp.auto, Some(None)));
+        for (index, expected) in [
+            (1usize, Some(json!(true))),
+            (2, Some(json!(false))),
+            (0, None),
+        ] {
+            cx.update(|window, cx| window.click("file-auto", cx));
+            cx.run_until_parked();
+            cx.update(|window, cx| {
+                window.render_frame(cx);
+                window.within("popup-menu").click(index, cx);
+            });
+            cx.run_until_parked();
+            owner.read_with(cx, |files, _| assert_eq!(files.mcp.auto, Some(expected)));
+        }
+        assert_eq!(std::fs::read_to_string(path).unwrap(), original);
     }
     #[gpui_kit::test]
     fn add_entry_button_opens_both_editors_without_reentering_owner(

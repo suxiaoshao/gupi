@@ -26,6 +26,8 @@
 
 **[Pi 供应商认证（Gupi #48）](issue-48/README.md)**：`auth.json` 的 API Key 设置/移除、OAuth 状态与注销、按需认证检查，以及与 Pi 文件锁兼容的写入（开发方案）。
 
+**[设置页布局、无障碍与文案修正](settings-polish/README.md)**：最小窗口与长语言下的布局、控件无障碍名称与菜单勾号、模板任务对话框、资源命名规则、用词统一及 gallery 隔离（开发方案）。
+
 **[性能采集](performance.md)**：开发专用全程时间线、真实 Pi 会话、发行隔离和前后对比。
 
 面向用户的入口：[English](../../README.md) · [简体中文](../../README.zh-CN.md)。每份 README 完整介绍产品、安装与日常使用。
@@ -34,7 +36,7 @@
 
 **[应用更新](app-updates/README.md)**：检查、下载、签名验证、安装与重启的实现，原生引擎的退出协调、发行配置和验证范围。
 
-本地构建环境见 README 的[安装章节](../../README.zh-CN.md#安装)，可分发产物使用[发行指南](../releasing.md)中的原生工具链。UI 与 RPC 隔离体验入口分别为 `script/gupi-ui-gallery`、`script/gupi-runtime-gallery`；它们使用已有 Pi、临时配置和 `tests/fixtures/`，不会向日常 Pi 配置注册扩展。脚本分别需要 Python 3 和 Node.js，均由 `nix develop` 提供；Python 不是 Gupi 应用运行或 Rust 构建的前置要求。
+本地构建环境见 README 的[安装章节](../../README.zh-CN.md#安装)，可分发产物使用[发行指南](../releasing.md)中的原生工具链。UI 与 RPC 隔离体验入口分别为 `cargo run -p xtask --locked -- gallery ui`、`cargo run -p xtask --locked -- gallery runtime`；它们使用已有 Pi、临时配置和 `tests/fixtures/`，不会向日常 Pi 配置注册扩展。启动器不需要 Python/Node；Pi 仍需其自身运行时，macOS UI bootstrap 需要命令行工具的 `/usr/bin/cc`。UI 退出后删除临时目录（`--keep` 保留），`gallery ui --cleanup ROOT_NAME...` 删除点名的闲置目录；runtime 目录始终保留。仅支持 macOS 与 Linux。
 
 历史 `issue-*` 目录及未注明仓库的历史编号沿用原 `suxiaoshao/gpui`；已关闭议题和关联 PR 保留在[原仓库](https://github.com/suxiaoshao/gpui/issues?q=is%3Aissue+is%3Aclosed+gupi)。新项目议题使用明确的 `Gupi #N` 链接。
 

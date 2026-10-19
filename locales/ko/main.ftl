@@ -11,7 +11,7 @@ settings-path-help = 비워 두면 pi를 자동으로 찾습니다. 인수 없�
 settings-theme = 모양
 settings-language = 언어
 settings-save-pi = Pi 경로 저장
-settings-reload = 디스크에서 다시 불러오기
+settings-reload = 다시 불러오기
 settings-write-current = 적용된 설정을 디스크에 저장(초안 유지)
 theme-system = 시스템
 theme-light = 라이트
@@ -262,8 +262,8 @@ conversation-history-calls = 도구 호출
 conversation-history-failed = 실행 실패
 conversation-history-stopped = 중단됨
 conversation-history-empty = 텍스트 없는 답변
-composer-model-thinking = 모델 및 추론
-composer-model-refresh = 모델과 추론 수준 새로 고침
+composer-model-thinking = 모델 및 추론 수준
+composer-model-refresh = 모델과 사고 수준 다시 불러오기
 composer-thinking-unavailable = 지원되지 않음
 composer-model-loading = 모델 불러오는 중…
 composer-thinking-loading = 추론 수준 불러오는 중…
@@ -365,20 +365,19 @@ settings-key-unbound = 할당된 단축키 없음
 settings-key-recording = 단축키를 누르세요 (Esc로 취소)
 settings-key-conflict = 단축키가 충돌하거나 유효하지 않습니다
 settings-key-invalid = 올바른 단축키를 입력하거나 비워 두어 할당을 해제하세요
-settings-resource-refresh = 리소스 새로 고침
+settings-resource-refresh = 다시 불러오기
 settings-resource-reload-help = 개인 리소스에만 적용됩니다. 변경 사항을 적용하려면 기존 세션을 직접 다시 불러오세요.
 settings-resource-working = 작업 중…
 settings-resource-pi-required = 먼저 Pi 설정에서 작동하는 Pi 실행 파일을 저장하고 확인하세요.
-settings-resource-invalid-name = 이름에는 영문자, 숫자, 하이픈, 밑줄을 사용할 수 있습니다.
+settings-resource-invalid-name = 경로 구분자가 없는 올바른 파일 이름을 입력하세요.
 settings-resource-register = 로컬에 추가
 settings-resource-create = 만들기
-settings-resource-name-help = 새 리소스 이름: 영문자, 숫자, 하이픈 또는 밑줄.
 settings-resource-empty = 일치하는 리소스가 없습니다.
 settings-resource-delete = 휴지통으로 이동
 settings-resource-save = 텍스트 저장
 shortcut-save-task = 저장
 settings-resource-loading = 텍스트 읽는 중…
-settings-resource-confirm-remove = 이 항목을 삭제할까요? 선택한 파일만 휴지통으로 이동하고 폴더는 유지합니다.
+settings-resource-confirm-remove = 선택한 파일만 휴지통으로 이동하며 디렉터리는 유지됩니다.
 settings-package-install = 패키지 설치
 settings-package-update = 업데이트
 settings-package-remove = 제거
@@ -389,14 +388,14 @@ settings-package-prompts = 템플릿 { $count}개
 settings-package-themes = 테마 { $count}개
 settings-skill-search = 이름, 설명, 경로 또는 원본으로 스킬 검색
 settings-skill-collapse = 접기
-settings-resource-edit = 편집
+settings-resource-edit = 편집…
 settings-about-gupi = 버전
 settings-about-pi = 버전
 settings-about-path = 확인된 경로
 settings-about-status = 확인 상태
 settings-about-unavailable = 아직 사용할 수 없음
 settings-editor-discard = 저장하지 않은 텍스트 변경 사항을 버릴까요?
-settings-package-confirm-remove = 선택한 Pi 범위에서 이 패키지를 제거할까요? 로컬 패키지는 등록만 해제되며 원본 폴더는 유지됩니다.
+settings-package-confirm-remove = 선택한 Pi 범위에서 패키지를 제거합니다. 로컬 원본 폴더는 유지됩니다.
 settings-package-heading = 설치된 패키지
 settings-extension-heading = 독립 확장
 settings-template-heading = 명령 템플릿
@@ -411,6 +410,7 @@ settings-pi-saved = 현재 경로가 저장되었습니다. Pi를 사용할 수 
 settings-resource-location = 위치 표시
 settings-package-source = 패키지 원본
 settings-package-empty = 설치된 개인 Pi 패키지가 없습니다.
+settings-package-resources-empty = 이 패키지에서 선언한 리소스를 찾지 못했습니다.
 settings-resource-name = 이름
 settings-resource-none = 아직 이 유형의 개인 리소스가 없습니다.
 settings-resource-view = 보기
@@ -451,8 +451,8 @@ image-preview-zoom-in = 확대
 image-preview-zoom-out = 축소
 shortcut-global = 전역 단축키
 shortcut-launcher = 임시 창
-shortcut-add = 템플릿 작업 추가
-shortcut-edit = 템플릿 작업 편집
+shortcut-add = 템플릿 작업 추가…
+shortcut-edit = 템플릿 작업 편집…
 shortcut-delete = 템플릿 작업 삭제
 shortcut-name = 이름
 shortcut-template = 명령 템플릿
@@ -682,11 +682,11 @@ screenshot-permission-required = 스크린샷을 찍으려면 화면 기록 권�
 files-title = 파일
 files-panel = 오른쪽 패널
 files-close = 패널 닫기
-files-refresh = 파일 새로 고침
+files-refresh = 다시 불러오기
 files-preview = 미리 보기
 files-readonly = 읽기 전용
 files-wrap = 줄 바꿈
-files-reload = 다시 읽기
+files-reload = 다시 불러오기
 files-loading = 읽는 중…
 files-expanded = 펼침
 files-collapsed = 접힘
@@ -805,7 +805,7 @@ packages-page = { $page }페이지
 packages-page-empty = 이 페이지에 조건에 맞는 패키지가 없습니다.
 packages-close = 세부 정보 닫기
 packages-local-unavailable = 로컬 패키지 정보를 사용할 수 없습니다. 리소스를 새로 고친 후 패키지를 관리하세요.
-packages-refresh-details = 상세 정보 새로 고침
+packages-refresh-details = 다시 불러오기
 
 ## Pi settings
 settings-domain-label = 설정 영역
@@ -824,7 +824,7 @@ pi-field-model = 기본 모델
 pi-field-model-help = 새 대화의 기본 모델입니다. 모델 범위에 따라 초기 모델이 달라질 수 있습니다.
 pi-field-model-auto = 자동
 pi-field-model-unavailable = 이 모델은 현재 사용할 수 없습니다.
-pi-field-thinking = 기본 사고 수준
+pi-field-thinking = 기본 추론 수준
 pi-thinking-unsupported = { $level }(이 모델에서 지원하지 않음)
 pi-field-compaction = 자동 압축
 pi-field-reserve = 응답용 예약 토큰
@@ -870,7 +870,7 @@ pi-settings-save = 저장
 pi-settings-discard = 버리기
 pi-settings-file-actions = 추가 작업
 pi-settings-open-file = settings.json 열기
-pi-settings-reload = 다시 읽기
+pi-settings-reload = 다시 불러오기
 pi-settings-invalid = 저장하기 전에 표시된 항목을 수정하세요.
 pi-settings-conflict = 일부 설정이 읽은 후 파일에서 변경되었습니다. 다시 읽은 다음 저장하세요.
 pi-settings-locked = 다른 프로세스가 설정 파일을 사용 중입니다. 다시 시도하세요.
@@ -900,7 +900,7 @@ settings-system-use-global = 전역 사용
 settings-system-use-global-title = { $file }을(를) 전역으로 되돌릴까요?
 settings-system-use-global-body = 프로젝트 파일은 휴지통으로 이동하고 Pi는 전역 파일을 사용합니다.
 settings-editor-changed = 파일이 열린 뒤 변경되어 저장하지 않았습니다. 다시 읽어 이 편집을 버리거나 취소하세요.
-settings-editor-reload = 다시 읽기
+settings-editor-reload = 다시 불러오기
 settings-editor-unsaved-title = { $file }의 변경 사항을 저장할까요?
 settings-editor-unsaved-body = 텍스트 변경 사항이 아직 저장되지 않았습니다.
 
@@ -958,7 +958,7 @@ pi-field-shell-prefix = 명령 접두사
 pi-field-npm-command = npm 명령
 pi-field-telemetry = 설치 원격 측정
 pi-field-project-trust = 기본 프로젝트 신뢰
-pi-field-model-thinking = 모델별 사고 수준
+pi-field-model-thinking = 모델별 추론 수준
 pi-field-model-overrides = 모델별 압축
 pi-field-budget-minimal = 최소
 pi-field-budget-low = 낮음
@@ -975,7 +975,7 @@ pi-timeout-disabled = 끄기
 pi-tools-startup-help = 확장과 MCP에서 도구가 추가로 활성화될 수 있습니다. 보안 제한이나 실시간 전체 도구 목록이 아닙니다.
 pi-map-add-model = 모델 추가
 pi-map-remove-local = 현재 범위 재정의 삭제
-pi-model-thinking-help = 시작 시 명시한 수준과 저장된 세션이 우선하며 모델 전환 시 이 값을 사용합니다. 모델 범위의 사고 접미사가 우선합니다.
+pi-model-thinking-help = 시작 시 명시한 수준과 저장된 세션이 우선하며 모델 전환 시 이 값을 사용합니다. 모델 범위의 추론 접미사가 우선합니다.
 pi-model-overrides-help = 각 토큰 값은 독립적으로 상속하며 변경한 필드만 저장합니다.
 pi-trust-always-title = 기본적으로 프로젝트를 신뢰할까요?
 pi-trust-always-body = 적용할 결정이 없는 프로젝트를 Pi가 신뢰하여 설정을 읽고 확장을 실행합니다. 기존의 명시적 결정과 신뢰 확장이 계속 우선합니다.
@@ -996,7 +996,7 @@ pi-choice-streaming = 스트리밍 중
 pi-choice-idle = 유휴 상태에서도
 pi-choice-auto = 자동
 
-pi-thinking-budgets = 사고 예산 (토큰)
+pi-thinking-budgets = 추론 예산 (토큰)
 pi-model-unavailable-short = 사용 불가
 pi-models-unavailable = 모델 목록을 불러올 수 없음
 pi-map-model = 모델
@@ -1091,11 +1091,11 @@ pi-files-label-contextWindow = 컨텍스트 창
 pi-files-label-maxTokens = 최대 출력 토큰
 pi-files-label-input = 입력 유형
 pi-files-label-cost = 비용
-pi-files-label-thinkingLevelMap = 생각 수준 매핑
+pi-files-label-thinkingLevelMap = 추론 수준 매핑
 pi-files-label-inputLimits = 입력 제한
 pi-files-label-promptCache = 프롬프트 캐시
 pi-files-label-samplingParams = 샘플링 매개변수
-pi-files-label-samplingParamsByThinkingLevel = 생각 수준별 샘플링
+pi-files-label-samplingParamsByThinkingLevel = 추론 수준별 샘플링
 pi-files-label-autoEnableCodemode = Codemode 자동 사용
 pi-files-providers = 공급자
 pi-files-servers = MCP 서버
@@ -1172,3 +1172,34 @@ pi-auth-edit-models = 모델 및 공급자에서 편집
 
 pi-provider-empty-id = 〈빈 ID〉
 pi-auth-check-unavailable = Pi는 이 공급자 ID를 확인할 수 없습니다.
+
+settings-skill-name-help = 디렉터리 이름입니다. Pi는 소문자, 숫자, 단일 하이픈으로 64자 이내를 권장합니다.
+
+settings-skill-name-warning = Pi 권장 형식이 아니지만 만들 수 있습니다. 여기서는 SKILL.md의 name을 검사하지 않습니다.
+
+settings-prompt-name-help = /이름으로 호출합니다. 공백은 허용되지 않습니다.
+
+settings-prompt-invalid-name = 공백이나 경로 구분자가 없는 올바른 파일 이름을 입력하세요.
+
+shortcut-add-title = 템플릿 작업 추가
+
+shortcut-edit-title = 템플릿 작업 편집
+
+shortcut-options-failed = 템플릿 또는 모델 옵션을 불러오지 못했습니다. Pi 연결을 확인한 후 다시 시도하세요.
+
+pi-auth-row-action = { $provider }: { $action }
+
+pi-auth-add-title = API 키 추가
+
+pi-auth-replace-editor-title = API 키 교체
+
+temporary-clean-title = 해제된 작업 디렉터리를 정리할까요?
+
+settings-package-remove-title = “{ $name }”을 제거할까요?
+
+settings-resource-delete-title = “{ $name }”을 휴지통으로 옮길까요?
+
+shortcut-delete-title = 템플릿 작업 “{ $name }”을 삭제할까요?
+
+settings-key-control-label = { $command }: { $binding }
+settings-key-control-recording = { $command }: { $binding } — { $state }

@@ -28,14 +28,14 @@
 在仓库根目录运行：
 
 ```sh
-python3 script/gupi-ui-gallery
+cargo run -p xtask --locked -- gallery ui
 ```
 
 默认先构建 Gupi，再打开独立环境；已有当前构建可加 `--no-build`。`--pi /absolute/path/to/pi` 指定已有 Pi，`--keep` 保留退出后的临时目录，`--prepare-only` 仅准备环境。macOS 使用临时的 `Gupi UI Gallery.app` 标识窗口，不是发行包。
 
 在新窗口输入 `/gupi-ui` 打开场景菜单；直接输入 `/gupi-ui select`、`/gupi-ui confirm`、`/gupi-ui input`、`/gupi-ui editor` 可以跳过菜单。`/gupi-ui sequence` 连续展示四种交互。退出待答界面用其取消按钮，结束体验用 Cmd+Q。未匹配的普通输入会被临时插件拦截，不调用模型。
 
-实现位置：[临时插件](../../../tests/fixtures/ui-gallery.mjs)、[隔离启动脚本](../../../script/gupi-ui-gallery)。插件只通过本次 wrapper 的 `--extension` 加载，不注册到个人配置。用户已明确自行测试，后续不自动接管体验窗口或扩展测试范围。
+实现位置：[临时插件](../../../tests/fixtures/ui-gallery.mjs)、[隔离启动器](../../../crates/xtask/src/gallery.rs)。插件只通过本次 wrapper 的 `--extension` 加载，不注册到个人配置。用户已明确自行测试，后续不自动接管体验窗口或扩展测试范围。
 
 ## 1. Pi RPC 究竟有多少种扩展 UI
 

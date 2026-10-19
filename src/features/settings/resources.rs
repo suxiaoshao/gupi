@@ -128,8 +128,7 @@ pub(super) struct ResourcesView {
     names: [Entity<InputState>; 2],
     search: Entity<InputState>,
     prompt_search: Entity<InputState>,
-    previews:
-        std::collections::BTreeMap<PreviewKey, refresh::Operation<String, io::Error, Task<()>>>,
+    previews: std::collections::BTreeMap<PreviewKey, skills::Preview>,
     editor: Option<Editor>,
     open: refresh::Operation<(), io::Error, Task<()>>,
     open_generation: u64,
@@ -357,14 +356,26 @@ impl ResourcesView {
             let result = worker.await;
             let _ = owner.update(cx, |this, cx| {
                 if let Some(preview) = this.previews.get_mut(&target) {
-                    preview.transition(Complete(result));
+                    preview.content.transition(Complete(result));
                 }
                 cx.notify();
             });
         });
         let mut preview = refresh::Operation::new();
         preview.transition(Load(task));
-        self.previews.insert(key, preview);
+        let (focus, scroll) = self
+            .previews
+            .get(&key)
+            .map(|preview| (preview.focus.clone(), preview.scroll.clone()))
+            .unwrap_or_else(|| (cx.focus_handle().tab_stop(true), ScrollHandle::new()));
+        self.previews.insert(
+            key,
+            skills::Preview {
+                content: preview,
+                focus,
+                scroll,
+            },
+        );
         cx.notify();
     }
 
@@ -374,6 +385,7 @@ impl ResourcesView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        skills::init(cx);
         let controller = cx.new(|_| ResourceController::new());
         let source = cx.new(|cx| InputState::new(window, cx));
         let names: [Entity<InputState>; 2] =
@@ -964,7 +976,17 @@ impl ResourcesView {
                 cx,
             ),
             Err(_) => {
-                self.error = Some((kind, t(cx, "settings-resource-invalid-name")));
+                self.error = Some((
+                    kind,
+                    t(
+                        cx,
+                        if kind == Kind::Prompt {
+                            "settings-prompt-invalid-name"
+                        } else {
+                            "settings-resource-invalid-name"
+                        },
+                    ),
+                ));
                 cx.notify();
             }
         }
@@ -994,6 +1016,23 @@ impl ResourcesView {
     ) {
         let owner = cx.entity().downgrade();
         let target = self.active().clone();
+        let display_name = resource
+            .as_ref()
+            .map(|resource| resource.name.clone())
+            .unwrap_or_else(|| {
+                target
+                    .read(cx)
+                    .catalog()
+                    .data()
+                    .and_then(|catalog| {
+                        catalog
+                            .packages
+                            .iter()
+                            .find(|package| package.source == source)
+                    })
+                    .map(packages::package_name)
+                    .unwrap_or_else(|| source.clone())
+            });
         window.open_dialog(cx, move |dialog, _, cx| {
             let owner = owner.clone();
             let target = target.clone();
@@ -1011,15 +1050,19 @@ impl ResourcesView {
                     crate::features::settings::DialogCommit::Danger,
                     cx,
                 ))
-                .title(t(
-                    cx,
-                    if resource.is_some() {
-                        "settings-resource-delete"
-                    } else {
-                        "settings-package-remove"
-                    },
-                ))
-                .child(div().font_weight(FontWeight::MEDIUM).child(source.clone()))
+                .title({
+                    let mut args = fluent_bundle::FluentArgs::new();
+                    args.set("name", display_name.clone());
+                    gupi_settings::i18n::t_with_args(
+                        cx,
+                        if resource.is_some() {
+                            "settings-resource-delete-title"
+                        } else {
+                            "settings-package-remove-title"
+                        },
+                        &args,
+                    )
+                })
                 // The exact file moved to the Trash; a skill's folder stays.
                 .children(resource.as_ref().map(|resource| {
                     div()
@@ -1064,7 +1107,8 @@ impl ResourcesView {
                     .ghost()
                     .small()
                     .icon(IconName::Info)
-                    .tooltip(t(cx, "settings-resource-reload-help")),
+                    .tooltip(t(cx, "settings-resource-reload-help"))
+                    .accessibility_label(t(cx, "settings-resource-reload-help")),
             )
             .child(
                 Button::new("resources-refresh")
@@ -1072,6 +1116,7 @@ impl ResourcesView {
                     .small()
                     .icon(IconName::RotateCw)
                     .tooltip(t(cx, "settings-resource-refresh"))
+                    .accessibility_label(t(cx, "settings-resource-refresh"))
                     .loading(
                         controller.catalog().is_running()
                             || self
@@ -1250,8 +1295,29 @@ impl ResourcesView {
                     .child(
                         gpui_kit::component::form::field()
                             .label(t(cx, "settings-resource-name"))
-                            .description(t(cx, "settings-resource-name-help"))
+                            .description(t(
+                                cx,
+                                if kind == Kind::Skill {
+                                    "settings-skill-name-help"
+                                } else {
+                                    "settings-prompt-name-help"
+                                },
+                            ))
                             .child(Input::new(self.name_input(kind)).disabled(busy)),
+                    )
+                    .when(
+                        kind == Kind::Skill && {
+                            let name = self.name_input(kind).read(cx).value();
+                            !name.trim().is_empty() && !io::recommended_skill_name(name.trim())
+                        },
+                        |view| {
+                            view.child(
+                                div()
+                                    .text_sm()
+                                    .text_color(cx.theme().warning)
+                                    .child(t(cx, "settings-skill-name-warning")),
+                            )
+                        },
                     )
                     .child(
                         h_flex()

@@ -13,6 +13,11 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Launch an isolated UI or runtime fixture (macOS/Linux only).
+    Gallery {
+        #[command(subcommand)]
+        command: crate::gallery::GalleryCommand,
+    },
     /// Prepare native updater SDKs or generate an update signing key.
     Updater {
         #[command(subcommand)]

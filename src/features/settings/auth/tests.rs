@@ -64,7 +64,6 @@ async fn editor_retains_masked_keys_on_busy_and_saves_without_exposing_existing_
         cx.update(|window, cx| {
             window.render_frame(cx);
             window.click("auth-row-p", cx);
-            window.click("auth-edit", cx);
         });
         owner.update(cx, |this, cx| {
             this.names.retain(|name| name != "p");
@@ -124,7 +123,6 @@ async fn editor_retains_masked_keys_on_busy_and_saves_without_exposing_existing_
         assert_eq!(window.find("auth-add").focused(), Some(true));
         window.click("auth-row-p", cx);
         window.render_frame(cx);
-        window.click("auth-edit", cx);
         window.render_frame(cx);
         assert_eq!(window.find("auth-key").value(), None);
         assert!(window.try_find("auth-candidates").is_none());
@@ -164,7 +162,6 @@ async fn editor_retains_masked_keys_on_busy_and_saves_without_exposing_existing_
     cx.update(|window, cx| {
         window.render_frame(cx);
         window.click("auth-row-q", cx);
-        window.click("auth-edit", cx);
         window.click("auth-key", cx);
         window.input("fixture-q-new", cx);
         window.click("auth-save", cx);
@@ -226,16 +223,31 @@ async fn empty_ids_keep_their_identity_through_actions_and_candidate_edits(
     cx.condition(&owner, |this, _| this.loading.is_none()).await;
     cx.update(|window, cx| {
         window.render_frame(cx);
-        assert_eq!(window.find("auth-row-").label(), Some("⟨Empty ID⟩"));
-        assert_eq!(window.find("auth-row-Empty ID").label(), Some("Empty ID"));
-        window.click("auth-row-", cx);
-        window.click("auth-check", cx);
-        assert!(window.has_active_dialog(cx));
+        assert!(
+            window
+                .find("auth-row-")
+                .label()
+                .unwrap()
+                .contains("⟨Empty ID⟩")
+        );
+        assert!(
+            window
+                .find("auth-row-Empty ID")
+                .label()
+                .unwrap()
+                .contains("Empty ID")
+        );
+        window.click("auth-menu-", cx);
+        assert_eq!(
+            window.within("popup-menu").find(3usize).label(),
+            Some("Pi cannot check this provider ID.")
+        );
+        window.within("popup-menu").click(2usize, cx);
         assert!(owner.read(cx).checking.is_empty());
+        window.press("escape", cx);
+        window.click("auth-row-", cx);
     });
-    assert!(cx.debug_bounds("auth-check-unavailable").is_some());
     cx.update(|window, cx| {
-        window.click("auth-edit", cx);
         assert_eq!(window.find("auth-provider").label(), Some("⟨Empty ID⟩"));
         window.click("auth-key", cx);
         window.input("fixture-empty-replacement", cx);
@@ -261,10 +273,11 @@ async fn empty_ids_keep_their_identity_through_actions_and_candidate_edits(
     assert_eq!(root["Empty ID"]["key"], "fixture-literal");
     cx.update(|window, cx| {
         window.render_frame(cx);
-        window.click("auth-row-", cx);
-        window.click("auth-delete", cx);
-        window.click("confirm", cx);
+        window.click("auth-menu-", cx);
+        window.within("popup-menu").click(4usize, cx);
     });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.click("confirm", cx));
     cx.condition(&owner, |this, _| {
         this.saving.is_none() && this.loading.is_none()
     })
@@ -323,11 +336,18 @@ async fn empty_ids_keep_their_identity_through_actions_and_candidate_edits(
     cx.condition(&owner, |this, _| this.loading.is_none()).await;
     cx.update(|window, cx| {
         window.render_frame(cx);
-        window.click("auth-row-", cx);
-        window.click("auth-login", cx);
+        window.click("auth-menu-", cx);
+        window.within("popup-menu").click(2usize, cx);
         assert_eq!(
             cx.read_from_clipboard().unwrap().text().as_deref(),
             Some("/login")
         );
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        window.click("auth-row-", cx);
+        assert!(window.has_active_dialog(cx));
+        assert!(window.find("confirm").label().unwrap().contains("Log out"));
+        window.click("cancel", cx);
     });
 }

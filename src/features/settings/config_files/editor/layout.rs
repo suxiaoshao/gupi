@@ -128,7 +128,7 @@ impl EntryEditor {
             }
             _ => {}
         }
-        let label = match current {
+        let label = match current.clone() {
             Some(Value::Bool(b)) => t(cx, if b { "pi-files-on" } else { "pi-files-off" }),
             Some(v) => v
                 .as_str()
@@ -143,6 +143,9 @@ impl EntryEditor {
                 },
             ),
         };
+        if present && !values.iter().any(|(value, _)| *value == current) {
+            values.push((current.clone(), label.clone()));
+        }
         Button::new(SharedString::from(format!("choice-{}", path_id(path))))
             .w_full()
             .small()
@@ -157,9 +160,10 @@ impl EntryEditor {
             .dropdown_menu(move |menu, _, _| {
                 values.iter().fold(menu, |menu, (value, label)| {
                     let (e, p, value) = (e.clone(), p.clone(), value.clone());
-                    menu.item(PopupMenuItem::new(label.clone()).on_click(move |_, _, cx| {
-                        e.update(cx, |this, cx| this.write(&p, value.clone(), cx))
-                    }))
+                    let checked = value == current;
+                    menu.item(PopupMenuItem::new(label.clone()).checked(checked).on_click(
+                        move |_, _, cx| e.update(cx, |this, cx| this.write(&p, value.clone(), cx)),
+                    ))
                 })
             })
             .into_any_element()
@@ -342,6 +346,7 @@ impl EntryEditor {
             .into_any_element()
     }
     fn definition_row(&self, cx: &Context<Self>) -> AnyElement {
+        let selected_partial = self.partial;
         let e = cx.entity();
         let label = t(
             cx,
@@ -367,14 +372,18 @@ impl EntryEditor {
                         .into_iter()
                         .fold(menu, |menu, (partial, label)| {
                             let e = e.clone();
-                            menu.item(PopupMenuItem::new(t(cx, label)).on_click(move |_, _, cx| {
-                                e.update(cx, |this, cx| {
-                                    this.partial = partial;
-                                    this.entry = Entry::new(Kind::Mcp);
-                                    this.clear_controls(&[]);
-                                    cx.notify()
-                                })
-                            }))
+                            menu.item(
+                                PopupMenuItem::new(t(cx, label))
+                                    .checked(partial == selected_partial)
+                                    .on_click(move |_, _, cx| {
+                                        e.update(cx, |this, cx| {
+                                            this.partial = partial;
+                                            this.entry = Entry::new(Kind::Mcp);
+                                            this.clear_controls(&[]);
+                                            cx.notify()
+                                        })
+                                    }),
+                            )
                         })
                 })
                 .into_any_element(),

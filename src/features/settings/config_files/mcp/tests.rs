@@ -289,3 +289,138 @@ printf '%s' '{"servers":[{"name":"oauth","scope":"global","enabled":true,"state"
     });
     assert_eq!(worker.await.unwrap(), Outcome::Failed);
 }
+
+#[cfg(unix)]
+#[gpui_kit::test]
+async fn login_dialog_updates_result_and_close_button_without_reopening(cx: &mut TestAppContext) {
+    use smol::stream::StreamExt as _;
+    use std::os::unix::fs::PermissionsExt as _;
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        gpui_tokio::init(cx);
+        gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::English, cx);
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mcp.json");
+    std::fs::write(
+        &path,
+        r#"{"mcpServers":{"oauth":{"url":"https://fixture.invalid"}}}"#,
+    )
+    .unwrap();
+    let gate = dir.path().join("finish");
+    let executable = dir.path().join("fake-pi");
+    let mut owner = None;
+    let (_, cx) = cx.add_window_view(|window, cx| {
+        let files = cx.new(|cx| {
+            let mut files = FilePages::new(cx);
+            files.agent = Ok(dir.path().into());
+            files.mcp.file = Some(File::load(Kind::Mcp, &path).unwrap());
+            files
+        });
+        owner = Some(files.clone());
+        let host = cx.new(|cx| {
+            // Do not make the parent page observe completion; the dialog
+            // has its own observer.
+            let subscription = cx.observe(&files, |_, _, _| {});
+            Host {
+                files,
+                mount: Rc::new(RefCell::new(None)),
+                _subscription: subscription,
+            }
+        });
+        Root::new(host, window, cx)
+    });
+    let owner = owner.unwrap();
+    cx.executor().allow_parking();
+    for (code, result) in [
+        (0, "Command completed"),
+        (
+            1,
+            "Login failed. Credentials may have been saved before the connection failed. Check the connection.",
+        ),
+    ] {
+        let _ = std::fs::remove_file(&gate);
+        std::fs::write(
+            &executable,
+            format!(
+                "#!/bin/sh\nwhile [ ! -f '{}' ]; do /bin/sleep 0.01; done\nexit {code}\n",
+                gate.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+        cx.update(|window, cx| {
+            FilePages::mcp_dialog(
+                &owner,
+                "oauth".into(),
+                true,
+                executable.as_os_str().into(),
+                Cancellation::new(),
+                window,
+                cx,
+            );
+            window.render_frame(cx);
+            assert_eq!(window.find("mcp-login-close").label(), Some("Cancel"));
+        });
+        let mut notifications = cx.notifications(&owner);
+        std::fs::write(&gate, "").unwrap();
+        while owner.read_with(cx, |this, _| this.mcp_actions.running.is_some()) {
+            notifications.next().await.expect("owner alive");
+        }
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            // Draw without render_frame's global refresh. The separate
+            // notification regression checks that the dialog requests this update.
+            window.draw(cx).clear(cx);
+            assert!(window.has_active_dialog(cx));
+            assert_eq!(window.find("mcp-login-close").label(), Some("Close"));
+            assert_eq!(window.find("mcp-login-outcome").label(), Some(result));
+        });
+        // The timeout outcome uses the same notification/render path without
+        // imposing the production seven-minute deadline on a view regression.
+        owner.update(cx, |this, cx| {
+            this.mcp_actions.message = Some("pi-mcp-timeout");
+            cx.notify();
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            window.draw(cx).clear(cx);
+            assert_eq!(
+                window.find("mcp-login-outcome").label(),
+                Some("Operation timed out; results are incomplete")
+            );
+            assert_eq!(window.find("mcp-login-close").label(), Some("Close"));
+            window.click("mcp-login-close", cx);
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
+    }
+}
+
+#[gpui_kit::test]
+fn login_progress_notifies_without_rebuilding_the_dialog_owner(cx: &mut TestAppContext) {
+    use std::cell::Cell;
+    cx.update(gpui_kit::init);
+    let agent = tempfile::tempdir().unwrap();
+    let owner = cx.new(|cx| {
+        let mut owner = FilePages::new(cx);
+        owner.agent = Ok(agent.path().into());
+        owner
+    });
+    let progress = cx.new(|cx| super::LoginProgress::new(&owner, 7, cx));
+    let notifications = Rc::new(Cell::new(0));
+    let count = notifications.clone();
+    let _subscription = progress.update(cx, |_, cx| {
+        cx.observe(&progress, move |_, _, _| count.set(count.get() + 1))
+    });
+    owner.update(cx, |owner, cx| {
+        owner.mcp_actions.generation = 7;
+        owner.mcp_actions.message = Some("pi-mcp-completed");
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert!(
+        notifications.get() > 0,
+        "the dialog view must request its own render when FilePages changes"
+    );
+}

@@ -1,5 +1,6 @@
 //! Settings-owned MCP operation state; no credential or raw CLI output is retained.
 use super::*;
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::component::{dialog::DialogFooter, menu::PopupMenu};
 use gupi_resources::pi_mcp::{
     self, Action, Cancellation, Eligibility, Outcome, Report, Server, ServerScope, State,
@@ -57,6 +58,62 @@ fn text(id: impl Into<ElementId>, value: String) -> Stateful<Div> {
         .role(Role::Label)
         .aria_label(value.clone())
         .child(value)
+}
+// The dialog builder is not an owner-observation hook. Keep its changing
+// outcome and action in one independently observed view, without copying state.
+struct LoginProgress {
+    owner: WeakEntity<FilePages>,
+    generation: u64,
+    _subscription: Subscription,
+}
+impl LoginProgress {
+    fn new(owner: &Entity<FilePages>, generation: u64, cx: &mut Context<Self>) -> Self {
+        Self {
+            owner: owner.downgrade(),
+            generation,
+            _subscription: cx.observe(owner, |_, _, cx| cx.notify()),
+        }
+    }
+}
+impl Render for LoginProgress {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.owner.upgrade().map(|owner| {
+            let actions = &owner.read(cx).mcp_actions;
+            let active = actions
+                .running
+                .as_ref()
+                .is_some_and(|running| running.generation == self.generation);
+            let message = (actions.generation == self.generation)
+                .then_some(actions.message)
+                .flatten();
+            (active, message)
+        });
+        let (active, message) = state.unwrap_or((false, None));
+        v_flex()
+            .w_full()
+            .gap_3()
+            .when_some(message, |view, key| {
+                view.child(text("mcp-login-outcome", t(cx, key)).test_support())
+            })
+            .child(
+                DialogFooter::new().child(
+                    Button::new("mcp-login-close")
+                        .label(t(
+                            cx,
+                            if active {
+                                "action-cancel"
+                            } else {
+                                "pi-mcp-close"
+                            },
+                        ))
+                        .on_click(|_, window, cx| {
+                            // Retain the dialog's generation-guarded cancel-on-close.
+                            window
+                                .dispatch_action(Box::new(gpui_kit::component::dialog::Cancel), cx);
+                        }),
+                ),
+            )
+    }
 }
 impl FilePages {
     pub(super) fn mcp_row_status(&self, name: &str, cx: &App) -> String {
@@ -386,6 +443,8 @@ impl FilePages {
         if login && generation.is_none() {
             return;
         }
+        let progress =
+            generation.map(|generation| cx.new(|cx| LoginProgress::new(entity, generation, cx)));
         let owner = entity.downgrade();
         window.open_dialog(cx, move |dialog, _, cx| {
             let mut args = fluent_bundle::FluentArgs::new();
@@ -412,25 +471,11 @@ impl FilePages {
                 ),
             ));
             if login {
-                let active = owner.upgrade().is_some_and(|owner| {
-                    owner
-                        .read(cx)
-                        .mcp_actions
-                        .running
-                        .as_ref()
-                        .is_some_and(|r| Some(r.generation) == generation)
-                });
-                let message = owner
-                    .upgrade()
-                    .and_then(|owner| owner.read(cx).mcp_actions.message);
                 dialog
                     .child(text(
                         "mcp-login-terminal",
                         t_with_args(cx, "pi-mcp-login-terminal", &args),
                     ))
-                    .when_some(message, |dialog, key| {
-                        dialog.child(text("mcp-login-outcome", t(cx, key)))
-                    })
                     .on_close(move |_, _, cx| {
                         let _ = cancel_owner.update(cx, |this, _| {
                             if this
@@ -443,26 +488,7 @@ impl FilePages {
                             }
                         });
                     })
-                    .footer(
-                        DialogFooter::new().child(
-                            Button::new("mcp-login-close")
-                                .label(t(
-                                    cx,
-                                    if active {
-                                        "action-cancel"
-                                    } else {
-                                        "pi-mcp-close"
-                                    },
-                                ))
-                                .on_click(|_, window, cx| {
-                                    // Dispatching Cancel invokes the dialog's close hook.
-                                    window.dispatch_action(
-                                        Box::new(gpui_kit::component::dialog::Cancel),
-                                        cx,
-                                    );
-                                }),
-                        ),
-                    )
+                    .when_some(progress.clone(), |dialog, progress| dialog.footer(progress))
             } else {
                 let owner = owner.clone();
                 let name = name.clone();

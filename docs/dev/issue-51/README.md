@@ -118,3 +118,12 @@
 - Windows 适配器：以实际 `process/containment/windows.rs` 源文件、已锁定 Tokio 1.53.3 / windows-sys 0.61.2，在临时独立 harness 中执行 `cargo check --target x86_64-pc-windows-gnu --offline`，通过。这只证明适配器编译，不代表完整 Windows 应用构建或 Job 原生行为已验证。
 - 原生 Gallery：通过 xtask 创建，直接启动及后续 `open -n` 重启均在 CUA 绑定前核对最终 GUI 的可执行文件、项目 cwd、HOME 及全部 Gupi/Pi/会话覆盖。简体中文默认窗口下，浅/深色均验证检查与状态展示、登录说明及取消；浅色验证 Danger 登出确认及假命令完成。验证未报告行仍为“未检查”、继承全局服务单列、通用配置错误、保留名称不可用原因、失败清空旧报告、离页取消与重入；退出应用时正在执行的假 list 也被回收。每次全局操作的空临时 cwd 在结束后删除。
 - AX 包含说明、作用域/状态与结果文本，不含假 header、URL、工具名、错误原文或原始输出标记；Gallery 日志同样不含这些标记。操作前后夹具 mcp/auth/models 文件 SHA-256 一致，未生成 MCP 凭据文件。截图证据在本次 CUA 内联输出（浅色登出确认、深色登录、深色检查及最终失败状态）；未导出截图文件。命令日志、启动环境核对与夹具哈希保存在 `/tmp/gupi-51-verification/`。验证后 Gallery 与所属假 Pi 均已退出，夹具保留供复核。
+
+
+### 登录对话框的结果更新
+
+- 登录结果文字与 Cancel/Close 按钮由同一个 `LoginProgress` 视图渲染，保留对 `FilePages` 的观察订阅，直接读取匹配操作代次的状态；不再依赖 `open_dialog` builder 随页面通知重新运行。`FilePages` 仍是操作状态的唯一所有者，原有代次校验及关闭时取消规则不变。
+- 新增两个回归：独立验证 owner 通知会触发对话框视图的通知；实际打开正式登录对话框，让受控假 Pi 分别退出 0/1，确认原对话框更新结果并将 Cancel 改为 Close，另验证超时状态通知、结果显示和正常关闭。全帧强制重绘可能顺带重建 dialog layer，所以单独检查观察通知，避免只靠重绘后的画面断言。
+- 本次受影响检查：`cargo fmt --all -- --check`、`cargo clippy -p gupi --all-targets --locked -- -D warnings`、`cargo test -p gupi --locked` 均通过；Gupi 共 129 个测试通过，包含上述 2 个新增回归。测试使用临时 HOME / Pi / 会话目录。
+- 原生隔离 Gallery：假 Pi 登录完成与失败时，对话框保持打开，AX 与截图均确认对应结果文字和“关闭”按钮；运行中的“取消”仍关闭对话框、显示已取消并停止/回收所属假 Pi。按本次确认的验证范围，不在 Gallery 等待 420 秒，超时结果的响应式更新由上述状态通知回归覆盖。
+- 原生绑定前已核对最终 GUI 的可执行文件、cwd 及全部隔离环境覆盖。夹具 mcp/auth/models SHA-256 未变，未生成 `mcp-auth.json`；没有真实 MCP/OAuth 或真实用户配置访问。验证结束后 Gallery 与假 Pi 已退出、操作临时目录已删除。截图为本次 CUA 内联的完成/失败对话框，日志、环境核对及哈希位于 `/tmp/gupi-77-dialog-verification/`。

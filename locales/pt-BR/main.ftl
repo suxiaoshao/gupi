@@ -1225,3 +1225,41 @@ shortcut-delete-title = Excluir a tarefa de modelo “{ $name }”?
 
 settings-key-control-label = { $command }: { $binding }
 settings-key-control-recording = { $command }: { $binding } — { $state }
+
+# MCP CLI login and last-check results
+pi-mcp-help = Estas ações usam o MCP integrado do Pi. Extensões podem ter outros estados de sessão. Serviços com auth.provider podem exigir login aqui e funcionar nas sessões.
+pi-mcp-reconnect = Para carregar toda a configuração MCP salva em uma sessão ativa, escolha Reconectar no menu da conversa. Novas sessões a carregam automaticamente.
+pi-mcp-global-cwd = A verificação global usa uma pasta temporária vazia; caminhos relativos podem funcionar de forma diferente nas sessões.
+pi-mcp-save-first = Salve ou descarte as alterações primeiro
+pi-mcp-check = Verificar conexão
+pi-mcp-running = Em andamento…
+pi-mcp-last-check = Última verificação { $time }
+pi-mcp-config-error = A configuração contém erros
+pi-mcp-untrusted = Projeto não confiável; o Pi usa apenas a configuração global
+pi-mcp-resources = Recursos disponíveis
+pi-mcp-connected = { $count ->
+    [one] Conectado ({ $count } ferramenta)
+   *[other] Conectado ({ $count } ferramentas)
+    }
+pi-mcp-needs-auth = Login necessário
+pi-mcp-connection-failed = Falha na conexão
+pi-mcp-disconnected = Desconectado
+pi-mcp-not-checked = Não verificado
+pi-mcp-unsupported-name = O Pi não permite login ou logout com este nome pela CLI
+pi-mcp-login = Entrar
+pi-mcp-logout = Sair
+pi-mcp-login-title = Entrar no servidor MCP “{ $name }”
+pi-mcp-logout-title = Sair do servidor MCP “{ $name }”?
+pi-mcp-login-help = Se necessário, o Pi abre um navegador. Conclua o login nele.
+pi-mcp-logout-help = Remove as credenciais locais sem revogar a autorização do servidor nem desconectar imediatamente as sessões ativas. Reconecte essas sessões para atualizar as conexões.
+pi-mcp-login-terminal = Se nenhum navegador aparecer, cancele e execute pi mcp login -- { $name } em um terminal.
+pi-mcp-completed = Comando concluído
+pi-mcp-cancelled = Cancelado
+pi-mcp-timeout = Tempo esgotado; resultados incompletos
+pi-mcp-login-failed = Falha no login. As credenciais podem ter sido salvas antes da falha de conexão. Verifique a conexão.
+pi-mcp-failed = Falha na operação
+pi-mcp-close = Fechar
+pi-mcp-scope-project = Projeto
+pi-mcp-disabled = Desativado
+pi-mcp-check-failed = Falha na verificação
+pi-mcp-check-timeout = Tempo de verificação esgotado; resultados incompletos

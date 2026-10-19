@@ -1,7 +1,12 @@
 //! Whitelisted protocol only: subprocess output and stderr never reach callers.
 use super::checkable_provider;
 use serde_json::Value;
-use std::{ffi::OsString, process::Stdio, time::Duration};
+use std::{
+    ffi::{OsStr, OsString},
+    future::Future,
+    process::Stdio,
+    time::Duration,
+};
 use tokio::io::AsyncReadExt as _;
 // Auth metadata replies are small; match the probe output budget without
 // exposing its private helper or probe-specific errors.
@@ -70,10 +75,11 @@ fn parse(provider: &str, code: Option<i32>, bytes: &[u8]) -> Option<Check> {
     })
 }
 /// No shell, refresh, credentials flag or stderr capture. A timeout kills the child.
+/// `variables` may still be loading; the load counts toward the check's time limit.
 pub async fn check(
-    command: &str,
+    command: &OsStr,
     provider: &str,
-    variables: Vec<(OsString, OsString)>,
+    variables: impl Future<Output = Vec<(OsString, OsString)>> + Send,
 ) -> Option<Check> {
     // Pi scans these flags before consuming --provider's following value.
     // In particular, passing --credentials would opt into credential output.
@@ -81,8 +87,9 @@ pub async fn check(
         return None;
     }
     let command = command.to_owned();
-    let resolve_variables = variables.clone();
     let attempt = async move {
+        let variables = variables.await;
+        let resolve_variables = variables.clone();
         let executable = tokio::task::spawn_blocking(move || {
             pi_rpc::probe::resolve_command_with_env(&command, &resolve_variables)
         })
@@ -195,7 +202,7 @@ mod transport_tests {
                 "line\u{2028}separator",
             ] {
                 assert!(
-                    super::check(script.to_str().unwrap(), provider, vec![])
+                    super::check(script.as_os_str(), provider, std::future::ready(vec![]))
                         .await
                         .is_none()
                 );
@@ -227,7 +234,7 @@ mod process_tests {
         .unwrap();
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
         assert_eq!(
-            check(script.to_str().unwrap(), "p", vec![])
+            check(script.as_os_str(), "p", std::future::ready(vec![]))
                 .await
                 .unwrap()
                 .status(),
@@ -249,7 +256,7 @@ mod process_tests {
         .unwrap();
         let result = tokio::time::timeout(
             Duration::from_secs(2),
-            check(script.to_str().unwrap(), "p", vec![]),
+            check(script.as_os_str(), "p", std::future::ready(vec![])),
         )
         .await
         .expect("oversized output must fail before the process exits");
@@ -280,7 +287,7 @@ mod process_tests {
                 let record = dir.path().join("argv");
                 std::fs::write(&script,format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nprintf '%s' '{}'\nprintf '%s' 'fixture-stderr-secret' >&2\nexit {code}\n",record.display(),reply)).unwrap();
                 std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
-                let result = check(script.to_str().unwrap(), provider, vec![])
+                let result = check(script.as_os_str(), provider, std::future::ready(vec![]))
                     .await
                     .unwrap();
                 assert_eq!(
@@ -313,7 +320,11 @@ mod process_tests {
             "#!/bin/sh\nprintf '%s' 'fixture-stderr-secret' >&2\nexit 2\n",
         )
         .unwrap();
-        assert!(check(script.to_str().unwrap(), "p", vec![]).await.is_none());
+        assert!(
+            check(script.as_os_str(), "p", std::future::ready(vec![]))
+                .await
+                .is_none()
+        );
     }
 }
 
@@ -333,16 +344,24 @@ mod resolution_tests {
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
         let env = vec![(OsString::from("PATH"), dir.path().as_os_str().to_owned())];
         assert_eq!(
-            check("pi-auth-snapshot-fixture", "p", env.clone())
-                .await
-                .unwrap()
-                .status(),
+            check(
+                "pi-auth-snapshot-fixture".as_ref(),
+                "p",
+                std::future::ready(env.clone())
+            )
+            .await
+            .unwrap()
+            .status(),
             CheckStatus::Ready
         );
         assert!(
-            check("pi-auth-does-not-exist-fixture", "p", env)
-                .await
-                .is_none()
+            check(
+                "pi-auth-does-not-exist-fixture".as_ref(),
+                "p",
+                std::future::ready(env)
+            )
+            .await
+            .is_none()
         );
     }
 }

@@ -38,6 +38,7 @@ use pi_rpc::LaunchOptions;
 use pi_rpc::protocol::Model;
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -900,6 +901,13 @@ impl PiConfig {
             gupi_pi_runtime::global(cx).update(cx, |pi, cx| pi.close(id, cx).detach());
         }
         self.model_task = None;
+    }
+
+    pub(super) fn mcp_command(&self, cx: &App) -> Option<OsString> {
+        self.applied_pi
+            .read(cx)
+            .data()
+            .map(|data| data.command.as_os_str().to_owned())
     }
 
     /// Lists models from a dedicated Pi with no session and no prompt. A

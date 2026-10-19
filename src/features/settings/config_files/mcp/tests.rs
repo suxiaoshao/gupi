@@ -1,0 +1,426 @@
+use super::{Cancellation, File, FilePages, Kind, Mount, Running, Scope};
+use gpui_kit::component::{
+    Root, WindowExt as _,
+    setting::{SettingGroup, SettingItem, SettingPage, Settings},
+};
+use gpui_kit::test::TestWindowExt as _;
+use gpui_kit::{
+    AppContext as _, Context, Entity, IntoElement, Render, TestAppContext, Window, div,
+};
+use std::{cell::RefCell, rc::Rc};
+struct Host {
+    mount: Rc<RefCell<Option<Cancellation>>>,
+    files: Entity<FilePages>,
+    _subscription: gpui_kit::Subscription,
+}
+impl Render for Host {
+    fn render(&mut self, _: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        let owner = self.files.clone();
+        let mount = self.mount.clone();
+        Settings::new("mcp-operation-test")
+            .page(
+                SettingPage::new("MCP").group(SettingGroup::new().item(SettingItem::render(
+                    move |_, window, cx| {
+                        let page = owner.update(cx, |this, cx| {
+                            this.render_page_with_mcp(
+                                Kind::Mcp,
+                                (Some("fake-pi".into()), true),
+                                window,
+                                cx,
+                            )
+                        });
+                        *mount.borrow_mut() = Some(
+                            window
+                                .use_keyed_state("mcp-cli-page-mount", cx, |_, _| Mount::default())
+                                .read(cx)
+                                .0
+                                .clone(),
+                        );
+                        page
+                    },
+                ))),
+            )
+            .page(
+                SettingPage::new("Other")
+                    .group(SettingGroup::new().item(SettingItem::render(|_, _, _| div()))),
+            )
+    }
+}
+#[gpui_kit::test]
+fn mcp_saved_actions_dirty_guard_logout_and_mount_cancellation(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::English, cx);
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mcp.json");
+    std::fs::write(&path,r#"{"mcpServers":{"oauth":{"url":"https://fixture.invalid"},"stdio":{"command":"not-executed"},"--help":{"url":"https://fixture.invalid"}}}"#).unwrap();
+    let mut owner = None;
+    let mounted_token = Rc::new(RefCell::new(None));
+    let (_, cx) = cx.add_window_view(|window, cx| {
+        let files = cx.new(|cx| {
+            let mut files = FilePages::new(cx);
+            files.agent = Ok(dir.path().into());
+            files.mcp.file = Some(File::load(Kind::Mcp, &path).unwrap());
+            files
+        });
+        owner = Some(files.clone());
+        let host = cx.new(|cx| {
+            let subscription = cx.observe(&files, |_, _, cx| cx.notify());
+            Host {
+                files,
+                mount: mounted_token.clone(),
+                _subscription: subscription,
+            }
+        });
+        Root::new(host, window, cx)
+    });
+    let owner = owner.unwrap();
+    cx.update(|window, cx| {
+        window.render_frame(cx);
+        assert_eq!(window.find("mcp-check").label(), Some("Check connection"));
+        window.click("file-menu-oauth", cx);
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        window.render_frame(cx);
+        assert_eq!(
+            window.within("popup-menu").find(0usize).label(),
+            Some("Log in")
+        );
+        assert_eq!(
+            window.within("popup-menu").find(1usize).label(),
+            Some("Log out")
+        );
+        window.within("popup-menu").click(1usize, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        window.render_frame(cx);
+        assert!(window.has_active_dialog(cx));
+        assert_eq!(window.find("confirm").label(), Some("Log out"));
+        window.close_dialog(cx);
+    });
+    owner.update(cx, |this, cx| {
+        let entry = this.mcp.entry("oauth").unwrap();
+        this.mcp.edit("new-draft".into(), Some(entry));
+        cx.notify();
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        window.render_frame(cx);
+        assert!(owner.read(cx).dirty());
+        window.click("mcp-check", cx);
+        assert!(owner.read(cx).mcp_actions.running.is_none());
+        window.click("file-menu-oauth", cx);
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        window.render_frame(cx);
+        window.within("popup-menu").click(0usize, cx);
+        assert!(!window.has_active_dialog(cx));
+        assert!(owner.read(cx).mcp_actions.running.is_none());
+        window.press("escape", cx);
+    });
+    cx.run_until_parked();
+    owner.update(cx, |this, cx| {
+        this.mcp.edits.clear();
+        cx.notify();
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.click("file-menu---help", cx));
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        window.render_frame(cx);
+        assert_eq!(
+            window.within("popup-menu").find(0usize).label(),
+            Some("Pi cannot log in or out with this name through the CLI")
+        );
+        window.press("escape", cx);
+    });
+    cx.run_until_parked();
+    // The actual keyed mount must cancel operations added later in the same mount.
+    let token = mounted_token.borrow().as_ref().unwrap().child();
+    assert!(!token.is_cancelled());
+    cx.update(|window, cx| window.within("settings-sidebar").click("0-1", cx));
+    cx.run_until_parked();
+    cx.update(|window, cx| window.render_frame(cx));
+    assert!(token.is_cancelled());
+    cx.update(|window, cx| window.within("settings-sidebar").click("0-0", cx));
+    cx.run_until_parked();
+    cx.update(|window, cx| window.render_frame(cx));
+    let reentry = mounted_token.borrow().as_ref().unwrap().child();
+    assert!(!reentry.is_cancelled());
+    assert!(token.is_cancelled());
+    owner.update(cx, |this, cx| {
+        this.mcp_actions.message = Some("pi-mcp-completed");
+        this.mcp_actions.invalidate();
+        assert!(this.mcp_actions.report.is_none() && this.mcp_actions.message.is_none());
+        this.mcp_actions.running = Some(Running {
+            generation: 99,
+            cancellation: reentry.clone(),
+        });
+        assert!(this.busy());
+        this.set_scope(Scope::Project(dir.path().into()), cx);
+        assert!(reentry.is_cancelled());
+        assert!(
+            this.busy(),
+            "cleanup must finish before another operation can start"
+        );
+    });
+}
+
+#[cfg(unix)]
+#[gpui_kit::test]
+async fn mcp_check_projection_invalidation_and_late_scope_completion(cx: &mut TestAppContext) {
+    use super::{Action, Outcome, pi_mcp};
+    use smol::stream::StreamExt as _;
+    use std::os::unix::fs::PermissionsExt as _;
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        gpui_tokio::init(cx);
+        gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::English, cx);
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mcp.json");
+    std::fs::write(&path,r#"{"mcpServers":{"oauth":{"url":"https://fixture.invalid"},"missing":{"url":"https://fixture.invalid"}}}"#).unwrap();
+    let executable = dir.path().join("fake-pi");
+    std::fs::write(&executable,r##"#!/bin/sh
+printf '%s' '{"servers":[{"name":"oauth","scope":"global","enabled":true,"state":"connected","tools":["PRIVATE-TOOL"],"transport":"PRIVATE-TRANSPORT"}],"errors":[]}'
+"##).unwrap();
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let mut owner = None;
+    let (_, cx) = cx.add_window_view(|window, cx| {
+        let files = cx.new(|cx| {
+            let mut files = FilePages::new(cx);
+            files.agent = Ok(dir.path().into());
+            files.mcp.file = Some(File::load(Kind::Mcp, &path).unwrap());
+            files
+        });
+        owner = Some(files.clone());
+        let host = cx.new(|cx| {
+            let subscription = cx.observe(&files, |_, _, cx| cx.notify());
+            Host {
+                files,
+                mount: Rc::new(RefCell::new(None)),
+                _subscription: subscription,
+            }
+        });
+        Root::new(host, window, cx)
+    });
+    let owner = owner.unwrap();
+    let mount = Cancellation::new();
+    let command = executable.into_os_string();
+    cx.update(|window, cx| {
+        assert!(
+            owner
+                .update(cx, |this, cx| this.start_mcp(
+                    Action::Check,
+                    command.clone(),
+                    mount.clone(),
+                    window,
+                    cx
+                ))
+                .is_some()
+        );
+        assert!(
+            owner
+                .update(cx, |this, cx| this.start_mcp(
+                    Action::Check,
+                    command.clone(),
+                    mount.clone(),
+                    window,
+                    cx
+                ))
+                .is_none()
+        );
+    });
+    cx.executor().allow_parking();
+    let mut notifications = cx.notifications(&owner);
+    while owner.read_with(cx, |this, _| this.mcp_actions.running.is_some()) {
+        notifications.next().await.expect("operation owner alive");
+    }
+    owner.read_with(cx, |this, cx| {
+        assert!(this.mcp_actions.report.is_some());
+        assert_eq!(
+            this.mcp_row_status("oauth", cx),
+            "Connected (\u{2068}1\u{2069} tool)"
+        );
+        assert_eq!(this.mcp_row_status("missing", cx), "Not checked");
+    });
+    cx.update(|window, cx| {
+        window.render_frame(cx);
+        assert_eq!(
+            window.find("file-row-oauth").label(),
+            Some("oauth · Connected (\u{2068}1\u{2069} tool)")
+        );
+    });
+    // A fresh operation invalidates the previous report immediately. Scope change
+    // cancels it and its late completion may only release the busy state.
+    cx.update(|window, cx| {
+        owner.update(cx, |this, cx| {
+            this.start_mcp(Action::Check, command.clone(), mount.clone(), window, cx);
+            assert!(this.mcp_actions.report.is_none());
+            this.set_scope(Scope::Project(dir.path().into()), cx);
+        })
+    });
+    cx.executor().allow_parking();
+    let mut notifications = cx.notifications(&owner);
+    while owner.read_with(cx, |this, _| this.mcp_actions.running.is_some()) {
+        notifications.next().await.expect("operation owner alive");
+    }
+    owner.read_with(cx, |this, cx| {
+        assert!(this.mcp_actions.report.is_none() && this.mcp_actions.message.is_none());
+        assert_eq!(this.mcp_row_status("oauth", cx), "Not checked");
+    });
+    // Reserved help tokens are rejected at the backend boundary, independently
+    // of whether a UI menu could accidentally invoke them.
+    let worker = cx.update(|_, cx| {
+        gpui_tokio::Tokio::spawn(
+            cx,
+            pi_mcp::run(
+                command,
+                Action::Login("--help".into()),
+                Scope::Global,
+                Box::pin(std::future::ready(vec![])),
+                Cancellation::new(),
+            ),
+        )
+    });
+    assert_eq!(worker.await.unwrap(), Outcome::Failed);
+}
+
+#[cfg(unix)]
+#[gpui_kit::test]
+async fn login_dialog_updates_result_and_close_button_without_reopening(cx: &mut TestAppContext) {
+    use smol::stream::StreamExt as _;
+    use std::os::unix::fs::PermissionsExt as _;
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        gpui_tokio::init(cx);
+        gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::English, cx);
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mcp.json");
+    std::fs::write(
+        &path,
+        r#"{"mcpServers":{"oauth":{"url":"https://fixture.invalid"}}}"#,
+    )
+    .unwrap();
+    let gate = dir.path().join("finish");
+    let executable = dir.path().join("fake-pi");
+    let mut owner = None;
+    let (_, cx) = cx.add_window_view(|window, cx| {
+        let files = cx.new(|cx| {
+            let mut files = FilePages::new(cx);
+            files.agent = Ok(dir.path().into());
+            files.mcp.file = Some(File::load(Kind::Mcp, &path).unwrap());
+            files
+        });
+        owner = Some(files.clone());
+        let host = cx.new(|cx| {
+            // Do not make the parent page observe completion; the dialog
+            // has its own observer.
+            let subscription = cx.observe(&files, |_, _, _| {});
+            Host {
+                files,
+                mount: Rc::new(RefCell::new(None)),
+                _subscription: subscription,
+            }
+        });
+        Root::new(host, window, cx)
+    });
+    let owner = owner.unwrap();
+    cx.executor().allow_parking();
+    for (code, result) in [
+        (0, "Command completed"),
+        (
+            1,
+            "Login failed. Credentials may have been saved before the connection failed. Check the connection.",
+        ),
+    ] {
+        let _ = std::fs::remove_file(&gate);
+        std::fs::write(
+            &executable,
+            format!(
+                "#!/bin/sh\nwhile [ ! -f '{}' ]; do /bin/sleep 0.01; done\nexit {code}\n",
+                gate.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+        cx.update(|window, cx| {
+            FilePages::mcp_dialog(
+                &owner,
+                "oauth".into(),
+                true,
+                executable.as_os_str().into(),
+                Cancellation::new(),
+                window,
+                cx,
+            );
+            window.render_frame(cx);
+            assert_eq!(window.find("mcp-login-close").label(), Some("Cancel"));
+        });
+        let mut notifications = cx.notifications(&owner);
+        std::fs::write(&gate, "").unwrap();
+        while owner.read_with(cx, |this, _| this.mcp_actions.running.is_some()) {
+            notifications.next().await.expect("owner alive");
+        }
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            // Draw without render_frame's global refresh. The separate
+            // notification regression checks that the dialog requests this update.
+            window.draw(cx).clear(cx);
+            assert!(window.has_active_dialog(cx));
+            assert_eq!(window.find("mcp-login-close").label(), Some("Close"));
+            assert_eq!(window.find("mcp-login-outcome").label(), Some(result));
+        });
+        // The timeout outcome uses the same notification/render path without
+        // imposing the production seven-minute deadline on a view regression.
+        owner.update(cx, |this, cx| {
+            this.mcp_actions.message = Some("pi-mcp-timeout");
+            cx.notify();
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            window.draw(cx).clear(cx);
+            assert_eq!(
+                window.find("mcp-login-outcome").label(),
+                Some("Operation timed out; results are incomplete")
+            );
+            assert_eq!(window.find("mcp-login-close").label(), Some("Close"));
+            window.click("mcp-login-close", cx);
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
+    }
+}
+
+#[gpui_kit::test]
+fn login_progress_notifies_without_rebuilding_the_dialog_owner(cx: &mut TestAppContext) {
+    use std::cell::Cell;
+    cx.update(gpui_kit::init);
+    let agent = tempfile::tempdir().unwrap();
+    let owner = cx.new(|cx| {
+        let mut owner = FilePages::new(cx);
+        owner.agent = Ok(agent.path().into());
+        owner
+    });
+    let progress = cx.new(|cx| super::LoginProgress::new(&owner, 7, cx));
+    let notifications = Rc::new(Cell::new(0));
+    let count = notifications.clone();
+    let _subscription = progress.update(cx, |_, cx| {
+        cx.observe(&progress, move |_, _, _| count.set(count.get() + 1))
+    });
+    owner.update(cx, |owner, cx| {
+        owner.mcp_actions.generation = 7;
+        owner.mcp_actions.message = Some("pi-mcp-completed");
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert!(
+        notifications.get() > 0,
+        "the dialog view must request its own render when FilePages changes"
+    );
+}

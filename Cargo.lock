@@ -5002,6 +5002,7 @@ dependencies = [
  "gpui-tokio",
  "gupi-pi-runtime",
  "ignore",
+ "libc",
  "pi-rpc",
  "regex",
  "reqwest 0.13.5",
@@ -5014,6 +5015,7 @@ dependencies = [
  "tokio",
  "trash",
  "url",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

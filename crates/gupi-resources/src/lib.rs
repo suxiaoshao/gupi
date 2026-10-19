@@ -10,3 +10,4 @@ pub mod resources;
 
 pub mod pi_auth;
 mod pi_lock;
+pub mod pi_mcp;

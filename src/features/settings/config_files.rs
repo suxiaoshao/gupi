@@ -1,5 +1,6 @@
 //! Independent, scope-local drafts for models.json and mcp.json.
 mod editor;
+mod mcp;
 use editor::EntryEditor;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
@@ -81,6 +82,7 @@ pub(super) struct FilePages {
     auth_providers: Option<BTreeSet<String>>,
     auth_loading: Option<Task<()>>,
     auth_generation: u64,
+    mcp_actions: mcp::Actions,
 }
 impl FilePages {
     pub(super) fn new(_: &mut Context<Self>) -> Self {
@@ -97,6 +99,7 @@ impl FilePages {
             auth_providers: None,
             auth_loading: None,
             auth_generation: 0,
+            mcp_actions: mcp::Actions::default(),
         }
     }
     #[cfg(test)]
@@ -122,9 +125,10 @@ impl FilePages {
         self.models.dirty() || self.mcp.dirty()
     }
     pub(super) fn busy(&self) -> bool {
-        self.saving.is_some()
+        self.saving.is_some() || self.mcp_actions.running.is_some()
     }
     pub(super) fn set_scope(&mut self, scope: Scope, cx: &mut Context<Self>) {
+        self.mcp_actions.invalidate();
         self.scope = scope;
         self.models = Draft::default();
         self.mcp = Draft::default();
@@ -182,6 +186,7 @@ impl FilePages {
         if self.busy() {
             return;
         }
+        self.mcp_actions.invalidate();
         self.refresh_auth(cx);
         self.generation += 1;
         let generation = self.generation;
@@ -238,6 +243,7 @@ impl FilePages {
         let Ok(agent) = self.agent.clone() else {
             return;
         };
+        self.mcp_actions.invalidate();
         let scope = self.scope.clone();
         let mut requests = vec![];
         for k in [Kind::Models, Kind::Mcp] {
@@ -303,7 +309,10 @@ impl FilePages {
         cx: &mut App,
     ) {
         if entity.read(cx).busy() {
-            entity.update(cx, |this, _| this.continuation = Some(proceed));
+            entity.update(cx, |this, _| {
+                this.mcp_actions.cancel();
+                this.continuation = Some(proceed);
+            });
             return;
         }
         if !entity.read(cx).dirty() {
@@ -364,6 +373,7 @@ impl FilePages {
         let e = entity.clone();
         let h = entity.clone();
         let config = config.clone();
+        let mcp_config = config.clone();
         let page = SettingPage::new(t(
             cx,
             if kind == Kind::Models {
@@ -458,7 +468,13 @@ impl FilePages {
         )
         .group(
             SettingGroup::new().item(SettingItem::render(move |_, window, cx| {
-                e.update(cx, |this, cx| this.render_page(kind, window, cx))
+                let context = (
+                    mcp_config.read(cx).mcp_command(cx),
+                    mcp_config.read(cx).trusted() == Some(true),
+                );
+                e.update(cx, |this, cx| {
+                    this.render_page_with_mcp(kind, context, window, cx)
+                })
             })),
         );
         if kind == Kind::Mcp {
@@ -475,7 +491,29 @@ impl FilePages {
         }
     }
 
-    fn render_page(&mut self, kind: Kind, _: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    #[cfg(test)]
+    fn render_page(
+        &mut self,
+        kind: Kind,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        self.render_page_with_mcp(kind, (None, false), window, cx)
+    }
+    fn render_page_with_mcp(
+        &mut self,
+        kind: Kind,
+        context: (Option<std::ffi::OsString>, bool),
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let mount = (kind == Kind::Mcp).then(|| {
+            window
+                .use_keyed_state("mcp-cli-page-mount", cx, |_, _| mcp::Mount::default())
+                .read(cx)
+                .0
+                .clone()
+        });
         if kind == Kind::Models && matches!(self.scope, Scope::Project(_)) {
             return div()
                 .text_sm()
@@ -495,6 +533,9 @@ impl FilePages {
                 });
             });
         }
+        let controls = mount
+            .as_ref()
+            .map(|mount| self.render_mcp_controls(context.0.clone(), mount.clone(), cx));
         let draft = self.draft(kind);
         let mut body = v_flex().w_full().min_w_0().max_w(rems(56.)).gap_2();
         let add = cx.entity();
@@ -511,13 +552,13 @@ impl FilePages {
                     },
                 ))
                 .into_any_element(),
-            Some(
+            (kind == Kind::Models).then(|| {
                 div()
                     .text_sm()
                     .text_color(cx.theme().muted_foreground)
                     .child(t(cx, "pi-files-startup-only"))
-                    .into_any_element(),
-            ),
+                    .into_any_element()
+            }),
             Button::new("file-add")
                 .small()
                 .label(t(cx, "pi-files-add"))
@@ -525,6 +566,9 @@ impl FilePages {
                 .on_click(move |_, window, cx| Self::open_editor(&add, kind, None, window, cx))
                 .into_any_element(),
         ));
+        if let Some(controls) = controls {
+            body = body.child(controls);
+        }
         if self.loading.is_some() {
             return body.child(t(cx, "pi-settings-loading")).into_any_element();
         }
@@ -589,15 +633,36 @@ impl FilePages {
                 };
                 t_with_args(cx, "pi-files-provider-summary", &args)
             };
-            let label = if entry.disabled() {
-                format!("{label} · {}", t(cx, "pi-files-disabled"))
+            let label = if kind == Kind::Mcp {
+                format!("{label} · {}", self.mcp_row_status(&name, cx))
             } else {
                 label
             };
+            let label =
+                if entry.disabled() && (kind != Kind::Mcp || !self.mcp_disabled_in_report(&name)) {
+                    format!("{label} · {}", t(cx, "pi-files-disabled"))
+                } else {
+                    label
+                };
             let has_auth = kind == Kind::Models && self.has_stored_credentials(&name);
             let e = cx.entity();
             let open = (e.clone(), name.clone());
             let row_name = name.clone();
+            let oauth = if kind == Kind::Mcp {
+                self.mcp.file.as_ref().map(|file| {
+                    file.mcp_oauth_eligibility(
+                        &name,
+                        self.global_mcp.as_ref().and_then(|f| f.as_ref().ok()),
+                        &self.scope,
+                        context.1,
+                    )
+                })
+            } else {
+                None
+            };
+            let command = context.0.clone();
+            let mount = mount.clone();
+            let cli_disabled = self.dirty() || busy || command.is_none();
             body = body.child(
                 h_flex()
                     .gap_2()
@@ -611,7 +676,7 @@ impl FilePages {
                             .accessibility_label(if kind == Kind::Models {
                                 super::provider_label(&name, cx)
                             } else {
-                                name.clone()
+                                format!("{name} · {}", self.mcp_row_status(&name, cx))
                             })
                             .disabled(busy)
                             .when(kind == Kind::Models, |row| row.h_auto().py_1())
@@ -695,6 +760,22 @@ impl FilePages {
                                         ),
                                     )
                                 });
+                                let menu = if let (Some(eligibility), Some(mount)) =
+                                    (oauth, mount.as_ref())
+                                {
+                                    Self::mcp_menu(
+                                        menu,
+                                        &e,
+                                        &row_name,
+                                        eligibility,
+                                        command.clone(),
+                                        mount.clone(),
+                                        cli_disabled,
+                                        cx,
+                                    )
+                                } else {
+                                    menu
+                                };
                                 menu.item(PopupMenuItem::new(t(cx, "pi-files-edit")).on_click(
                                     move |_, w, cx| {
                                         Self::open_editor(
@@ -719,6 +800,9 @@ impl FilePages {
                             }),
                     ),
             );
+        }
+        if kind == Kind::Mcp {
+            body = body.child(self.render_mcp_results(cx));
         }
         body.into_any_element()
     }

@@ -26,6 +26,8 @@
 
 **[Pi 供应商认证（Gupi #48）](issue-48/README.md)**：`auth.json` 的 API Key 设置/移除、OAuth 状态与注销、按需认证检查，以及与 Pi 文件锁兼容的写入（开发方案）。
 
+**[设置页布局、无障碍与文案修正](settings-polish/README.md)**：最小窗口与长语言下的布局、控件无障碍名称与菜单勾号、模板任务对话框、资源命名规则、用词统一及 gallery 隔离（开发方案）。
+
 **[性能采集](performance.md)**：开发专用全程时间线、真实 Pi 会话、发行隔离和前后对比。
 
 面向用户的入口：[English](../../README.md) · [简体中文](../../README.zh-CN.md)。每份 README 完整介绍产品、安装与日常使用。

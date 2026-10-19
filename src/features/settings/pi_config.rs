@@ -902,6 +902,13 @@ impl PiConfig {
         self.model_task = None;
     }
 
+    pub(super) fn mcp_command(&self, cx: &App) -> Option<String> {
+        self.applied_pi
+            .read(cx)
+            .data()
+            .map(|data| data.command.to_string_lossy().into_owned())
+    }
+
     /// Lists models from a dedicated Pi with no session and no prompt. A
     /// project query runs in that project, so Pi applies its own trust rules.
     fn load_models(&mut self, window: &mut Window, cx: &mut Context<Self>) {

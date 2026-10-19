@@ -413,7 +413,7 @@ impl PiConfig {
             .when_some(path.clone(), |this, path| {
                 this.tooltip(path.display().to_string())
             })
-            .disabled(self.is_saving())
+            .disabled(self.is_saving() || self.file_pages.read(cx).busy())
             .dropdown_menu({
                 let entity = entity.clone();
                 move |menu, _, cx| {

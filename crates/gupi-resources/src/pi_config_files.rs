@@ -98,6 +98,71 @@ impl File {
                 value: value.clone(),
             })
     }
+    /// Saved-definition OAuth availability only. Never evaluates values or reads
+    /// Pi's MCP credential store; Pi remains the final configuration validator.
+    pub fn mcp_oauth_eligibility(
+        &self,
+        name: &str,
+        global: Option<&Self>,
+        scope: &Scope,
+        trusted: bool,
+    ) -> crate::pi_mcp::Eligibility {
+        use crate::pi_mcp::Eligibility;
+        if !crate::pi_mcp::addressable_name(name) {
+            return Eligibility::UnsupportedName;
+        }
+        if matches!(scope, Scope::Project(_)) && !trusted {
+            return Eligibility::UntrustedProject;
+        }
+        if self.kind != Kind::Mcp {
+            return Eligibility::Ineligible;
+        }
+        let Some(entry) = self.entry(name) else {
+            return Eligibility::Ineligible;
+        };
+        // Ambiguous namespace definitions are never guessed to be CLI targets.
+        let namespace = name.replace('-', "_");
+        let Ok(names) = self.names() else {
+            return Eligibility::Ineligible;
+        };
+        if names
+            .iter()
+            .filter(|other| other.replace('-', "_") == namespace)
+            .count()
+            != 1
+        {
+            return Eligibility::Ineligible;
+        }
+        let project = matches!(scope, Scope::Project(_));
+        if project
+            && global.is_some_and(|file| {
+                file.names().is_ok_and(|names| {
+                    names
+                        .iter()
+                        .any(|other| other != name && other.replace('-', "_") == namespace)
+                })
+            })
+        {
+            return Eligibility::Ineligible;
+        }
+        let eligible = if project && entry.partial() {
+            let allowed = entry.value.as_object().is_some_and(|map| {
+                map.keys()
+                    .all(|key| matches!(key.as_str(), "enabled" | "exposure" | "toolExposure"))
+            });
+            allowed
+                && global
+                    .and_then(|file| file.entry(name))
+                    .is_some_and(|base| base.mcp_uses_oauth())
+        } else {
+            entry.mcp_uses_oauth()
+        };
+        if eligible {
+            Eligibility::Eligible
+        } else {
+            Eligibility::Ineligible
+        }
+    }
     pub fn auto_enable(&self) -> Option<Value> {
         self.document.get(&["autoEnableCodemode"]).cloned()
     }
@@ -217,6 +282,37 @@ impl Entry {
         Self {
             kind,
             value: Value::Object(Map::new()),
+        }
+    }
+    fn mcp_uses_oauth(&self) -> bool {
+        let Some(map) = self.value.as_object() else {
+            return false;
+        };
+        if self.kind != Kind::Mcp || map.contains_key("auth") || map.contains_key("command") {
+            return false;
+        }
+        if map
+            .get("type")
+            .is_some_and(|value| !matches!(value.as_str(), Some("http" | "streamable-http")))
+        {
+            return false;
+        }
+        let Some(url) = map
+            .get("url")
+            .and_then(Value::as_str)
+            .and_then(|value| url::Url::parse(value).ok())
+        else {
+            return false;
+        };
+        if !matches!(url.scheme(), "http" | "https") || url.host().is_none() {
+            return false;
+        }
+        match map.get("headers") {
+            None => true,
+            Some(Value::Object(headers)) => headers.iter().all(|(key, value)| {
+                !key.eq_ignore_ascii_case("authorization") && value.is_string()
+            }),
+            _ => false,
         }
     }
     pub fn is_object(&self) -> bool {

@@ -1226,3 +1226,41 @@ shortcut-delete-title = Delete template task “{ $name }”?
 
 settings-key-control-label = { $command }: { $binding }
 settings-key-control-recording = { $command }: { $binding } — { $state }
+
+# MCP CLI login and last-check results
+pi-mcp-help = This checks and signs in to Pi’s built-in MCP. Extensions replacing it may have different session states. Services using auth.provider may need login in this check but work in sessions.
+pi-mcp-reconnect = To load saved MCP configuration fully in a running session, choose Reconnect in its conversation menu. New sessions load it automatically.
+pi-mcp-global-cwd = Global checks run in an empty temporary directory; relative paths may behave differently in sessions.
+pi-mcp-save-first = Save or discard changes first
+pi-mcp-check = Check connection
+pi-mcp-running = Working…
+pi-mcp-last-check = Last check { $time }
+pi-mcp-config-error = Configuration has errors
+pi-mcp-untrusted = Project is not trusted; Pi uses only global configuration
+pi-mcp-resources = Resources available
+pi-mcp-connected = { $count ->
+    [one] Connected ({ $count } tool)
+   *[other] Connected ({ $count } tools)
+    }
+pi-mcp-needs-auth = Login required
+pi-mcp-connection-failed = Connection failed
+pi-mcp-disconnected = Not connected
+pi-mcp-not-checked = Not checked
+pi-mcp-unsupported-name = Pi cannot log in or out with this name through the CLI
+pi-mcp-login = Log in
+pi-mcp-logout = Log out
+pi-mcp-login-title = Log in to MCP server “{ $name }”
+pi-mcp-logout-title = Log out of MCP server “{ $name }”?
+pi-mcp-login-help = If login is needed, Pi opens a browser. Complete login there.
+pi-mcp-logout-help = Deletes locally saved credentials without revoking server authorization or immediately disconnecting running sessions. Reconnect those sessions to refresh their connections.
+pi-mcp-login-terminal = If no browser appears, cancel and run pi mcp login -- { $name } in a terminal.
+pi-mcp-completed = Command completed
+pi-mcp-cancelled = Cancelled
+pi-mcp-timeout = Operation timed out; results are incomplete
+pi-mcp-login-failed = Login failed. Credentials may have been saved before the connection failed. Check the connection.
+pi-mcp-failed = Operation failed
+pi-mcp-close = Close
+pi-mcp-scope-project = Project
+pi-mcp-disabled = Disabled
+pi-mcp-check-failed = Check failed
+pi-mcp-check-timeout = Check timed out; results are incomplete

@@ -1226,3 +1226,41 @@ shortcut-delete-title = Vorlagenaufgabe „{ $name }“ löschen?
 
 settings-key-control-label = { $command }: { $binding }
 settings-key-control-recording = { $command }: { $binding } — { $state }
+
+# MCP CLI login and last-check results
+pi-mcp-help = Prüfung und Anmeldung gelten für Pis integriertes MCP. Erweiterungen können andere Sitzungszustände haben. Dienste mit auth.provider können hier eine Anmeldung benötigen und in Sitzungen dennoch funktionieren.
+pi-mcp-reconnect = Damit eine laufende Sitzung die gespeicherte MCP-Konfiguration vollständig lädt, wählen Sie im Gesprächsmenü „Erneut verbinden“. Neue Sitzungen laden sie automatisch.
+pi-mcp-global-cwd = Globale Prüfungen laufen in einem leeren temporären Ordner. Relative Pfade können sich in Sitzungen anders verhalten.
+pi-mcp-save-first = Änderungen zuerst speichern oder verwerfen
+pi-mcp-check = Verbindung prüfen
+pi-mcp-running = Wird ausgeführt…
+pi-mcp-last-check = Letzte Prüfung { $time }
+pi-mcp-config-error = Konfiguration enthält Fehler
+pi-mcp-untrusted = Projekt nicht vertrauenswürdig; Pi nutzt nur die globale Konfiguration
+pi-mcp-resources = Ressourcen verfügbar
+pi-mcp-connected = { $count ->
+    [one] Verbunden ({ $count } Werkzeug)
+   *[other] Verbunden ({ $count } Werkzeuge)
+    }
+pi-mcp-needs-auth = Anmeldung erforderlich
+pi-mcp-connection-failed = Verbindung fehlgeschlagen
+pi-mcp-disconnected = Nicht verbunden
+pi-mcp-not-checked = Nicht geprüft
+pi-mcp-unsupported-name = Pi unterstützt die CLI-Anmeldung und -Abmeldung für diesen Namen nicht
+pi-mcp-login = Anmelden
+pi-mcp-logout = Abmelden
+pi-mcp-login-title = Bei MCP-Dienst „{ $name }“ anmelden
+pi-mcp-logout-title = Von MCP-Dienst „{ $name }“ abmelden?
+pi-mcp-login-help = Falls nötig, öffnet Pi einen Browser. Schließen Sie dort die Anmeldung ab.
+pi-mcp-logout-help = Löscht lokal gespeicherte Zugangsdaten, ohne die Serverautorisierung zu widerrufen oder laufende Sitzungen sofort zu trennen. Verbinden Sie diese Sitzungen erneut.
+pi-mcp-login-terminal = Falls kein Browser erscheint, abbrechen und pi mcp login -- { $name } im Terminal ausführen.
+pi-mcp-completed = Befehl abgeschlossen
+pi-mcp-cancelled = Abgebrochen
+pi-mcp-timeout = Zeitlimit überschritten; Ergebnisse unvollständig
+pi-mcp-login-failed = Anmeldung fehlgeschlagen. Zugangsdaten wurden möglicherweise vor dem Verbindungsfehler gespeichert. Prüfen Sie die Verbindung.
+pi-mcp-failed = Vorgang fehlgeschlagen
+pi-mcp-close = Schließen
+pi-mcp-scope-project = Projekt
+pi-mcp-disabled = Deaktiviert
+pi-mcp-check-failed = Prüfung fehlgeschlagen
+pi-mcp-check-timeout = Zeitlimit der Prüfung überschritten; Ergebnisse unvollständig

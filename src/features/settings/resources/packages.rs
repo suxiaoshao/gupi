@@ -534,7 +534,7 @@ impl ResourcesView {
                     div()
                         .text_sm()
                         .text_color(cx.theme().muted_foreground)
-                        .child(t(cx, "settings-package-empty")),
+                        .child(t(cx, "settings-package-resources-empty")),
                 );
             }
             card = card.content(contents);

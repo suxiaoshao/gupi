@@ -83,6 +83,14 @@ async fn entry_refreshes_metadata_without_resetting_drafts_or_looping(cx: &mut T
     });
     cx.update(|window, cx| window.render_frame(cx));
     assert!(cx.debug_bounds("file-auth-p").is_some());
+    cx.update(|_, cx| gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::German, cx));
+    cx.simulate_resize(gpui_kit::size(gpui_kit::px(800.), gpui_kit::px(600.)));
+    cx.update(|window, cx| window.render_frame(cx));
+    let identity = cx.debug_bounds("file-name-p").unwrap();
+    let marker = cx.debug_bounds("file-auth-p").unwrap();
+    assert!(identity.size.width > gpui_kit::px(100.));
+    assert!(marker.top() >= identity.bottom());
+    cx.update(|window, _| assert!(window.find("file-add").bounds().right() <= gpui_kit::px(800.)));
     cx.update(|window, cx| window.within("settings-sidebar").click("0-1", cx));
     std::fs::write(&auth, "invalid").unwrap();
     cx.update(|window, cx| window.within("settings-sidebar").click("0-0", cx));

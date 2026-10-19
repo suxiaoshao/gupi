@@ -2,7 +2,10 @@ use super::*;
 use gpui_kit::component::dialog::DialogFooter;
 use gpui_kit::component::{
     form::{Field, Form},
-    input::{Input, InputEvent, InputState},
+    input::{
+        Input, InputEvent, InputGroup, InputGroupAddon, InputGroupAddonAlignment, InputGroupButton,
+        InputState,
+    },
 };
 
 pub(super) struct Editor {
@@ -11,6 +14,8 @@ pub(super) struct Editor {
     provider: Entity<InputState>,
     key: Entity<InputState>,
     fixed: bool,
+    origin: Option<WeakFocusHandle>,
+    fallback: WeakFocusHandle,
     error: Option<Error>,
     waiting: bool,
     confirming: bool,
@@ -20,15 +25,20 @@ impl Editor {
     pub(super) fn open(
         owner: &Entity<AuthPage>,
         entry: Option<Entry>,
+        fallback: WeakFocusHandle,
         window: &mut Window,
         cx: &mut App,
     ) {
-        if owner.read(cx).saving.is_some() {
+        if owner.read(cx).saving.is_some() || owner.read(cx).loading.is_some() {
             return;
         }
         let Some(baseline) = owner.read(cx).file.clone() else {
             return;
         };
+        let origin = window.focused(cx).map(|focus| focus.downgrade());
+        let closed_origin = origin.clone();
+        let closed_fallback = fallback.clone();
+        let closed_owner = owner.downgrade();
         let fixed = entry.is_some();
         let name = entry.map(|e| e.provider().to_owned()).unwrap_or_default();
         let editor = cx.new(|cx: &mut Context<Self>| {
@@ -58,6 +68,13 @@ impl Editor {
                                 this.key
                                     .update(cx, |input, cx| input.set_value("", window, cx));
                                 window.close_dialog(cx);
+                                AuthPage::restore_focus_if_lost(
+                                    this.origin.clone(),
+                                    this.fallback.clone(),
+                                    this.owner.downgrade(),
+                                    window,
+                                    cx,
+                                );
                             }
                             Err(error) => this.error = Some(error),
                         }
@@ -71,6 +88,8 @@ impl Editor {
                 provider,
                 key,
                 fixed,
+                origin,
+                fallback,
                 error: None,
                 waiting: false,
                 confirming: false,
@@ -82,6 +101,20 @@ impl Editor {
             let cancel = editor.clone();
             dialog
                 .overlay_closable(false)
+                .on_close({
+                    let origin = closed_origin.clone();
+                    let fallback = closed_fallback.clone();
+                    let owner = closed_owner.clone();
+                    move |_, window, cx| {
+                        AuthPage::restore_focus_if_lost(
+                            origin.clone(),
+                            fallback.clone(),
+                            owner.clone(),
+                            window,
+                            cx,
+                        )
+                    }
+                })
                 .close_button(!editor.read(cx).waiting)
                 .on_cancel(move |_, _, cx| {
                     cancel.update(cx, |this, cx| {
@@ -150,16 +183,49 @@ impl Render for Editor {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let candidates = self.owner.read(cx).names.clone();
         let provider = self.provider.clone();
+        let mut provider_input = InputGroup::new("auth-provider-group")
+            .input(
+                Input::new(&self.provider)
+                    .id("auth-provider")
+                    .aria_label(t(cx, "pi-auth-provider")),
+            )
+            .readonly(self.fixed || self.confirming)
+            .disabled(self.waiting);
+        if !self.fixed && !self.confirming && !candidates.is_empty() {
+            provider_input = provider_input.addon(
+                InputGroupAddon::new("candidates")
+                    .align(InputGroupAddonAlignment::InlineEnd)
+                    .child(
+                        InputGroupButton::new("auth-candidates")
+                            .small()
+                            .ghost()
+                            .icon(IconName::ChevronDown)
+                            .accessibility_label(t(cx, "pi-auth-candidates"))
+                            .disabled(self.waiting)
+                            .dropdown_menu(move |menu, _, _| {
+                                let mut menu = menu;
+                                for name in &candidates {
+                                    let input = provider.clone();
+                                    let value = name.clone();
+                                    menu = menu.item(PopupMenuItem::new(name.clone()).on_click(
+                                        move |_, w, cx| {
+                                            input.update(cx, |input, cx| {
+                                                input.set_value(value.clone(), w, cx)
+                                            })
+                                        },
+                                    ));
+                                }
+                                menu
+                            }),
+                    ),
+            );
+        }
         let mut body = v_flex().gap_3().child(
             Form::new()
                 .child(
-                    Field::new().label(t(cx, "pi-auth-provider")).child(
-                        Input::new(&self.provider)
-                            .id("auth-provider")
-                            .aria_label(t(cx, "pi-auth-provider"))
-                            .readonly(self.fixed || self.confirming)
-                            .disabled(self.waiting),
-                    ),
+                    Field::new()
+                        .label(t(cx, "pi-auth-provider"))
+                        .child(provider_input),
                 )
                 .child(
                     Field::new().label(t(cx, "pi-auth-api-key")).child(
@@ -177,29 +243,6 @@ impl Render for Editor {
             body = body
                 .child(t_with_args(cx, "pi-auth-replace-title", &args))
                 .child(t(cx, "pi-auth-replace-help"));
-        }
-        if !self.fixed && !self.confirming && !candidates.is_empty() {
-            body = body.child(
-                Button::new("auth-candidates")
-                    .small()
-                    .label(t(cx, "pi-auth-candidates"))
-                    .disabled(self.waiting)
-                    .dropdown_menu(move |menu, _, _| {
-                        let mut menu = menu;
-                        for name in &candidates {
-                            let input = provider.clone();
-                            let value = name.clone();
-                            menu = menu.item(PopupMenuItem::new(name.clone()).on_click(
-                                move |_, w, cx| {
-                                    input.update(cx, |input, cx| {
-                                        input.set_value(value.clone(), w, cx)
-                                    })
-                                },
-                            ));
-                        }
-                        menu
-                    }),
-            );
         }
         if self
             .baseline
@@ -222,7 +265,7 @@ impl Render for Editor {
             );
         }
         if self.waiting {
-            body = body.child(t(cx, "pi-settings-loading"));
+            body = body.child(t(cx, "pi-auth-saving"));
         }
         body.child(
             DialogFooter::new()

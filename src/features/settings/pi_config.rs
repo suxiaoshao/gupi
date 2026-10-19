@@ -858,7 +858,13 @@ impl PiConfig {
                         .child(div().text_sm().child(folder.display().to_string()))
                         .child(t(cx, "pi-trust-body")),
                 )
-                .footer(super::dialog_buttons("pi-trust-confirm", false, false, cx))
+                .footer(super::dialog_buttons(
+                    "pi-trust-confirm",
+                    false,
+                    false,
+                    crate::features::settings::DialogCommit::Primary,
+                    cx,
+                ))
                 .on_ok(move |_, window, cx| {
                     this.update(cx, |this, cx| this.trust(window, cx));
                     true

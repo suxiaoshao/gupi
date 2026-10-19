@@ -198,7 +198,13 @@ impl GlobalKeys {
             let controller = controller.clone();
             dialog
                 .title(t(cx, "shortcut-delete"))
-                .footer(dialog_buttons("shortcut-delete", false, false, cx))
+                .footer(dialog_buttons(
+                    "shortcut-delete",
+                    false,
+                    false,
+                    DialogCommit::Danger,
+                    cx,
+                ))
                 .on_ok(move |_, _, cx| {
                     let mut config = controller.read(cx).preferences(cx).shortcuts;
                     config.tasks.retain(|task| task.id != target);

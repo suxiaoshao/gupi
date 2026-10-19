@@ -27,6 +27,7 @@ use gpui_kit::component::input::InputEvent;
 use gpui_kit::component::input::InputState;
 use gpui_kit::component::searchable_list::SearchableVec;
 use gpui_kit::component::v_flex;
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use gupi_pi_runtime::PiProbeController;
 use gupi_settings::assets::IconName;
@@ -494,7 +495,18 @@ impl SettingsView {
     }
 }
 
-fn dialog_buttons(label: &str, busy: bool, confirm_disabled: bool, cx: &App) -> impl IntoElement {
+enum DialogCommit {
+    Primary,
+    Danger,
+}
+
+fn dialog_buttons(
+    label: &str,
+    busy: bool,
+    confirm_disabled: bool,
+    commit: DialogCommit,
+    cx: &App,
+) -> impl IntoElement {
     use gpui_kit::component::dialog::Cancel;
     use gpui_kit::component::dialog::Confirm;
     use gpui_kit::component::dialog::DialogFooter;
@@ -507,7 +519,10 @@ fn dialog_buttons(label: &str, busy: bool, confirm_disabled: bool, cx: &App) -> 
         )
         .child(
             Button::new("confirm")
-                .primary()
+                .map(|button| match commit {
+                    DialogCommit::Primary => button.primary(),
+                    DialogCommit::Danger => button.danger(),
+                })
                 .label(t(cx, label))
                 .disabled(busy || confirm_disabled)
                 .on_click(|_, window, cx| {

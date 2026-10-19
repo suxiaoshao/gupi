@@ -1008,6 +1008,7 @@ impl ResourcesView {
                     },
                     false,
                     false,
+                    crate::features::settings::DialogCommit::Danger,
                     cx,
                 ))
                 .title(t(

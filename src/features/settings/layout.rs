@@ -299,6 +299,7 @@ impl SettingsView {
                                                         "temporary-clean",
                                                         false,
                                                         false,
+                                                        DialogCommit::Danger,
                                                         cx,
                                                     ))
                                                     .on_ok(|_, _, cx| {

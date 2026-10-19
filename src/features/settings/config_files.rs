@@ -476,7 +476,7 @@ impl FilePages {
             });
         }
         let draft = self.draft(kind);
-        let mut body = v_flex().w_full().max_w(rems(56.)).gap_2();
+        let mut body = v_flex().w_full().min_w_0().max_w(rems(56.)).gap_2();
         let add = cx.entity();
         body = body.child(
             h_flex()
@@ -486,6 +486,7 @@ impl FilePages {
                 .child(
                     v_flex()
                         .flex_1()
+                        .min_w_0()
                         .gap_1()
                         .child(div().text_sm().font_weight(FontWeight::SEMIBOLD).child(t(
                             cx,
@@ -597,37 +598,57 @@ impl FilePages {
                             .min_w_0()
                             .accessibility_label(name.clone())
                             .disabled(busy)
-                            .child(
-                                h_flex()
+                            .when(kind == Kind::Models, |row| row.h_auto().py_1())
+                            .child({
+                                let identity = div()
+                                    .debug_selector({
+                                        let name = name.clone();
+                                        move || format!("file-name-{name}")
+                                    })
+                                    .min_w_0()
                                     .w_full()
-                                    .gap_2()
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .text_left()
-                                            .truncate()
-                                            .child(name.clone()),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(cx.theme().muted_foreground)
-                                            .child(label),
-                                    )
+                                    .text_left()
+                                    .truncate()
+                                    .child(name.clone());
+                                let metadata = h_flex()
+                                    .min_w_0()
+                                    .flex_wrap()
+                                    .gap_x_2()
+                                    .gap_y_1()
+                                    .text_sm()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(div().min_w_0().max_w_full().truncate().child(label))
                                     .when(has_auth, |row| {
                                         row.child(
                                             div()
+                                                .min_w_0()
+                                                .max_w_full()
+                                                .truncate()
                                                 .debug_selector({
                                                     let name = name.clone();
                                                     move || format!("file-auth-{name}")
                                                 })
-                                                .text_sm()
-                                                .text_color(cx.theme().muted_foreground)
                                                 .child(t(cx, "pi-files-auth-stored")),
                                         )
-                                    }),
-                            )
+                                    });
+                                if kind == Kind::Models {
+                                    v_flex()
+                                        .w_full()
+                                        .min_w_0()
+                                        .gap_1()
+                                        .child(identity)
+                                        .child(metadata)
+                                        .into_any_element()
+                                } else {
+                                    h_flex()
+                                        .w_full()
+                                        .min_w_0()
+                                        .gap_2()
+                                        .child(identity.flex_1())
+                                        .child(metadata)
+                                        .into_any_element()
+                                }
+                            })
                             .on_click(move |_, window, cx| {
                                 Self::open_editor(&open.0, kind, Some(open.1.clone()), window, cx)
                             }),
@@ -822,7 +843,13 @@ impl FilePages {
                 .width(window.rem_size() * 42.)
                 .overlay_closable(false)
                 .content(move |content, _, _| content.min_h_0().child(editor.clone()))
-                .footer(super::dialog_buttons("pi-files-stage", false, false, cx))
+                .footer(super::dialog_buttons(
+                    "pi-files-stage",
+                    false,
+                    false,
+                    crate::features::settings::DialogCommit::Primary,
+                    cx,
+                ))
                 .on_ok(move |_, window, cx| {
                     let result = save.1.update(cx, |editor, cx| editor.prepare(cx));
                     let Ok((name, entry)) = result else {

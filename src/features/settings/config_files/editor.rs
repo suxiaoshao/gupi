@@ -115,7 +115,7 @@ impl EntryEditor {
     }
     pub(super) fn prepare(&mut self, cx: &mut Context<Self>) -> Result<(String, Entry), Error> {
         let name = self.name.read(cx).value().to_string();
-        let result = if name.is_empty()
+        let result = if (name.is_empty() && !(self.kind == Kind::Models && self.editing))
             || !self.invalid.is_empty()
             || (self.kind == Kind::Mcp && !self.partial && self.entry.partial())
         {
@@ -329,6 +329,42 @@ mod tests {
             _: &mut gpui_kit::Context<Self>,
         ) -> impl gpui_kit::IntoElement {
             gpui_kit::div()
+        }
+    }
+    #[gpui_kit::test]
+    fn existing_empty_model_id_is_editable_but_manual_empty_name_is_not(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::English, cx);
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("models.json");
+        std::fs::write(&path, r#"{"providers":{"":{}}}"#).unwrap();
+        let file = File::load(Kind::Models, &path).unwrap();
+        for editing in [true, false] {
+            let mut editor = None;
+            let (_, cx) = cx.add_window_view(|window, cx| {
+                let entity = cx.new(|cx| {
+                    EntryEditor::new(
+                        Kind::Models,
+                        "".into(),
+                        file.entry("").unwrap(),
+                        editing,
+                        false,
+                        window,
+                        cx,
+                    )
+                });
+                editor = Some(entity.clone());
+                gpui_kit::component::Root::new(entity, window, cx)
+            });
+            editor.unwrap().update(cx, |this, cx| {
+                let result = this.prepare(cx);
+                assert_eq!(result.is_ok(), editing);
+                if let Ok((name, _)) = result {
+                    assert!(name.is_empty());
+                }
+            });
         }
     }
     #[gpui_kit::test]

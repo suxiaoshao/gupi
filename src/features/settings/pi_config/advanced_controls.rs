@@ -59,6 +59,7 @@ impl PiConfig {
                     "pi-trust-always-confirm",
                     false,
                     false,
+                    crate::features::settings::DialogCommit::Primary,
                     cx,
                 ))
                 .on_ok(move |_, _, cx| {

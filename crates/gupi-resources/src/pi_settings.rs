@@ -2,7 +2,7 @@
 //!
 //! Edits are applied to the latest file inside Pi's lock and touch only the
 //! requested leaves, so unknown fields and concurrent edits elsewhere survive.
-mod lock;
+use crate::pi_lock as lock;
 pub mod trust;
 
 use crate::persistence;

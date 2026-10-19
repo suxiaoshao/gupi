@@ -262,7 +262,13 @@ impl KeysView {
                             dialog
                                 .title(t(cx, "settings-key-reset-all"))
                                 .child(t(cx, "settings-key-reset-all-confirm"))
-                                .footer(dialog_buttons("settings-key-reset-all", false, false, cx))
+                                .footer(dialog_buttons(
+                                    "settings-key-reset-all",
+                                    false,
+                                    false,
+                                    DialogCommit::Primary,
+                                    cx,
+                                ))
                                 .on_ok(move |_, window, cx| {
                                     owner
                                         .update(cx, |this, cx| this.reset_all(window, cx))

@@ -1,3 +1,4 @@
+mod auth;
 mod config_files;
 mod global_keys;
 mod keys;
@@ -26,6 +27,7 @@ use gpui_kit::component::input::InputEvent;
 use gpui_kit::component::input::InputState;
 use gpui_kit::component::searchable_list::SearchableVec;
 use gpui_kit::component::v_flex;
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use gupi_pi_runtime::PiProbeController;
 use gupi_settings::assets::IconName;
@@ -39,6 +41,12 @@ use gupi_settings::config::ThemeMode;
 use gupi_settings::i18n::t;
 use preferences::LanguageItem;
 use preferences::language_items;
+
+#[derive(Clone, Copy)]
+enum CredentialPage {
+    Models,
+    Auth,
+}
 
 pub(crate) struct SettingsView {
     focus_handle: FocusHandle,
@@ -66,6 +74,7 @@ pub(crate) struct SettingsView {
     navigation: (usize, usize),
     domain: layout::Domain,
     pi_config: Entity<pi_config::PiConfig>,
+    auth: Entity<auth::AuthPage>,
     language: Entity<ComboboxState<SearchableVec<LanguageItem>>>,
     updates: Entity<super::updates::UpdatesView>,
 }
@@ -213,7 +222,25 @@ impl SettingsView {
             this.refresh_language(window, cx)
         });
         let controller_sub = cx.observe(&controller, |_, _, cx| cx.notify());
+        let auth = cx.new(|_| auth::AuthPage::new(controller.clone()));
+        let auth_sub = cx.observe(&auth, |_, _, cx| cx.notify());
+        let files = pi_config.read(cx).file_pages.clone();
+        let auth_navigation = cx.subscribe_in(
+            &auth,
+            window,
+            |this, _, page: &CredentialPage, window, cx| {
+                this.navigate_credentials(*page, window, cx);
+            },
+        );
+        let files_navigation = cx.subscribe_in(
+            &files,
+            window,
+            |this, _, page: &CredentialPage, window, cx| {
+                this.navigate_credentials(*page, window, cx);
+            },
+        );
         Self {
+            auth,
             updates: cx.new(|cx| super::updates::UpdatesView::new(controller.clone(), cx)),
             focus_handle,
             form,
@@ -224,6 +251,9 @@ impl SettingsView {
             _binding: binding,
             _pi_binding: pi_binding,
             _subscriptions: vec![
+                auth_sub,
+                auth_navigation,
+                files_navigation,
                 pi_config_sub,
                 temporary_sub,
                 resources_sub,
@@ -467,7 +497,18 @@ impl SettingsView {
     }
 }
 
-fn dialog_buttons(label: &str, busy: bool, confirm_disabled: bool, cx: &App) -> impl IntoElement {
+enum DialogCommit {
+    Primary,
+    Danger,
+}
+
+fn dialog_buttons(
+    label: &str,
+    busy: bool,
+    confirm_disabled: bool,
+    commit: DialogCommit,
+    cx: &App,
+) -> impl IntoElement {
     use gpui_kit::component::dialog::Cancel;
     use gpui_kit::component::dialog::Confirm;
     use gpui_kit::component::dialog::DialogFooter;
@@ -480,11 +521,32 @@ fn dialog_buttons(label: &str, busy: bool, confirm_disabled: bool, cx: &App) -> 
         )
         .child(
             Button::new("confirm")
-                .primary()
+                .map(|button| match commit {
+                    DialogCommit::Primary => button.primary(),
+                    DialogCommit::Danger => button.danger(),
+                })
                 .label(t(cx, label))
                 .disabled(busy || confirm_disabled)
                 .on_click(|_, window, cx| {
                     window.dispatch_action(Box::new(Confirm { secondary: false }), cx)
                 }),
         )
+}
+
+// Presentation only: raw provider IDs remain map, element and navigation keys.
+fn provider_label(provider: &str, cx: &App) -> String {
+    if provider.is_empty() {
+        t(cx, "pi-provider-empty-id")
+    } else {
+        provider.to_owned()
+    }
+}
+fn provider_name(provider: &str, cx: &App) -> Stateful<Div> {
+    let name = provider_label(provider, cx);
+    div()
+        .id(SharedString::from(format!("provider-name-{provider}")))
+        .role(Role::Label)
+        .aria_label(name.clone())
+        .when(provider.is_empty(), |view| view.italic())
+        .child(name)
 }

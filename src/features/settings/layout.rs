@@ -25,10 +25,12 @@ pub(super) enum Domain {
 #[cfg(test)]
 pub(super) const KEYBOARD_PAGE: usize = 3;
 #[cfg(test)]
-pub(super) const DOMAIN_PAGES: [(Domain, usize); 2] = [(Domain::Gupi, 5), (Domain::Pi, 9)];
+pub(super) const DOMAIN_PAGES: [(Domain, usize); 2] = [(Domain::Gupi, 5), (Domain::Pi, 10)];
 pub(super) const PI_PAGE: usize = 0;
 pub(super) const CONVERSATION_PAGE: usize = 1;
-pub(super) const PACKAGES_PAGE: usize = 6;
+pub(super) const PACKAGES_PAGE: usize = 7;
+pub(super) const MODELS_PAGE: usize = 4;
+pub(super) const AUTH_PAGE: usize = 5;
 
 impl SettingsView {
     /// Settings selection lives in the component's keyed state; a new key
@@ -40,6 +42,37 @@ impl SettingsView {
         }
         self.navigation = (self.navigation.0 + 1, page_ix);
         cx.notify();
+    }
+
+    pub(super) fn navigate_credentials(
+        &mut self,
+        page: CredentialPage,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let this = cx.entity().downgrade();
+        let resources = self.resources.clone();
+        let config = self.pi_config.clone();
+        window.defer(cx, move |window, cx| {
+            confirm_unsaved(
+                resources,
+                config,
+                move |_, cx| {
+                    let _ = this.update(cx, |this, cx| {
+                        this.open_page(
+                            Domain::Pi,
+                            match page {
+                                CredentialPage::Models => MODELS_PAGE,
+                                CredentialPage::Auth => AUTH_PAGE,
+                            },
+                            cx,
+                        )
+                    });
+                },
+                window,
+                cx,
+            );
+        });
     }
 
     /// Switches area from the page bar. Leaving Pi asks about unsaved drafts.
@@ -266,6 +299,7 @@ impl SettingsView {
                                                         "temporary-clean",
                                                         false,
                                                         false,
+                                                        DialogCommit::Danger,
                                                         cx,
                                                     ))
                                                     .on_ok(|_, _, cx| {
@@ -668,6 +702,7 @@ impl SettingsView {
                 .page(pi_config::PiConfig::page(&self.pi_config, pi_config::Page::Network, cx))
                 .page(pi_config::PiConfig::page(&self.pi_config, pi_config::Page::Tools, cx))
                 .page(super::config_files::FilePages::page(&self.pi_config.read(cx).file_pages, gupi_resources::pi_config_files::Kind::Models, &self.pi_config, cx))
+                .page(super::auth::AuthPage::page(&self.auth, cx))
                 .page(super::config_files::FilePages::page(&self.pi_config.read(cx).file_pages, gupi_resources::pi_config_files::Kind::Mcp, &self.pi_config, cx))
                 .page(resource_page("settings-page-packages",Kind::Extension,"package plugin extension install update remove source version path enable disable browse search npm 插件 扩展 包 安装 更新 移除 启停 浏览 搜索"))
                 .page(resource_page("settings-page-skills",Kind::Skill,"skill name description source path create edit delete enable disable 技能 创建 编辑 删除 启停"))

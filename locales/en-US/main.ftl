@@ -1136,3 +1136,62 @@ pi-files-provider-summary =
         [one] { $overrides } override
        *[other] { $overrides } overrides
     }
+
+# Pi provider authentication
+pi-auth-title = Authentication
+pi-auth-help = Credentials are stored in Pi’s auth.json. Changes take full effect in new sessions. Gupi does not reconnect or synchronize model lists in existing sessions.
+pi-auth-add = Add API key…
+pi-auth-replace = Replace API key…
+pi-auth-api-key = API key
+pi-auth-oauth = OAuth
+pi-auth-unknown = Unrecognized
+pi-auth-missing = No stored credentials
+pi-auth-set = Already set
+pi-auth-empty = No stored providers. Add an API key to get started.
+pi-auth-provider = Provider ID
+pi-auth-key-placeholder = Enter a new API key
+pi-auth-saving = Saving…
+pi-auth-candidates = Choose a provider
+pi-auth-check = Check configuration
+pi-auth-checking = Checking configuration
+pi-auth-ready = Pi found usable credential configuration. This does not validate the token.
+pi-auth-not-ready = Pi could not find usable credential configuration.
+pi-auth-invalid = Pi reported invalid configuration.
+pi-auth-check-failed = Could not check configuration.
+pi-auth-provider-not-found = Provider not found.
+pi-auth-not-configured = Credentials are not configured.
+pi-auth-not-available = Credentials are not available.
+pi-auth-invalid-state = Pi could not read the authentication state.
+pi-auth-copy-login = Copy login command
+pi-auth-login-help = Login command copied. Run it in the Pi terminal to log in again.
+pi-auth-oauth-help = Local record only. Pi may try to refresh credentials when using them. Log in again if needed.
+pi-auth-expired = Past the recorded expiration time
+pi-auth-expires = Recorded expiration: { $time }
+pi-auth-remove = Remove credential…
+pi-auth-logout = Log out…
+pi-auth-remove-title = Remove credentials for “{ $provider }”?
+pi-auth-logout-title = Log out of “{ $provider }”?
+pi-auth-remove-help = Only local credentials are deleted. Server tokens are not revoked. Environment variables or apiKey in models.json may still provide authentication.
+pi-auth-remove-env = Provider environment and configuration values will also be removed.
+pi-auth-remove-confirm = Remove
+pi-auth-logout-confirm = Log out
+pi-auth-replace-title = Replace credentials for “{ $provider }”?
+pi-auth-replace-help = The entire stored credential, including tokens and unknown fields, will be replaced with an API key.
+pi-auth-replace-confirm = Replace
+pi-auth-read-error = Could not read auth.json.
+pi-auth-parse-error = auth.json must contain a valid JSON object. Editing is disabled.
+pi-auth-busy = auth.json is busy. Try again.
+pi-auth-conflict = This provider changed on disk. Reload and try again.
+pi-auth-write-error = Could not write auth.json. Reload to inspect the current state.
+pi-auth-input-error = Choose a provider or enter a nonempty single-line ID, and enter an API key.
+pi-auth-login-select-help = Login command copied. Run /login in the Pi terminal and select the provider.
+
+# Authentication and model provider settings
+pi-files-auth-stored = Credentials stored in Authentication
+pi-files-manage-auth = Manage in Authentication
+pi-files-api-key-auth-help = When credentials are stored in Authentication, Pi does not fall back to this apiKey. Stored credentials do not mean authentication is valid.
+pi-auth-models-help = Stored credentials affect how Pi uses apiKey in models.json. Pi handles authentication according to provider rules.
+pi-auth-edit-models = Edit in Models & providers
+
+pi-provider-empty-id = ⟨Empty ID⟩
+pi-auth-check-unavailable = Pi cannot check this provider ID.

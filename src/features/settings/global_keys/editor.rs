@@ -74,7 +74,13 @@ pub(super) fn open(
             .overlay_closable(false)
             .child(editor.clone())
             .close_button(!busy)
-            .footer(dialog_buttons("shortcut-save-task", busy, loading, cx))
+            .footer(dialog_buttons(
+                "shortcut-save-task",
+                busy,
+                loading,
+                DialogCommit::Primary,
+                cx,
+            ))
             .on_cancel(move |_, _, cx| !cancel.read(cx).controller.read(cx).busy(cx))
             .on_ok(move |_, _, cx| save.update(cx, |s, cx| s.save(cx)))
     });

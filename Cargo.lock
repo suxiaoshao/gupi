@@ -4890,6 +4890,7 @@ version = "0.1.6"
 dependencies = [
  "app-theme",
  "base64 0.23.1",
+ "chrono",
  "fluent-bundle",
  "get-selected-text",
  "global-hotkey",
@@ -5006,6 +5007,7 @@ dependencies = [
  "reqwest 0.13.5",
  "serde_json",
  "serde_yaml_ng",
+ "sha2 0.10.9",
  "smol",
  "tempfile",
  "thiserror 2.0.21",

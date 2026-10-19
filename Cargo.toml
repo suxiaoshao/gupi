@@ -82,6 +82,7 @@ path = "src/update_helper.rs"
 required-features = ["bundled"]
 
 [dependencies]
+chrono = "0.4.45"
 semver = "1.0.28"
 # UI and workspace services.
 gupi-conversation-ui.workspace = true

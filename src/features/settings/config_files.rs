@@ -16,7 +16,7 @@ use gupi_settings::{
     i18n::{t, t_with_args},
 };
 use serde_json::Value;
-use std::path::PathBuf;
+use std::{collections::BTreeSet, path::PathBuf};
 
 type Continue = Box<dyn FnOnce(&mut Window, &mut App)>;
 #[derive(Default)]
@@ -66,6 +66,8 @@ impl Draft {
         }
     }
 }
+impl EventEmitter<super::CredentialPage> for FilePages {}
+
 pub(super) struct FilePages {
     agent: Result<PathBuf, Error>,
     scope: Scope,
@@ -76,6 +78,9 @@ pub(super) struct FilePages {
     loading: Option<Task<()>>,
     saving: Option<Task<()>>,
     continuation: Option<Continue>,
+    auth_providers: Option<BTreeSet<String>>,
+    auth_loading: Option<Task<()>>,
+    auth_generation: u64,
 }
 impl FilePages {
     pub(super) fn new(_: &mut Context<Self>) -> Self {
@@ -89,11 +94,17 @@ impl FilePages {
             loading: None,
             saving: None,
             continuation: None,
+            auth_providers: None,
+            auth_loading: None,
+            auth_generation: 0,
         }
     }
     #[cfg(test)]
     pub(super) fn set_agent_for_test(&mut self, agent: PathBuf) {
         self.agent = Ok(agent);
+        self.auth_generation += 1;
+        self.auth_loading = None;
+        self.auth_providers = None;
     }
     fn draft(&self, kind: Kind) -> &Draft {
         match kind {
@@ -127,6 +138,43 @@ impl FilePages {
             self.reload(cx)
         }
     }
+    fn refresh_auth(&mut self, cx: &mut Context<Self>) {
+        // Entry and initial file load can request the same snapshot in one frame.
+        if self.auth_loading.is_some() {
+            return;
+        }
+        let Ok(agent) = self.agent.clone() else {
+            return;
+        };
+        self.auth_generation += 1;
+        let generation = self.auth_generation;
+        let worker = cx.background_spawn(async move {
+            gupi_resources::pi_auth::File::load(&agent.join("auth.json"))
+                .ok()
+                .map(|file| {
+                    file.entries()
+                        .iter()
+                        .map(|entry| entry.provider().to_owned())
+                        .collect()
+                })
+        });
+        self.auth_loading = Some(cx.spawn(async move |this, cx| {
+            let providers = worker.await;
+            let _ = this.update(cx, |this, cx| {
+                if this.auth_generation != generation {
+                    return;
+                }
+                this.auth_loading = None;
+                this.auth_providers = providers;
+                cx.notify();
+            });
+        }));
+    }
+    fn has_stored_credentials(&self, name: &str) -> bool {
+        self.auth_providers
+            .as_ref()
+            .is_some_and(|providers| providers.contains(name))
+    }
     fn reload(&mut self, cx: &mut Context<Self>) {
         let Ok(agent) = self.agent.clone() else {
             return;
@@ -134,6 +182,7 @@ impl FilePages {
         if self.busy() {
             return;
         }
+        self.refresh_auth(cx);
         self.generation += 1;
         let generation = self.generation;
         let scope = self.scope.clone();
@@ -329,7 +378,15 @@ impl FilePages {
             IconName::Server
         })
         .resettable(false)
-        .title_suffix(move |_, cx| {
+        .title_suffix(move |window, cx| {
+            if kind == Kind::Models {
+                let owner = h.downgrade();
+                window.use_keyed_state("models-page-auth-metadata-entry", cx, |window, cx| {
+                    window.defer(cx, move |_, cx| {
+                        let _ = owner.update(cx, |this, cx| this.refresh_auth(cx));
+                    });
+                });
+            }
             let e = h.clone();
             let dirty = h.read(cx).draft(kind).dirty();
             let busy = h.read(cx).busy();
@@ -419,7 +476,7 @@ impl FilePages {
             });
         }
         let draft = self.draft(kind);
-        let mut body = v_flex().w_full().max_w(rems(56.)).gap_2();
+        let mut body = v_flex().w_full().min_w_0().max_w(rems(56.)).gap_2();
         let add = cx.entity();
         body = body.child(
             h_flex()
@@ -429,6 +486,7 @@ impl FilePages {
                 .child(
                     v_flex()
                         .flex_1()
+                        .min_w_0()
                         .gap_1()
                         .child(div().text_sm().font_weight(FontWeight::SEMIBOLD).child(t(
                             cx,
@@ -524,6 +582,7 @@ impl FilePages {
             } else {
                 label
             };
+            let has_auth = kind == Kind::Models && self.has_stored_credentials(&name);
             let e = cx.entity();
             let open = (e.clone(), name.clone());
             let row_name = name.clone();
@@ -537,27 +596,67 @@ impl FilePages {
                             .small()
                             .flex_1()
                             .min_w_0()
-                            .accessibility_label(name.clone())
+                            .accessibility_label(if kind == Kind::Models {
+                                super::provider_label(&name, cx)
+                            } else {
+                                name.clone()
+                            })
                             .disabled(busy)
-                            .child(
-                                h_flex()
+                            .when(kind == Kind::Models, |row| row.h_auto().py_1())
+                            .child({
+                                let identity = div()
+                                    .debug_selector({
+                                        let name = name.clone();
+                                        move || format!("file-name-{name}")
+                                    })
+                                    .min_w_0()
                                     .w_full()
-                                    .gap_2()
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .text_left()
-                                            .truncate()
-                                            .child(name.clone()),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(cx.theme().muted_foreground)
-                                            .child(label),
-                                    ),
-                            )
+                                    .text_left()
+                                    .truncate()
+                                    .child(if kind == Kind::Models {
+                                        super::provider_name(&name, cx).into_any_element()
+                                    } else {
+                                        div().child(name.clone()).into_any_element()
+                                    });
+                                let metadata = h_flex()
+                                    .min_w_0()
+                                    .flex_wrap()
+                                    .gap_x_2()
+                                    .gap_y_1()
+                                    .text_sm()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(div().min_w_0().max_w_full().truncate().child(label))
+                                    .when(has_auth, |row| {
+                                        row.child(
+                                            div()
+                                                .min_w_0()
+                                                .max_w_full()
+                                                .truncate()
+                                                .debug_selector({
+                                                    let name = name.clone();
+                                                    move || format!("file-auth-{name}")
+                                                })
+                                                .child(t(cx, "pi-files-auth-stored")),
+                                        )
+                                    });
+                                if kind == Kind::Models {
+                                    v_flex()
+                                        .w_full()
+                                        .min_w_0()
+                                        .gap_1()
+                                        .child(identity)
+                                        .child(metadata)
+                                        .into_any_element()
+                                } else {
+                                    h_flex()
+                                        .w_full()
+                                        .min_w_0()
+                                        .gap_2()
+                                        .child(identity.flex_1())
+                                        .child(metadata)
+                                        .into_any_element()
+                                }
+                            })
                             .on_click(move |_, window, cx| {
                                 Self::open_editor(&open.0, kind, Some(open.1.clone()), window, cx)
                             }),
@@ -572,6 +671,18 @@ impl FilePages {
                             .dropdown_menu(move |menu, _, cx| {
                                 let edit = (e.clone(), row_name.clone());
                                 let delete = (e.clone(), row_name.clone());
+                                let navigate = e.clone();
+                                let menu = menu.when(kind == Kind::Models, |menu| {
+                                    menu.item(
+                                        PopupMenuItem::new(t(cx, "pi-files-manage-auth")).on_click(
+                                            move |_, _, cx| {
+                                                navigate.update(cx, |_, cx| {
+                                                    cx.emit(super::CredentialPage::Auth)
+                                                })
+                                            },
+                                        ),
+                                    )
+                                });
                                 menu.item(PopupMenuItem::new(t(cx, "pi-files-edit")).on_click(
                                     move |_, w, cx| {
                                         Self::open_editor(
@@ -740,7 +851,13 @@ impl FilePages {
                 .width(window.rem_size() * 42.)
                 .overlay_closable(false)
                 .content(move |content, _, _| content.min_h_0().child(editor.clone()))
-                .footer(super::dialog_buttons("pi-files-stage", false, false, cx))
+                .footer(super::dialog_buttons(
+                    "pi-files-stage",
+                    false,
+                    false,
+                    crate::features::settings::DialogCommit::Primary,
+                    cx,
+                ))
                 .on_ok(move |_, window, cx| {
                     let result = save.1.update(cx, |editor, cx| editor.prepare(cx));
                     let Ok((name, entry)) = result else {
@@ -881,3 +998,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod auth_metadata_tests;

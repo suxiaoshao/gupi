@@ -1136,3 +1136,62 @@ pi-files-provider-summary =
         [one] { $overrides } surcharge
        *[other] { $overrides } surcharges
     }
+
+# Pi provider authentication
+pi-auth-title = Authentification
+pi-auth-help = Les identifiants sont stockés dans auth.json de Pi. Les changements prennent pleinement effet dans les nouvelles sessions. Gupi ne reconnecte pas les sessions existantes et ne synchronise pas leurs listes de modèles.
+pi-auth-add = Ajouter une clé API…
+pi-auth-replace = Remplacer la clé API…
+pi-auth-api-key = Clé API
+pi-auth-oauth = OAuth
+pi-auth-unknown = Non reconnu
+pi-auth-missing = Aucun identifiant enregistré
+pi-auth-set = Déjà définie
+pi-auth-empty = Aucun fournisseur enregistré. Ajoutez une clé API pour commencer.
+pi-auth-provider = ID du fournisseur
+pi-auth-key-placeholder = Saisir une nouvelle clé API
+pi-auth-saving = Enregistrement…
+pi-auth-candidates = Choisir un fournisseur
+pi-auth-check = Vérifier la configuration
+pi-auth-checking = Vérification de la configuration
+pi-auth-ready = Pi a trouvé une configuration utilisable. Cela ne valide pas le jeton.
+pi-auth-not-ready = Pi n’a trouvé aucune configuration utilisable.
+pi-auth-invalid = Pi a signalé une configuration invalide.
+pi-auth-check-failed = Impossible de vérifier la configuration.
+pi-auth-provider-not-found = Fournisseur introuvable.
+pi-auth-not-configured = Identifiants non configurés.
+pi-auth-not-available = Identifiants indisponibles.
+pi-auth-invalid-state = Pi n’a pas pu lire l’état d’authentification.
+pi-auth-copy-login = Copier la commande de connexion
+pi-auth-login-help = Commande copiée. Exécutez-la dans le terminal Pi pour vous reconnecter.
+pi-auth-oauth-help = Enregistrement local uniquement. Pi peut tenter de renouveler les identifiants lors de leur utilisation. Reconnectez-vous si nécessaire.
+pi-auth-expired = Date d’expiration enregistrée dépassée
+pi-auth-expires = Expiration enregistrée : { $time }
+pi-auth-remove = Supprimer les identifiants…
+pi-auth-logout = Se déconnecter…
+pi-auth-remove-title = Supprimer les identifiants de « { $provider } » ?
+pi-auth-logout-title = Se déconnecter de « { $provider } » ?
+pi-auth-remove-help = Seuls les identifiants locaux sont supprimés. Les jetons du serveur ne sont pas révoqués. Les variables d’environnement ou apiKey dans models.json peuvent toujours authentifier.
+pi-auth-remove-env = Les valeurs d’environnement et de configuration du fournisseur seront également supprimées.
+pi-auth-remove-confirm = Supprimer
+pi-auth-logout-confirm = Se déconnecter
+pi-auth-replace-title = Remplacer les identifiants de « { $provider } » ?
+pi-auth-replace-help = L’identifiant entier, y compris les jetons et les champs inconnus, sera remplacé par une clé API.
+pi-auth-replace-confirm = Remplacer
+pi-auth-read-error = Impossible de lire auth.json.
+pi-auth-parse-error = auth.json doit contenir un objet JSON valide. La modification est désactivée.
+pi-auth-busy = auth.json est occupé. Réessayez.
+pi-auth-conflict = Ce fournisseur a changé sur le disque. Rechargez puis réessayez.
+pi-auth-write-error = Impossible d’écrire auth.json. Rechargez pour vérifier l’état actuel.
+pi-auth-input-error = Choisissez un fournisseur ou saisissez un ID non vide sur une seule ligne, puis une clé API.
+pi-auth-login-select-help = Commande copiée. Exécutez /login dans le terminal Pi et choisissez le fournisseur.
+
+# Authentication and model provider settings
+pi-files-auth-stored = Identifiants enregistrés dans Authentification
+pi-files-manage-auth = Gérer dans Authentification
+pi-files-api-key-auth-help = Si des identifiants sont enregistrés dans Authentification, Pi n’utilise pas cet apiKey en secours. Des identifiants enregistrés ne garantissent pas une authentification valide.
+pi-auth-models-help = Les identifiants enregistrés influencent l’utilisation de apiKey dans models.json. Pi gère l’authentification selon les règles du fournisseur.
+pi-auth-edit-models = Modifier dans Modèles et fournisseurs
+
+pi-provider-empty-id = ⟨ID vide⟩
+pi-auth-check-unavailable = Pi ne peut pas vérifier cet ID de fournisseur.

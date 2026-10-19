@@ -65,7 +65,8 @@ pub async fn probe_with_env(
     )
     .await
 }
-fn resolve_command_with_env(
+/// Resolve a Pi executable using the child snapshot PATH (including Windows PATHEXT).
+pub fn resolve_command_with_env(
     command: &str,
     env: &[(OsString, OsString)],
 ) -> Result<PathBuf, ProbeFailure> {

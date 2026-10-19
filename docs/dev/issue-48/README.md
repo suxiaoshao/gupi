@@ -38,7 +38,8 @@ Pi 设置新增“认证”页，只有全局作用域：
 | 注销只删除本地条目，不吊销服务端令牌；环境变量、`models.json`、运行时凭据仍可能让请求通过认证 | `ai/models.ts:825-833` |
 | `pi auth check --provider <id> --json --no-refresh` 用只读存储、不联网、不刷新，输出 `status`（ready / not_ready / invalid）、`reason`、`authType`，不加 `--credentials` 时不含凭据；退出码 ready 0、not_ready 1、invalid 2，参数错误也是 2 且只写 stderr | `cli/auth-check.ts:8-51,66-72`、`main.ts:176-206` |
 | 该检查不验证令牌：已过期的 OAuth 在支持 OAuth 的供应商上仍报 ready；内部错误统一报 `invalid_state` | `ai/models.ts:657-664`、`cli/auth-check.ts:46-50` |
-| API Key 来源优先级：运行时 `--api-key` > `auth.json` 已存凭据 > `models.json` 供应商 `apiKey` > 内置供应商自身来源（如环境变量）；`models.json` 的 `headers`、`authHeader` 在任一来源上叠加 | `core/provider-composer.ts:437-472`、`ai/models.ts:871` |
+| 运行时凭据覆盖已存凭据。存在已存凭据时，Pi 按凭据类型调用供应商的认证实现，不再使用 `models.json` 的 `apiKey`；没有已存凭据时，API Key 分支先取扩展的 `apiKey`，其次 `models.json` 的 `apiKey`，否则交给供应商自身解析（可能结合环境变量或账户配置）。认证失败不会回退到下一来源 | `core/runtime-credentials.ts:24-27`、`core/provider-composer.ts:388-392,437-472`、`ai/auth/helpers.ts:20` 起、`ai/auth/resolve.ts:70-92` |
+| 供应商 `headers`/`authHeader` 参与请求认证组合，不因已存凭据被整体忽略；扩展可覆盖这些配置，`authHeader: true` 要求解析出 API Key，最终请求还可能有模型或请求级覆盖 | `core/provider-composer.ts:374-400,429`、`ai/models.ts:758-764,870-874` |
 | `/login`、`/logout` 只在交互模式；RPC 没有认证命令，`setRuntimeApiKey` 不持久化 | `modes/interactive/interactive-mode.ts:3293-3302`、`modes/rpc/rpc-types.ts:20` 起、`core/runtime-credentials.ts:3-27` |
 
 ## 设计
@@ -108,9 +109,9 @@ Pi 设置新增“认证”页，只有全局作用域：
 
 两页保持分开：认证页立即写 `auth.json`，模型页按草稿保存 `models.json`，保存方式不混在同一页。两处都能设置 API Key，因此补充关联与优先级说明：
 
-- **模型页供应商行**：该供应商在 `auth.json` 已存凭据时，摘要中显示“认证页已存凭据”（只读元数据，不读值）；行尾 `⋯` 增加“在认证页管理”，跳转到认证页。`auth.json` 无法读取时不显示该标记，不阻止模型页编辑。
-- **模型页供应商对话框的 `apiKey` 字段**：说明一行“认证页已存凭据时，Pi 优先使用认证页的凭据。”
-- **认证页**：组说明补一句“已存凭据优先于 models.json 中供应商的 apiKey。”；来自 `models.json` 的行在 `⋯` 中增加“在模型与供应商中编辑”，跳转到模型页。
+- **模型页供应商行**：该供应商在 `auth.json` 已存凭据时，摘要中显示“认证页已存凭据”（模型页只拿到元数据，不接触凭据值；这只表示已存在，不代表认证有效）；行尾 `⋯` 增加“在认证页管理”，跳转到认证页。`auth.json` 无法读取时不显示该标记，也不显示为“未存储”，不阻止模型页编辑。
+- **模型页供应商对话框的 `apiKey` 字段**：说明一行“认证页存在已存凭据时，Pi 不回退使用此处的 apiKey。已存凭据不代表认证有效。”
+- **认证页**：组说明补一句“已存凭据会影响 Pi 对 models.json 中 apiKey 的使用；实际认证由 Pi 按供应商规则处理。”；来自 `models.json` 的行在 `⋯` 中增加“在模型与供应商中编辑”，跳转到模型页。
 - 跳转只切换设置页，不打开对话框、不改草稿；离开模型页时沿用现有离开保护。
 - 认证页写入成功后，模型页的标记在下次进入或重新读取时更新，不要求实时同步。
 

@@ -186,7 +186,7 @@ impl AuthPage {
         let busy = self.loading.is_some() || self.saving.is_some();
         let add = cx.entity();
         let reload = add.clone();
-        let mut body = v_flex().w_full().max_w(rems(56.)).gap_2().child(
+        let mut body = v_flex().w_full().min_w_0().max_w(rems(56.)).gap_2().child(
             h_flex()
                 .w_full()
                 .items_start()
@@ -194,6 +194,7 @@ impl AuthPage {
                 .child(
                     v_flex()
                         .flex_1()
+                        .min_w_0()
                         .gap_1()
                         .child(
                             div()

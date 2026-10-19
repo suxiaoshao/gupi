@@ -43,9 +43,15 @@ def has_gallery_process(root):
         raise RuntimeError("process inspection incomplete; keeping fixtures")
     aliases = {str(root), str(root.resolve()),
                str(Path(tempfile.gettempdir()) / root.name)}
+    if sys.platform == "darwin":
+        for alias in tuple(aliases):
+            if alias.startswith(("/private/var/", "/private/tmp/")):
+                aliases.add(alias.removeprefix("/private"))
+            elif alias.startswith(("/var/", "/tmp/")):
+                aliases.add("/private" + alias)
     # Match a complete path component, including paths shown without shell quotes.
     pattern = re.compile(r"(?<![\w/.-])(?:" + "|".join(re.escape(p) for p in aliases)
-                         + r")(?=/|\s|$)")
+                         + r''')(?=/|[\s'"]|$)''')
     for line in processes.stdout.splitlines():
         fields = line.strip().split(None, 2)
         if len(fields) == 3 and pattern.search(fields[2]):
@@ -72,16 +78,32 @@ def remove_gallery(root, identity):
         if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
                 or (info.st_dev, info.st_ino) != identity):
             raise RuntimeError("fixture directory identity changed; keeping it")
-        shutil.rmtree(root.name, dir_fd=with_parent)
+        # The system Python may predate rmtree(dir_fd=...). fchdir keeps
+        # deletion relative to the inspected parent without resolving it again.
+        previous_cwd = os.open(".", os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fchdir(with_parent)
+            shutil.rmtree(root.name)
+        finally:
+            os.fchdir(previous_cwd)
+            os.close(previous_cwd)
     finally:
         os.close(with_parent)
     print(f"Removed gallery: {root}", flush=True)
     return True
 
 
-def cleanup_galleries(parent):
+def cleanup_galleries(parent, names, excluded):
     # Explicit cleanup includes retained/prepared fixtures; ordinary launch does not.
-    for root, identity in gallery_roots(parent):
+    candidates = {root.name: (root, identity) for root, identity in gallery_roots(parent)}
+    for name in dict.fromkeys(names):
+        if name in excluded:
+            print(f"Kept excluded gallery: {name}", flush=True)
+            continue
+        if name not in candidates:
+            print(f"Kept/unavailable gallery (not an owned direct fixture): {name}", flush=True)
+            continue
+        root, identity = candidates[name]
         try:
             remove_gallery(root, identity)
         except (OSError, RuntimeError, subprocess.SubprocessError):
@@ -139,16 +161,18 @@ def main():
     parser.add_argument("--no-build", action="store_true", help="Use the existing target/debug/gupi")
     parser.add_argument("--prepare-only", action="store_true", help="Create fixtures without opening Gupi")
     parser.add_argument("--keep", action="store_true", help="Keep the temporary environment after Gupi exits")
-    parser.add_argument("--cleanup", action="store_true",
-                        help="Remove inactive gallery fixtures in the current temp directory, including --keep; do not launch")
+    parser.add_argument("--cleanup", nargs="+", metavar="ROOT_NAME",
+                        help="Remove only these named inactive gallery roots, including --keep; do not launch")
+    parser.add_argument("--exclude", action="append", default=[], metavar="ROOT_NAME",
+                        help="Keep this root even when explicitly selected for cleanup")
     args = parser.parse_args()
     if args.cleanup:
-        cleanup_galleries(Path(tempfile.gettempdir()).resolve())
+        cleanup_galleries(Path(tempfile.gettempdir()).resolve(), args.cleanup, args.exclude)
         return
     existing = [root for root, _ in gallery_roots(Path(tempfile.gettempdir()).resolve())
                 if (root / "Gupi UI Gallery.app").is_dir()]
     if existing and not args.prepare_only:
-        parser.error("Existing gallery bundles must be stopped and explicitly removed with --cleanup before launching another")
+        parser.error("Existing gallery bundles must be stopped and explicitly removed with --cleanup ROOT_NAME... before launching another")
     repo = Path(__file__).resolve().parent.parent
     pi = shutil.which(args.pi)
     if not pi:

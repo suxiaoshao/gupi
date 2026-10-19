@@ -444,3 +444,50 @@ fn empty_project_entry_keeps_the_current_settings_page(cx: &mut TestAppContext) 
         );
     });
 }
+
+#[gpui_kit::test]
+async fn auth_notifications_invalidate_settings(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        crate::app::init_capability_hosts(cx);
+        app_theme::init(cx);
+        gupi_settings::theme::init(cx);
+        gupi_settings::i18n::apply(AppLanguage::English, cx);
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let mut settings = None;
+    let (_, cx) = cx.add_window_view(|window, cx| {
+        let form = cx.new(|_| Form::new(AppConfig::default()));
+        let controller = cx.new(|cx| ConfigController::new(&form, cx));
+        let draft = cx.new(|_| PiProbeController::new());
+        let applied = cx.new(|_| PiProbeController::new());
+        let view = cx.new(|cx| {
+            SettingsView::new(
+                form,
+                controller,
+                draft,
+                applied,
+                cx.focus_handle(),
+                window,
+                cx,
+            )
+        });
+        let auth = view.read(cx).auth.clone();
+        auth.update(cx, |auth, _| auth.set_agent_for_test(dir.path().to_owned()));
+        settings = Some(view.clone());
+        Root::new(view, window, cx)
+    });
+    let settings = settings.unwrap();
+    let changes = std::rc::Rc::new(std::cell::Cell::new(0));
+    let count = changes.clone();
+    let _observation =
+        cx.update(|_, cx| cx.observe(&settings, move |_, _| count.set(count.get() + 1)));
+    cx.run_until_parked();
+    let before = changes.get();
+    let auth = settings.read_with(cx, |settings, _| settings.auth.clone());
+    // Model a deferred load/save/check completion without any user event or
+    // explicit parent update/render, which would mask missing observation.
+    cx.update(|_, cx| cx.defer(move |cx| auth.update(cx, |_, cx| cx.notify())));
+    cx.run_until_parked();
+    assert!(changes.get() > before);
+}

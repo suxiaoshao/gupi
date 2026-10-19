@@ -2,6 +2,11 @@
 use super::addressable_provider;
 use serde_json::Value;
 use std::{ffi::OsString, process::Stdio, time::Duration};
+use tokio::io::AsyncReadExt as _;
+// Auth metadata replies are small; match the probe output budget without
+// exposing its private helper or probe-specific errors.
+const OUTPUT_LIMIT: u64 = 16 * 1024;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CheckStatus {
     Ready,
@@ -105,8 +110,21 @@ pub async fn check(
         .kill_on_drop(true);
         #[cfg(windows)]
         cmd.creation_flags(0x08000000);
-        let output = cmd.output().await.ok()?;
-        parse(provider, output.status.code(), &output.stdout)
+        let mut child = cmd.spawn().ok()?;
+        let mut stdout = Vec::new();
+        child
+            .stdout
+            .take()?
+            .take(OUTPUT_LIMIT + 1)
+            .read_to_end(&mut stdout)
+            .await
+            .ok()?;
+        if stdout.len() as u64 > OUTPUT_LIMIT {
+            // Returning drops the kill-on-drop child even if it keeps writing.
+            return None;
+        }
+        let status = child.wait().await.ok()?;
+        parse(provider, status.code(), &stdout)
     };
     tokio::time::timeout(Duration::from_secs(10), attempt)
         .await
@@ -197,6 +215,65 @@ mod transport_tests {
 mod process_tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt as _;
+    #[tokio::test]
+    async fn stdout_is_bounded_and_oversized_children_are_killed() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("fake-pi");
+        let reply = dir.path().join("reply");
+        let pid_file = dir.path().join("pid");
+        let mut bytes = br#"{"provider":"p","status":"ready"}"#.to_vec();
+        bytes.resize(OUTPUT_LIMIT as usize, b' ');
+        std::fs::write(&reply, &bytes).unwrap();
+        std::fs::write(
+            &script,
+            format!("#!/bin/sh\n/bin/cat '{}'\n", reply.display()),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(
+            check(script.to_str().unwrap(), "p", vec![])
+                .await
+                .unwrap()
+                .status(),
+            CheckStatus::Ready
+        );
+
+        // Valid JSON plus whitespace would parse if the size limit were absent.
+        // Keep the pipe open after writing so rejection cannot wait for EOF/exit.
+        bytes.push(b' ');
+        std::fs::write(&reply, &bytes).unwrap();
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nprintf '%s' \"$$\" > '{}'\n/bin/cat '{}'\nexec /bin/sleep 30\n",
+                pid_file.display(),
+                reply.display()
+            ),
+        )
+        .unwrap();
+        let result = tokio::time::timeout(
+            Duration::from_secs(2),
+            check(script.to_str().unwrap(), "p", vec![]),
+        )
+        .await
+        .expect("oversized output must fail before the process exits");
+        assert!(result.is_none());
+        let pid = std::fs::read_to_string(pid_file).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while std::process::Command::new("/bin/kill")
+                .args(["-0", pid.trim()])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+            {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the oversized child must be killed and reaped");
+    }
     #[tokio::test]
     async fn structured_nonzero_replies_and_unicode_arguments_are_supported() {
         let dir = tempfile::tempdir().unwrap();

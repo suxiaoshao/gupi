@@ -223,6 +223,7 @@ impl SettingsView {
         });
         let controller_sub = cx.observe(&controller, |_, _, cx| cx.notify());
         let auth = cx.new(|_| auth::AuthPage::new(controller.clone()));
+        let auth_sub = cx.observe(&auth, |_, _, cx| cx.notify());
         let files = pi_config.read(cx).file_pages.clone();
         let auth_navigation = cx.subscribe_in(
             &auth,
@@ -250,6 +251,7 @@ impl SettingsView {
             _binding: binding,
             _pi_binding: pi_binding,
             _subscriptions: vec![
+                auth_sub,
                 auth_navigation,
                 files_navigation,
                 pi_config_sub,

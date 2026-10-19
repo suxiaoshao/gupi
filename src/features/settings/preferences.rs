@@ -21,6 +21,16 @@ impl SearchableListItem for LanguageItem {
     fn title(&self) -> SharedString {
         self.title.clone()
     }
+    fn render(&self, _: &mut Window, _: &mut App) -> impl IntoElement {
+        div()
+            .id(SharedString::from(format!(
+                "language-option-{:?}",
+                self.value
+            )))
+            .role(Role::Label)
+            .aria_label(self.title.clone())
+            .child(self.title.clone())
+    }
     fn value(&self) -> &AppLanguage {
         &self.value
     }

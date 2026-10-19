@@ -1,6 +1,6 @@
 # 设置页布局、无障碍与文案修正
 
-状态：实现与自动检查完成，原生复查待 Computer Use 授权恢复；组件自带的设置搜索占位翻译按用户决定暂缓。
+状态：步骤 1–7 已实现并完成隔离原生复查；组件自带的设置搜索占位翻译按用户决定暂缓。
 
 来源：#75 合并前对全部设置页的原生走查（zh-CN 960×740、德语 800×600，浅色/深色，全局/项目作用域）和代码审查。认证页与模型页的同类问题已在 #75 修复，本文只覆盖其余现有页面。依据为 [GPUI Kit Design Guides](../../../.agents/skills/gpui-kit-design-guides/references/design-guides.md) 的 Forms and settings、Responsive desktop windows、Spatial grammar、Components and composition、Interface language 与 Accessibility checklist。Pi 规则依据 Pi v1.2.0（本地 `/Users/sushao/Documents/code/pi`，路径相对 `packages/coding-agent/src/`）。
 
@@ -68,7 +68,7 @@
 
 `script/gupi-ui-gallery` 把 `HOME` 指向私有临时根目录，使 `~/.agents/skills` 等基于主目录的发现也落在临时数据上（`crates/gupi-resources/src/resources.rs:173`）；同时设置配置、日志、数据、Pi 与会话目录。不改应用的发现规则。
 
-macOS 临时 bundle 恢复原先成功连接的固定标识 `top.sushao.gupi.ui-gallery`，保留原生 bootstrap。标识与真实应用不同；每次运行的临时路径与隔离环境仍各自独立。工具通过绝对路径 `/usr/bin/cc` 编译 bootstrap；它检查必需的 fixture 目录，切换到 project-a，以绝对路径和静态环境白名单 `execve` 内部 gupi-bin，并转发参数；缺目录、chdir 或 execve 失败即退出，不合并宿主环境。Info.plist 的 LSEnvironment 仅保留为冗余元数据，不作为隔离保证。直接启动和 Launch Services 重启都须观察最终 GUI 进程的可执行文件、cwd 和覆盖变量，确认后才绑定 CUA。
+macOS 临时 bundle 恢复原先成功连接的固定标识 `top.sushao.gupi.ui-gallery`，保留原生 bootstrap。标识与真实应用不同；每次运行的临时路径与隔离环境仍各自独立。工具通过绝对路径 `/usr/bin/cc` 编译 bootstrap；它检查必需的 fixture 目录，切换到 project-a，以绝对路径和静态环境白名单 `execve` 内部 gupi-bin，并转发参数；缺目录、chdir 或 execve 失败即退出，不合并宿主环境。Info.plist 的 LSEnvironment 仅保留为冗余元数据，不作为隔离保证。通过 bundle 入口启动和 Launch Services 重启均须观察最终 GUI 进程的可执行文件、cwd 和覆盖变量，确认后才绑定 CUA。用户明确将手动执行内部 gupi-bin 排除在隔离范围外；不修改应用源码，不声称内部二进制具有独立隔离守卫。
 
 ### 7. 认证页行点击（用户已确认）
 
@@ -104,15 +104,31 @@ macOS 临时 bundle 恢复原先成功连接的固定标识 `top.sushao.gupi.ui-
 
 - `cargo fmt --all -- --check`：通过。
 - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`：通过。
-- `cargo test --workspace --locked`：439 通过、0 失败、2 个既有忽略项；其中 Gupi 124、gupi-resources 72、gupi-settings 21 通过，包含九语言一致性检查。
+- `cargo test --workspace --locked`：440 通过、0 失败、2 个既有忽略项；其中 Gupi 125、gupi-resources 72、gupi-settings 21 通过，包含九语言一致性检查。
 - `cargo build -p gupi --locked`：通过。
 - 原生 bootstrap 使用绝对路径 C 编译器的生成/编译检查通过；实际 `open -n` 启动及重启验证见下。
 
 Cargo 仍报告既有第三方 `block 0.1.6` future-incompatibility 提示，不影响上述检查退出状态。日志在 `/tmp/gupi-polish-final-{clippy,workspace}.log`。
 
-新增回归覆盖 Skill 完整说明、正文读取失败时说明保留、实际键盘翻页与 Tab 离开、操作区位于滚动区上方；语言原始值与语言切换后的控件名称；录制控件包含命令、绑定和状态；资源命名对新建/已有文件的不同规则。认证现有回归已按直接行操作更新。
+新增回归覆盖 Skill 完整说明、正文读取失败时说明保留、实际键盘翻页与 Tab 离开、操作区位于滚动区上方；语言原始值与语言切换后的控件名称；录制控件包含命令、绑定和状态；资源命名对新建/已有文件的不同规则。认证现有回归已按直接行操作更新。补充生产视图回归：德语 800 宽度的 Codemode 操作在界内；未知值项不可操作，明确选择未写入/开/关只改暂存状态，不写文件。
 
-原生验证限制：此前走查是问题来源，不能作为此次修正的验收。此次 protected Gallery 通过 `open -n` 启动和退出后的再次启动，均验证最终 gupi-bin 的可执行文件、project-a cwd、临时 HOME、GUPI_CONFIG_DIR / GUPI_LOG_DIR / GUPI_DATA_DIR、PI_CODING_AGENT_DIR / PI_CODING_AGENT_SESSION_DIR。随机标识阶段 CUA 返回 `Computer Use was not approved to use Gupi UI Gallery`，未尝试改名或换标识绕过拒绝；修正后的 zh-CN 默认尺寸、德语 800×600、主题及原生 AX 逐项复查尚未执行，暂无此次有效 UI 截图。启动证据与 fixture 位于 `/tmp/gupi-settings-polish-20261019`（verified-launches.jsonl）。
+原生验证：使用新建的私有 fixture，zh-CN 960×740 浅色和德语 800×600 深色各复查一次。证据为会话内联截图；未另造截图导出路径。启动验证、清理日志、fixture/hash 记录保存在 `/tmp/gupi-settings-polish-20261019`。
+
+| 原生覆盖 | 实际结果 |
+| --- | --- |
+| 通用、关于、外观 | 语言字段和文件/诊断操作可达；等宽图标卡片与完整 AX 名称；清理确认含对象。语言 Select 有名称和当前值，选项通过可达的非焦点静态文字暴露本地语言名称；切换语言后键盘搜索、选择和选中状态正常 |
+| 快捷键、模板任务 | 录制取消/确认在窄窗口内；AX 含命令、绑定和录制状态；紧凑模型/思考等级选择；假 Pi 失败时德语/中文重试就近显示且保留名称/模板，重试后可保存；删除任务确认包含对象 |
+| 网络 | 重试次数、初始/最大延迟与高级超时标签和值可读 |
+| 项目包、提示词、工具、MCP、模型 | 仅选择 fixture project-a，保持未信任；作用域/信任带与操作栏分行，添加、浏览/已安装、重新读取可达；项目模型显示既有全局专属说明 |
+| 模型/MCP 菜单 | 模型布尔值、MCP 未知枚举与工具 Codemode 当前项勾号；最终构建另验证自动 Codemode 的未知值、暂存未写入/开/关各自勾号和键盘选择，放弃后文件仍为未知值，不自动改写 |
+| 包 | 长来源不遮住可识别包名；展开空包显示空状态；移除确认含对象 |
+| Skill | 摘要三行，查看暴露完整说明与有界正文，操作在上方；聚焦后 End 改变实际滚动位置，Tab 可离开；不合推荐但安全的 Native_Skill 显示警告且成功创建 |
+| 提示词 | 含空白新名称在两种语言下拒绝创建、输入保留；已有 old name 仍可编辑，未改写原文件 |
+| 认证 | API Key、Missing、OAuth、Unknown 行分别直接打开替换、设置、注销确认、替换编辑器；Unknown 保存仍有整条替换确认；掩码输入及 AX 不含假 secret 值，取消未改 auth.json |
+
+fixture 结束核对（native-final-hashes.json）：auth.json、models.json、已有提示词、项目配置及隔离 .agents 文件哈希与初始记录相同；mcp.json 的差异仅来自主动注入的未知枚举/工具 Codemode fixture。Native_Skill/SKILL.md 已创建；native prompt.md 与 german prompt.md 均不存在。配置中的语言和 Native task 为本次有意操作结果。
+
+原生发现并修正：语言选项原先没有可达 AX 名称；各语言目录中的语言选项统一为 autonym。autoEnableCodemode 原先在窄宽度溢出且未显示选中项，改为标签/状态在上、选择和更多操作在下；选择依据有效暂存值，未知值以禁用的当前项保留。此修正经架构师确认，不改变保存语义。
 
 ### 隔离事件与修复
 
@@ -122,12 +138,12 @@ Cargo 仍报告既有第三方 `block 0.1.6` future-incompatibility 提示，不
 
 ### 固定 Gallery 标识后的复核
 
-按用户批准，将每次随机的 CFBundleIdentifier 改为固定的 `top.sushao.gupi.ui-gallery.isolated`，应用名仍为 `Gupi UI Gallery`，保留原生 execve bootstrap 和冗余 LSEnvironment。停止旧 fixture PID 98433 后，以临时 HOME/Pi 环境重新执行 `cargo build -p gupi --locked`，通过；更新 bundle 并通过 `open -n` 启动最终 GUI PID 2757。绑定 CUA 前已用 ps 与 cwd 检查确认最终可执行文件为该临时 bundle 的 gupi-bin、工作目录为 project-a，且 HOME 与全部 GUPI/Pi/会话覆盖变量匹配 fixture。实际绑定仍返回 `Computer Use was not approved to use Gupi UI Gallery`；已停止原生尝试，未换别名重试，待用户在 Codex 中授权上述固定应用后继续。此轮没有新增 UI 验收覆盖或截图。
+固定 `.isolated` 标识尝试仍遇到 CUA 未授权；恢复原始固定 `top.sushao.gupi.ui-gallery` 并清理已批准的旧 bundle、创建新路径后，按精确 bundle 路径绑定成功。不能把先前失败仅归因于随机标识。最终 GUI 的可执行文件、project-a cwd 和六个 HOME/GUPI/Pi/会话覆盖变量均在 CUA 绑定前验证；证据为 verified-launches.jsonl。
 
 ### 当前 Gallery 生命周期修正
 
-用户批准恢复原始固定标识 `top.sushao.gupi.ui-gallery`，并同意删除先前列明的 14 个闲置临时根目录，运行中的 0w4b4sua 在替代环境准备好后再停止和删除。工具增加显式 `--cleanup`：仅枚举同一规范化临时父目录的直属、当前用户所有且具有预期 fixture 结构的目录；检查完整进程参数与 cwd/可执行文件元数据，发现运行引用或检查不完整就保留；删除前复核所有者、目录类型与设备/inode，以 fd 相对路径使用防 symlink 替换的 rmtree。清理不终止进程。
+用户批准恢复原始固定标识 `top.sushao.gupi.ui-gallery`，并同意删除先前列明的 14 个闲置临时根目录，运行中的 0w4b4sua 在替代环境准备好后再停止和删除。工具增加显式 `--cleanup ROOT_NAME...` 和 `--exclude ROOT_NAME`，仅处理明确列出的已批准集合；仅枚举同一规范化临时父目录的直属、当前用户所有且具有预期 fixture 结构的目录；检查完整进程参数与 cwd/可执行文件元数据，发现运行引用或检查不完整就保留；删除前复核所有者、目录类型与设备/inode，通过已打开的父目录 fd 切换目录，再使用防 symlink 替换的相对路径 rmtree（兼容本机 Python 无 rmtree dir_fd 参数）。清理不终止进程。
 
 普通启动不隐式删除保留或预备环境；若仍有其他 Gallery bundle，则拒绝再启动并提示先显式清理。正常退出时同样检查有无重开 GUI 或残留子进程再删除本次目录，`--keep` 保留本次 fixture，后续显式清理才可移除。进程检查是保守保护，仍有并发启动与删除间的竞争窗口；不将其称为并发安全协议。
 
-当前仅完成语法和差异检查、只读枚举：15 个预期 fixture 根目录（14 个已批准闲置项及运行中的 0w4b4sua），尚未执行删除。bootstrap 只能约束 bundle 入口；直接启动内部 gupi-bin 的隔离边界已报协调者，专用 Gallery 构建最早入口守卫的应用源码方案待确认，尚未实施或新增原生验收结论。
+已实际删除用户逐项批准的 14 个闲置根目录，明确排除 0w4b4sua；备份假 fixture 后停止自己的 PID 2757，再单独删除该根目录。每次删除前复核无可见存活引用，未停止其他进程。日志为 cleanup-approved.log、cleanup-own.log。当前新 fixture 通过 --keep 保留以供复查；没有把未列明根目录纳入删除授权。此流程只提供保守检查，不消除并发启动竞争。

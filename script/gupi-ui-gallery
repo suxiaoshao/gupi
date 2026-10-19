@@ -5,11 +5,87 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import re
 import shlex
 import shutil
 import subprocess
+import stat
 import sys
 import tempfile
+
+
+PREFIX = "gupi-ui-gallery-"
+
+
+def gallery_roots(parent):
+    """Only inspect direct, owned fixture directories in this canonical parent."""
+    for root in parent.glob(PREFIX + "*"):
+        info = root.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+            continue
+        structure = all((root / name).is_dir() and not (root / name).is_symlink()
+                        for name in ["config", "agent", "project-a"])
+        if structure:
+            yield root, (info.st_dev, info.st_ino)
+
+
+def has_gallery_process(root):
+    # Keep metadata private: only root names, never process argv/env, are printed.
+    processes = subprocess.run(["/bin/ps", "-ww", "-axo", "pid=,ppid=,command="],
+                               capture_output=True, text=True, check=True)
+    lsof = shutil.which("lsof")
+    if not lsof:
+        raise RuntimeError("lsof unavailable; cannot establish fixture inactivity")
+    references = subprocess.run([lsof, "-nP", "-a", "-u", str(os.getuid()),
+                                "-d", "cwd,txt", "-Fpn"],
+                               capture_output=True, text=True, check=True)
+    if processes.stderr or references.stderr:
+        raise RuntimeError("process inspection incomplete; keeping fixtures")
+    aliases = {str(root), str(root.resolve()),
+               str(Path(tempfile.gettempdir()) / root.name)}
+    # Match a complete path component, including paths shown without shell quotes.
+    pattern = re.compile(r"(?<![\w/.-])(?:" + "|".join(re.escape(p) for p in aliases)
+                         + r")(?=/|\s|$)")
+    for line in processes.stdout.splitlines():
+        fields = line.strip().split(None, 2)
+        if len(fields) == 3 and pattern.search(fields[2]):
+            return True
+    for line in references.stdout.splitlines():
+        if line.startswith("n"):
+            path = Path(line[1:])
+            if any(path == Path(alias) or Path(alias) in path.parents for alias in aliases):
+                return True
+    return False
+
+
+def remove_gallery(root, identity):
+    if not shutil.rmtree.avoids_symlink_attacks:
+        raise RuntimeError("symlink-safe directory removal unavailable; keeping fixtures")
+    if has_gallery_process(root):
+        print(f"Kept running gallery: {root}", flush=True)
+        return False
+    # Recheck the inspected inode, through the canonical parent, just before removal.
+    parent = root.parent.resolve()
+    with_parent = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        info = os.stat(root.name, dir_fd=with_parent, follow_symlinks=False)
+        if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+                or (info.st_dev, info.st_ino) != identity):
+            raise RuntimeError("fixture directory identity changed; keeping it")
+        shutil.rmtree(root.name, dir_fd=with_parent)
+    finally:
+        os.close(with_parent)
+    print(f"Removed gallery: {root}", flush=True)
+    return True
+
+
+def cleanup_galleries(parent):
+    # Explicit cleanup includes retained/prepared fixtures; ordinary launch does not.
+    for root, identity in gallery_roots(parent):
+        try:
+            remove_gallery(root, identity)
+        except (OSError, RuntimeError, subprocess.SubprocessError):
+            print(f"Kept gallery (inactivity/removal not established): {root}", flush=True)
 
 
 def c_string(value):
@@ -63,7 +139,16 @@ def main():
     parser.add_argument("--no-build", action="store_true", help="Use the existing target/debug/gupi")
     parser.add_argument("--prepare-only", action="store_true", help="Create fixtures without opening Gupi")
     parser.add_argument("--keep", action="store_true", help="Keep the temporary environment after Gupi exits")
+    parser.add_argument("--cleanup", action="store_true",
+                        help="Remove inactive gallery fixtures in the current temp directory, including --keep; do not launch")
     args = parser.parse_args()
+    if args.cleanup:
+        cleanup_galleries(Path(tempfile.gettempdir()).resolve())
+        return
+    existing = [root for root, _ in gallery_roots(Path(tempfile.gettempdir()).resolve())
+                if (root / "Gupi UI Gallery.app").is_dir()]
+    if existing and not args.prepare_only:
+        parser.error("Existing gallery bundles must be stopped and explicitly removed with --cleanup before launching another")
     repo = Path(__file__).resolve().parent.parent
     pi = shutil.which(args.pi)
     if not pi:
@@ -73,7 +158,7 @@ def main():
     binary = repo / "target/debug/gupi"
     if not args.prepare_only and not binary.is_file():
         parser.error(f"Gupi build not found: {binary}")
-    root = Path(tempfile.mkdtemp(prefix="gupi-ui-gallery-"))
+    root = Path(tempfile.mkdtemp(prefix=PREFIX))
     root.chmod(0o700)
     for name in ["config", "logs", "data", "agent", "sessions", "project-a", "project-b"]:
         (root / name).mkdir()
@@ -120,7 +205,7 @@ def main():
         build_bootstrap(root, env, executable, bootstrap)
         (bundle / "Info.plist").write_bytes(plistlib.dumps({
             "CFBundleExecutable": "gupi",
-            "CFBundleIdentifier": "top.sushao.gupi.ui-gallery.isolated",
+            "CFBundleIdentifier": "top.sushao.gupi.ui-gallery",
             # Redundant metadata; the executable bootstrap enforces isolation.
             # Some Launch Services paths ignore LSEnvironment.
             "LSEnvironment": env,
@@ -141,7 +226,11 @@ def main():
         if args.keep:
             print(f"Kept gallery files: {root}", flush=True)
         elif 'process' not in locals() or process.poll() is not None:
-            shutil.rmtree(root)
+            try:
+                info = root.lstat()
+                remove_gallery(root, (info.st_dev, info.st_ino))
+            except (OSError, RuntimeError, subprocess.SubprocessError):
+                print(f"Kept gallery (inactivity/removal not established): {root}", flush=True)
         else:
             print(f"Gupi is still running; kept gallery files: {root}", flush=True)
 

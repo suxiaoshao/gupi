@@ -68,7 +68,7 @@
 
 `script/gupi-ui-gallery` 把 `HOME` 指向私有临时根目录，使 `~/.agents/skills` 等基于主目录的发现也落在临时数据上（`crates/gupi-resources/src/resources.rs:173`）；同时设置配置、日志、数据、Pi 与会话目录。不改应用的发现规则。
 
-macOS 临时 bundle 使用与真实应用不同的固定标识 `top.sushao.gupi.ui-gallery.isolated` 及原生 bootstrap。该固定标识由用户批准，便于 Computer Use 的一次性授权；每次运行的临时路径与隔离环境仍各自独立。工具通过绝对路径 `/usr/bin/cc` 编译 bootstrap；它检查必需的 fixture 目录，切换到 project-a，以绝对路径和静态环境白名单 `execve` 内部 gupi-bin，并转发参数；缺目录、chdir 或 execve 失败即退出，不合并宿主环境。Info.plist 的 LSEnvironment 仅保留为冗余元数据，不作为隔离保证。直接启动和 Launch Services 重启都须观察最终 GUI 进程的可执行文件、cwd 和覆盖变量，确认后才绑定 CUA。
+macOS 临时 bundle 恢复原先成功连接的固定标识 `top.sushao.gupi.ui-gallery`，保留原生 bootstrap。标识与真实应用不同；每次运行的临时路径与隔离环境仍各自独立。工具通过绝对路径 `/usr/bin/cc` 编译 bootstrap；它检查必需的 fixture 目录，切换到 project-a，以绝对路径和静态环境白名单 `execve` 内部 gupi-bin，并转发参数；缺目录、chdir 或 execve 失败即退出，不合并宿主环境。Info.plist 的 LSEnvironment 仅保留为冗余元数据，不作为隔离保证。直接启动和 Launch Services 重启都须观察最终 GUI 进程的可执行文件、cwd 和覆盖变量，确认后才绑定 CUA。
 
 ### 7. 认证页行点击（用户已确认）
 
@@ -123,3 +123,11 @@ Cargo 仍报告既有第三方 `block 0.1.6` future-incompatibility 提示，不
 ### 固定 Gallery 标识后的复核
 
 按用户批准，将每次随机的 CFBundleIdentifier 改为固定的 `top.sushao.gupi.ui-gallery.isolated`，应用名仍为 `Gupi UI Gallery`，保留原生 execve bootstrap 和冗余 LSEnvironment。停止旧 fixture PID 98433 后，以临时 HOME/Pi 环境重新执行 `cargo build -p gupi --locked`，通过；更新 bundle 并通过 `open -n` 启动最终 GUI PID 2757。绑定 CUA 前已用 ps 与 cwd 检查确认最终可执行文件为该临时 bundle 的 gupi-bin、工作目录为 project-a，且 HOME 与全部 GUPI/Pi/会话覆盖变量匹配 fixture。实际绑定仍返回 `Computer Use was not approved to use Gupi UI Gallery`；已停止原生尝试，未换别名重试，待用户在 Codex 中授权上述固定应用后继续。此轮没有新增 UI 验收覆盖或截图。
+
+### 当前 Gallery 生命周期修正
+
+用户批准恢复原始固定标识 `top.sushao.gupi.ui-gallery`，并同意删除先前列明的 14 个闲置临时根目录，运行中的 0w4b4sua 在替代环境准备好后再停止和删除。工具增加显式 `--cleanup`：仅枚举同一规范化临时父目录的直属、当前用户所有且具有预期 fixture 结构的目录；检查完整进程参数与 cwd/可执行文件元数据，发现运行引用或检查不完整就保留；删除前复核所有者、目录类型与设备/inode，以 fd 相对路径使用防 symlink 替换的 rmtree。清理不终止进程。
+
+普通启动不隐式删除保留或预备环境；若仍有其他 Gallery bundle，则拒绝再启动并提示先显式清理。正常退出时同样检查有无重开 GUI 或残留子进程再删除本次目录，`--keep` 保留本次 fixture，后续显式清理才可移除。进程检查是保守保护，仍有并发启动与删除间的竞争窗口；不将其称为并发安全协议。
+
+当前仅完成语法和差异检查、只读枚举：15 个预期 fixture 根目录（14 个已批准闲置项及运行中的 0w4b4sua），尚未执行删除。bootstrap 只能约束 bundle 入口；直接启动内部 gupi-bin 的隔离边界已报协调者，专用 Gallery 构建最早入口守卫的应用源码方案待确认，尚未实施或新增原生验收结论。

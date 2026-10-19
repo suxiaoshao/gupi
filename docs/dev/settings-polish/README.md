@@ -1,6 +1,6 @@
 # 设置页布局、无障碍与文案修正
 
-状态：Draft（待用户确认“认证页行点击”一项，见“待确认”）。
+状态：Ready（架构师评审通过，用户已确认认证页行点击）。
 
 来源：#75 合并前对全部设置页的原生走查（zh-CN 960×740、德语 800×600，浅色/深色，全局/项目作用域）和代码审查。认证页与模型页的同类问题已在 #75 修复，本文只覆盖其余现有页面。依据为 [GPUI Kit Design Guides](../../../.agents/skills/gpui-kit-design-guides/references/design-guides.md) 的 Forms and settings、Responsive desktop windows、Spatial grammar、Components and composition、Interface language 与 Accessibility checklist。Pi 规则依据 Pi v1.2.0（本地 `/Users/sushao/Documents/code/pi`，路径相对 `packages/coding-agent/src/`）。
 
@@ -68,9 +68,9 @@
 
 `script/gupi-ui-gallery` 额外把 `HOME` 指向临时根目录，使 `~/.agents/skills` 等基于主目录的发现也落在临时数据上（`crates/gupi-resources/src/resources.rs:173`）。不改应用的发现规则。
 
-## 待确认
+### 7. 认证页行点击（用户已确认）
 
-- **认证页点击供应商行**：现在弹出的操作对话框与行尾菜单重复。建议改为点击行直接打开该行最常用的操作（API Key：替换；未存储：设置；OAuth：注销确认；无法识别：替换确认），其余操作留在行尾菜单。这会改变交互，需用户确认后纳入。
+点击供应商行直接打开该行最常用的操作，不再弹出与行尾菜单重复的操作对话框：API Key 行打开替换，未存储的行打开设置，OAuth 行打开注销确认，无法识别的行打开整条替换确认。检查、复制登录命令、跳转等其余操作留在行尾菜单；可用操作与文案由同一处定义，行与菜单共用。行的无障碍名称说明该操作。
 
 ## 实施顺序
 
@@ -80,7 +80,7 @@
 4. 资源命名：提示词模板的新建校验（`gupi-resources`），Skill 的非阻断警告，以及按类型的提示文案。
 5. 用词与确认文案，九种语言。
 6. gallery 隔离 `HOME`。
-7. （确认后）认证页行点击。
+7. 认证页行点击。
 
 ## 验证
 

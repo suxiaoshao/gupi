@@ -39,7 +39,7 @@
 | `logout` 只删除本地已存凭据，不连接、不吊销，也不断开运行中会话的连接 | `cli.ts:239-243` |
 | `login` 先连接服务，已登录时直接返回，需要授权时才打开浏览器；`--timeout`（默认 300 秒）只限制授权阶段，不含前后的连接与重连。非 TTY 下通过浏览器回调完成，粘贴回调 URL 只在 TTY 可用；没有 JSON 输出；退出码 1 也可能是凭据已保存但随后重连失败 | `cli.ts:244-252,516-594` |
 | `list --json` 连接所有启用的服务、枚举工具、可能刷新令牌、求值配置中的 `!command` 与环境引用，然后关闭连接；停用的服务不连接。没有单服务过滤或超时参数 | `cli.ts:209-216,434-485` |
-| `list` 的 JSON 每项含 `name`、`scope`、`enabled`、`exposure`、`transport`、`state`、`tools`，可选 `source`、`override`、`toolExposure`、`resources`、`error`；顶层有 `errors` 与可选 `note`；无效条目可能不出现在 `servers` 中；`state` 为 `connecting` / `connected` / `disconnected` / `needs-auth` / `failed` / `closed` 或停用时的 `disabled`。有服务未连接或配置有错（即使所有列出的服务都已连接）时退出码为 1，但 JSON 仍有效 | `cli.ts:434-485`、`extensions/mcp/config.ts:107-138`、`runtime.ts:57` |
+| `list` 的 JSON 每项含 `name`、`scope`、`source`、`enabled`、`exposure`、`transport`、`state`、`tools`，可选 `override`、`toolExposure`、`resources`、`error`；顶层有 `errors` 与可选 `note`；无效条目可能不出现在 `servers` 中；`state` 为 `connecting` / `connected` / `disconnected` / `needs-auth` / `failed` / `closed` 或停用时的 `disabled`。有服务未连接或配置有错（即使所有列出的服务都已连接）时退出码为 1，但 JSON 仍有效 | `cli.ts:434-485`、`extensions/mcp/config.ts:107-138`、`runtime.ts:57` |
 | CLI 不提供会话的令牌解析（provider token）；使用 `auth.provider` 的服务在 CLI 检查中可能显示为未认证，而会话中实际可用 | `cli.ts:118-126`、`runtime.ts:186-198` |
 | 会话在 `session_start` 时读取 `mcp.json`；没有 RPC 重新加载命令；`/mcp reconnect` 只重开原连接，不重读配置 | `extensions/mcp/index.ts:720-726,1114-1128` |
 | 会话中已启用、处于 `needs-auth` 的连接在下一轮 `turn_start` 时比较已存令牌，变化后重连；令牌提供方每次请求重读存储。外部登录或登出不会立即广播给运行中的会话 | `index.ts:538-557,1211-1214` |

@@ -1024,6 +1024,7 @@ fn multiple_runs_keep_tabs_and_closing_main_only_tab_promotes_files_to_overlay(
                 .map(|(run, _)| run.to_owned())
                 .collect();
             assert_eq!(runs.len(), 2);
+            home.select_workspace_tab(None, window, cx);
             for run in runs {
                 home.open_changes("a", &run, "dir/0.rs", window, cx);
             }
@@ -1053,5 +1054,165 @@ fn multiple_runs_keep_tabs_and_closing_main_only_tab_promotes_files_to_overlay(
             assert!(home.pane_layout.right > 0.);
             assert_eq!(home.views["a"].workspace.changes.len(), 1);
         })
+    });
+}
+
+#[gpui_kit::test]
+fn launcher_files_changes_middle_close_and_last_tab(cx: &mut TestAppContext) {
+    let (home, _, visual) = mount_mode(cx, &fixture(2, 1, 0), false, false);
+    visual.simulate_resize(size(px(1728.), px(900.)));
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            home.ensure_panel(crate::home::panes::Panel::Workspace, window, cx)
+        })
+    });
+    visual.run_until_parked();
+    let files = visual.debug_bounds("launcher-files").unwrap();
+    visual.simulate_click(files.center(), Modifiers::default());
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            home.select_workspace_tab(None, window, cx);
+            assert_eq!(home.views["a"].workspace.order, vec![None]);
+        })
+    });
+    let add = visual.debug_bounds("workspace-add").unwrap();
+    visual.simulate_click(add.center(), Modifiers::default());
+    visual.run_until_parked();
+    let changes = visual.debug_bounds("launcher-changes").unwrap();
+    visual.simulate_click(changes.center(), Modifiers::default());
+    visual.run_until_parked();
+    let id = visual.update(|_, cx| home.read(cx).views["a"].workspace.changes[0].id.clone());
+    assert_eq!(id, "tool-0-0");
+    let tab = visual.debug_bounds("workspace-tab-tool-0-0").unwrap();
+    visual.simulate_mouse_down(tab.center(), MouseButton::Middle, Modifiers::default());
+    visual.simulate_mouse_up(tab.center(), MouseButton::Middle, Modifiers::default());
+    visual.run_until_parked();
+    visual.update(|_, cx| {
+        assert!(home.read(cx).views["a"].workspace.changes.is_empty());
+        assert_eq!(home.read(cx).views["a"].workspace.order, vec![None]);
+    });
+    let files = visual.debug_bounds("workspace-tab-files").unwrap();
+    visual.simulate_mouse_down(files.center(), MouseButton::Middle, Modifiers::default());
+    visual.simulate_mouse_up(files.center(), MouseButton::Middle, Modifiers::default());
+    visual.run_until_parked();
+    assert!(visual.debug_bounds("launcher-files").is_some());
+    visual.update(|_, cx| {
+        assert!(
+            home.read(cx)
+                .pane_layout
+                .visible(crate::home::panes::Panel::Workspace)
+        )
+    });
+}
+
+#[gpui_kit::test]
+fn workspace_maximize_escape_and_narrow_restore_preferences(cx: &mut TestAppContext) {
+    let (home, _, visual) = mount_mode(cx, &fixture(1, 1, 0), false, false);
+    visual.simulate_resize(size(px(1728.), px(900.)));
+    visual.update(|window, cx| {
+        let run = run(&home, cx);
+        home.update(cx, |home, cx| {
+            home.open_changes("a", &run, "dir/0.rs", window, cx)
+        });
+    });
+    visual.run_until_parked();
+    let segment = visual.debug_bounds("titlebar-workspace").unwrap();
+    let body = visual.debug_bounds("workspace-docked").unwrap();
+    assert_eq!(segment.left(), body.left());
+    assert_eq!(segment.size.width, body.size.width);
+    let before = visual.update(|_, cx| {
+        (
+            cx.global::<layout::LayoutState>().clone(),
+            home.read(cx).pane_layout.ratio(),
+        )
+    });
+    let maximize = visual.debug_bounds("workspace-maximize").unwrap();
+    visual.simulate_click(maximize.center(), Modifiers::default());
+    visual.run_until_parked();
+    visual.update(|_, cx| assert!(home.read(cx).pane_layout.maximized));
+    visual.simulate_keystrokes("escape");
+    visual.run_until_parked();
+    visual.update(|_, cx| assert!(!home.read(cx).pane_layout.maximized));
+    let maximize = visual.debug_bounds("workspace-maximize").unwrap();
+    visual.simulate_click(maximize.center(), Modifiers::default());
+    visual.run_until_parked();
+    visual.simulate_resize(size(px(850.), px(900.)));
+    visual.run_until_parked();
+    visual.update(|_, cx| {
+        assert!(!home.read(cx).pane_layout.maximized);
+        assert_eq!(home.read(cx).pane_layout.ratio(), before.1);
+        assert_eq!(
+            cx.global::<layout::LayoutState>().workspace_pinned,
+            before.0.workspace_pinned
+        );
+        assert_eq!(
+            cx.global::<layout::LayoutState>().navigator_width_rem,
+            before.0.navigator_width_rem
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn workspace_tab_drag_reorders_and_outside_drop_cancels(cx: &mut TestAppContext) {
+    let (home, state, visual) = mount_mode(cx, &fixture(1, 1, 0), false, false);
+    visual.simulate_resize(size(px(1728.), px(900.)));
+    visual.update(|window, cx| {
+        let run = run(&home, cx);
+        home.update(cx, |home, cx| {
+            home.select_workspace_tab(None, window, cx);
+            home.open_changes("a", &run, "dir/0.rs", window, cx);
+        });
+    });
+    visual.run_until_parked();
+    let id = visual.update(|_, cx| home.read(cx).views["a"].workspace.changes[0].id.clone());
+    let start = visual.debug_bounds("workspace-tab-files").unwrap().center();
+    let target = visual.debug_bounds("workspace-tab-tool-0-0").unwrap();
+    let end = point(target.right() - px(3.), target.center().y);
+    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(
+        start + point(px(10.), px(0.)),
+        MouseButton::Left,
+        Modifiers::default(),
+    );
+    visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    visual.update(|_, cx| {
+        assert_eq!(
+            home.read(cx).views["a"].workspace.order,
+            vec![Some(id.clone()), None]
+        )
+    });
+    let start = visual.debug_bounds("workspace-tab-files").unwrap().center();
+    let end = point(start.x, px(400.));
+    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    visual.update(|_, cx| {
+        assert_eq!(
+            home.read(cx).views["a"].workspace.order,
+            vec![Some(id.clone()), None]
+        )
+    });
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| home.toggle_workspace_maximized(window, cx));
+        assert!(home.read(cx).pane_layout.maximized);
+        state.update(cx, |state, _| {
+            state
+                .sessions_for_test()
+                .insert("b".into(), session("b", &fixture(1, 1, 0), false));
+            *state.selected_for_test() = Some("b".into());
+        });
+        home.update(cx, |home, cx| home.sync(true, window, cx));
+        assert!(!home.read(cx).pane_layout.maximized);
+        assert!(home.read(cx).views["b"].workspace.launcher());
+        state.update(cx, |state, _| *state.selected_for_test() = Some("a".into()));
+        home.update(cx, |home, cx| home.sync(true, window, cx));
+        assert_eq!(
+            home.read(cx).views["a"].workspace.order,
+            vec![Some(id), None]
+        );
     });
 }

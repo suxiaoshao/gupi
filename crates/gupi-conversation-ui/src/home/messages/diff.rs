@@ -246,9 +246,12 @@ impl DiffBlock {
             })
             .into_any_element()
     }
+    /// The workspace shows one file per view and owns its header, so the
+    /// component's per-file header (and its collapse control) is hidden.
     pub fn render_workspace(&self) -> AnyElement {
         if let Some(state) = &self.state {
             Diff::new(state)
+                .header_visible(false)
                 .size_full()
                 .min_w_0()
                 .min_h_0()

@@ -318,6 +318,10 @@ impl HomeView {
                 .find(|tab| Some(&tab.id) == view.workspace.active.as_ref())
             {
                 tab.focus.focus(window, cx);
+            } else if view.workspace.launcher() {
+                if let Some(focus) = view.workspace.headers.get(&view.workspace.active) {
+                    focus.focus(window, cx);
+                }
             } else {
                 view.files.update(cx, |files, cx| files.focus(window, cx));
             }
@@ -665,6 +669,10 @@ impl HomeView {
             view.model_picker
                 .update(cx, |picker, cx| picker.close(window, cx));
         }
+        if self.shown_key != key {
+            self.pane_layout.maximized = false;
+            self.pane_layout.invalidate();
+        }
         self.shown_key = key.clone();
         let Some(key) = key else {
             if changed {
@@ -843,7 +851,7 @@ impl HomeView {
                     _files_subscription: files_subscription,
                     source: None,
                     source_subscription: None,
-                    workspace: Default::default(),
+                    workspace: workspace::Tabs::new(cx),
                     input,
                     input_draft: draft,
                     _input_subscriptions: input_subscriptions,
@@ -1360,6 +1368,23 @@ impl Render for HomeView {
             } else {
                 0.
             };
+            if panel == panes::Panel::Workspace {
+                // The workspace overlay covers nearly the whole column; dim the
+                // uncovered strip so it reads as the click-away area rather than
+                // clipped conversation.
+                shell = shell.child(
+                    div()
+                        .id("panel-overlay-scrim")
+                        .occlude()
+                        .absolute()
+                        .inset_0()
+                        .bg(cx.theme().overlay)
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, _, window, cx| this.close_navigator(window, cx)),
+                        ),
+                );
+            }
             shell = shell.child(
                 div()
                     .id("panel-overlay")
@@ -1395,13 +1420,22 @@ impl Render for HomeView {
                             .track_focus(&self.history_region)
                             .child(self.render_history_card(true, cx))
                             .into_any_element(),
-                        panes::Panel::Workspace => self.render_file_workspace(cx),
+                        panes::Panel::Workspace => self.render_file_workspace(window, cx),
                     }),
             );
         }
         shell = shell.child(panes::ResizeEvents(cx.weak_entity()));
         let content = v_flex()
             .key_context("Gupi")
+            .when(self.pane_layout.maximized, |view| {
+                view.key_context("Gupi GupiWorkspaceMaximized")
+                    .on_action(
+                        cx.listener(|this, _: &actions::CloseNavigator, window, cx| {
+                            this.toggle_workspace_maximized(window, cx);
+                            cx.stop_propagation();
+                        }),
+                    )
+            })
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::run_action))
             .on_action(cx.listener(

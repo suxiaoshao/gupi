@@ -340,7 +340,7 @@ fn count(cx: &App, key: &str, count: usize) -> String {
     args.set("count", count as i64);
     t_with_args(cx, key, &args)
 }
-fn stats(stats: Option<LineStats>, cx: &App) -> AnyElement {
+pub(in crate::home) fn stats(stats: Option<LineStats>, cx: &App) -> AnyElement {
     statistics(stats, "conversation-edit-stats-tooltip", cx)
 }
 fn statistics(stats: Option<LineStats>, tooltip_key: &str, cx: &App) -> AnyElement {

@@ -5,16 +5,111 @@ use gpui_kit::component::tooltip::Tooltip;
 use panes::Panel;
 mod changes;
 use changes::ChangesTab;
-use gpui_kit::component::tab::{Tab, TabBar};
+mod launcher;
+mod strip;
+const NEW_TAB: &str = "workspace:new";
+const RECENT_LIMIT: usize = 8;
 
-#[derive(Default)]
 pub(super) struct Tabs {
+    pub order: Vec<Option<String>>,
+    recent: Vec<launcher::Recent>,
+    pub scroll: ScrollHandle,
+    pub headers: HashMap<Option<String>, FocusHandle>,
+    pub dragging: Option<Option<String>>,
+    pub exit_maximized: bool,
+    pub drop_target: Option<(Option<String>, bool)>,
     pub navigator_hidden: bool,
+    next_new: u64,
     pub changes: Vec<ChangesTab>,
     pub active: Option<String>,
     pub restore_focus: bool,
 }
+impl Default for Tabs {
+    fn default() -> Self {
+        Self {
+            navigator_hidden: false,
+            next_new: 0,
+            changes: Vec::new(),
+            active: Some(NEW_TAB.into()),
+            restore_focus: false,
+            order: vec![Some(NEW_TAB.into())],
+            recent: Vec::new(),
+            scroll: ScrollHandle::new(),
+            headers: HashMap::new(),
+            drop_target: None,
+            dragging: None,
+            exit_maximized: false,
+        }
+    }
+}
 impl Tabs {
+    pub fn new(cx: &mut App) -> Self {
+        let mut tabs = Self::default();
+        tabs.activate(Some(NEW_TAB.into()), cx);
+        tabs
+    }
+    pub(super) fn launcher(&self) -> bool {
+        self.active
+            .as_deref()
+            .is_some_and(|id| id.starts_with(NEW_TAB))
+    }
+    fn activate(&mut self, id: Option<String>, cx: &mut App) {
+        if self.launcher()
+            && !id.as_deref().is_some_and(|id| id.starts_with(NEW_TAB))
+            && self.order.contains(&id)
+        {
+            self.order.retain(|entry| *entry != self.active);
+        }
+        if !self.order.contains(&id) {
+            if self.launcher() && !id.as_deref().is_some_and(|id| id.starts_with(NEW_TAB)) {
+                if let Some(slot) = self.order.iter_mut().find(|slot| **slot == self.active) {
+                    *slot = id.clone();
+                }
+            } else {
+                self.order.push(id.clone());
+            }
+        }
+        self.headers
+            .entry(id.clone())
+            .or_insert_with(|| cx.focus_handle());
+        self.active = id;
+        self.headers
+            .retain(|id, _| id.as_deref() == Some(NEW_TAB) || self.order.contains(id));
+        self.reveal();
+    }
+    fn reveal(&self) {
+        if let Some(ix) = self.order.iter().position(|id| *id == self.active) {
+            self.scroll.scroll_to_item(ix);
+        }
+    }
+    fn reconcile_order(&mut self) {
+        let previous = self.order.clone();
+        self.order.retain(|id| {
+            id.as_deref().is_none_or(|id| {
+                id.starts_with(NEW_TAB) || self.changes.iter().any(|tab| tab.id == id)
+            })
+        });
+        if !self.order.contains(&self.active) {
+            let ix = previous
+                .iter()
+                .position(|id| *id == self.active)
+                .unwrap_or(0);
+            self.active = previous[..ix]
+                .iter()
+                .rev()
+                .find(|id| self.order.contains(id))
+                .cloned()
+                .or_else(|| self.order.first().cloned())
+                .unwrap_or(Some(NEW_TAB.into()));
+        }
+        if self.order.is_empty() {
+            self.order.push(Some(NEW_TAB.into()));
+            self.active = Some(NEW_TAB.into());
+        }
+        self.headers
+            .retain(|id, _| id.as_deref() == Some(NEW_TAB) || self.order.contains(id));
+        self.reveal();
+    }
     pub(super) fn reconcile_records(
         &mut self,
         session: &gupi_conversation::conversation::Session,
@@ -59,23 +154,24 @@ impl Tabs {
                 }
             }
         }
-        let old_active = self.active.clone();
-        let mut previous = None;
+
         let mut restore = false;
         self.changes.retain(|tab| {
             let keep = tab.ids.iter().any(|id| ids.contains(id));
-            if !keep && Some(&tab.id) == old_active.as_ref() {
-                self.active = previous.clone();
-            }
             if !keep {
                 restore |=
                     tab.contains_focus(window, cx) || tab.header_focus.contains_focused(window, cx);
             }
-            if keep {
-                previous = Some(tab.id.clone());
-            }
             keep
         });
+        self.reconcile_order();
+        if self
+            .order
+            .iter()
+            .all(|id| id.as_deref().is_some_and(|id| id.starts_with(NEW_TAB)))
+        {
+            self.exit_maximized = true;
+        }
         self.restore_focus |= restore;
     }
 }
@@ -90,6 +186,12 @@ impl HomeView {
         self.session_view().and_then(|view| view.source.clone())
     }
     fn workspace_content(&self) -> panes::geometry::Content {
+        if self.session_view().is_none_or(|v| v.workspace.launcher()) {
+            return panes::geometry::Content {
+                main: true,
+                navigator: false,
+            };
+        }
         if let Some(tab) = self.active_changes() {
             return panes::geometry::Content {
                 main: true,
@@ -106,6 +208,15 @@ impl HomeView {
         }
     }
     pub(super) fn fit_layout(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self
+            .shown_key
+            .as_ref()
+            .and_then(|key| self.views.get_mut(key))
+            .is_some_and(|v| std::mem::take(&mut v.workspace.exit_maximized))
+        {
+            self.pane_layout.maximized = false;
+            self.pane_layout.invalidate();
+        }
         let preferences = cx.global::<layout::LayoutState>();
         let request = panes::Request {
             width: f32::from(window.viewport_size().width),
@@ -117,6 +228,9 @@ impl HomeView {
         };
         if self.pane_layout.fit(request, preferences) {
             self.interrupt_pane_drag(window, cx);
+            if let Some(view) = self.session_view() {
+                view.workspace.reveal();
+            }
         }
     }
     pub(super) fn ensure_panel(
@@ -154,7 +268,14 @@ impl HomeView {
                 Panel::History => &self.history_region,
                 Panel::Workspace => &self.workspace_region,
             };
-            if region.contains_focused(window, cx) {
+            let header_focused = panel == Panel::Workspace
+                && self.session_view().is_some_and(|view| {
+                    view.workspace
+                        .headers
+                        .values()
+                        .any(|focus| focus.contains_focused(window, cx))
+                });
+            if region.contains_focused(window, cx) || header_focused {
                 match panel {
                     Panel::History => &self.history_button_focus,
                     Panel::Workspace => &self.workspace_button_focus,
@@ -178,7 +299,9 @@ impl HomeView {
         match panel {
             Panel::History => self.history_focus_handle(cx).focus(window, cx),
             Panel::Workspace => {
-                if let Some(tab) = self.active_changes() {
+                if self.session_view().is_none_or(|v| v.workspace.launcher()) {
+                    self.workspace_region.focus(window, cx);
+                } else if let Some(tab) = self.active_changes() {
                     if tab.navigator_hidden {
                         tab.focus_main(window, cx);
                     } else {
@@ -194,6 +317,64 @@ impl HomeView {
             }
         }
     }
+    fn set_files_navigator_hidden(&mut self, hidden: bool, cx: &mut Context<Self>) {
+        let Some(view) = self
+            .shown_key
+            .as_ref()
+            .and_then(|key| self.views.get_mut(key))
+        else {
+            return;
+        };
+        view.workspace.navigator_hidden = hidden;
+        if let Some(source) = &view.source {
+            source.update(cx, |source, cx| {
+                source.navigator_visible = !hidden;
+                cx.notify();
+            });
+        }
+    }
+    /// Shows or hides the active tab's navigator: the file tree for Files, the
+    /// changed-file list for a Changes tab.
+    pub(super) fn toggle_workspace_navigator(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(view) = self
+            .shown_key
+            .as_ref()
+            .and_then(|key| self.views.get_mut(key))
+        else {
+            return;
+        };
+        if let Some(tab) = view
+            .workspace
+            .changes
+            .iter_mut()
+            .find(|tab| Some(&tab.id) == view.workspace.active.as_ref())
+        {
+            tab.navigator_hidden = !tab.navigator_hidden;
+        } else {
+            let hidden = !view.workspace.navigator_hidden;
+            self.set_files_navigator_hidden(hidden, cx);
+        }
+        self.fit_layout(window, cx);
+        cx.notify();
+    }
+    /// The Changes header's toggle; the Files tab renders its own in the source header.
+    pub(super) fn navigator_toggle(&self, cx: &mut Context<Self>) -> Button {
+        let visible = self.workspace_content().navigator;
+        Button::new("workspace-navigator")
+            .small()
+            .ghost()
+            .selected(visible)
+            .icon(IconName::List)
+            .tooltip(t(cx, "workspace-toggle-change-list"))
+            .accessibility_label(t(cx, "workspace-toggle-change-list"))
+            .on_click(
+                cx.listener(|this, _, window, cx| this.toggle_workspace_navigator(window, cx)),
+            )
+    }
     pub(super) fn open_source(
         &mut self,
         path: PathBuf,
@@ -208,7 +389,12 @@ impl HomeView {
         else {
             return;
         };
-        self.views.get_mut(&key).unwrap().workspace.active = None;
+        self.views
+            .get_mut(&key)
+            .unwrap()
+            .workspace
+            .activate(None, cx);
+        self.remember_file(path.clone());
         if let Some(source) = self.source().filter(|s| s.read(cx).path == path) {
             self.fit_layout(window, cx);
             if keyboard {
@@ -217,8 +403,12 @@ impl HomeView {
             return;
         }
         let root = self.state.read(cx).sessions()[&key].info().cwd.clone();
-        let preview =
-            cx.new(|cx| source::Preview::new(path.clone(), Some(root), keyboard, window, cx));
+        let navigator_visible = !self.views[&key].workspace.navigator_hidden;
+        let preview = cx.new(|cx| {
+            let mut preview = source::Preview::new(path.clone(), Some(root), keyboard, window, cx);
+            preview.navigator_visible = navigator_visible;
+            preview
+        });
         self.files()
             .unwrap()
             .update(cx, |files, cx| files.set_open_path(Some(path), cx));
@@ -233,12 +423,9 @@ impl HomeView {
                 match event {
                     source::Event::Close => this.close_source(window, cx),
                     source::Event::Return => this.return_from_source(window, cx),
+                    source::Event::ToggleNavigator => this.toggle_workspace_navigator(window, cx),
                     source::Event::Reveal => {
-                        this.views
-                            .get_mut(&preview_key)
-                            .unwrap()
-                            .workspace
-                            .navigator_hidden = false;
+                        this.set_files_navigator_hidden(false, cx);
                         this.fit_layout(window, cx);
                         if let Some(path) = this.source().map(|s| s.read(cx).path.clone()) {
                             this.files()
@@ -257,6 +444,10 @@ impl HomeView {
         cx.notify();
     }
     pub(super) fn return_from_source(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.pane_layout.maximized {
+            self.toggle_workspace_maximized(window, cx);
+            return;
+        }
         if self.pane_layout.overlay == Some(Panel::Workspace) {
             self.close_navigator(window, cx);
         } else if self.pane_layout.workspace_docked && self.workspace_content().navigator {
@@ -288,6 +479,10 @@ impl HomeView {
         cx.notify();
     }
     pub(super) fn close_navigator(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.pane_layout.maximized {
+            self.toggle_workspace_maximized(window, cx);
+            return;
+        }
         if let Some(panel) = self.pane_layout.overlay.take() {
             let region = match panel {
                 Panel::History => &self.history_region,
@@ -341,7 +536,7 @@ impl HomeView {
             .as_ref()
             .and_then(|key| self.views.get_mut(key))
         {
-            view.workspace.active = id;
+            view.workspace.activate(id, cx);
         }
         self.fit_layout(window, cx);
         self.sync(false, window, cx);
@@ -361,42 +556,66 @@ impl HomeView {
         else {
             return;
         };
-        let Some(ix) = view.workspace.changes.iter().position(|tab| tab.id == id) else {
-            return;
-        };
-        let active_removed = view.workspace.changes.iter().enumerate().any(|(i, tab)| {
-            Some(&tab.id) == view.workspace.active.as_ref()
-                && match mode {
-                    1 => i != ix,
-                    2 => i > ix,
-                    _ => i == ix,
-                }
-        });
-        let focused = view.workspace.changes.iter().enumerate().any(|(i, tab)| {
-            (match mode {
-                1 => i != ix,
-                2 => i > ix,
-                _ => i == ix,
-            }) && (tab.contains_focus(window, cx) || tab.header_focus.contains_focused(window, cx))
-        });
-        let next = if mode == 0 {
-            ix.checked_sub(1)
-                .map(|i| view.workspace.changes[i].id.clone())
+        let target = if id == "files" {
+            None
         } else {
             Some(id.to_owned())
         };
-        let mut position = 0;
-        view.workspace.changes.retain(|_| {
-            let i = position;
-            position += 1;
-            match mode {
-                1 => i == ix,
-                2 => i <= ix,
-                _ => i != ix,
-            }
-        });
-        if active_removed {
-            view.workspace.active = next;
+        let Some(ix) = view.workspace.order.iter().position(|tab| *tab == target) else {
+            return;
+        };
+        let removed: Vec<_> = view
+            .workspace
+            .order
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| match mode {
+                1 => *i != ix,
+                2 => *i > ix,
+                _ => *i == ix,
+            })
+            .map(|(_, id)| id.clone())
+            .collect();
+        let focused = (removed.contains(&view.workspace.active)
+            && self.workspace_region.contains_focused(window, cx))
+            || removed
+                .iter()
+                .filter_map(|id| view.workspace.headers.get(id))
+                .any(|focus| focus.contains_focused(window, cx));
+        let old_order = view.workspace.order.clone();
+        let old_active = view.workspace.active.clone();
+        view.workspace.order.retain(|id| !removed.contains(id));
+        view.workspace
+            .changes
+            .retain(|tab| !removed.contains(&Some(tab.id.clone())));
+        if removed.contains(&None) {
+            view.source = None;
+            view.source_subscription = None;
+            view.files
+                .update(cx, |files, cx| files.set_open_path(None, cx));
+        }
+        if removed.contains(&old_active) {
+            let active_ix = old_order
+                .iter()
+                .position(|id| *id == old_active)
+                .unwrap_or(0);
+            view.workspace.active = old_order[..active_ix]
+                .iter()
+                .rev()
+                .find(|id| view.workspace.order.contains(id))
+                .cloned()
+                .or_else(|| view.workspace.order.first().cloned())
+                .unwrap_or(Some(NEW_TAB.into()));
+        }
+        view.workspace.reconcile_order();
+        if view
+            .workspace
+            .order
+            .iter()
+            .all(|id| id.as_deref().is_some_and(|id| id.starts_with(NEW_TAB)))
+        {
+            self.pane_layout.maximized = false;
+            self.pane_layout.invalidate();
         }
         self.fit_layout(window, cx);
         if focused {
@@ -404,130 +623,16 @@ impl HomeView {
         }
         cx.notify();
     }
-    pub(super) fn render_file_workspace(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn render_file_workspace(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let content = self.workspace_content();
-        let active = self
-            .session_view()
-            .and_then(|v| v.workspace.active.as_ref());
-        let index = self
-            .session_view()
-            .and_then(|view| {
-                view.workspace
-                    .changes
-                    .iter()
-                    .position(|tab| Some(&tab.id) == active)
-            })
-            .map_or(0, |i| i + 1);
-        let mut all_tabs = vec![(None, t(cx, "files-title"))];
-        let mut tabs = TabBar::new("workspace-tabs")
-            .selected_index(index)
-            .child(Tab::new().label(t(cx, "files-title")))
-            .on_click(cx.listener(|this, ix: &usize, window, cx| {
-                let id = ix
-                    .checked_sub(1)
-                    .and_then(|i| this.session_view()?.workspace.changes.get(i))
-                    .map(|tab| tab.id.clone());
-                this.select_workspace_tab(id, window, cx);
-            }));
-        if let Some(view) = self.session_view() {
-            for tab in &view.workspace.changes {
-                let close = tab.id.clone();
-                let menu_id = tab.id.clone();
-                let owner = cx.weak_entity();
-                let time = tab
-                    .timestamp
-                    .and_then(|millis| {
-                        time::OffsetDateTime::from_unix_timestamp_nanos(
-                            i128::from(millis) * 1_000_000,
-                        )
-                        .ok()
-                    })
-                    .map(|date| format!("{} {:02}:{:02}", date.date(), date.hour(), date.minute()))
-                    .unwrap_or_default();
-                let summary = tab
-                    .title
-                    .lines()
-                    .next()
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or(&time);
-                let title = format!("{} · {}", t(cx, "workspace-changes"), summary);
-                all_tabs.push((Some(tab.id.clone()), title.clone()));
-                let totals =
-                    tab.files
-                        .iter()
-                        .filter_map(|file| file.stats())
-                        .fold(None, |total, stats| {
-                            let (a, b) = total.unwrap_or((0, 0));
-                            Some((a + stats.added(), b + stats.removed()))
-                        });
-                let mut tooltip = format!("{}\n{}", tab.title, time);
-                if let Some((added, removed)) = totals {
-                    tooltip.push_str(&format!("\n+{added} −{removed}"));
-                }
-                let label = h_flex()
-                    .id(format!("changes-tab-{}", tab.id))
-                    .track_focus(&tab.header_focus)
-                    .min_w_0()
-                    .gap_2()
-                    .child(div().max_w(rems(20.)).truncate().child(title.clone()))
-                    .child(
-                        Button::new(format!("close-changes-{}", tab.id))
-                            .ghost()
-                            .xsmall()
-                            .icon(IconName::X)
-                            .accessibility_label(t(cx, "workspace-close-tab"))
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                cx.stop_propagation();
-                                this.close_workspace_tabs(&close, 0, window, cx);
-                            })),
-                    )
-                    .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
-                    .context_menu(move |mut menu, _, cx| {
-                        for (mode, label) in [
-                            (0, "workspace-close-tab"),
-                            (1, "workspace-close-others"),
-                            (2, "workspace-close-right"),
-                        ] {
-                            let owner = owner.clone();
-                            let id = menu_id.clone();
-                            menu = menu.item(PopupMenuItem::new(t(cx, label)).on_click(
-                                move |_, window, cx| {
-                                    let _ = owner.update(cx, |this, cx| {
-                                        this.close_workspace_tabs(&id, mode, window, cx)
-                                    });
-                                },
-                            ));
-                        }
-                        menu
-                    });
-                tabs = tabs.child(Tab::new().aria_label(title).child(label));
-            }
-        }
-        let owner = cx.weak_entity();
-        tabs = tabs.suffix(
-            Button::new("workspace-all-tabs")
-                .ghost()
-                .small()
-                .icon(IconName::ChevronDown)
-                .accessibility_label(t(cx, "workspace-all-tabs"))
-                .dropdown_menu(move |mut menu, _, cx| {
-                    for (id, label) in &all_tabs {
-                        let id = id.clone();
-                        let owner = owner.clone();
-                        menu = menu.item(PopupMenuItem::new(label.clone()).on_click(
-                            move |_, window, cx| {
-                                let _ = owner.update(cx, |this, cx| {
-                                    this.select_workspace_tab(id.clone(), window, cx)
-                                });
-                            },
-                        ));
-                    }
-                    let _ = cx;
-                    menu
-                }),
-        );
         let mut columns = h_flex().items_stretch().flex_1().min_h_0().min_w_0();
-        if let Some(tab) = self.active_changes() {
+        if self.session_view().is_none_or(|v| v.workspace.launcher()) {
+            columns = columns.child(self.render_launcher(window, cx));
+        } else if let Some(tab) = self.active_changes() {
             columns = columns.child(
                 div()
                     .flex_1()
@@ -572,40 +677,19 @@ impl HomeView {
             .min_h_0()
             .min_w_0()
             .track_focus(&self.workspace_region)
-            .child(
-                h_flex()
-                    .min_w_0()
-                    .child(div().flex_1().min_w_0().child(tabs))
-                    .when(content.main, |row| {
-                        row.child(
-                            Button::new("workspace-navigator")
-                                .ghost()
-                                .small()
-                                .icon(IconName::PanelRight)
-                                .accessibility_label(t(cx, "workspace-toggle-navigator"))
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    if let Some(view) = this
-                                        .shown_key
-                                        .as_ref()
-                                        .and_then(|key| this.views.get_mut(key))
-                                    {
-                                        if let Some(tab) =
-                                            view.workspace.changes.iter_mut().find(|tab| {
-                                                Some(&tab.id) == view.workspace.active.as_ref()
-                                            })
-                                        {
-                                            tab.navigator_hidden = !tab.navigator_hidden;
-                                        } else {
-                                            view.workspace.navigator_hidden =
-                                                !view.workspace.navigator_hidden;
-                                        }
-                                    }
-                                    this.fit_layout(window, cx);
-                                    cx.notify();
-                                })),
-                        )
-                    }),
-            )
+            .when(self.pane_layout.maximized, |view| {
+                view.key_context("GupiWorkspaceMaximized")
+                    .on_action(
+                        cx.listener(|this, _: &actions::CloseNavigator, window, cx| {
+                            this.toggle_workspace_maximized(window, cx);
+                            cx.stop_propagation();
+                        }),
+                    )
+            })
+            .bg(cx.theme().background)
+            .when(!self.pane_layout.workspace_docked, |view| {
+                view.child(self.render_workspace_strip(false, window, cx))
+            })
             .child(columns)
             .into_any_element()
     }
@@ -614,6 +698,12 @@ impl HomeView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        if self.pane_layout.maximized {
+            return div()
+                .size_full()
+                .child(self.render_file_workspace(window, cx))
+                .into_any_element();
+        }
         let conversation = v_flex()
             .size_full()
             .min_h_0()
@@ -667,11 +757,15 @@ impl HomeView {
                     div()
                         .relative()
                         .flex_none()
-                        .w(px(self.pane_layout.workspace_width))
+                        .id("workspace-docked")
+                        .debug_selector(|| "workspace-docked".into())
+                        .w(px(
+                            self.pane_layout.workspace_width + panes::geometry::DIVIDER
+                        ))
                         .h_full()
                         .border_l_1()
                         .border_color(cx.theme().border)
-                        .child(self.render_file_workspace(cx))
+                        .child(self.render_file_workspace(window, cx))
                         .child(self.pane_handle(panes::Side::Source, cx)),
                 )
             })

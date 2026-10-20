@@ -16,6 +16,7 @@ actions!(
 pub(super) fn init(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("escape", CloseNavigator, Some("GupiNavigatorOverlay")),
+        KeyBinding::new("escape", CloseNavigator, Some("GupiWorkspaceMaximized")),
         KeyBinding::new("escape", ReturnFromSource, Some("SourcePreview")),
         KeyBinding::new("escape", ReturnFromSource, Some("GupiWorkspaceDiff")),
         KeyBinding::new("enter", ConfirmExtension, Some("GupiExtension")),

@@ -43,6 +43,7 @@ pub(super) struct PaneLayout {
     pub workspace_docked: bool,
     pub history_docked: bool,
     pub overlay: Option<Panel>,
+    pub maximized: bool,
     navigator_preference: f32,
     history_preference: f32,
 }
@@ -127,6 +128,36 @@ impl PaneLayout {
         self.history_width = history.width;
         self.body_width = history.body;
         self.body_origin = history.origin;
+        if !self.workspace_docked {
+            self.maximized = false;
+        }
+        if self.maximized {
+            self.conversation = 0.;
+            self.history_docked = false;
+            self.workspace_width = available;
+            self.right = if request.content.navigator {
+                clamp(
+                    self.navigator_preference,
+                    geometry::NAVIGATOR_MIN_REM * request.rem,
+                    available
+                        - if request.content.main {
+                            geometry::CONTENT_MIN_REM * request.rem
+                        } else {
+                            0.
+                        },
+                )
+            } else {
+                0.
+            };
+            self.main_width = (available
+                - self.right
+                - if request.content.navigator {
+                    geometry::DIVIDER
+                } else {
+                    0.
+                })
+            .max(0.);
+        }
     }
     pub fn dockable(&self, panel: Panel) -> bool {
         self.container.is_some_and(|r| match panel {
@@ -258,18 +289,21 @@ impl HomeView {
             },
             Axis::Horizontal,
         )
-        .when(matches!(side, Side::History), |handle| {
-            let appearance = gpui_kit::component::resizable::resize_handle_appearance();
-            handle.with_appearance(Rc::new(move |handle, window, cx| {
-                // The detached history card supplies the resting boundary. Keep the
-                // kit's hit band and engaged resize feedback without a second strip.
-                if handle.state() == gpui_kit::base::ResizeHandleState::Idle {
-                    Some(div().into_any_element())
-                } else {
-                    appearance(handle, window, cx)
-                }
-            }))
-        })
+        .when(
+            matches!(side, Side::History | Side::Right | Side::Source),
+            |handle| {
+                let appearance = gpui_kit::component::resizable::resize_handle_appearance();
+                handle.with_appearance(Rc::new(move |handle, window, cx| {
+                    // The card or column already paints its boundary. Preserve the kit's
+                    // hit band and engaged feedback without a second resting line.
+                    if handle.state() == gpui_kit::base::ResizeHandleState::Idle {
+                        Some(div().into_any_element())
+                    } else {
+                        appearance(handle, window, cx)
+                    }
+                }))
+            },
+        )
         .on_drag(side, move |_, _, window, cx| {
             let _ = owner.update(cx, |this, cx| {
                 this.pane_drag = Some(Drag {
@@ -451,6 +485,7 @@ mod tests {
         visual.simulate_resize(size(px(950.), px(800.)));
         visual.update(|window, cx| {
             home.update(cx, |home, cx| {
+                home.select_workspace_tab(None, window, cx);
                 home.ensure_panel(Panel::Workspace, window, cx);
                 assert!(home.pane_layout.workspace_docked);
                 home.open_source("/tmp/workspace-fixture.rs".into(), true, window, cx);

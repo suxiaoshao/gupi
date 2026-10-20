@@ -156,7 +156,7 @@ impl HomeView {
             ));
         }
         let history_bounds = self.panel_button_bounds[0].clone();
-        let workspace_bounds = self.panel_button_bounds[1].clone();
+
         main = main
             .child(div().flex_1())
             .child(
@@ -181,28 +181,57 @@ impl HomeView {
                             })),
                     )),
             )
-            .child(
-                div()
-                    .track_focus(&self.workspace_button_focus)
-                    .on_children_prepainted(move |bounds, _, _| {
-                        workspace_bounds.set(bounds.first().copied())
-                    })
-                    .child(chrome::control(
-                        "workspace-control",
-                        chrome::button("toggle-workspace")
-                            .icon(if self.pane_layout.visible(panes::Panel::Workspace) {
-                                gpui_kit::component::IconName::PanelRightClose
-                            } else {
-                                gpui_kit::component::IconName::PanelRightOpen
+            .when(!self.pane_layout.workspace_docked, |row| {
+                row.child(self.render_workspace_toggle(cx))
+            });
+
+        chrome::page_bar(cx).child(
+            h_flex()
+                .size_full()
+                .min_w_0()
+                .child(left)
+                .when(!self.pane_layout.maximized, |row| row.child(main))
+                .when(self.pane_layout.workspace_docked, |row| {
+                    row.child(
+                        div()
+                            .id("titlebar-workspace")
+                            .debug_selector(|| "titlebar-workspace".into())
+                            .h_full()
+                            .min_w_0()
+                            .border_l_1()
+                            .border_b_1()
+                            .border_color(cx.theme().border)
+                            .when(self.pane_layout.maximized, |view| view.flex_1())
+                            .when(!self.pane_layout.maximized, |view| {
+                                view.flex_none().w(px(
+                                    self.pane_layout.workspace_width + panes::geometry::DIVIDER
+                                ))
                             })
-                            .selected(self.pane_layout.visible(panes::Panel::Workspace))
-                            .tooltip(t(cx, "files-panel"))
-                            .accessibility_label(t(cx, "files-panel"))
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.toggle_panel(panes::Panel::Workspace, window, cx)
-                            })),
-                    )),
-            );
-        chrome::page_bar(cx).child(h_flex().size_full().min_w_0().child(left).child(main))
+                            .child(self.render_workspace_strip(true, window, cx)),
+                    )
+                }),
+        )
+    }
+    pub(super) fn render_workspace_toggle(&self, cx: &mut Context<Self>) -> AnyElement {
+        let bounds = self.panel_button_bounds[1].clone();
+        div()
+            .track_focus(&self.workspace_button_focus)
+            .on_children_prepainted(move |children, _, _| bounds.set(children.first().copied()))
+            .child(chrome::control(
+                "workspace-control",
+                chrome::button("toggle-workspace")
+                    .icon(if self.pane_layout.visible(panes::Panel::Workspace) {
+                        IconName::PanelRightClose
+                    } else {
+                        IconName::PanelRightOpen
+                    })
+                    .selected(self.pane_layout.visible(panes::Panel::Workspace))
+                    .tooltip(t(cx, "files-panel"))
+                    .accessibility_label(t(cx, "files-panel"))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.toggle_panel(panes::Panel::Workspace, window, cx)
+                    })),
+            ))
+            .into_any_element()
     }
 }

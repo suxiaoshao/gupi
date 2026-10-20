@@ -1,4 +1,5 @@
 use super::*;
+use gpui_kit::component::Icon;
 use messages::diff::DiffBlock;
 use messages::edited_files::{ChangeBody, EditedFile, EditedFiles};
 use messages::tools::ToolIndex;
@@ -208,6 +209,27 @@ impl HomeView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.activate_changes(key, run, path, true, window, cx);
+    }
+    pub(super) fn navigate_changes(
+        &mut self,
+        key: &str,
+        run: &str,
+        path: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.activate_changes(key, run, path, false, window, cx);
+    }
+    fn activate_changes(
+        &mut self,
+        key: &str,
+        run: &str,
+        path: &str,
+        ensure: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(view) = self.views.get_mut(key) else {
             return;
         };
@@ -234,8 +256,20 @@ impl HomeView {
             };
         let tab = &mut view.workspace.changes[index];
         tab.selected = Some(path.to_owned());
-        view.workspace.active = Some(tab.id.clone());
-        self.ensure_panel(Panel::Workspace, window, cx);
+        let id = tab.id.clone();
+        let title = tab.title.clone();
+        let header_focus = tab.header_focus.clone();
+        view.workspace.activate(Some(id.clone()), cx);
+        view.workspace
+            .headers
+            .insert(Some(id.clone()), header_focus);
+        self.remember_change(id, title);
+        if ensure {
+            self.ensure_panel(Panel::Workspace, window, cx);
+        } else {
+            self.fit_layout(window, cx);
+            self.sync(false, window, cx);
+        }
         if let Some(tab) = self.active_changes() {
             tab.focus_main(window, cx);
         }
@@ -269,14 +303,91 @@ impl HomeView {
         }
         cx.notify();
     }
+    fn render_change_header(&self, file: &EditedFile, cx: &mut Context<Self>) -> AnyElement {
+        let path = file.path().to_owned();
+        let name = std::path::Path::new(&path)
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        let directory = path.strip_suffix(&name).unwrap_or("").to_owned();
+        h_flex()
+            .h_10()
+            .flex_none()
+            .pl_3()
+            .pr_2()
+            .gap_2()
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .child(
+                h_flex()
+                    .flex_1()
+                    .min_w_0()
+                    .text_sm()
+                    .child(
+                        div()
+                            .truncate()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(directory),
+                    )
+                    .child(
+                        div()
+                            .flex_none()
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(name),
+                    ),
+            )
+            .when(file.written(), |row| {
+                row.child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(t(cx, "conversation-edit-write")),
+                )
+            })
+            .when(file.failed(), |row| {
+                row.child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().danger)
+                        .child(t(cx, "conversation-edit-error")),
+                )
+            })
+            .child(messages::changes::stats(file.stats(), cx))
+            .child(
+                Button::new("change-open-file")
+                    .small()
+                    .ghost()
+                    .label(t(cx, "workspace-open-file"))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        let root = this
+                            .state
+                            .read(cx)
+                            .current()
+                            .map(|s| PathBuf::from(&s.info().cwd));
+                        if let Some(root) = root {
+                            this.select_workspace_tab(None, window, cx);
+                            this.open_source(root.join(&path), true, window, cx);
+                        }
+                    })),
+            )
+            .child(self.navigator_toggle(cx))
+            .into_any_element()
+    }
     pub(super) fn render_changes_main(
         &self,
         tab: &ChangesTab,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let body = if !tab.in_scope {
-            div()
-                .p_4()
+            v_flex()
+                .size_full()
+                .justify_center()
+                .items_center()
+                .p_6()
+                .gap_3()
+                .text_color(cx.theme().muted_foreground)
+                .child(Icon::new(IconName::FileDiff).size_6())
                 .child(t(cx, "workspace-out-of-scope"))
                 .into_any_element()
         } else if let Some(file) = tab
@@ -285,37 +396,11 @@ impl HomeView {
             .find(|f| Some(f.path()) == tab.selected.as_deref())
         {
             let state = &tab.states[file.path()];
-            let path = file.path().to_owned();
-            let mut body = v_flex().size_full().min_h_0().min_w_0().child(
-                h_flex()
-                    .px_3()
-                    .py_2()
-                    .gap_2()
-                    .child(div().flex_1().min_w_0().truncate().child(path.clone()))
-                    .when(file.written(), |row| {
-                        row.child(t(cx, "conversation-edit-write"))
-                    })
-                    .when(file.failed(), |row| {
-                        row.child(t(cx, "conversation-edit-error"))
-                    })
-                    .child(
-                        Button::new("change-open-file")
-                            .small()
-                            .ghost()
-                            .label(t(cx, "workspace-open-file"))
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                let root = this
-                                    .state
-                                    .read(cx)
-                                    .current()
-                                    .map(|s| PathBuf::from(&s.info().cwd));
-                                if let Some(root) = root {
-                                    this.select_workspace_tab(None, window, cx);
-                                    this.open_source(root.join(&path), true, window, cx);
-                                }
-                            })),
-                    ),
-            );
+            let mut body = v_flex()
+                .size_full()
+                .min_h_0()
+                .min_w_0()
+                .child(self.render_change_header(file, cx));
             if let Some(block) = &state.combined {
                 body = body.child(div().flex_1().min_h_0().child(block.render_workspace()));
             } else {
@@ -417,8 +502,14 @@ impl HomeView {
             }
             body.into_any_element()
         } else {
-            div()
-                .p_4()
+            v_flex()
+                .size_full()
+                .justify_center()
+                .items_center()
+                .p_6()
+                .gap_3()
+                .text_color(cx.theme().muted_foreground)
+                .child(Icon::new(IconName::FileDiff).size_6())
                 .child(t(cx, "workspace-net-zero"))
                 .into_any_element()
         };
@@ -430,7 +521,9 @@ impl HomeView {
             .key_context("GupiWorkspaceDiff")
             .on_action(
                 cx.listener(|this, _: &actions::ReturnFromSource, window, cx| {
-                    if this.pane_layout.overlay == Some(Panel::Workspace) {
+                    if this.pane_layout.maximized {
+                        this.toggle_workspace_maximized(window, cx);
+                    } else if this.pane_layout.overlay == Some(Panel::Workspace) {
                         this.close_navigator(window, cx);
                     } else if let Some(tab) =
                         this.active_changes().filter(|tab| !tab.navigator_hidden)
@@ -455,6 +548,8 @@ impl HomeView {
             .size_full()
             .min_h_0()
             .overflow_y_scroll()
+            .p_2()
+            .gap_1()
             .track_scroll(&tab.scroll)
             .track_focus(&tab.focus)
             .tab_stop(true);
@@ -466,7 +561,29 @@ impl HomeView {
                     .min_w_0()
                     .w_full()
                     .gap_2()
-                    .child(div().flex_1().min_w_0().truncate().child(path.clone()));
+                    .child(
+                        Icon::new(IconName::File)
+                            .size_4()
+                            .flex_none()
+                            .text_color(cx.theme().muted_foreground),
+                    )
+                    .child(div().flex_1().min_w_0().truncate().child({
+                        let name = std::path::Path::new(&path)
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .into_owned();
+                        let directory = path.strip_suffix(&name).unwrap_or("").to_owned();
+                        h_flex()
+                            .min_w_0()
+                            .child(
+                                div()
+                                    .truncate()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(directory),
+                            )
+                            .child(div().flex_none().child(name))
+                    }));
                 if file.written() {
                     row = row.child(div().text_xs().child(t(cx, "conversation-edit-write")));
                 }
@@ -478,13 +595,7 @@ impl HomeView {
                             .child(t(cx, "conversation-edit-error")),
                     );
                 }
-                if let Some(stats) = file.stats() {
-                    row = row.child(div().text_xs().child(format!(
-                        "+{} −{}",
-                        stats.added(),
-                        stats.removed()
-                    )));
-                }
+                row = row.child(messages::changes::stats(file.stats(), cx));
                 list = list.child(
                     div().track_focus(&tab.states[file.path()].row_focus).child(
                         Button::new(format!("changes-file-{}-{path}", tab.id))

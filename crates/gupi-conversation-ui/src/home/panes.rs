@@ -510,6 +510,34 @@ mod tests {
         });
     }
     #[gpui_kit::test]
+    fn opening_docked_history_replaces_workspace_overlay(cx: &mut TestAppContext) {
+        let (home, visual) = setup(cx);
+        visual.simulate_resize(size(px(950.), px(800.)));
+        visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                home.select_workspace_tab(None, window, cx);
+                home.ensure_panel(Panel::Workspace, window, cx);
+                home.open_source("/tmp/workspace-fixture.rs".into(), true, window, cx);
+                assert_eq!(home.pane_layout.overlay, Some(Panel::Workspace));
+                assert!(home.pane_layout.dockable(Panel::History));
+                home.focus_panel(Panel::Workspace, window, cx);
+                home.toggle_panel(Panel::History, window, cx);
+            });
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            let home = home.read(cx);
+            assert!(home.pane_layout.history_docked);
+            assert!(home.pane_layout.visible(Panel::History));
+            assert!(home.pane_layout.overlay.is_none());
+            assert_eq!(home.pane_layout.workspace_width, 0.);
+            assert!(home.history_focus_handle(cx).contains_focused(window, cx));
+            assert!(cx.global::<layout::LayoutState>().workspace_pinned);
+            assert!(cx.global::<layout::LayoutState>().history_pinned);
+        });
+    }
+
+    #[gpui_kit::test]
     fn overlay_titlebar_toggle_closes_without_reopening(cx: &mut TestAppContext) {
         let (home, visual) = setup(cx);
         visual.simulate_resize(size(px(800.), px(800.)));

@@ -262,6 +262,9 @@ impl HomeView {
     ) {
         self.fit_layout(window, cx);
         if self.pane_layout.dockable(panel) {
+            if self.pane_layout.overlay.take().is_some() {
+                self.pane_layout.allocate();
+            }
             match panel {
                 Panel::History => cx.global_mut::<layout::LayoutState>().history_pinned = true,
                 Panel::Workspace => cx.global_mut::<layout::LayoutState>().workspace_pinned = true,

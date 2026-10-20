@@ -1002,6 +1002,55 @@ fn main_card_opens_retained_tab_and_persistence_scope_and_net_zero_preserve_iden
 }
 
 #[gpui_kit::test]
+fn change_tab_reconciliation_advances_stream_revision_and_removes_deleted_records(
+    cx: &mut TestAppContext,
+) {
+    let (home, state, visual) = mount_mode(cx, &fixture(1, 1, 0), false, false);
+    visual.update(|window, cx| {
+        let run = run(&home, cx);
+        home.update(cx, |home, cx| {
+            home.open_changes("a", &run, "dir/0.rs", window, cx)
+        });
+    });
+    receive(
+        &state,
+        visual,
+        "message_start",
+        json!({"message":{"role":"assistant","timestamp":1000,"content":[{"type":"text","text":""}]}}),
+    );
+    let before = visual.update(|_, cx| home.read(cx).views["a"].workspace.record_revision.unwrap());
+    receive(
+        &state,
+        visual,
+        "message_update",
+        json!({"assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"stream"}}),
+    );
+    visual.update(|window, cx| {
+        let session = &state.read(cx).sessions()["a"];
+        assert!(session.message_update_since(before.1).is_some());
+        let revision = (
+            session.tool_projection_revision(),
+            session.content_revision(),
+        );
+        assert_eq!(revision.0, before.0);
+        assert_eq!(revision.1, before.1 + 1);
+        // Forced synchronization at the same revision keeps the cached result.
+        home.update(cx, |home, cx| home.sync_messages("a", true, window, cx));
+        let workspace = &home.read(cx).views["a"].workspace;
+        assert_eq!(workspace.record_revision, Some(revision));
+        assert_eq!(workspace.changes.len(), 1);
+    });
+    emit(&state, visual, |session| {
+        session.replace_entries_for_test(entries(&[]));
+        session.live_for_test().clear();
+        *session.content_revision_for_test() += 1;
+    });
+    visual.update(|_, cx| {
+        assert!(home.read(cx).views["a"].workspace.changes.is_empty());
+    });
+}
+
+#[gpui_kit::test]
 fn idless_change_tab_survives_record_reconciliation(cx: &mut TestAppContext) {
     let source = vec![
         message("user", json!({"role":"user","content":"Edit a file"})),

@@ -23,6 +23,7 @@ pub(super) struct Tabs {
     pub changes: Vec<ChangesTab>,
     pub active: Option<String>,
     pub restore_focus: bool,
+    pub(super) record_revision: Option<((u64, u64, bool), u64)>,
 }
 impl Default for Tabs {
     fn default() -> Self {
@@ -32,6 +33,7 @@ impl Default for Tabs {
             changes: Vec::new(),
             active: Some(NEW_TAB.into()),
             restore_focus: false,
+            record_revision: None,
             order: vec![Some(NEW_TAB.into())],
             recent: Vec::new(),
             scroll: ScrollHandle::new(),
@@ -117,6 +119,21 @@ impl Tabs {
         cx: &App,
     ) {
         if self.changes.is_empty() {
+            return;
+        }
+        let revision = (
+            session.tool_projection_revision(),
+            session.content_revision(),
+        );
+        if self.record_revision == Some(revision) {
+            return;
+        }
+        let streamed = self.record_revision.is_some_and(|(tools, content)| {
+            tools == revision.0 && session.message_update_since(content).is_some()
+        });
+        self.record_revision = Some(revision);
+        // A consecutive text/thinking update cannot remove backing records.
+        if streamed {
             return;
         }
         let mut ids: HashSet<String> = session

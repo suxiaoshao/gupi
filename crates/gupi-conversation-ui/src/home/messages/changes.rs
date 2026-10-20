@@ -22,10 +22,10 @@ struct Trigger {
     action: Disclosure,
     focus: FocusHandle,
     label: String,
-    expanded: bool,
+    expanded: Option<bool>,
 }
 impl Trigger {
-    fn new(action: Disclosure, focus: &FocusHandle, label: String, expanded: bool) -> Self {
+    fn new(action: Disclosure, focus: &FocusHandle, label: String, expanded: Option<bool>) -> Self {
         Self {
             action,
             focus: focus.clone(),
@@ -465,7 +465,7 @@ impl HomeView {
             .role(Role::Button)
             .debug_selector(move || selector.clone())
             .aria_label(label.clone())
-            .aria_expanded(expanded)
+            .when_some(expanded, |row, expanded| row.aria_expanded(expanded))
             .border_1()
             .border_color(focus_color.opacity(0.))
             .focus_visible(|style| style.rounded_md().border_color(focus_color))
@@ -587,29 +587,31 @@ impl HomeView {
                 .unwrap_or((String::new(), path));
             let mut args = FluentArgs::new();
             args.set("path", path);
-            args.set(
-                "state",
-                t(
-                    cx,
-                    if state.open {
-                        "files-expanded"
-                    } else {
-                        "files-collapsed"
-                    },
-                ),
-            );
+            if temporary {
+                args.set(
+                    "state",
+                    t(
+                        cx,
+                        if state.open {
+                            "files-expanded"
+                        } else {
+                            "files-collapsed"
+                        },
+                    ),
+                );
+            }
             let row = self
                 .change_trigger(
                     (key, run),
                     Trigger::new(
                         Disclosure::File(path.to_owned()),
                         &state.focus,
-                        if self.state.read(cx).is_temporary() {
+                        if temporary {
                             t_with_args(cx, "conversation-edit-file-label", &args)
                         } else {
                             t_with_args(cx, "workspace-open-change", &args)
                         },
-                        state.open,
+                        temporary.then_some(state.open),
                     ),
                     Button::new(format!("change-file-{key}-{run}-{path}"))
                         .ghost()
@@ -772,7 +774,7 @@ impl HomeView {
                                     Disclosure::Previous(path.to_owned()),
                                     &state.previous_focus,
                                     t(cx, "conversation-edit-previous-operations"),
-                                    false,
+                                    Some(false),
                                 ),
                                 Button::new(format!("change-prev-{key}-{run}-{path}"))
                                     .ghost()
@@ -794,7 +796,7 @@ impl HomeView {
                                     Disclosure::Next(path.to_owned()),
                                     &state.next_focus,
                                     label.clone(),
-                                    false,
+                                    Some(false),
                                 ),
                                 Button::new(format!("change-next-{key}-{run}-{path}"))
                                     .ghost()
@@ -823,7 +825,7 @@ impl HomeView {
                         Disclosure::Files,
                         &run_state.focus,
                         label.clone(),
-                        run_state.all,
+                        Some(run_state.all),
                     ),
                     Button::new(format!("change-more-{key}-{run}"))
                         .ghost()

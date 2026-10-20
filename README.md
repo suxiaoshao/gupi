@@ -55,16 +55,16 @@ brew uninstall --cask suxiaoshao/tap/gupi
 
 ### Download Gupi
 
-| Platform | Download v0.1.6 | Installation |
+| Platform | Download v0.1.7 | Installation |
 | --- | --- | --- |
-| macOS · Apple silicon | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_aarch64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_aarch64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
-| macOS · Intel | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_x86_64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_x86_64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
-| Windows · x64 | [English MSI](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_x64_en-US.msi) · [All installer languages](https://github.com/suxiaoshao/gupi/releases/tag/v0.1.6) | Run the MSI, complete the installation, and open Gupi from the Start menu. |
-| Linux · x64 Debian/Ubuntu | [deb](https://github.com/suxiaoshao/gupi/releases/download/v0.1.6/Gupi_0.1.6_amd64.deb) | Run `sudo apt install ./Gupi_0.1.6_amd64.deb`, then launch Gupi in a graphical desktop session. |
+| macOS · Apple silicon | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.7/Gupi_0.1.7_aarch64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.7/Gupi_0.1.7_aarch64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
+| macOS · Intel | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.7/Gupi_0.1.7_x86_64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.7/Gupi_0.1.7_x86_64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
+| Windows · x64 | [English MSI](https://github.com/suxiaoshao/gupi/releases/download/v0.1.7/Gupi_0.1.7_x64_en-US.msi) · [All installer languages](https://github.com/suxiaoshao/gupi/releases/tag/v0.1.7) | Run the MSI, complete the installation, and open Gupi from the Start menu. |
+| Linux · x64 Debian/Ubuntu | [deb](https://github.com/suxiaoshao/gupi/releases/download/v0.1.7/Gupi_0.1.7_amd64.deb) | Run `sudo apt install ./Gupi_0.1.7_amd64.deb`, then launch Gupi in a graphical desktop session. |
 
 macOS packages require macOS 11 or later and are signed with Developer ID and notarized by Apple. Windows installers are not yet Authenticode-signed, so Windows may show an unknown publisher. Linux packages are also unsigned. The release includes `SHA256SUMS` for checking downloaded files.
 
-Windows MSI packages from 0.1.6 include the Visual C++ runtime for both direct and WinGet installation. If an older release fails to start with a missing `VCRUNTIME140.dll` or error `0xc0000135`, upgrade to 0.1.6 or install Microsoft's [x64 Visual C++ Redistributable](https://aka.ms/vc14/vc_redist.x64.exe), then reopen Gupi. Previously published installers have not been replaced.
+Windows 0.1.7 statically links the Visual C++ runtime in the application and update helper; no separate runtime installation is required. Version 0.1.6 bundled the runtime DLLs. If an older release fails with missing `VCRUNTIME140.dll` or error `0xc0000135`, upgrade to the latest MSI or install Microsoft's [x64 Visual C++ Redistributable](https://aka.ms/vc14/vc_redist.x64.exe). Previously published installers have not been replaced.
 
 <details>
 <summary>Build from source or create local packages</summary>
@@ -289,7 +289,7 @@ These pages edit the files as written rather than previewing effective merged se
 
 On **Pi → Authentication**, manage global provider credentials stored by Pi: add or replace an API key, remove a saved credential, or log out a saved OAuth account. Secret values are never displayed. Provider OAuth login still takes place in terminal Pi using `/login <provider>`. **Check configuration** asks Pi to inspect local authentication configuration without contacting the provider or refreshing tokens; a ready result does not verify that a token works. Credential removal does not revoke server-side authorization or remove other authentication sources. New sessions fully load credential changes.
 
-On **Pi → MCP**, save or discard edits before using a server's **Log in** or **Log out** action. Supported HTTP OAuth servers use Pi's browser login flow; logging out removes local credentials without revoking server authorization. **Check connections** actually connects to enabled servers in the selected scope and may run configured commands or refresh tokens. Results describe the last check, not live session state; cancel if needed. Project checks respect Pi's trust rules. Reconnect running conversations to fully load saved configuration. These controls use Pi's built-in MCP, and do not manage a replacement extension's connections.
+On **Pi → MCP**, save or discard edits before using a server's **Log in** or **Log out** action. Supported HTTP OAuth servers use Pi's browser login flow; logging out removes local credentials without revoking server authorization. **Check connection** actually connects to enabled servers in the selected scope and may run configured commands or refresh tokens. Results describe the last check, not live session state; cancel if needed. Project checks respect Pi's trust rules. Reconnect running conversations to fully load saved configuration. These controls use Pi's built-in MCP, and do not manage a replacement extension's connections.
 
 ## Shortcuts and settings
 

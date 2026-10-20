@@ -1352,3 +1352,105 @@ fn workspace_tab_drag_reorders_and_outside_drop_cancels(cx: &mut TestAppContext)
         );
     });
 }
+
+#[gpui_kit::test]
+fn changes_navigator_virtualizes_rows_and_restores_keyboard_selection(cx: &mut TestAppContext) {
+    let (home, _, visual) = mount_mode(cx, &fixture(100, 1, 0), false, false);
+    visual.simulate_resize(size(px(1728.), px(900.)));
+    let id = visual.update(|window, cx| {
+        let run = run(&home, cx);
+        home.update(cx, |home, cx| {
+            home.open_changes("a", &run, "dir/0.rs", window, cx);
+            home.views["a"]
+                .workspace
+                .changes
+                .first()
+                .unwrap()
+                .id
+                .clone()
+        })
+    });
+    visual.run_until_parked();
+    assert_eq!(id, "tool-0-0");
+    assert!(
+        visual
+            .debug_bounds("changes-file-tool-0-0-dir/0.rs")
+            .is_some()
+    );
+    assert!(
+        visual
+            .debug_bounds("changes-file-tool-0-0-dir/99.rs")
+            .is_none()
+    );
+    let row = visual
+        .debug_bounds("changes-file-tool-0-0-dir/1.rs")
+        .unwrap();
+    visual.simulate_click(row.center(), Modifiers::default());
+    visual.run_until_parked();
+    visual.update(|_, cx| {
+        assert_eq!(
+            home.read(cx).views["a"]
+                .workspace
+                .changes
+                .first()
+                .unwrap()
+                .selected
+                .as_deref(),
+            Some("dir/1.rs")
+        )
+    });
+    visual.simulate_keystrokes("escape");
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        assert!(
+            home.read(cx).views["a"]
+                .workspace
+                .changes
+                .first()
+                .unwrap()
+                .focus
+                .is_focused(window)
+        )
+    });
+    visual.simulate_keystrokes("down enter");
+    visual.run_until_parked();
+    visual.update(|_, cx| {
+        assert_eq!(
+            home.read(cx).views["a"]
+                .workspace
+                .changes
+                .first()
+                .unwrap()
+                .selected
+                .as_deref(),
+            Some("dir/2.rs")
+        )
+    });
+    visual.simulate_keystrokes("escape up enter");
+    visual.run_until_parked();
+    visual.update(|_, cx| {
+        assert_eq!(
+            home.read(cx).views["a"]
+                .workspace
+                .changes
+                .first()
+                .unwrap()
+                .selected
+                .as_deref(),
+            Some("dir/1.rs")
+        )
+    });
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            let run = home.views["a"].workspace.changes[0].run.clone();
+            home.open_changes("a", &run, "dir/99.rs", window, cx);
+        });
+    });
+    visual.simulate_keystrokes("escape");
+    visual.run_until_parked();
+    assert!(
+        visual
+            .debug_bounds("changes-file-tool-0-0-dir/99.rs")
+            .is_some()
+    );
+}

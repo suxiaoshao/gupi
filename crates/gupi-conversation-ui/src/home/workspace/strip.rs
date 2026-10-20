@@ -54,6 +54,7 @@ impl HomeView {
                 .session_view()
                 .and_then(|v| v.workspace.changes.iter().find(|tab| tab.id == id))
                 .map(|tab| {
+                    let timestamp = tab.timestamp.and_then(local_timestamp);
                     let title = tab
                         .title
                         .lines()
@@ -61,34 +62,13 @@ impl HomeView {
                         .filter(|s| !s.is_empty())
                         .map(str::to_owned)
                         .unwrap_or_else(|| {
-                            tab.timestamp
-                                .and_then(|ms| {
-                                    time::OffsetDateTime::from_unix_timestamp_nanos(
-                                        i128::from(ms) * 1_000_000,
-                                    )
-                                    .ok()
-                                })
-                                .map(|date| {
-                                    format!(
-                                        "{} {:02}:{:02}",
-                                        date.date(),
-                                        date.hour(),
-                                        date.minute()
-                                    )
-                                })
+                            timestamp
+                                .clone()
                                 .unwrap_or_else(|| t(cx, "workspace-changes"))
                         });
                     let mut tooltip = tab.title.clone();
-                    if let Some(date) = tab.timestamp.and_then(|ms| {
-                        time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(ms) * 1_000_000)
-                            .ok()
-                    }) {
-                        tooltip.push_str(&format!(
-                            "\n{} {:02}:{:02}",
-                            date.date(),
-                            date.hour(),
-                            date.minute()
-                        ));
+                    if let Some(timestamp) = timestamp {
+                        tooltip.push_str(&format!("\n{timestamp}"));
                     }
                     let totals = tab.files.iter().filter_map(|file| file.stats()).fold(
                         None,
@@ -459,4 +439,18 @@ impl HomeView {
             .child(row)
             .into_any_element()
     }
+}
+
+fn local_timestamp(milliseconds: i64) -> Option<String> {
+    let date =
+        time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(milliseconds) * 1_000_000)
+            .ok()?;
+    let offset = time::UtcOffset::local_offset_at(date).unwrap_or(time::UtcOffset::UTC);
+    let date = date.to_offset(offset);
+    Some(format!(
+        "{} {:02}:{:02}",
+        date.date(),
+        date.hour(),
+        date.minute()
+    ))
 }

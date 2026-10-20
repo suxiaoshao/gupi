@@ -1,3 +1,5 @@
+mod navigator;
+
 use super::*;
 use gpui_kit::component::Icon;
 use messages::diff::DiffBlock;
@@ -12,16 +14,15 @@ pub(in crate::home) struct ChangesTab {
     pub ids: HashSet<String>,
     pub navigator_hidden: bool,
     pub in_scope: bool,
-    pub files: Vec<EditedFile>,
+    pub files: Rc<Vec<EditedFile>>,
     pub selected: Option<String>,
     pub focus: FocusHandle,
     pub main_focus: FocusHandle,
     pub header_focus: FocusHandle,
-    pub scroll: ScrollHandle,
+    list: Entity<ListState<navigator::Delegate>>,
     states: HashMap<String, FileDiff>,
 }
 struct FileDiff {
-    row_focus: FocusHandle,
     combined: Option<DiffBlock>,
     operations: HashMap<String, DiffBlock>,
     page: usize,
@@ -33,7 +34,8 @@ impl ChangesTab {
         timestamp: Option<i64>,
         files: &[EditedFile],
         path: &str,
-        cx: &mut App,
+        window: &mut Window,
+        cx: &mut Context<HomeView>,
     ) -> Self {
         let ids: HashSet<_> = files
             .iter()
@@ -46,6 +48,16 @@ impl ChangesTab {
             .map(|op| op.id())
             .unwrap_or(run)
             .to_owned();
+        let files = Rc::new(files.to_vec());
+        let owner = cx.weak_entity();
+        let list = cx.new(|inner| {
+            ListState::new(
+                navigator::Delegate::new(owner, id.clone(), files.clone()),
+                window,
+                inner,
+            )
+            .searchable(false)
+        });
         let mut tab = Self {
             id,
             run: run.to_owned(),
@@ -54,31 +66,47 @@ impl ChangesTab {
             ids,
             navigator_hidden: false,
             in_scope: true,
-            files: files.to_vec(),
+            files,
             selected: Some(path.to_owned()),
-            focus: cx.focus_handle(),
+            focus: list.focus_handle(cx),
             main_focus: cx.focus_handle(),
             header_focus: cx.focus_handle(),
-            scroll: ScrollHandle::new(),
+            list,
             states: HashMap::new(),
         };
         tab.prepare(cx);
+        tab.sync_list(window, cx);
         tab
     }
     pub fn contains_focus(&self, window: &Window, cx: &App) -> bool {
         self.focus.contains_focused(window, cx) || self.main_focus.contains_focused(window, cx)
     }
     pub fn focus_list(&self, window: &mut Window, cx: &mut App) {
-        if let Some(state) = self
-            .selected
-            .as_ref()
-            .and_then(|path| self.states.get(path))
-        {
-            state.row_focus.focus(window, cx);
-            window.focus_next(cx);
-        } else {
-            self.focus.focus(window, cx);
-        }
+        self.list.update(cx, |list, cx| {
+            let ix = self
+                .files
+                .iter()
+                .position(|file| Some(file.path()) == self.selected.as_deref());
+            list.set_selected_index(ix.map(gpui_kit::component::IndexPath::new), window, cx);
+            list.scroll_to_selected_item(window, cx);
+        });
+        self.focus.focus(window, cx);
+    }
+    fn sync_list(&self, window: &mut Window, cx: &mut App) {
+        self.list.update(cx, |list, cx| {
+            let delegate = list.delegate_mut();
+            delegate.files = if self.in_scope {
+                self.files.clone()
+            } else {
+                Rc::new(Vec::new())
+            };
+            let ix = delegate
+                .files
+                .iter()
+                .position(|file| Some(file.path()) == self.selected.as_deref());
+            list.set_selected_index(ix.map(gpui_kit::component::IndexPath::new), window, cx);
+            cx.notify();
+        });
     }
     pub fn focus_main(&self, window: &mut Window, cx: &mut App) {
         let state = self
@@ -114,6 +142,7 @@ impl ChangesTab {
         let was_in_scope = self.in_scope;
         self.in_scope = owner.is_some();
         let Some(run) = owner else {
+            self.sync_list(window, cx);
             if was_in_scope && self.contains_focus(window, cx) {
                 self.main_focus.focus(window, cx);
             }
@@ -143,7 +172,7 @@ impl ChangesTab {
                 .iter()
                 .flat_map(|f| f.operations().iter().map(|op| op.id().to_owned())),
         );
-        self.files = files.to_vec();
+        self.files = Rc::new(files.to_vec());
         if selection_gone {
             self.selected = files
                 .get(position.min(files.len().saturating_sub(1)))
@@ -152,6 +181,7 @@ impl ChangesTab {
         self.states
             .retain(|path, _| files.iter().any(|f| f.path() == path));
         self.prepare(cx);
+        self.sync_list(window, cx);
         if (selection_gone || mode_changed) && focused {
             if self.navigator_hidden {
                 self.main_focus.focus(window, cx);
@@ -161,12 +191,11 @@ impl ChangesTab {
         }
     }
     fn prepare(&mut self, cx: &mut App) {
-        for file in &self.files {
+        for file in self.files.iter() {
             let state = self
                 .states
                 .entry(file.path().to_owned())
                 .or_insert_with(|| FileDiff {
-                    row_focus: cx.focus_handle(),
                     combined: None,
                     operations: HashMap::new(),
                     page: 0,
@@ -250,12 +279,14 @@ impl HomeView {
                     timestamp,
                     view.edited_files.files(run),
                     path,
+                    window,
                     cx,
                 ));
                 view.workspace.changes.len() - 1
             };
         let tab = &mut view.workspace.changes[index];
         tab.selected = Some(path.to_owned());
+        tab.sync_list(window, cx);
         let id = tab.id.clone();
         let title = tab.title.clone();
         let header_focus = tab.header_focus.clone();
@@ -299,6 +330,7 @@ impl HomeView {
                 .find(|tab| Some(&tab.id) == view.workspace.active.as_ref())
         {
             tab.selected = Some(path);
+            tab.sync_list(window, cx);
             tab.focus_main(window, cx);
         }
         cx.notify();
@@ -541,78 +573,14 @@ impl HomeView {
     pub(super) fn render_changes_list(
         &self,
         tab: &ChangesTab,
-        cx: &mut Context<Self>,
+        _: &mut Context<Self>,
     ) -> AnyElement {
-        let mut list = v_flex()
+        div()
             .id(format!("changes-list-{}", tab.id))
             .size_full()
             .min_h_0()
-            .overflow_y_scroll()
             .p_2()
-            .gap_1()
-            .track_scroll(&tab.scroll)
-            .track_focus(&tab.focus)
-            .tab_stop(true);
-        if tab.in_scope {
-            for file in &tab.files {
-                let path = file.path().to_owned();
-                let selected = tab.selected.as_deref() == Some(file.path());
-                let mut row = h_flex()
-                    .min_w_0()
-                    .w_full()
-                    .gap_2()
-                    .child(
-                        Icon::new(IconName::File)
-                            .size_4()
-                            .flex_none()
-                            .text_color(cx.theme().muted_foreground),
-                    )
-                    .child(div().flex_1().min_w_0().truncate().child({
-                        let name = std::path::Path::new(&path)
-                            .file_name()
-                            .unwrap_or_default()
-                            .to_string_lossy()
-                            .into_owned();
-                        let directory = path.strip_suffix(&name).unwrap_or("").to_owned();
-                        h_flex()
-                            .min_w_0()
-                            .child(
-                                div()
-                                    .truncate()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(directory),
-                            )
-                            .child(div().flex_none().child(name))
-                    }));
-                if file.written() {
-                    row = row.child(div().text_xs().child(t(cx, "conversation-edit-write")));
-                }
-                if file.failed() {
-                    row = row.child(
-                        div()
-                            .text_xs()
-                            .text_color(cx.theme().danger)
-                            .child(t(cx, "conversation-edit-error")),
-                    );
-                }
-                row = row.child(messages::changes::stats(file.stats(), cx));
-                list = list.child(
-                    div().track_focus(&tab.states[file.path()].row_focus).child(
-                        Button::new(format!("changes-file-{}-{path}", tab.id))
-                            .ghost()
-                            .small()
-                            .w_full()
-                            .selected(selected)
-                            .accessibility_label(path.clone())
-                            .tooltip(path.clone())
-                            .child(row)
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.select_change_file(path.clone(), window, cx)
-                            })),
-                    ),
-                );
-            }
-        }
-        list.into_any_element()
+            .child(gpui_kit::component::list::List::new(&tab.list))
+            .into_any_element()
     }
 }

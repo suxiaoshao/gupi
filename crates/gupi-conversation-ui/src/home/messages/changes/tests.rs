@@ -1002,6 +1002,93 @@ fn main_card_opens_retained_tab_and_persistence_scope_and_net_zero_preserve_iden
 }
 
 #[gpui_kit::test]
+fn idless_change_tab_survives_record_reconciliation(cx: &mut TestAppContext) {
+    let source = vec![
+        message("user", json!({"role":"user","content":"Edit a file"})),
+        message(
+            "call",
+            json!({"role":"assistant","timestamp":1,"content":[
+                {"type":"text","text":"Updating the file"},
+                {"type":"toolCall","name":"write","arguments":{"path":"dir/file.rs","content":"new"}}
+            ]}),
+        ),
+        message(
+            "answer",
+            json!({"role":"assistant","timestamp":3,"stopReason":"stop","content":"Done"}),
+        ),
+    ];
+    for live in [false, true] {
+        let mut source = source.clone();
+        source.insert(
+            2,
+            message(
+                "result",
+                json!({
+                    "role":"toolResult", "timestamp":2, "toolName":"write",
+                    "toolCallId": if live { "part-live-assistant-1-1" } else { "part-call-1" },
+                    "content":"Written"
+                }),
+            ),
+        );
+        let (home, state, visual) = mount_mode(cx, &source, live, false);
+        source.retain(|message| message.role() != "toolResult");
+        visual.update(|window, cx| {
+            let run = run(&home, cx);
+            home.update(cx, |home, cx| {
+                home.open_changes("a", &run, "dir/file.rs", window, cx);
+                let tab = &home.views["a"].workspace.changes[0];
+                let identity = tab.id.clone();
+                assert_eq!(tab.ids.len(), 1);
+                let id = tab.ids.iter().next().unwrap();
+                assert!(id.starts_with("tool-part-"));
+                assert!(id.ends_with("-1"));
+                // Only the id-less call may keep this tab alive, not its result ID.
+                state.update(cx, |state, _| {
+                    let session = state.sessions_for_test().get_mut("a").unwrap();
+                    if live {
+                        session
+                            .live_for_test()
+                            .retain(|message| message.role() != "toolResult");
+                    } else {
+                        session.replace_entries_for_test(entries(&source));
+                    }
+                    *session.content_revision_for_test() += 1;
+                });
+                home.sync_messages("a", true, window, cx);
+                let workspace = &home.views["a"].workspace;
+                assert_eq!(workspace.changes.len(), 1);
+                assert_eq!(workspace.changes[0].id, identity);
+                assert_eq!(workspace.active.as_ref(), Some(&identity));
+            });
+        });
+        if !live {
+            // Off-branch calls exist only in history, not the projected messages.
+            emit(&state, visual, |session| {
+                let mut records = entries(&source);
+                records.entries.push(
+                    serde_json::from_value(json!({
+                        "id":"sibling", "parentId":"user", "timestamp":"2026-10-15T00:00:00Z",
+                        "type":"message", "message":{"role":"user", "content":"Other branch"}
+                    }))
+                    .unwrap(),
+                );
+                records.leaf_id = Some("sibling".into());
+                session.replace_entries_for_test(records);
+            });
+            visual.update(|window, cx| {
+                home.update(cx, |home, cx| {
+                    home.views.get_mut("a").unwrap().preview = Some("sibling".into());
+                    home.sync_messages("a", true, window, cx);
+                    let workspace = &home.views["a"].workspace;
+                    assert_eq!(workspace.changes.len(), 1);
+                    assert!(!workspace.changes[0].in_scope);
+                });
+            });
+        }
+    }
+}
+
+#[gpui_kit::test]
 fn multiple_runs_keep_tabs_and_closing_main_only_tab_promotes_files_to_overlay(
     cx: &mut TestAppContext,
 ) {

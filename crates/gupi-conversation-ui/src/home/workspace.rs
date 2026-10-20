@@ -130,11 +130,13 @@ impl Tabs {
                     ids.insert(format!("tool-{id}"));
                 }
                 if let Some(content) = message["content"].as_array() {
-                    for part in content {
-                        if part["type"] == "toolCall"
-                            && let Some(id) = part["id"].as_str()
-                        {
-                            ids.insert(format!("tool-{id}"));
+                    for (part_ix, part) in content.iter().enumerate() {
+                        if part["type"] == "toolCall" {
+                            ids.insert(messages::tools::tool_call_id(
+                                &entry.id,
+                                part_ix,
+                                part["id"].as_str(),
+                            ));
                         }
                     }
                 }
@@ -145,11 +147,13 @@ impl Tabs {
                 ids.insert(format!("tool-{id}"));
             }
             if let Some(content) = message.value["content"].as_array() {
-                for part in content {
-                    if part["type"] == "toolCall"
-                        && let Some(id) = part["id"].as_str()
-                    {
-                        ids.insert(format!("tool-{id}"));
+                for (part_ix, part) in content.iter().enumerate() {
+                    if part["type"] == "toolCall" {
+                        ids.insert(messages::tools::tool_call_id(
+                            &message.id,
+                            part_ix,
+                            part["id"].as_str(),
+                        ));
                     }
                 }
             }

@@ -130,7 +130,7 @@ fn local_icon(kind: Kind) -> IconName {
         Kind::Rename => IconName::SquarePen,
         Kind::CopyPath => IconName::Copy,
         Kind::Reveal => IconName::FolderOpen,
-        Kind::FocusInput | Kind::ShowMain | Kind::ShowConversation => IconName::MessageCircle,
+        Kind::FocusInput | Kind::ShowMain => IconName::MessageCircle,
         Kind::Stop => IconName::Square,
         _ => IconName::X,
     }

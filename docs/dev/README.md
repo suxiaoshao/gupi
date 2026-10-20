@@ -14,6 +14,8 @@
 
 **[项目目录文件浏览（Gupi #31）](issue-31/README.md)**：按需目录读取、只读文件预览及 [会话/源码工作区 UI 改造方案](issue-31/ui-redesign.md)。
 
+**[主窗口工作区、历史面板与标题栏](workspace-layout/README.md)**：右侧多标签工作区（文件、各轮改动）、历史面板随对话栏停靠、固定/浮窗的统一空间规则，以及标题栏与会话菜单整理（当前实现，替换 #31 的主窗口布局与 #33 主窗口卡片的原地展开）。
+
 **[应用架构改造](capability-architecture/README.md)**：六个能力 crate 的当前职责、依赖和验证；[接口与依赖收敛](capability-architecture/refinement.md)记录官方 skill 核对结果。
 
 **[全局快捷键截图（Gupi #18）](issue-18/README.md)**：截图能力 crate、平台选择、取消与草稿边界及实施验证设计。

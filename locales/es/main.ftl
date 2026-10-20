@@ -686,7 +686,7 @@ screenshot-permission-required = Se necesita permiso para grabar la pantalla. Au
 
 # Project files and source preview
 files-title = Archivos
-files-panel = Panel derecho
+files-panel = Área de trabajo
 files-close = Cerrar panel
 files-refresh = Volver a cargar
 files-preview = Vista previa
@@ -711,7 +711,6 @@ files-focus-source = Enfocar código
 files-conversation = Conversación
 files-conversation-busy = Conversación, respondiendo
 files-view = Vista
-files-show-conversation = Mostrar conversación
 files-source = Código
 
 files-link-label = { $name } — enlace simbólico
@@ -1263,3 +1262,19 @@ pi-mcp-scope-project = Proyecto
 pi-mcp-disabled = Deshabilitado
 pi-mcp-check-failed = Error en la comprobación
 pi-mcp-check-timeout = Tiempo de comprobación agotado; resultados incompletos
+
+workspace-changes = Cambios
+workspace-close-tab = Cerrar pestaña
+workspace-close-others = Cerrar las demás pestañas
+workspace-close-right = Cerrar pestañas a la derecha
+workspace-toggle-navigator = Mostrar u ocultar el navegador
+workspace-out-of-scope = Esta respuesta está fuera del ámbito actual.
+workspace-net-zero = Todos los cambios de esta respuesta se han anulado entre sí.
+workspace-open-file = Abrir archivo
+workspace-next-operations = Siguientes operaciones
+workspace-open-change = Abrir { $path } en el espacio de trabajo
+workspace-all-tabs = Todas las pestañas
+
+history-panel-title = Historial
+history-panel-options = Opciones del historial
+workspace-view-changes = Ver cambios

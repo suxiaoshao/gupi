@@ -680,7 +680,7 @@ screenshot-permission-required = スクリーンショットには画面収録�
 
 # Project files and source preview
 files-title = ファイル
-files-panel = 右パネル
+files-panel = ワークスペース
 files-close = パネルを閉じる
 files-refresh = 再読み込み
 files-preview = プレビュー
@@ -705,7 +705,6 @@ files-focus-source = ソースにフォーカス
 files-conversation = 会話
 files-conversation-busy = 会話、応答中
 files-view = 表示
-files-show-conversation = 会話を表示
 files-source = ソース
 
 files-link-label = { $name } — シンボリックリンク
@@ -1238,3 +1237,19 @@ pi-mcp-scope-project = プロジェクト
 pi-mcp-disabled = 無効
 pi-mcp-check-failed = 確認に失敗しました
 pi-mcp-check-timeout = 確認が時間切れのため結果は不完全です
+
+workspace-changes = 変更
+workspace-close-tab = タブを閉じる
+workspace-close-others = 他のタブを閉じる
+workspace-close-right = 右側のタブを閉じる
+workspace-toggle-navigator = ナビゲーターの表示切替
+workspace-out-of-scope = この返信は現在の範囲外です。
+workspace-net-zero = この返信の変更はすべて相殺されました。
+workspace-open-file = ファイルを開く
+workspace-next-operations = 次の操作
+workspace-open-change = ワークスペースで { $path } を開く
+workspace-all-tabs = すべてのタブ
+
+history-panel-title = 履歴
+history-panel-options = 履歴のオプション
+workspace-view-changes = 変更を表示

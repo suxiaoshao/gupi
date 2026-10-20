@@ -83,6 +83,18 @@ fn mount<'a>(
     Entity<ConversationState>,
     &'a mut VisualTestContext,
 ) {
+    mount_mode(cx, messages, live, true)
+}
+fn mount_mode<'a>(
+    cx: &'a mut TestAppContext,
+    messages: &[DisplayMessage],
+    live: bool,
+    temporary: bool,
+) -> (
+    Entity<HomeView>,
+    Entity<ConversationState>,
+    &'a mut VisualTestContext,
+) {
     cx.update(|cx| {
         gpui_kit::init(cx);
         crate::host::install_headless(cx);
@@ -103,7 +115,13 @@ fn mount<'a>(
         std::fs::create_dir_all(&directory).unwrap();
         cx.set_global(TestLayoutDirectory(directory));
     });
-    let state = cx.new(|cx| ConversationState::new("unused".into(), cx));
+    let state = cx.new(|cx| {
+        if temporary {
+            ConversationState::temporary("unused".into(), cx)
+        } else {
+            ConversationState::new("unused".into(), cx)
+        }
+    });
     state.update(cx, |state, _| {
         state
             .sessions_for_test()
@@ -883,4 +901,157 @@ fn home_preview_switches_keep_current_path_live_tools(cx: &mut TestAppContext) {
             })
         });
     }
+}
+
+#[gpui_kit::test]
+fn main_card_view_changes_reuses_run_and_selects_first_file(cx: &mut TestAppContext) {
+    let (home, _, visual) = mount_mode(cx, &fixture(2, 1, 0), false, false);
+    let row = visual.debug_bounds("change-file-row-dir/1.rs").unwrap();
+    visual.simulate_click(row.center(), Modifiers::default());
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| home.close_navigator(window, cx));
+    });
+    visual.run_until_parked();
+    let button = visual.debug_bounds("view-run-changes").unwrap();
+    visual.simulate_click(button.center(), Modifiers::default());
+    visual.run_until_parked();
+    visual.update(|_, cx| {
+        let home = home.read(cx);
+        let view = &home.views["a"];
+        assert_eq!(view.workspace.changes.len(), 1);
+        assert_eq!(
+            view.workspace.changes[0].selected.as_deref(),
+            Some("dir/0.rs")
+        );
+        assert!(
+            home.pane_layout
+                .visible(crate::home::panes::Panel::Workspace)
+        );
+        assert!(
+            !view.changes.files[&(view.workspace.changes[0].run.clone(), "dir/0.rs".into())].open
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn main_card_opens_retained_tab_and_persistence_scope_and_net_zero_preserve_identity(
+    cx: &mut TestAppContext,
+) {
+    let source = net_fixture(1);
+    let (home, state, visual) = mount_mode(cx, &source, true, false);
+    let row = visual.debug_bounds("change-file-row-dir/0.rs").unwrap();
+    visual.simulate_click(row.center(), Modifiers::default());
+    visual.run_until_parked();
+    let (identity, original_run) = visual.update(|_, cx| {
+        let view = &home.read(cx).views["a"];
+        assert_eq!(view.workspace.changes.len(), 1);
+        let tab = &view.workspace.changes[0];
+        assert_eq!(view.workspace.active.as_ref(), Some(&tab.id));
+        assert_eq!(tab.selected.as_deref(), Some("dir/0.rs"));
+        assert!(!view.changes.files[&(tab.run.clone(), "dir/0.rs".into())].open);
+        (tab.id.clone(), tab.run.clone())
+    });
+    emit(&state, visual, |session| {
+        session.replace_entries_for_test(entries(&source));
+        session.live_for_test().clear();
+        *session.content_revision_for_test() += 1;
+    });
+    visual.update(|window, cx| {
+        let view = &home.read(cx).views["a"];
+        assert_eq!(view.workspace.changes.len(), 1);
+        assert_eq!(view.workspace.changes[0].id, identity);
+        assert_ne!(view.workspace.changes[0].run, original_run);
+        let run = view.workspace.changes[0].run.clone();
+        home.update(cx, |home, cx| {
+            home.open_changes("a", &run, "dir/0.rs", window, cx)
+        });
+        assert_eq!(home.read(cx).views["a"].workspace.changes.len(), 1);
+    });
+    // A sibling branch excludes this response but must retain its tab.
+    emit(&state, visual, |session| {
+        let mut records = entries(&source);
+        records.entries.push(serde_json::from_value(json!({"id":"sibling", "parentId":"user", "timestamp":"2026-10-15T00:00:00Z", "type":"message", "message":{"role":"user", "content":"Other branch"}})).unwrap());
+        session.replace_entries_for_test(records);
+    });
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            home.views.get_mut("a").unwrap().preview = Some("sibling".into());
+            home.sync_messages("a", true, window, cx);
+            assert!(!home.views["a"].workspace.changes[0].in_scope);
+            home.views.get_mut("a").unwrap().preview = None;
+            home.sync_messages("a", true, window, cx);
+            assert!(home.views["a"].workspace.changes[0].in_scope);
+        })
+    });
+    emit(&state, visual, |session| {
+        append_edit(session, "cancel", "dir/0.rs", "new-0-0", "old", 2000)
+    });
+    visual.update(|_, cx| {
+        let tab = &home.read(cx).views["a"].workspace.changes[0];
+        assert_eq!(tab.id, identity);
+        assert!(tab.in_scope && tab.files.is_empty());
+        assert!(tab.selected.is_none());
+    });
+    emit(&state, visual, |session| {
+        session.replace_entries_for_test(entries(&[]));
+        session.live_for_test().clear();
+        *session.content_revision_for_test() += 1;
+    });
+    visual.update(|_, cx| assert!(home.read(cx).views["a"].workspace.changes.is_empty()));
+}
+
+#[gpui_kit::test]
+fn multiple_runs_keep_tabs_and_closing_main_only_tab_promotes_files_to_overlay(
+    cx: &mut TestAppContext,
+) {
+    let mut source = fixture(1, 1, 0);
+    let second = fixture(1, 1, 0).into_iter().map(|mut message| {
+        message.id = format!("second-{}", message.id);
+        message.value =
+            serde_json::from_str(&message.value.to_string().replace("0-0", "second-operation"))
+                .unwrap();
+        message
+    });
+    source.extend(second);
+    let (home, _, visual) = mount_mode(cx, &source, false, false);
+    visual.simulate_resize(size(px(1600.), px(800.)));
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            let runs: Vec<_> = home.views["a"]
+                .edited_files
+                .runs()
+                .map(|(run, _)| run.to_owned())
+                .collect();
+            assert_eq!(runs.len(), 2);
+            for run in runs {
+                home.open_changes("a", &run, "dir/0.rs", window, cx);
+            }
+            assert_eq!(home.views["a"].workspace.changes.len(), 2);
+            home.open_source("/repo/example.rs".into(), false, window, cx);
+            let id = home.views["a"].workspace.changes[0].id.clone();
+            home.views.get_mut("a").unwrap().workspace.changes[0].navigator_hidden = true;
+            home.select_workspace_tab(Some(id), window, cx);
+        })
+    });
+    visual.simulate_resize(size(px(1150.), px(800.)));
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            home.fit_layout(window, cx);
+            assert!(home.pane_layout.workspace_docked);
+            let id = home.views["a"].workspace.changes[0].id.clone();
+            home.views["a"].workspace.changes[0]
+                .header_focus
+                .focus(window, cx);
+            home.close_workspace_tabs(&id, 0, window, cx);
+            assert!(home.views["a"].files.read(cx).is_focused(window, cx));
+            assert!(home.views["a"].workspace.active.is_none());
+            assert_eq!(
+                home.pane_layout.overlay,
+                Some(crate::home::panes::Panel::Workspace)
+            );
+            assert!(home.pane_layout.right > 0.);
+            assert_eq!(home.views["a"].workspace.changes.len(), 1);
+        })
+    });
 }

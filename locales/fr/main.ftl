@@ -687,7 +687,7 @@ screenshot-permission-required = L’autorisation d’enregistrer l’écran est
 
 # Project files and source preview
 files-title = Fichiers
-files-panel = Panneau droit
+files-panel = Espace de travail
 files-close = Fermer le panneau
 files-refresh = Recharger
 files-preview = Aperçu
@@ -712,7 +712,6 @@ files-focus-source = Activer le code source
 files-conversation = Conversation
 files-conversation-busy = Conversation, réponse en cours
 files-view = Vue
-files-show-conversation = Afficher la conversation
 files-source = Source
 
 files-link-label = { $name } — lien symbolique
@@ -1264,3 +1263,19 @@ pi-mcp-scope-project = Projet
 pi-mcp-disabled = Désactivé
 pi-mcp-check-failed = Échec de la vérification
 pi-mcp-check-timeout = Délai de vérification dépassé ; résultats incomplets
+
+workspace-changes = Modifications
+workspace-close-tab = Fermer l’onglet
+workspace-close-others = Fermer les autres onglets
+workspace-close-right = Fermer les onglets à droite
+workspace-toggle-navigator = Afficher ou masquer la navigation
+workspace-out-of-scope = Cette réponse est hors du périmètre actuel.
+workspace-net-zero = Toutes les modifications de cette réponse s’annulent.
+workspace-open-file = Ouvrir le fichier
+workspace-next-operations = Opérations suivantes
+workspace-open-change = Ouvrir { $path } dans l’espace de travail
+workspace-all-tabs = Tous les onglets
+
+history-panel-title = Historique
+history-panel-options = Options de l’historique
+workspace-view-changes = Voir les modifications

@@ -26,6 +26,12 @@ pub struct LayoutState {
         deserialize_with = "read_width"
     )]
     pub navigator_width_rem: f32,
+    #[serde(default, deserialize_with = "read_pin")]
+    pub workspace_pinned: bool,
+    #[serde(default, deserialize_with = "read_pin")]
+    pub history_pinned: bool,
+    #[serde(default = "default_history_width_rem", deserialize_with = "read_width")]
+    pub history_width_rem: f32,
 }
 impl Global for LayoutState {}
 impl Default for LayoutState {
@@ -34,6 +40,9 @@ impl Default for LayoutState {
             main_window: None,
             sidebar_width_rem: default_sidebar_width_rem(),
             navigator_width_rem: default_navigator_width_rem(),
+            workspace_pinned: false,
+            history_pinned: false,
+            history_width_rem: default_history_width_rem(),
         }
     }
 }
@@ -42,6 +51,14 @@ fn default_sidebar_width_rem() -> f32 {
 }
 fn default_navigator_width_rem() -> f32 {
     20.
+}
+fn default_history_width_rem() -> f32 {
+    20.
+}
+fn read_pin<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
+    Ok(toml::Value::deserialize(deserializer)?
+        .as_bool()
+        .unwrap_or(false))
 }
 fn read_width<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<f32, D::Error> {
     let value = toml::Value::deserialize(deserializer)?;
@@ -153,6 +170,9 @@ pub fn read(path: &Path) -> Result<LayoutState, String> {
     if !value.navigator_width_rem.is_finite() || value.navigator_width_rem <= 0. {
         value.navigator_width_rem = default_navigator_width_rem();
     }
+    if !value.history_width_rem.is_finite() || value.history_width_rem <= 0. {
+        value.history_width_rem = default_history_width_rem();
+    }
     Ok(value)
 }
 pub fn capture(window: &Window, previous: &LayoutState) -> LayoutState {
@@ -170,6 +190,9 @@ pub fn capture(window: &Window, previous: &LayoutState) -> LayoutState {
         }),
         sidebar_width_rem: previous.sidebar_width_rem,
         navigator_width_rem: previous.navigator_width_rem,
+        workspace_pinned: previous.workspace_pinned,
+        history_pinned: previous.history_pinned,
+        history_width_rem: previous.history_width_rem,
     }
 }
 pub fn save(path: &Path, value: &LayoutState) -> Result<(), String> {
@@ -194,6 +217,27 @@ pub fn save(path: &Path, value: &LayoutState) -> Result<(), String> {
 mod tests {
     use super::{LayoutState, load, read, save};
     use std::fs;
+
+    #[test]
+    fn panel_preferences_default_validate_and_round_trip() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("state.toml");
+        fs::write(
+            &path,
+            "workspace_pinned = 'invalid'\nhistory_pinned = true\nhistory_width_rem = -2\n",
+        )
+        .unwrap();
+        let mut value = read(&path).unwrap();
+        assert!(!value.workspace_pinned);
+        assert!(value.history_pinned);
+        assert_eq!(value.history_width_rem, 20.);
+        value.workspace_pinned = true;
+        value.history_width_rem = 25.;
+        save(&path, &value).unwrap();
+        let restored = read(&path).unwrap();
+        assert!(restored.workspace_pinned && restored.history_pinned);
+        assert_eq!(restored.history_width_rem, 25.);
+    }
 
     #[test]
     fn rem_preferences_round_trip_without_pixel_range_clamps() {

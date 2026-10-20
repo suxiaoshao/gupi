@@ -687,7 +687,7 @@ screenshot-permission-required = Screen recording access is required. Enable Gup
 
 # Project files and source preview
 files-title = Files
-files-panel = Right panel
+files-panel = Workspace
 files-close = Close panel
 files-refresh = Reload
 files-preview = Preview
@@ -712,7 +712,6 @@ files-focus-source = Focus source
 files-conversation = Conversation
 files-conversation-busy = Conversation, responding
 files-view = View
-files-show-conversation = Show conversation
 files-source = Source
 
 files-link-label = { $name } — symbolic link
@@ -1264,3 +1263,19 @@ pi-mcp-scope-project = Project
 pi-mcp-disabled = Disabled
 pi-mcp-check-failed = Check failed
 pi-mcp-check-timeout = Check timed out; results are incomplete
+
+workspace-changes = Changes
+workspace-close-tab = Close tab
+workspace-close-others = Close other tabs
+workspace-close-right = Close tabs to the right
+workspace-toggle-navigator = Toggle navigator
+workspace-out-of-scope = This reply is outside the current scope.
+workspace-net-zero = All changes in this reply cancel out.
+workspace-open-file = Open file
+workspace-next-operations = Next operations
+workspace-open-change = Open { $path } in the workspace
+workspace-all-tabs = All tabs
+
+history-panel-title = History
+history-panel-options = History options
+workspace-view-changes = View changes

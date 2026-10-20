@@ -1,91 +1,151 @@
 use super::*;
+pub(super) mod geometry;
+use geometry::{Content, History, Workspace, clamp};
 
 const LEFT_MIN_REM: f32 = 10.;
 const LEFT_MAX_REM: f32 = 30.;
-const RIGHT_MIN_REM: f32 = 15.;
-const RIGHT_MAX_REM: f32 = 32.5;
 
-fn sidebar_bounds(width: f32, reserved: f32, content: f32, rem: f32) -> (f32, f32) {
-    let maximum = (width - reserved - content).clamp(0., LEFT_MAX_REM * rem);
-    ((LEFT_MIN_REM * rem).min(maximum), maximum)
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum Panel {
+    History,
+    Workspace,
 }
-
-fn navigator_bounds(main: f32, content: f32, overlay: bool, rem: f32) -> (f32, f32) {
-    let reserved = if overlay { 6.25 * rem } else { content };
-    let maximum = (main - reserved).clamp(0., RIGHT_MAX_REM * rem);
-    ((RIGHT_MIN_REM * rem).min(maximum), maximum)
-}
-
 #[derive(Clone, Copy)]
 pub(super) enum Side {
     Left,
     Right,
     Source,
+    History,
+}
+#[derive(Clone, Copy, PartialEq)]
+pub(super) struct Request {
+    pub width: f32,
+    pub sidebar: bool,
+    pub content: Content,
+    pub rem: f32,
+    pub workspace_pinned: bool,
+    pub history_pinned: bool,
 }
 
-/// Displayed widths are independent of persisted preferences. Re-fit them only
-/// when the available space or visible panels change, never after a sibling drag.
 #[derive(Default)]
 pub(super) struct PaneLayout {
-    container: Option<(f32, bool, bool, bool, f32)>,
-    pub conversation: f32,
-    pub work: f32,
-    pub single: bool,
+    container: Option<Request>,
     ratio: Option<f32>,
     pub left: f32,
     pub right: f32,
-    pub overlay: bool,
+    pub conversation: f32,
+    pub work: f32,
+    pub workspace_width: f32,
+    pub main_width: f32,
+    pub history_width: f32,
+    pub body_width: f32,
+    pub body_origin: f32,
+    pub workspace_docked: bool,
+    pub history_docked: bool,
+    pub overlay: Option<Panel>,
+    navigator_preference: f32,
+    history_preference: f32,
 }
-
 impl PaneLayout {
-    pub fn fit_workspace(
-        &mut self,
-        width: f32,
-        left: bool,
-        right: bool,
-        source: bool,
-        rem: f32,
-        preferences: &layout::LayoutState,
-    ) -> bool {
-        let container = (width, left, right, source, rem);
-        if self.container == Some(container) {
+    pub fn available(&self) -> f32 {
+        self.container
+            .map_or(0., |r| r.width - if r.sidebar { self.left } else { 0. })
+    }
+    pub fn fit(&mut self, request: Request, preferences: &layout::LayoutState) -> bool {
+        if self.container == Some(request) {
             return false;
         }
-        self.container = Some(container);
-        let (minimum, maximum) = sidebar_bounds(width, 0., 24. * rem, rem);
-        self.left = (preferences.sidebar_width_rem * rem).clamp(minimum, maximum);
-        let main = width - if left { self.left } else { 0. };
-        let required = if source { 54. * rem } else { 24. * rem };
-        self.overlay = right && main < required + RIGHT_MIN_REM * rem;
-        self.right = if right {
-            let (minimum, maximum) = navigator_bounds(main, required, self.overlay, rem);
-            (preferences.navigator_width_rem * rem).clamp(minimum, maximum)
-        } else {
-            0.
-        };
-        self.work = main
-            - if right && !self.overlay {
-                self.right
-            } else {
-                0.
-            };
-        self.single = source && self.work < 54. * rem;
-        self.fit_split(rem);
+        let content_changed = self
+            .container
+            .is_some_and(|old| old.content != request.content);
+        let was_docked = self.workspace_docked;
+        self.container = Some(request);
+        self.left = clamp(
+            preferences.sidebar_width_rem * request.rem,
+            LEFT_MIN_REM * request.rem,
+            (request.width - geometry::CONVERSATION_MIN_REM * request.rem)
+                .min(LEFT_MAX_REM * request.rem),
+        );
+        self.navigator_preference = preferences.navigator_width_rem * request.rem;
+        self.history_preference = preferences.history_width_rem * request.rem;
+        if content_changed && was_docked && !request.content.dockable(self.available(), request.rem)
+        {
+            self.overlay = Some(Panel::Workspace);
+        }
+        self.allocate();
         true
     }
-    fn fit_split(&mut self, rem: f32) {
-        self.conversation = if self.single {
-            self.work
-        } else {
-            (self.ratio.unwrap_or(0.4) * self.work).clamp(
-                (24. * rem).min(self.work),
-                (self.work - 30. * rem).max((24. * rem).min(self.work)),
-            )
+    pub fn invalidate(&mut self) {
+        self.container = None;
+    }
+    pub fn allocate(&mut self) {
+        let Some(request) = self.container else {
+            return;
         };
+        let available = self.available();
+        self.workspace_docked =
+            request.workspace_pinned && request.content.dockable(available, request.rem);
+        if self.workspace_docked && self.overlay == Some(Panel::Workspace) {
+            self.overlay = None;
+        }
+        let workspace = if self.workspace_docked {
+            Workspace::docked(
+                available,
+                request.content,
+                self.navigator_preference,
+                self.ratio(),
+                request.rem,
+            )
+        } else if self.overlay == Some(Panel::Workspace) {
+            Workspace::overlay(
+                available,
+                request.content,
+                self.navigator_preference,
+                request.rem,
+            )
+        } else {
+            Workspace {
+                conversation: available,
+                ..Default::default()
+            }
+        };
+        self.conversation = workspace.conversation;
+        self.right = workspace.navigator;
+        self.main_width = workspace.main;
+        self.workspace_width = workspace.width;
+        self.work = workspace.ratio_width;
+        let history = History::new(
+            self.conversation,
+            self.history_preference,
+            request.history_pinned,
+            request.rem,
+        );
+        self.history_docked = request.history_pinned && history.dockable;
+        if self.history_docked && self.overlay == Some(Panel::History) {
+            self.overlay = None;
+        }
+        self.history_width = history.width;
+        self.body_width = history.body;
+        self.body_origin = history.origin;
+    }
+    pub fn dockable(&self, panel: Panel) -> bool {
+        self.container.is_some_and(|r| match panel {
+            Panel::Workspace => r.content.dockable(self.available(), r.rem),
+            Panel::History => {
+                History::new(self.conversation, self.history_preference, true, r.rem).dockable
+            }
+        })
+    }
+    pub fn visible(&self, panel: Panel) -> bool {
+        self.overlay == Some(panel)
+            || match panel {
+                Panel::History => self.history_docked,
+                Panel::Workspace => self.workspace_docked,
+            }
     }
     pub fn set_ratio(&mut self, ratio: f32) {
         self.ratio = Some(ratio);
-        self.container = None;
+        self.invalidate();
     }
     pub fn ratio(&self) -> f32 {
         self.ratio.unwrap_or(0.4)
@@ -95,63 +155,71 @@ impl PaneLayout {
             Side::Left => self.left,
             Side::Right => self.right,
             Side::Source => self.conversation,
+            Side::History => self.history_width,
         }
     }
-
     fn drag_to(&mut self, side: Side, x: f32) {
-        let Some((width, left, _, _, _)) = self.container else {
+        let Some(r) = self.container else {
             return;
         };
         self.resize(
             side,
             match side {
                 Side::Left => x,
-                Side::Right => width - x,
-                Side::Source => x - if left { self.left } else { 0. },
+                Side::Right => r.width - x,
+                Side::Source => x - if r.sidebar { self.left } else { 0. },
+                Side::History => {
+                    r.width
+                        - self.workspace_width
+                        - if self.workspace_docked {
+                            geometry::DIVIDER
+                        } else {
+                            0.
+                        }
+                        - x
+                }
             },
         );
     }
-
     pub fn resize(&mut self, side: Side, requested: f32) {
-        let Some((width, left_visible, _, source, rem)) = self.container else {
+        let Some(r) = self.container else {
             return;
         };
-        if matches!(side, Side::Source) {
-            if !self.single && source && self.work > 0. {
-                self.conversation = requested.clamp(24. * rem, self.work - 30. * rem);
-                self.ratio = Some(self.conversation / self.work);
-            }
-            return;
-        }
-        let content_min = if source && !self.single {
-            54. * rem
-        } else {
-            24. * rem
-        };
-        let (minimum, maximum) = match side {
-            Side::Left => sidebar_bounds(
-                width,
-                if self.overlay { 0. } else { self.right },
-                content_min,
-                rem,
-            ),
-            Side::Right => navigator_bounds(
-                width - if left_visible { self.left } else { 0. },
-                content_min,
-                self.overlay,
-                rem,
-            ),
-            Side::Source => unreachable!(),
-        };
-        let value = requested.clamp(minimum, maximum);
         match side {
-            Side::Left => self.left = value,
-            Side::Right => self.right = value,
-            Side::Source => unreachable!(),
+            Side::Source => {
+                if self.workspace_docked && r.content.main && self.work > 0. {
+                    self.ratio = Some(
+                        clamp(
+                            requested,
+                            geometry::CONVERSATION_MIN_REM * r.rem,
+                            self.work - geometry::CONTENT_MIN_REM * r.rem,
+                        ) / self.work,
+                    );
+                }
+            }
+            Side::Left => {
+                let reserve = if self.workspace_docked {
+                    r.content.minimum(r.rem)
+                } else {
+                    geometry::CONVERSATION_MIN_REM * r.rem
+                };
+                self.left = clamp(
+                    requested,
+                    LEFT_MIN_REM * r.rem,
+                    (r.width - reserve).min(LEFT_MAX_REM * r.rem),
+                );
+            }
+            Side::Right => self.navigator_preference = requested,
+            Side::History => {
+                self.history_preference = clamp(
+                    requested,
+                    geometry::HISTORY_MIN_REM * r.rem,
+                    self.conversation
+                        - (geometry::BODY_MIN_REM + geometry::HISTORY_GAP_REM) * r.rem,
+                )
+            }
         }
-        let main = width - if left_visible { self.left } else { 0. };
-        self.work = main - if self.overlay { 0. } else { self.right };
-        self.fit_split(rem);
+        self.allocate();
     }
 }
 
@@ -186,9 +254,22 @@ impl HomeView {
                 Side::Left => "sidebar-resize",
                 Side::Right => "history-resize",
                 Side::Source => "source-resize",
+                Side::History => "history-panel-resize",
             },
             Axis::Horizontal,
         )
+        .when(matches!(side, Side::History), |handle| {
+            let appearance = gpui_kit::component::resizable::resize_handle_appearance();
+            handle.with_appearance(Rc::new(move |handle, window, cx| {
+                // The detached history card supplies the resting boundary. Keep the
+                // kit's hit band and engaged resize feedback without a second strip.
+                if handle.state() == gpui_kit::base::ResizeHandleState::Idle {
+                    Some(div().into_any_element())
+                } else {
+                    appearance(handle, window, cx)
+                }
+            }))
+        })
         .on_drag(side, move |_, _, window, cx| {
             let _ = owner.update(cx, |this, cx| {
                 this.pane_drag = Some(Drag {
@@ -207,7 +288,7 @@ impl HomeView {
     pub(super) fn interrupt_pane_drag(&mut self, window: &mut Window, cx: &mut App) {
         if let Some(drag) = self.pane_drag.take() {
             self.pane_layout.ratio = drag.start_ratio;
-            self.pane_layout.fit_split(f32::from(window.rem_size()));
+            self.pane_layout.allocate();
             cx.stop_active_drag(window);
         }
     }
@@ -222,6 +303,11 @@ impl HomeView {
                 Side::Left => self.save_layout(Some(width), None, window, cx),
                 Side::Right => self.save_layout(None, Some(width), window, cx),
                 Side::Source => self.save_source_split(cx),
+                Side::History => {
+                    cx.global_mut::<layout::LayoutState>().history_width_rem =
+                        width / f32::from(window.rem_size());
+                    self.save_layout(None, None, window, cx);
+                }
             }
         }
         cx.notify();
@@ -301,10 +387,9 @@ impl Element for ResizeEvents {
 
 #[cfg(test)]
 mod tests {
-    use super::PaneLayout;
-    use super::Side;
-    use gupi_settings::layout;
-
+    use super::*;
+    use core::prelude::v1::test;
+    use gpui_kit::test::TestWindowExt as _;
     fn setup(
         cx: &mut gpui_kit::TestAppContext,
     ) -> (
@@ -361,180 +446,106 @@ mod tests {
     }
 
     #[gpui_kit::test]
-    fn sidebar_drag_tracks_pointer_without_width_transitions(cx: &mut gpui_kit::TestAppContext) {
-        use gpui_kit::Modifiers;
-        use gpui_kit::MouseButton;
-        use gpui_kit::point;
-        use gpui_kit::px;
-        use gpui_kit::size;
+    fn first_file_promotes_tree_to_overlay_and_escape_returns_to_trigger(cx: &mut TestAppContext) {
         let (home, visual) = setup(cx);
-        visual.simulate_resize(size(px(1200.), px(800.)));
-        visual.update(|window, cx| window.draw(cx).clear(cx));
-        let initial = visual.debug_bounds("conversation-center").unwrap().origin.x;
-        let start = point(initial, px(300.));
-        visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
-        for x in [
-            initial + px(50.),
-            initial + px(120.),
-            initial + px(40.),
-            initial,
-        ] {
-            visual.simulate_mouse_move(point(x, start.y), MouseButton::Left, Modifiers::default());
-            visual.update(|window, cx| window.draw(cx).clear(cx));
-            visual.update(|_, cx| assert!(home.read(cx).resizing_sidebar()));
-            // Inspect the first frame after each motion, without advancing the
-            // animation clock: both content and chrome must already be at x.
-            assert_eq!(
-                visual.debug_bounds("conversation-center").unwrap().origin.x,
-                x
+        visual.simulate_resize(size(px(950.), px(800.)));
+        visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                home.ensure_panel(Panel::Workspace, window, cx);
+                assert!(home.pane_layout.workspace_docked);
+                home.open_source("/tmp/workspace-fixture.rs".into(), true, window, cx);
+                assert_eq!(home.pane_layout.overlay, Some(Panel::Workspace));
+                assert!(home.pane_layout.right > 0.);
+                assert!(!home.views["empty"].workspace.navigator_hidden);
+                home.source()
+                    .unwrap()
+                    .update(cx, |source, cx| source.focus(window, cx));
+            })
+        });
+        visual.run_until_parked();
+        visual.simulate_keystrokes("escape");
+        visual.update(|window, cx| {
+            assert!(home.read(cx).pane_layout.overlay.is_none());
+            assert!(
+                home.read(cx)
+                    .workspace_button_focus
+                    .contains_focused(window, cx)
             );
-            assert_eq!(
-                visual.debug_bounds("titlebar-sidebar").unwrap().size.width,
-                x
-            );
-        }
-        // Return to the starting width so this UI test does not persist layout.
-        visual.simulate_mouse_up(start, MouseButton::Left, Modifiers::default());
+            assert!(cx.global::<layout::LayoutState>().workspace_pinned);
+        });
+    }
+    #[gpui_kit::test]
+    fn overlay_titlebar_toggle_closes_without_reopening(cx: &mut TestAppContext) {
+        let (home, visual) = setup(cx);
+        visual.simulate_resize(size(px(800.), px(800.)));
+        visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                home.ensure_panel(Panel::Workspace, window, cx)
+            });
+        });
         visual.run_until_parked();
         visual.update(|window, cx| {
-            assert!(!home.read(cx).resizing_sidebar());
-            window.draw(cx).clear(cx);
+            window.render_frame(cx);
+            window.click("toggle-workspace", cx);
         });
-        assert_eq!(
-            visual.debug_bounds("conversation-center").unwrap().origin.x,
-            initial
-        );
-        assert_eq!(
-            visual.debug_bounds("titlebar-sidebar").unwrap().size.width,
-            initial
-        );
+        visual.run_until_parked();
+        assert!(home.read_with(visual, |home, _| home.pane_layout.overlay.is_none()));
     }
 
-    #[test]
-    fn hidden_sidebar_keeps_animation_width_without_reserving_layout_space() {
-        let preferences = {
-            let mut record = layout::LayoutState::default();
-            record.sidebar_width_rem = 30.;
-            record.navigator_width_rem = 32.5;
-            record
-        };
-        let mut panes = PaneLayout::default();
-        panes.fit_workspace(1200., true, true, false, 16., &preferences);
-        assert_eq!((panes.left, panes.right), (480., 336.));
-        panes.fit_workspace(1200., false, true, false, 16., &preferences);
-        assert_eq!((panes.left, panes.right), (480., 520.));
-        panes.resize(Side::Right, 520.);
-        assert_eq!(panes.right, 520.);
-        panes.fit_workspace(1200., true, true, false, 16., &preferences);
-        assert_eq!((panes.left, panes.right), (480., 336.));
+    #[gpui_kit::test]
+    fn explicit_open_pins_resized_overlay_but_internal_navigation_does_not(
+        cx: &mut TestAppContext,
+    ) {
+        let (home, visual) = setup(cx);
+        visual.simulate_resize(size(px(800.), px(800.)));
+        visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                home.ensure_panel(Panel::Workspace, window, cx);
+                assert_eq!(home.pane_layout.overlay, Some(Panel::Workspace));
+                assert!(!cx.global::<layout::LayoutState>().workspace_pinned);
+            })
+        });
+        visual.simulate_resize(size(px(2000.), px(800.)));
+        visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                home.fit_layout(window, cx);
+                assert_eq!(home.pane_layout.overlay, Some(Panel::Workspace));
+                home.select_workspace_tab(None, window, cx);
+                assert_eq!(home.pane_layout.overlay, Some(Panel::Workspace));
+                home.ensure_panel(Panel::Workspace, window, cx);
+                assert!(home.pane_layout.workspace_docked);
+                assert!(home.pane_layout.overlay.is_none());
+                assert!(cx.global::<layout::LayoutState>().workspace_pinned);
+            })
+        });
     }
     #[test]
-    fn resizing_one_sidebar_never_borrows_from_the_other() {
-        let preferences = {
-            let mut record = layout::LayoutState::default();
-            record.sidebar_width_rem = 18.75;
-            record.navigator_width_rem = 18.75;
-            record
+    fn resize_does_not_write_preferences_and_history_can_redock() {
+        let mut preferences = layout::LayoutState::default();
+        preferences.workspace_pinned = true;
+        preferences.history_pinned = true;
+        let mut panes = PaneLayout::default();
+        let mut request = Request {
+            width: 1400.,
+            sidebar: false,
+            content: Content {
+                main: true,
+                navigator: true,
+            },
+            rem: 16.,
+            workspace_pinned: true,
+            history_pinned: true,
         };
-        let mut panes = PaneLayout::default();
-        panes.fit_workspace(1200., true, true, false, 16., &preferences);
-        panes.resize(Side::Right, 600.);
-        assert_eq!((panes.left, panes.right), (300., 516.));
-        panes.resize(Side::Left, 480.);
-        assert_eq!((panes.left, panes.right), (300., 516.));
-        panes.resize(Side::Right, 100.);
-        assert_eq!((panes.left, panes.right), (300., 240.));
-    }
-    #[test]
-    fn temporary_constraints_and_sibling_drag_do_not_restore_or_overwrite_preferences() {
-        let preferences = {
-            let mut record = layout::LayoutState::default();
-            record.sidebar_width_rem = 30.;
-            record.navigator_width_rem = 32.5;
-            record
-        };
-        let mut panes = PaneLayout::default();
-        panes.fit_workspace(1100., true, true, false, 16., &preferences);
-        assert_eq!((panes.left, panes.right), (480., 520.));
-        panes.resize(Side::Left, 400.);
-        // A redraw after dragging the left edge must not expand the right edge.
-        assert!(!panes.fit_workspace(1100., true, true, false, 16., &preferences));
-        assert_eq!((panes.left, panes.right), (400., 520.));
-        panes.fit_workspace(1500., true, true, false, 16., &preferences);
-        assert_eq!((panes.left, panes.right), (480., 520.));
-        assert_eq!(
-            (
-                preferences.sidebar_width_rem,
-                preferences.navigator_width_rem
-            ),
-            (30., 32.5)
-        );
-    }
-    #[test]
-    fn overlay_and_visibility_changes_keep_the_original_pixel_preferences() {
-        let preferences = {
-            let mut record = layout::LayoutState::default();
-            record.sidebar_width_rem = 30.;
-            record.navigator_width_rem = 32.5;
-            record
-        };
-        let mut panes = PaneLayout::default();
-        panes.fit_workspace(800., true, true, false, 16., &preferences);
-        assert!(panes.overlay);
-        assert_eq!((panes.left, panes.right), (416., 284.));
-        panes.resize(Side::Right, 300.);
-        assert_eq!(panes.left, 416.);
-        panes.fit_workspace(1500., true, false, false, 16., &preferences);
-        assert_eq!((panes.left, panes.right), (480., 0.));
-        panes.fit_workspace(1500., true, true, false, 16., &preferences);
-        assert_eq!((panes.left, panes.right), (480., 520.));
-    }
-    #[test]
-    fn source_layout_fits_minima_and_keeps_the_saved_split() {
-        let preferences = layout::LayoutState::default();
-        let mut panes = PaneLayout::default();
-        panes.set_ratio(0.45);
-        panes.fit_workspace(1728., true, true, true, 16., &preferences);
-        assert!(!panes.overlay && !panes.single);
-        assert!(panes.conversation >= 384. && panes.work - panes.conversation >= 480.);
-        panes.resize(Side::Source, 600.);
-        let ratio = panes.ratio();
-        panes.fit_workspace(1200., true, true, true, 16., &preferences);
-        assert!(panes.overlay && !panes.single);
-        panes.fit_workspace(960., true, false, true, 16., &preferences);
-        assert!(panes.single);
-        assert_eq!(panes.ratio(), ratio);
-        panes.fit_workspace(1440., true, true, true, 20., &preferences);
-        assert!(panes.overlay && !panes.single);
+        panes.fit(request, &preferences);
+        assert!(panes.workspace_docked);
+        assert!(!panes.history_docked);
+        request.width = 1000.;
+        panes.fit(request, &preferences);
+        assert!(!panes.workspace_docked);
+        assert!(panes.history_docked);
         assert_eq!(preferences.navigator_width_rem, 20.);
+        assert_eq!(preferences.history_width_rem, 20.);
     }
-    #[test]
-    fn navigator_fit_drag_and_reopen_share_feasible_rem_bounds() {
-        for rem in [12., 13., 14., 16., 20., 40.] {
-            for width in [800., 1200., 4000.] {
-                let mut preferences = layout::LayoutState::default();
-                preferences.sidebar_width_rem = 30.;
-                let mut panes = PaneLayout::default();
-                panes.fit_workspace(width, true, true, false, rem, &preferences);
-                for requested in [0., 10000.] {
-                    panes.resize(Side::Right, requested);
-                    let dragged = panes.right;
-                    assert!(dragged > 0.);
-                    preferences.navigator_width_rem = dragged / rem;
-                    panes.fit_workspace(width, true, false, false, rem, &preferences);
-                    panes.fit_workspace(width, true, true, false, rem, &preferences);
-                    assert!((panes.right - dragged).abs() < 0.001);
-                }
-            }
-        }
-        let mut panes = PaneLayout::default();
-        let preferences = layout::LayoutState::default();
-        panes.fit_workspace(4000., false, true, false, 14., &preferences);
-        assert_eq!(panes.right, 20. * 14.);
-        panes.fit_workspace(4000., false, true, false, 20., &preferences);
-        assert_eq!(panes.right, 20. * 20.);
-    }
-
     fn start_drag(
         home: &gpui_kit::Entity<super::HomeView>,
         visual: &mut gpui_kit::VisualTestContext,
@@ -549,6 +560,7 @@ mod tests {
                 Side::Left => panes.left,
                 Side::Right => f32::from(window.viewport_size().width) - panes.right,
                 Side::Source => panes.left + panes.conversation,
+                Side::History => panes.left + panes.conversation - panes.history_width,
             }
         });
         let start = point(px(x), px(300.));
@@ -566,8 +578,8 @@ mod tests {
         let (home, visual) = setup(cx);
         visual.update(|window, cx| {
             home.update(cx, |home, cx| {
-                home.show_history = true;
                 home.open_source("/tmp/gupi-resize-fixture.rs".into(), false, window, cx);
+                home.ensure_panel(Panel::Workspace, window, cx);
                 home.pane_layout.set_ratio(0.4);
             })
         });
@@ -629,6 +641,7 @@ mod tests {
         visual.update(|window, cx| {
             home.update(cx, |home, cx| {
                 home.open_source("/tmp/gupi-resize-fixture.rs".into(), false, window, cx);
+                home.ensure_panel(Panel::Workspace, window, cx);
             })
         });
         visual.run_until_parked();

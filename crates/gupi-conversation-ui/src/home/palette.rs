@@ -46,7 +46,6 @@ pub const SESSION: &[Kind] = &[
     Kind::ProjectFiles,
     Kind::CloseSource,
     Kind::FocusSource,
-    Kind::ShowConversation,
     Kind::Export,
     Kind::Clone,
     Kind::CopyLastAnswer,
@@ -87,7 +86,6 @@ pub fn label(kind: Kind, sidebar: bool, history: bool, cx: &App) -> String {
             Kind::Model => "command-model",
             Kind::Compact => "command-compact",
             Kind::CloseSource => "files-close-source",
-            Kind::ShowConversation => "files-show-conversation",
             Kind::FocusSource => "files-focus-source",
             Kind::ProjectFiles => "files-title",
             Kind::OpenHistory => "conversation-history",
@@ -723,8 +721,15 @@ mod tests {
         cx.simulate_resize(size(px(600.), px(740.)));
         cx.simulate_keystrokes("secondary-alt-b");
         cx.update(|window, cx| {
-            assert!(home.read(cx).show_history);
-            assert!(home.read(cx).pane_layout.overlay);
+            assert!(
+                home.read(cx)
+                    .pane_layout
+                    .visible(super::panes::Panel::History)
+            );
+            assert_eq!(
+                home.read(cx).pane_layout.overlay,
+                Some(super::panes::Panel::History)
+            );
             assert!(
                 home.read(cx)
                     .history_list
@@ -752,8 +757,17 @@ mod tests {
         cx.run_until_parked();
         cx.update(|window, cx| {
             window.draw(cx).clear(cx);
-            assert!(!home.read(cx).show_history);
-            assert!(home.read(cx).focus_handle.is_focused(window));
+            assert!(
+                !home
+                    .read(cx)
+                    .pane_layout
+                    .visible(super::panes::Panel::History)
+            );
+            assert!(
+                home.read(cx)
+                    .workspace_button_focus
+                    .contains_focused(window, cx)
+            );
             assert!(
                 !home
                     .read(cx)
@@ -786,9 +800,16 @@ mod tests {
             cx.run_until_parked();
             cx.update(|window, cx| {
                 window.draw(cx).clear(cx);
-                assert!(!home.read(cx).show_history);
+                assert!(
+                    !home
+                        .read(cx)
+                        .pane_layout
+                        .visible(super::panes::Panel::History)
+                );
                 assert_eq!(
-                    home.read(cx).focus_handle.is_focused(window),
+                    home.read(cx)
+                        .history_button_focus
+                        .contains_focused(window, cx),
                     !workspace_focused
                 );
                 assert_eq!(
@@ -810,8 +831,12 @@ mod tests {
         cx.simulate_resize(size(px(1280.), px(740.)));
         cx.simulate_keystrokes("secondary-alt-b");
         cx.update(|window, cx| {
-            assert!(home.read(cx).show_history);
-            assert!(!home.read(cx).pane_layout.overlay);
+            assert!(
+                home.read(cx)
+                    .pane_layout
+                    .visible(super::panes::Panel::History)
+            );
+            assert!(home.read(cx).pane_layout.overlay.is_none());
             assert!(
                 home.read(cx)
                     .history_list
@@ -854,8 +879,17 @@ mod tests {
             cx.run_until_parked();
             cx.update(|window, cx| {
                 window.draw(cx).clear(cx);
-                assert!(!home.read(cx).show_history);
-                assert!(home.read(cx).focus_handle.is_focused(window));
+                assert!(
+                    !home
+                        .read(cx)
+                        .pane_layout
+                        .visible(super::panes::Panel::History)
+                );
+                assert!(
+                    home.read(cx)
+                        .history_button_focus
+                        .contains_focused(window, cx)
+                );
             });
         }
     }

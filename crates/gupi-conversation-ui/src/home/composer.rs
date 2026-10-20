@@ -75,6 +75,7 @@ impl HomeView {
 
     pub(super) fn render_composer(
         &self,
+        max_width: Pixels,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -89,17 +90,12 @@ impl HomeView {
             .get(&key)
             .and_then(|v| v.preview.as_deref())
             .is_some_and(|id| !session.history().on_current_path(id));
-        let mut shell = v_flex().w_full().max_w(px(820.)).gap_2();
+        let mut shell = v_flex().w_full().max_w(max_width).gap_2();
         use gupi_conversation::notifications::Severity;
-        let source_showing = self.pane_layout.single && self.source_active();
-        let visible_notices: Vec<_> = session
-            .notices()
-            .iter()
-            .filter(|notice| !source_showing || notice.severity != Severity::Info)
-            .collect();
+        let visible_notices: Vec<_> = session.notices().iter().collect();
         if !visible_notices.is_empty() {
             use gpui_kit::component::collapsible::Collapsible;
-            let open = source_showing || self.views.get(&key).is_some_and(|v| v.notices_open);
+            let open = self.views.get(&key).is_some_and(|v| v.notices_open);
             let toggle = key.clone();
             let clear = key.clone();
             let notices = v_flex().gap_2().children(visible_notices.iter().map(|n| {

@@ -11,7 +11,7 @@ fn loading_label(stage: LoadStage) -> &'static str {
     }
 }
 
-pub(super) fn skeleton(stage: LoadStage, cx: &App) -> AnyElement {
+pub(super) fn skeleton(stage: LoadStage, max_width: Pixels, cx: &App) -> AnyElement {
     v_flex()
         .flex_1()
         .min_h_0()
@@ -28,7 +28,7 @@ pub(super) fn skeleton(stage: LoadStage, cx: &App) -> AnyElement {
         .children([0.7, 1.0, 0.85].into_iter().map(|width| {
             v_flex()
                 .w_full()
-                .max_w(px(820.))
+                .max_w(max_width)
                 .gap_3()
                 .child(Skeleton::new().w(px(96.)).h_4())
                 .child(Skeleton::new().w(relative(width)).h_4())

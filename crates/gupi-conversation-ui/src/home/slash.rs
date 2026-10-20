@@ -131,7 +131,7 @@ impl HomeView {
         palette::label(
             kind,
             self.show_sidebar,
-            self.show_history && !self.files_tab,
+            self.pane_layout.visible(panes::Panel::History),
             cx,
         )
     }

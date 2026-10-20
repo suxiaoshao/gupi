@@ -126,9 +126,6 @@ impl Preview {
             self.focus.focus(window, cx);
         }
     }
-    pub(super) fn focus_container(&self, window: &mut Window, cx: &mut App) {
-        self.focus.focus(window, cx);
-    }
     pub(super) fn contains_focus(&self, window: &Window, cx: &App) -> bool {
         self.focus.contains_focused(window, cx)
     }

@@ -17,6 +17,7 @@ pub(super) fn init(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("escape", CloseNavigator, Some("GupiNavigatorOverlay")),
         KeyBinding::new("escape", ReturnFromSource, Some("SourcePreview")),
+        KeyBinding::new("escape", ReturnFromSource, Some("GupiWorkspaceDiff")),
         KeyBinding::new("enter", ConfirmExtension, Some("GupiExtension")),
         KeyBinding::new("escape", CancelExtension, Some("GupiExtension")),
     ]);
@@ -38,7 +39,6 @@ impl HomeView {
                     | Kind::ProjectFiles
                     | Kind::CloseSource
                     | Kind::FocusSource
-                    | Kind::ShowConversation
                     | Kind::Scan
                     | Kind::Clone
                     | Kind::Export
@@ -65,9 +65,6 @@ impl HomeView {
                 s.is_some()
             }
             Kind::CloseSource | Kind::FocusSource => self.source().is_some(),
-            Kind::ShowConversation => {
-                self.source().is_some() && self.pane_layout.single && self.source_active()
-            }
             Kind::Export => state
                 .selected()
                 .as_ref()
@@ -144,13 +141,10 @@ impl HomeView {
         }
         let key = self.state.read(cx).selected().clone();
         match action.0 {
-            Kind::ShowConversation => {
-                self.set_source_active(false);
-                self.focus_composer(window, cx);
-            }
             Kind::CloseSource => self.close_source(window, cx),
             Kind::FocusSource => {
-                self.set_source_active(true);
+                self.select_workspace_tab(None, window, cx);
+                self.ensure_panel(panes::Panel::Workspace, window, cx);
                 if let Some(source) = self.source() {
                     source.update(cx, |s, cx| s.focus(window, cx));
                 }
@@ -158,7 +152,8 @@ impl HomeView {
             Kind::Find => {
                 // This explicitly named command targets conversation messages.
                 // The shortcut is owned by the messages region, never the window.
-                self.set_source_active(false);
+
+                self.close_navigator(window, cx);
                 self.open_find(window, cx);
                 cx.notify();
             }
@@ -174,17 +169,13 @@ impl HomeView {
             }
             Kind::History => self.toggle_history(window, cx),
             Kind::ProjectFiles => {
-                self.files_tab = true;
-                self.show_history = true;
-                self.sync(false, window, cx);
-                self.files()
-                    .unwrap()
-                    .update(cx, |files, cx| files.focus(window, cx));
+                self.select_workspace_tab(None, window, cx);
+                self.ensure_panel(panes::Panel::Workspace, window, cx);
+                self.focus_panel(panes::Panel::Workspace, window, cx);
             }
             Kind::OpenHistory => {
-                if !self.show_history || self.files_tab {
-                    self.toggle_history(window, cx);
-                }
+                self.ensure_panel(panes::Panel::History, window, cx);
+                self.focus_panel(panes::Panel::History, window, cx);
             }
             Kind::CopyLastAnswer => {
                 if let Some(text) = self
@@ -272,30 +263,6 @@ impl HomeView {
         }
     }
     pub(super) fn toggle_history(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.show_history = self.files_tab || !self.show_history;
-        self.files_tab = false;
-        self.sync(true, window, cx);
-        if !self.show_history
-            && let Some(view) = self.shown_key.as_ref().and_then(|key| self.views.get(key))
-        {
-            view.history_canvas
-                .update(cx, |canvas, cx| canvas.clear_pointer(cx));
-        }
-        if self.show_history && self.history_view != HistoryView::Tree {
-            self.history_list.update(cx, |list, cx| {
-                if let Some(last) = list.delegate().rows.len().checked_sub(1) {
-                    list.scroll_to_item(
-                        gpui_kit::component::IndexPath::new(last),
-                        ScrollStrategy::Bottom,
-                        window,
-                        cx,
-                    );
-                }
-            });
-        }
-        if self.show_history {
-            self.focus_navigator(window, cx);
-        }
-        cx.notify();
+        self.toggle_panel(panes::Panel::History, window, cx);
     }
 }

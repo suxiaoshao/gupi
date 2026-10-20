@@ -60,7 +60,7 @@ struct SessionView {
     _files_subscription: Subscription,
     source: Option<Entity<source::Preview>>,
     source_subscription: Option<Subscription>,
-    source_active: bool,
+    workspace: workspace::Tabs,
     input: Entity<TextareaState>,
     // Last persisted/external snapshot, excluding the editor's uncommitted IME text.
     input_draft: gpui_kit::component::input::InputContent,
@@ -103,8 +103,11 @@ pub struct HomeView {
     history_detail: HistoryDetail,
     history_scope: HistoryScope,
     show_sidebar: bool,
-    show_history: bool,
-    files_tab: bool,
+    history_button_focus: FocusHandle,
+    workspace_button_focus: FocusHandle,
+    panel_button_bounds: [Rc<std::cell::Cell<Option<Bounds<Pixels>>>>; 2],
+    workspace_region: FocusHandle,
+    history_region: FocusHandle,
     source_save: Option<Task<()>>,
     source_split_touched: bool,
     navigation: navigation::Navigation,
@@ -178,6 +181,7 @@ impl HomeView {
         if stale_preview {
             view.preview = None;
         }
+        view.workspace.reconcile_records(session, window, cx);
         view.changes.sync_scope(session, view.preview.as_deref());
         let tool_snapshot = (view.tool_projection.as_ref()
             != Some(&(tool_revision, view.preview.clone())))
@@ -303,6 +307,21 @@ impl HomeView {
             view.changes.capture_anchors();
         }
         view.edited_files.sync(&next, cwd);
+        for tab in &mut view.workspace.changes {
+            tab.sync(&view.edited_files, &next, window, cx);
+        }
+        if std::mem::take(&mut view.workspace.restore_focus) {
+            if let Some(tab) = view
+                .workspace
+                .changes
+                .iter()
+                .find(|tab| Some(&tab.id) == view.workspace.active.as_ref())
+            {
+                tab.focus.focus(window, cx);
+            } else {
+                view.files.update(cx, |files, cx| files.focus(window, cx));
+            }
+        }
         if view.changes.sync(&view.edited_files, &next, window, cx) {
             view.input.update(cx, |input, cx| input.focus(window, cx));
         }
@@ -514,8 +533,11 @@ impl HomeView {
             history_detail: Default::default(),
             history_scope: Default::default(),
             show_sidebar: true,
-            show_history: false,
-            files_tab: false,
+            history_button_focus: cx.focus_handle(),
+            workspace_button_focus: cx.focus_handle(),
+            panel_button_bounds: [Rc::default(), Rc::default()],
+            workspace_region: cx.focus_handle(),
+            history_region: cx.focus_handle(),
             source_save: None,
             source_split_touched: false,
             navigation: Default::default(),
@@ -821,7 +843,7 @@ impl HomeView {
                     _files_subscription: files_subscription,
                     source: None,
                     source_subscription: None,
-                    source_active: false,
+                    workspace: Default::default(),
                     input,
                     input_draft: draft,
                     _input_subscriptions: input_subscriptions,
@@ -847,7 +869,7 @@ impl HomeView {
                 },
             );
         }
-        if self.show_history && self.files_tab {
+        if self.pane_layout.visible(panes::Panel::Workspace) {
             self.views[&key]
                 .files
                 .update(cx, |files, cx| files.ensure_loaded(window, cx));
@@ -1016,7 +1038,7 @@ impl HomeView {
                 cx.notify();
             });
         }
-        if self.show_history && !self.files_tab {
+        if self.pane_layout.visible(panes::Panel::History) {
             self.state
                 .update(cx, |state, cx| state.read_visible_history(&key, cx));
         }
@@ -1141,7 +1163,6 @@ impl HomeView {
         cx.notify();
     }
     fn preview_node(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        self.set_source_active(false);
         self.close_find(false, window, cx);
         let Some(key) = self.shown_key.clone() else {
             return;
@@ -1283,19 +1304,18 @@ impl Render for HomeView {
                     .items_center()
                     .px_8()
                     .py_12()
-                    .child(
-                        div()
-                            .w_full()
-                            .max_w(px(780.))
-                            .child(self.render_composer(window, cx)),
-                    )
+                    .child(div().w_full().max_w(px(780.)).child(self.render_composer(
+                        px(820.),
+                        window,
+                        cx,
+                    )))
             } else {
                 v_flex()
                     .size_full()
                     .min_w_0()
                     .children(self.find.clone())
-                    .child(self.render_messages(window, cx))
-                    .child(self.render_composer(window, cx))
+                    .child(self.render_messages(px(820.), window, cx))
+                    .child(self.render_composer(px(820.), window, cx))
             };
             let content = v_flex()
                 .size_full()
@@ -1309,24 +1329,10 @@ impl Render for HomeView {
             let content = crate::performance::measure("home", false, content);
             return content;
         }
-        if self.pane_layout.fit_workspace(
-            f32::from(window.viewport_size().width),
-            self.show_sidebar,
-            self.show_history,
-            self.source().is_some(),
-            f32::from(window.rem_size()),
-            cx.global::<layout::LayoutState>(),
-        ) {
-            // A window resize or panel toggle ends an in-progress drag without
-            // persisting a width that was only imposed by the available space.
-            self.interrupt_pane_drag(window, cx);
-        }
+        self.fit_layout(window, cx);
         let titlebar = self.render_titlebar(window, cx);
         let window_titlebar = crate::chrome::window_title_bar(window, cx);
         let center = self.render_workspace(window, cx);
-        // Keep the component mounted: Offcanvas owns the closing animation and
-        // removes its contents from the tab order after the transition finishes.
-        let mut columns = h_flex().size_full().child(self.render_sidebar(window, cx));
         let mut center_panel = div()
             .id("conversation-center")
             .debug_selector(|| "conversation-center".into())
@@ -1338,42 +1344,59 @@ impl Render for HomeView {
         if self.show_sidebar {
             center_panel = center_panel.child(self.pane_handle(panes::Side::Left, cx));
         }
-        columns = columns.child(center_panel);
-        if self.show_history && !self.pane_layout.overlay {
-            columns = columns.child(
-                div()
-                    .relative()
-                    .w(px(self.pane_layout.right))
-                    .h_full()
-                    .flex_none()
-                    .border_l_1()
-                    .border_color(cx.theme().border)
-                    .child(self.render_right_panel(cx))
-                    .child(self.pane_handle(panes::Side::Right, cx)),
-            );
-        }
+        let columns = h_flex()
+            .items_stretch()
+            .size_full()
+            .child(self.render_sidebar(window, cx))
+            .child(center_panel);
         let mut shell = div().relative().flex_1().min_h_0().w_full().child(columns);
-        if self.show_history && self.pane_layout.overlay {
+        if let Some(panel) = self.pane_layout.overlay {
+            let width = match panel {
+                panes::Panel::History => self.pane_layout.history_width,
+                panes::Panel::Workspace => self.pane_layout.workspace_width,
+            };
+            let right = if panel == panes::Panel::History && self.pane_layout.workspace_docked {
+                self.pane_layout.workspace_width + panes::geometry::DIVIDER
+            } else {
+                0.
+            };
             shell = shell.child(
                 div()
+                    .id("panel-overlay")
                     .occlude()
                     .absolute()
-                    .right_0()
+                    .right(px(right))
                     .top_0()
                     .bottom_0()
-                    .w(px(self.pane_layout.right))
-                    .bg(cx.theme().background)
-                    .shadow_md()
+                    .w(px(width))
+                    .when(panel == panes::Panel::Workspace, |view| {
+                        view.bg(cx.theme().background).shadow_md()
+                    })
                     .key_context("GupiNavigatorOverlay")
                     .on_action(
                         cx.listener(|this, _: &actions::CloseNavigator, window, cx| {
-                            this.close_navigator(window, cx);
+                            this.close_navigator(window, cx)
                         }),
                     )
-                    .border_l_1()
-                    .border_color(cx.theme().border)
-                    .child(self.render_right_panel(cx))
-                    .child(self.pane_handle(panes::Side::Right, cx)),
+                    .on_mouse_down_out(cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                        // The titlebar button handles its own toggle on click. Dismissing
+                        // on mouse-down first would make that click reopen the overlay.
+                        if !this.panel_button_bounds.iter().any(|bounds| {
+                            bounds
+                                .get()
+                                .is_some_and(|bounds| bounds.contains(&event.position))
+                        }) {
+                            this.close_navigator(window, cx);
+                        }
+                    }))
+                    .child(match panel {
+                        panes::Panel::History => div()
+                            .size_full()
+                            .track_focus(&self.history_region)
+                            .child(self.render_history_card(true, cx))
+                            .into_any_element(),
+                        panes::Panel::Workspace => self.render_file_workspace(cx),
+                    }),
             );
         }
         shell = shell.child(panes::ResizeEvents(cx.weak_entity()));

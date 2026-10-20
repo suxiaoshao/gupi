@@ -395,6 +395,12 @@ impl HomeView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if !self.state.read(cx).is_temporary()
+            && let Disclosure::File(path) = action
+        {
+            self.open_changes(key, run, path, window, cx);
+            return;
+        }
         let Some(view) = self.views.get_mut(key) else {
             return;
         };
@@ -496,16 +502,17 @@ impl HomeView {
         let Some(run_state) = view.changes.runs.get(run) else {
             return div().into_any_element();
         };
+        let temporary = self.state.read(cx).is_temporary();
         let mut focused_nodes = Vec::new();
         let mut card = v_flex()
             .id(format!("changes-{key}-{run}"))
             .min_w_0()
             .w_full()
-            .gap_1()
+            .when(temporary, |card| card.gap_1())
             .border_1()
             .border_color(cx.theme().border)
             .rounded(cx.theme().radius)
-            .child(
+            .child(if temporary {
                 h_flex()
                     .px_3()
                     .py_2()
@@ -520,8 +527,53 @@ impl HomeView {
                             .font_semibold()
                             .child(count(cx, "conversation-edited-files", files.len())),
                     )
-                    .child(stats(view.edited_files.stats(run), cx)),
-            );
+                    .child(stats(view.edited_files.stats(run), cx))
+            } else {
+                let open_owner = owner.clone();
+                let open_key = key.to_owned();
+                let open_run = run.to_owned();
+                let first = files[0].path().to_owned();
+                h_flex()
+                    .px_3()
+                    .py_3()
+                    .gap_3()
+                    .min_w_0()
+                    .child(
+                        h_flex()
+                            .size_8()
+                            .flex_none()
+                            .justify_center()
+                            .rounded(cx.theme().radius)
+                            .bg(cx.theme().muted)
+                            .child(Icon::new(IconName::FileDiff).size_4()),
+                    )
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .gap_1()
+                            .child(div().text_sm().font_medium().child(count(
+                                cx,
+                                "conversation-edited-files",
+                                files.len(),
+                            )))
+                            .child(stats(view.edited_files.stats(run), cx)),
+                    )
+                    .child(
+                        Button::new(format!("view-changes-{key}-{run}"))
+                            .outline()
+                            .small()
+                            .debug_selector(|| "view-run-changes".into())
+                            .label(t(cx, "workspace-view-changes"))
+                            .on_click(move |_, window, cx| {
+                                let _ = open_owner.update(cx, |home, cx| {
+                                    home.open_changes(&open_key, &open_run, &first, window, cx)
+                                });
+                            }),
+                    )
+                    .border_b_1()
+                    .border_color(cx.theme().border)
+            });
         for file in files
             .iter()
             .take(if run_state.all { files.len() } else { PAGE })
@@ -552,7 +604,11 @@ impl HomeView {
                     Trigger::new(
                         Disclosure::File(path.to_owned()),
                         &state.focus,
-                        t_with_args(cx, "conversation-edit-file-label", &args),
+                        if self.state.read(cx).is_temporary() {
+                            t_with_args(cx, "conversation-edit-file-label", &args)
+                        } else {
+                            t_with_args(cx, "workspace-open-change", &args)
+                        },
                         state.open,
                     ),
                     Button::new(format!("change-file-{key}-{run}-{path}"))
@@ -566,15 +622,17 @@ impl HomeView {
                                 .w_full()
                                 .min_w_0()
                                 .gap_2()
-                                .child(
-                                    Icon::new(if state.open {
-                                        IconName::ChevronDown
-                                    } else {
-                                        IconName::ChevronRight
-                                    })
-                                    .size_3()
-                                    .flex_none(),
-                                )
+                                .when(temporary, |row| {
+                                    row.child(
+                                        Icon::new(if state.open {
+                                            IconName::ChevronDown
+                                        } else {
+                                            IconName::ChevronRight
+                                        })
+                                        .size_3()
+                                        .flex_none(),
+                                    )
+                                })
                                 .child(
                                     h_flex()
                                         .flex_1()
@@ -619,7 +677,7 @@ impl HomeView {
                 )
                 .into_any_element();
             card = card.child(record(format!("file-{path}"), row, &run_state.geometry));
-            if state.open {
+            if state.open && self.state.read(cx).is_temporary() {
                 let mut body = v_flex()
                     .min_w_0()
                     .gap_2()
@@ -771,7 +829,19 @@ impl HomeView {
                         .ghost()
                         .small()
                         .w_full()
-                        .label(label),
+                        .when(temporary, |button| button.label(label.clone()))
+                        .when(!temporary, |button| {
+                            button.child(
+                                h_flex().gap_1().child(label.clone()).child(
+                                    Icon::new(if run_state.all {
+                                        IconName::ChevronUp
+                                    } else {
+                                        IconName::ChevronDown
+                                    })
+                                    .size_3(),
+                                ),
+                            )
+                        }),
                     owner,
                     cx,
                 )

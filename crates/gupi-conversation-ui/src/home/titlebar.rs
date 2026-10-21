@@ -155,6 +155,40 @@ impl HomeView {
                     }),
             ));
         }
+        if let Some(head) = self.git.head() {
+            let mut args = fluent_bundle::FluentArgs::new();
+            args.set("name", head.name());
+            let label = gupi_settings::i18n::t_with_args(
+                cx,
+                match head {
+                    gupi_resources::git::Head::Branch(_) => "titlebar-git-branch",
+                    gupi_resources::git::Head::Detached(_) => "titlebar-git-detached",
+                },
+                &args,
+            );
+            main = main.child(
+                h_flex()
+                    .id("session-git-head")
+                    .debug_selector(|| "session-git-head".into())
+                    .aria_label(label.clone())
+                    .min_w_0()
+                    .gap_1()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(
+                        gpui_kit::component::Icon::new(IconName::GitBranch)
+                            .small()
+                            .flex_shrink_0(),
+                    )
+                    .child(
+                        div()
+                            .min_w_0()
+                            .text_ellipsis()
+                            .child(head.name().to_owned()),
+                    )
+                    .tooltip(move |window, cx| Tooltip::new(label.clone()).build(window, cx)),
+            );
+        }
         let history_bounds = self.panel_button_bounds[0].clone();
 
         main = main

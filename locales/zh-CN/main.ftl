@@ -1284,3 +1284,6 @@ shell-show-all = 显示全部输出
 shell-show-less = 收起输出
 shell-open-full-output = 查看完整输出
 shell-display-truncated = 仅显示最近的输出。
+
+titlebar-git-branch = Git 分支：{ $name }
+titlebar-git-detached = 游离 HEAD：{ $name }

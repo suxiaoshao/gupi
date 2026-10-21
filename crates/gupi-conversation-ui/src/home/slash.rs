@@ -5,8 +5,16 @@ use crate::command_palette::CommandPalette;
 pub(super) struct Completion {
     leading_slash: bool,
     dismissed: bool,
-    file_query: Option<(std::ops::Range<usize>, String)>,
     file_dismissed: bool,
+}
+
+/// A palette owns this exact composer snapshot, never a later selection.
+#[derive(Clone)]
+pub(crate) struct FileInsertion {
+    key: String,
+    binding: u64,
+    content: gpui_kit::component::input::InputContent,
+    range: std::ops::Range<usize>,
 }
 impl Completion {
     pub(super) fn dismiss_file_query(&mut self) {
@@ -165,8 +173,8 @@ impl HomeView {
         if window.has_active_dialog(cx) || self.has_image_preview(cx) {
             return;
         }
-        self.slash.file_query = None;
-        self.command_panel = Some(CommandPalette::open(
+        let insertion = self.capture_file_insertion(None, cx);
+        self.command_panel = Some(CommandPalette::open_with_file_insertion(
             Some((cx.weak_entity(), self.state.clone())),
             from_composer,
             if from_composer {
@@ -174,6 +182,7 @@ impl HomeView {
             } else {
                 String::new()
             },
+            insertion,
             window,
             cx,
         ));
@@ -194,35 +203,61 @@ impl HomeView {
         if !session.can_edit_draft() || !session.pending_ui().is_empty() {
             return;
         }
-        let text = self.input.read(cx).value();
-        self.slash.file_query =
-            range.and_then(|range| text.get(range.clone()).map(|text| (range, text.to_owned())));
-        let query = self
-            .slash
-            .file_query
+        let insertion = self.capture_file_insertion(range, cx);
+        let query = insertion
             .as_ref()
-            .map_or("@", |(_, text)| text.as_str())
+            .and_then(|insertion| insertion.content.text().get(insertion.range.clone()))
+            .filter(|text| text.starts_with('@'))
+            .unwrap_or("@")
             .to_owned();
         self.slash.file_dismissed = true;
-        self.command_panel = Some(CommandPalette::open(
+        self.command_panel = Some(CommandPalette::open_with_file_insertion(
             Some((cx.weak_entity(), self.state.clone())),
             false,
             query,
+            insertion,
             window,
             cx,
         ));
     }
 
-    pub fn select_file(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        let range = self
-            .slash
-            .file_query
-            .take()
-            .and_then(|(range, text)| {
-                (self.input.read(cx).value().get(range.clone()) == Some(&text)).then_some(range)
-            })
-            .unwrap_or_else(|| self.input.read(cx).selected_range());
-        self.insert_file_reference(&path, range, window, cx);
+    pub(crate) fn capture_file_insertion(
+        &self,
+        range: Option<std::ops::Range<usize>>,
+        cx: &App,
+    ) -> Option<FileInsertion> {
+        let state = self.state.read(cx);
+        let key = state.selected().as_ref()?;
+        let session = state.current()?;
+        let input = self.input.read(cx);
+        let range = range.unwrap_or_else(|| input.selected_range());
+        let content = input.content();
+        content.text().get(range.clone())?;
+        Some(FileInsertion {
+            key: key.clone(),
+            binding: session.binding(),
+            content,
+            range,
+        })
+    }
+
+    pub(crate) fn select_file(
+        &mut self,
+        path: PathBuf,
+        insertion: FileInsertion,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let state = self.state.read(cx);
+        if state.selected().as_ref() != Some(&insertion.key)
+            || !state
+                .current()
+                .is_some_and(|session| session.binding() == insertion.binding)
+            || self.input.read(cx).content() != insertion.content
+        {
+            return;
+        }
+        self.insert_file_reference(&path, insertion.range, window, cx);
     }
 
     pub(super) fn insert_file_reference(
@@ -265,18 +300,291 @@ impl HomeView {
 
 fn file_query(text: &str, cursor: usize) -> Option<std::ops::Range<usize>> {
     let before = text.get(..cursor)?;
-    let start = before.rfind('@')?;
-    if start > 0 && !before[..start].ends_with(char::is_whitespace) {
-        return None;
+    let line = before.rfind('\n').map_or(0, |index| index + 1);
+    for (offset, _) in before[line..].match_indices('@').rev() {
+        let start = line + offset;
+        let prefix = before[..start].trim_end_matches(['(', '[', '{', '<', '`']);
+        if !prefix.is_empty() && !prefix.ends_with(reference_boundary) {
+            continue;
+        }
+        let suffix = &before[start + 1..];
+        if let Some(quoted) = suffix.strip_prefix('"') {
+            // A closing quote may be at or just after the cursor. Consume it
+            // once so token insertion preserves the remaining prose verbatim.
+            if let Some(close) = quoted.find('"')
+                && close + 1 != quoted.len()
+            {
+                continue;
+            }
+            let end =
+                cursor + usize::from(!quoted.ends_with('"') && text[cursor..].starts_with('"'));
+            return Some(start..end);
+        }
+        if suffix.contains(reference_boundary) {
+            continue;
+        }
+        return Some(start..cursor);
     }
-    if before[start..].contains(char::is_whitespace) {
-        return None;
-    }
-    Some(start..cursor)
+    None
+}
+
+fn reference_boundary(c: char) -> bool {
+    c.is_whitespace()
+        || matches!(
+            c,
+            '，' | '。'
+                | '、'
+                | '．'
+                | '：'
+                | '；'
+                | '！'
+                | '？'
+                | '（'
+                | '）'
+                | '［'
+                | '］'
+                | '｛'
+                | '｝'
+                | '“'
+                | '”'
+                | '‘'
+                | '’'
+                | '…'
+                | '—'
+                | '"'
+                | '\''
+                | '='
+        )
 }
 #[cfg(test)]
 mod tests {
     use super::Completion;
+    #[test]
+    fn file_reference_boundaries_quotes_and_cursor_suffix() {
+        for text in [
+            "@src",
+            "请看：@src",
+            "见，@文档",
+            "(@src",
+            "[(@src",
+            "text `@src",
+            "@app/[slug]/page",
+            "@src/(group)/file",
+            "(@app/[slug]/page",
+            "`@src/(group)/file",
+            "@\"path with spaces",
+            "@\"path with spaces\"",
+        ] {
+            let range = super::file_query(text, text.len()).unwrap();
+            assert_eq!(&text[range], &text[text.find('@').unwrap()..]);
+        }
+        for text in [
+            "mail@example.com",
+            "正文@src",
+            "@src text",
+            "@\"closed\" prose",
+            "@old\nnew",
+        ] {
+            assert!(super::file_query(text, text.len()).is_none(), "{text}");
+        }
+        let text = "prefix @\"path with spaces\" suffix";
+        let cursor = text.find("\" suffix").unwrap();
+        let range = super::file_query(text, cursor).unwrap();
+        assert_eq!(&text[range.clone()], "@\"path with spaces\"");
+        assert_eq!(&text[range.end..], " suffix");
+    }
+
+    #[gpui_kit::test]
+    fn file_palette_directory_tab_accept_escape_and_stale_range(cx: &mut gpui_kit::TestAppContext) {
+        use super::*;
+        use gpui_kit::component::Root;
+        use gpui_kit::test::TestWindowExt as _;
+        let fixture = tempfile::tempdir().unwrap();
+        std::fs::create_dir(fixture.path().join("src")).unwrap();
+        std::fs::create_dir(fixture.path().join("src/components")).unwrap();
+        std::fs::write(
+            fixture.path().join("src/components/Button.rs"),
+            "struct Button;\n",
+        )
+        .unwrap();
+        let file = fixture.path().join("src/main.rs");
+        std::fs::write(&file, "fn main() {}\n").unwrap();
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            crate::host::install_headless(cx);
+            app_theme::init(cx);
+            gupi_settings::theme::init(cx);
+            gupi_settings::i18n::apply(Default::default(), cx);
+            gupi_settings::keybindings::apply(&Default::default(), cx);
+            gupi_pi_runtime::init(cx);
+            cx.set_global(layout::LayoutState::default());
+        });
+        let state = cx.new(|cx| ConversationState::new("unused-pi".into(), cx));
+        state.update(cx, |state, _| {
+            let info = gupi_conversation::session_catalog::SessionInfo::new(Default::default(), "files".into(), fixture.path().to_owned());
+            let mut session = gupi_conversation::conversation::Session::new(info, String::new());
+            *session.state_for_test() = Some(serde_json::from_value(serde_json::json!({"sessionId":"fixture","isStreaming":false,"isCompacting":false})).unwrap());
+            state.sessions_for_test().insert("files".into(), session);
+            *state.selected_for_test() = Some("files".into());
+        });
+        let mut home = None;
+        let (_, visual) = cx.add_window_view(|window, cx| {
+            let view = cx.new(|cx| HomeView::with_state(state, window, cx));
+            home = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let home = home.unwrap();
+        visual.run_until_parked();
+        let original = "see @\"src\" suffix";
+        visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                home.slash.file_dismissed = true;
+                home.input.update(cx, |input, cx| {
+                    input.set_value(original, window, cx);
+                    input.set_selected_range(9..9, cx);
+                    input.focus(window, cx);
+                });
+                home.open_files(Some(4..10), window, cx);
+            })
+        });
+        fn settle(home: &Entity<HomeView>, visual: &mut VisualTestContext) {
+            visual.run_until_parked();
+            // The test platform has no native frame loop. Draw the loading
+            // state, then exactly one results frame, without forcing refresh
+            // or a second render_frame that repairs stale footer state.
+            visual.update(|window, cx| window.draw(cx).clear(cx));
+            visual
+                .executor()
+                .advance_clock(std::time::Duration::from_millis(50));
+            for _ in 0..200 {
+                visual.run_until_parked();
+                if visual.update(|_, cx| {
+                    home.read(cx)
+                        .command_panel
+                        .as_ref()
+                        .is_some_and(|panel| panel.read(cx).file_search_ready())
+                }) {
+                    visual.update(|window, cx| window.draw(cx).clear(cx));
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            panic!("file query did not settle");
+        }
+        settle(&home, visual);
+        visual.simulate_keystrokes("down");
+        visual.simulate_keystrokes("tab");
+        visual.update(|_, cx| {
+            assert!(home.read(cx).command_panel.is_some());
+            assert_eq!(home.read(cx).input.read(cx).value().as_ref(), original);
+        });
+        settle(&home, visual);
+        visual.update(|window, cx| {
+            let action = window.find("command-send");
+            assert_eq!(
+                action.label(),
+                Some(t(cx, "command-select-resource").as_str())
+            );
+            assert_ne!(action.disabled(), Some(true));
+        });
+        visual.simulate_keystrokes("enter");
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            let home = home.read(cx);
+            assert!(home.command_panel.is_none());
+            let input = home.input.read(cx);
+            assert_eq!(input.content().tokens().len(), 1);
+            assert!(input.value().starts_with("see "));
+            assert!(input.value().ends_with(" suffix"));
+            assert!(input.focus_handle(cx).is_focused(window));
+        });
+        visual.dispatch_action(gpui_kit::component::input::Undo);
+        visual.update(|_, cx| assert_eq!(home.read(cx).input.read(cx).value().as_ref(), original));
+        visual.update(|window, cx| {
+            home.update(cx, |home, cx| home.open_files(Some(4..10), window, cx))
+        });
+        settle(&home, visual);
+        visual.simulate_keystrokes("escape");
+        visual.update(|window, cx| {
+            let home = home.read(cx);
+            assert!(home.command_panel.is_none());
+            assert_eq!(home.input.read(cx).value().as_ref(), original);
+            assert!(home.input.read(cx).focus_handle(cx).is_focused(window));
+        });
+        // The previous cancelled picker cannot lend its range to either
+        // ordinary command-palette entry route.
+        for from_composer in [false, true] {
+            visual.update(|window, cx| {
+                home.update(cx, |home, cx| {
+                    home.input
+                        .update(cx, |input, cx| input.set_selected_range(0..0, cx));
+                    home.open_commands(from_composer, window, cx);
+                })
+            });
+            visual.dispatch_action(gpui_kit::component::input::SelectAll);
+            visual.simulate_input(if from_composer {
+                "@src/main.rs"
+            } else {
+                "@src/"
+            });
+            settle(&home, visual);
+            visual.simulate_keystrokes("down");
+            visual.simulate_keystrokes("enter");
+            if !from_composer {
+                visual.update(|_, cx| {
+                    assert!(home.read(cx).command_panel.is_some());
+                    assert_eq!(home.read(cx).input.read(cx).value().as_ref(), original);
+                });
+                settle(&home, visual);
+                visual.update(|window, cx| {
+                    let action = window.find("command-send");
+                    assert_eq!(
+                        action.label(),
+                        Some(t(cx, "command-select-resource").as_str())
+                    );
+                    assert_ne!(action.disabled(), Some(true));
+                });
+                // Enter on a directory must leave its first file selected.
+                visual.simulate_keystrokes("enter");
+            }
+            visual.update(|_, cx| {
+                let home = home.read(cx);
+                let content = home.input.read(cx).content();
+                assert!(home.command_panel.is_none());
+                assert_eq!(content.tokens().len(), 1);
+                assert_eq!(content.tokens()[0].range().start, 0);
+                assert!(content.text().ends_with(original));
+            });
+            visual.dispatch_action(gpui_kit::component::input::Undo);
+            visual.update(|_, cx| {
+                assert_eq!(home.read(cx).input.read(cx).value().as_ref(), original)
+            });
+        }
+        // A changed source range must not fall back to replacing the new selection.
+        visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                let insertion = home.capture_file_insertion(Some(4..10), cx).unwrap();
+                home.open_files(Some(4..10), window, cx);
+                home.input.update(cx, |input, cx| {
+                    input.set_value("new @\"src\" suffix", window, cx)
+                });
+                home.select_file(file.clone(), insertion, window, cx);
+                assert_eq!(home.input.read(cx).value().as_ref(), "new @\"src\" suffix");
+                home.close_commands(window, cx);
+                home.input
+                    .update(cx, |input, cx| input.set_selected_range(0..0, cx));
+                let empty = home.capture_file_insertion(None, cx).unwrap();
+                home.open_files(None, window, cx);
+                home.input.update(cx, |input, cx| {
+                    input.set_value("replacement draft", window, cx)
+                });
+                home.select_file(file, empty, window, cx);
+                assert_eq!(home.input.read(cx).value().as_ref(), "replacement draft");
+                home.close_commands(window, cx);
+            })
+        });
+    }
+
     #[test]
     fn escape_dismissal_survives_edits_until_leading_slash_is_removed() {
         let mut c = Completion::default();

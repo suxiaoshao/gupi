@@ -1275,7 +1275,6 @@ workspace-net-zero = All changes in this reply cancel out.
 workspace-open-file = Open file
 workspace-next-operations = Next operations
 workspace-open-change = Open { $path } in the workspace
-workspace-all-tabs = All tabs
 
 history-panel-title = History
 history-panel-options = History options

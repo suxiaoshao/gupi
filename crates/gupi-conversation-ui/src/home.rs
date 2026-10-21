@@ -117,6 +117,7 @@ pub struct HomeView {
     progress: Entity<progress::RetryView>,
     pane_layout: panes::PaneLayout,
     pane_drag: Option<panes::Drag>,
+    pane_committed: Option<panes::Intent>,
     palette: Option<Entity<palette::Palette>>,
     find: Option<Entity<find::FindBar>>,
     find_subscription: Option<Subscription>,
@@ -250,14 +251,12 @@ impl HomeView {
             view.scroller.update(cx, |state, cx| {
                 #[cfg(feature = "performance")]
                 let _span = tracing::debug_span!(target: "gupi::performance", "messages.diff_rows", old_rows = old.len(), new_rows = new.len()).entered();
-                let prefix = old
-                    .iter()
-                    .zip(new.iter())
-                    .take_while(|(a, b)| a.id == b.id)
-                    .count();
-                if prefix < old.len() || new.len() != old.len() {
-                    let _ = state.splice(prefix..old.len(), new.len() - prefix, cx);
-                }
+                messages::row_sync::sync(
+                    state,
+                    &old.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+                    &new.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+                    cx,
+                );
                 for (index, row) in new.iter().enumerate() {
                     if old.get(index) != Some(row) || row.active() {
                         state.remeasure_items(index..index + 1, cx);
@@ -551,6 +550,7 @@ impl HomeView {
             progress: cx.new(progress::RetryView::new),
             pane_layout: panes::PaneLayout::default(),
             pane_drag: None,
+            pane_committed: None,
             palette: None,
             find: None,
             find_subscription: None,

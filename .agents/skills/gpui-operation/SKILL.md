@@ -5,7 +5,7 @@ description: Implement or modify gpui-operation and its deliberate application i
 
 # GPUI Operation
 
-Use the [README](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/crates/gpui-operation/README.md) and [guide](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/crates/gpui-operation/docs/guide.md) for current families and legal messages. Ordinary async code need not adopt this crate.
+Use the [README](https://github.com/suxiaoshao/gpui/blob/3ade6e9f829dc96864a05a1c094767efdae6bb56/crates/gpui-operation/README.md) and [guide](https://github.com/suxiaoshao/gpui/blob/3ade6e9f829dc96864a05a1c094767efdae6bb56/crates/gpui-operation/docs/guide.md) for current families and legal messages. Ordinary async code need not adopt this crate.
 
 - `refresh` repeats a read; `repair` accepts caller-selected recovery. The app chooses recovery and UI behavior.
 - Keep one complete runtime enum in its owner. Its running variant owns the lifecycle-critical task; the application constructs it and routes completion. Do not mirror phase/data/task state.

@@ -168,7 +168,7 @@ impl HomeView {
                     .child(chrome::control(
                         "history-control",
                         chrome::button("toggle-history")
-                            .icon(IconName::ListClock)
+                            .icon(IconName::RotateCcwClock)
                             .selected(self.pane_layout.visible(panes::Panel::History))
                             .tooltip_with_action(
                                 t(cx, "conversation-history"),
@@ -189,6 +189,7 @@ impl HomeView {
             h_flex()
                 .size_full()
                 .min_w_0()
+                .max_w(window.viewport_size().width)
                 .child(left)
                 .when(!self.pane_layout.maximized, |row| row.child(main))
                 .when(self.pane_layout.workspace_docked, |row| {

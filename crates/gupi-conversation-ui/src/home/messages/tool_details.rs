@@ -301,23 +301,7 @@ fn file_language(args: &Value) -> String {
         .rsplit(['/', '\\'])
         .next()
         .unwrap_or_default();
-    let extension = name
-        .rsplit('.')
-        .next()
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    let language = match extension.as_str() {
-        "h" => "c",
-        "cc" | "cxx" | "hpp" | "hxx" => "cpp",
-        "mjs" | "cjs" | "jsx" => "javascript",
-        "yml" => "yaml",
-        "patch" => "diff",
-        _ => &extension,
-    };
-    gpui_kit::component::highlighter::LanguageRegistry::singleton()
-        .language(language)
-        .map(|_| language.to_owned())
-        .unwrap_or_else(|| "text".into())
+    super::super::files::directory::language(std::path::Path::new(name)).to_owned()
 }
 
 #[derive(IntoElement)]
@@ -472,7 +456,7 @@ mod tests {
         let body = project(&read);
         assert!(body.contains(&Detail::Field("tool-detail-offset", "4".into())));
         assert!(body.contains(&Detail::Field("tool-detail-line-limit", "20".into())));
-        assert!(body.contains(&Detail::code("rs", "fn main() {}")));
+        assert!(body.contains(&Detail::code("rust", "fn main() {}")));
         let mut failed = read;
         failed.status = ToolStatus::Failed;
         assert!(project(&failed).contains(&Detail::code("text", "fn main() {}")));
@@ -482,13 +466,13 @@ mod tests {
             json!({"content":[{"type":"text", "text":"# Skill"}]}),
         );
         assert_eq!(skill.kind(), ToolKind::Skill);
-        assert!(project(&skill).contains(&Detail::code("md", "# Skill")));
+        assert!(project(&skill).contains(&Detail::code("markdown", "# Skill")));
         let write = tool(
             "write",
             json!({"path":"existing.py", "content":"print(1)"}),
             json!({"content":[{"type":"text", "text":"Written"}]}),
         );
-        assert!(project(&write).contains(&Detail::code("py", "print(1)")));
+        assert!(project(&write).contains(&Detail::code("python", "print(1)")));
         assert!(
             !project(&write)
                 .iter()
@@ -587,33 +571,5 @@ mod tests {
         assert!(image.decode().is_none());
         image.mime = "image/unknown".into();
         assert!(image.decode().is_none());
-    }
-
-    #[test]
-    fn component_diff_highlighting_distinguishes_additions_and_deletions() {
-        use gpui_kit::component::highlighter::HighlightTheme;
-        use gpui_kit::component::highlighter::SyntaxHighlighter;
-        let patch = "--- a/test\n+++ b/test\n@@ -1 +1 @@\n-old\n+new\n";
-        let mut highlighter = SyntaxHighlighter::new("diff");
-        let mut rope = highlighter.text().clone();
-        rope.insert(0, patch);
-        assert!(highlighter.update(None, &rope, None));
-        for theme in [
-            HighlightTheme::default_light(),
-            HighlightTheme::default_dark(),
-        ] {
-            let styles = highlighter.styles(&(0..patch.len()), theme.as_ref());
-            let color = |needle: &str| {
-                let offset = patch.find(needle).unwrap();
-                styles
-                    .iter()
-                    .find(|(range, _)| range.contains(&offset))
-                    .and_then(|(_, style)| style.color)
-            };
-            let removed = color("-old");
-            let added = color("+new");
-            assert!(removed.is_some() && added.is_some());
-            assert_ne!(removed, added);
-        }
     }
 }

@@ -8,7 +8,8 @@ description: Choose app structure, shared ownership, and relevant skills for Gup
 Use the `gpui-kit` skill and the official [Coding Guides](https://gpui-kit.com/docs/coding-guides/)
 for architecture, state ownership, file organization, naming, and public APIs.
 Do not maintain a competing set of framework rules here. The official skill is
-installed and maintained through `npx skills`; keep Gupi-specific guidance in
+installed and maintained through `npx skills`; refresh with
+`npx -y skills add https://github.com/longbridge/gpui-kit/tree/v0.8.0 --skill gpui-kit gpui-kit-design-guides --agent codex --copy --yes`. Keep Gupi-specific guidance in
 this skill and project documents.
 
 Gupi is the root application package. [AGENTS.md](../../../AGENTS.md#项目结构)

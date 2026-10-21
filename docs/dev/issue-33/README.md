@@ -6,10 +6,7 @@
 
 在每次回复下方汇总这一轮里 agent 通过编辑工具改过的文件，并用 GPUI Kit 的只读差异组件查看改动。
 
-分两个提交交付：
-
-1. **依赖升级**：GPUI Kit 升级到 0.7.3 及配套依赖，处理破坏性变更，评估能否用官方组件替换自写实现。
-2. **改动查看**：回复下方平铺的改动卡片，以及工具详情改用差异组件。
+改动卡片与工具详情组合 GPUI Kit 的只读差异组件；依赖和官方组件采用情况如下。
 
 不做：bash 等非编辑工具造成的改动、工作目录快照或文件系统重建、回滚和提交操作。
 
@@ -25,48 +22,15 @@
 - 界面中的一组回复（Run）按用户消息、压缩和分支摘要切分；中途插话会产生多段，它不是 Pi 的稳定轮次标识（`.../home/messages.rs`）。
 - GPUI Kit 0.7.3 的只读差异组件：`DiffFile::parse(patch)` 解析补丁，`DiffState` 由所有者持有，渲染时构建 `Diff`，需要有界视口；`DiffFile::unchanged(path, content)` 可中性展示整份内容。组件负责渲染、选择与虚拟化，不合并多次补丁；同一 `DiffState` 内按文件路径标识，重复路径以第一个为准，选择、导航和复制都会落到第一个文件上。
 
-## 一、依赖升级
+## 一、依赖与官方组件
 
-单独一个提交，只升级版本、处理必要的兼容修改，不引入 GPUI Kit main 上尚未发布的接口，不顺带做功能改动。
-
-### 版本
-
-| 依赖 | 升级前 | 升级后 |
-| --- | --- | --- |
-| `gpui-kit` / `gpui-component` / `gpui-kit-assets` | 0.7.1 | =0.7.3 |
-| `gpui-pre` | 0.3.8 | =0.3.9 |
-| 共享服务（`app-theme`、`gpui-form`、`gpui-operation`、`gpui-store`、`platform-ext`） | `9d7eb499` | `b460ca46`（`suxiaoshao/gpui` #259，只改 manifest 与 lockfile，共享库公开接口不变），五者使用同一 revision |
-| `tokio` / `tokio-util` | 1.53.2 / 0.7.19 | 1.53.3 / 0.7.20 |
-| `objc2` | 0.6.4 | 0.6.5 |
-| `serde_json` | 1.0.151 | 1.0.154 |
-| `toml` | 1.1.6 | 1.1.8 |
-| `uuid` | 1.27.0 | 1.28.0 |
-| `sha2` | 0.11.0 | 0.11.1 |
-| `tauri-bundler` | 2.10.1 | 2.10.2（`tauri-utils` 保持 2.10.1） |
-| `tray-icon` | 0.26.0 | 0.26.1 |
-
-`cc` 保持 1.2.67：依赖图中的 `tree-sitter-sequel` 限制其版本。其余直接依赖保持不变；不采用 `libc` 1.0、Tauri 3.0 等预发布版本。版本调研为直接依赖范围，不是完整的传递依赖审计。
-
-### 变更与需要的修改
-
-- GPUI Kit 0.7.2 的发布提交（`c6193700`）只挑选兼容改动，明确排除 main 上的破坏性改动（`ResizeHandle` 签名、`Folder` 标签变体、测试 trait 要求、Easing 和 WebView 迁移）；0.7.3（`67265a36`）只在 0.7.2 上更新 GPUI 运行时到 0.3.9，声明无公开接口变化。仓库中的 `release-notes.md` 停留在 0.7.0，以发布提交说明为准。
-- GPUI 运行时对应 Zed `279fe07` → `93d7456`：新增显示器追踪与刷新率接口，修复长 `uniform_list` 布局和 macOS 27 模糊背景。`paint_surface` 参数改为 `CFRetained<CVPixelBuffer>`，Gupi 没有调用方或自定义平台实现，无需迁移。
-- 按源码核对，Gupi 不需要迁移 Rust 调用，只改各 manifest 的版本声明、`Cargo.lock` 和五个共享服务的 revision。
-- 其他依赖为修复与兼容扩展：Tokio 弃用的 `AsyncFd` 构造函数 Gupi 未使用；`toml` 调整了编码表键的序列化，由现有设置与配置往返测试覆盖；`tray-icon` 只改 Linux（Gupi 托盘只在 macOS / Windows 启用）；`tauri-bundler` 扩展了 NSIS 降级检查，属于发行验证范围。
-- 可见变化：文本视图的默认排版调整（段落间距 1rem → 0.75rem，标题随正文字号缩放），Markdown 回复的观感会略有不同。
-
-### 官方组件替换评估
-
-| 自写实现 | 结论 | 理由 |
-| --- | --- | --- |
-| 工具详情中的补丁代码块 | 替换（第二个提交） | 改用官方差异组件，与改动卡片共用 |
-| `gpui-lucide` | 不替换 | 官方 `SvgIcon` 只在本地未合并分支上，0.7.3 与上游 main 都没有；官方 `IconName` 也不覆盖完整图标目录 |
-| `gpui-tokio` | 不替换 | GPUI Kit 没有 Tokio 桥接；Zed 的 `gpui_tokio` 依赖其自身运行时 crate |
-| 复制按钮（`CopyAction`） | 不替换 | Gupi 会回读剪贴板确认并报告失败，官方 `Clipboard` 直接标记成功 |
-| Markdown 适配、输入框封装、设置表单与布局 | 不替换 | 已组合官方组件，其余是应用自身的流式身份、查找投影和表单所有权 |
-| 面板布局与拖拽调整 | 不替换 | 新的可调整面板接口只在 main 上，现有实现已使用官方 `resize_handle` |
-| 历史画布的提示计时器 | 不替换 | 官方提示需要稳定的命中区域，虚拟画布没有，不能直接替换 |
-| `window-ext`、截图显示器快照 | 不替换 | 新的显示器事件可用于失效通知，但不提供 xcap 标识、模式像素和覆盖层生命周期 |
+- GPUI Kit 使用 0.8.0，GPUI 运行时保持 `gpui-pre =0.3.9`；Rust 为 1.99.1。完整版本与固定共享服务 revision 见根 `Cargo.toml` / `Cargo.lock`。
+- 只读源文件、Markdown 和差异视图统一采用 syntect；依赖图移除 tree-sitter，因此 `cc` 可升级到 1.9。Astro 采用 HTML 标记回退，不保证 frontmatter 或表达式的专用高亮；Svelte 保留其实际语法。JSX 沿用 JavaScript，TSX 使用 TypeScriptReact，Make/EJS 由官方别名映射。
+- `gpui-lucide`、`gpui-tokio` 使用固定到同一共享 revision 的实现，移除本地重复 crate。图标仍按实际使用嵌入 SVG，provider SVG 仍归应用所有。
+- 工作区使用官方 `TabBar` / `Tab` pill；应用拥有领域身份、顺序、关闭、右键操作和焦点，官方组件拥有滚动与溢出菜单。
+- 普通分栏使用 Kit resize handle 和应用自管的全窗口拖动路由；应用保留响应式停靠/浮窗和历史居中策略。拖动尺寸只在内存中更新，松开或 Escape 提交一次；布局中断恢复上次提交的宽度与比例，不从按下或绘制时捕获快照。
+- 转录列表通过 `logical_scroll_top` 保留仍存活的顶部行及行内偏移；改动卡片内部的像素锚点继续由卡片拥有。
+- 复制按钮仍回读剪贴板确认失败，Markdown 适配仍拥有流式身份和查找投影，表单仍使用共享适配层；这些应用契约不由组件替代。
 
 ## 二、改动查看
 

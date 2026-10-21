@@ -1,6 +1,6 @@
 use super::*;
 use gpui_kit::component::Selectable;
-use gpui_kit::component::menu::{ContextMenuExt, DropdownMenu, PopupMenuItem};
+use gpui_kit::component::menu::{ContextMenuExt, PopupMenuItem};
 use gpui_kit::component::tooltip::Tooltip;
 use panes::Panel;
 mod changes;
@@ -247,8 +247,11 @@ impl HomeView {
             workspace_pinned: preferences.workspace_pinned,
             history_pinned: preferences.history_pinned,
         };
-        if self.pane_layout.fit(request, preferences) {
+        if self.pane_layout.needs_fit(request) {
             self.interrupt_pane_drag(window, cx);
+            self.pane_layout
+                .fit(request, cx.global::<layout::LayoutState>());
+            self.commit_pane_intent();
             if let Some(view) = self.session_view() {
                 view.workspace.reveal();
             }

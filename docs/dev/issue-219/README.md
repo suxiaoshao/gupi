@@ -11,7 +11,7 @@ Gupi 使用用户本机的 Pi CLI，通过 `pi --mode rpc` 的 stdin/stdout JSON
 | [PiState](../../../crates/gupi-pi-runtime/src/runtime.rs) | 应用内多个运行实例、client 与各自的事件消费任务，统一创建与退出 |
 | [会话状态](../../../crates/gupi-conversation/src/conversation.rs) | 实例与会话绑定、事件投影、命令及扩展请求回复 |
 | [启动与退出](../../../src/features/startup.rs) | 已有配置写入、草稿和布局保存、Pi 连接关闭完成后退出应用 |
-| [gpui-tokio](../../../crates/gpui-tokio/src/lib.rs) | GPUI / Tokio 桥接；丢弃 GPUI Task 取消所持有的 future |
+| [gpui-tokio](https://github.com/suxiaoshao/gpui/blob/3ade6e9f829dc96864a05a1c094767efdae6bb56/crates/gpui-tokio/src/lib.rs) | GPUI / Tokio 桥接；丢弃 GPUI Task 取消所持有的 future |
 
 运行实例标识、Pi session ID 与 OS PID 各有用途。隐藏窗口或切换展示会话不关闭后台连接；已保存 Pi 命令的变更只影响之后建立的连接。同一会话文件在应用内复用连接。
 

@@ -1,6 +1,6 @@
 # Form Internal Invariants
 
-Public construction, paths and bindings are documented in the [guide](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/crates/gpui-form/docs/guide.md). These are the non-obvious constraints for changing their implementation.
+Public construction, paths and bindings are documented in the [guide](https://github.com/suxiaoshao/gpui/blob/3ade6e9f829dc96864a05a1c094767efdae6bb56/crates/gpui-form/docs/guide.md). These are the non-obvious constraints for changing their implementation.
 
 ## Identity and mutation
 

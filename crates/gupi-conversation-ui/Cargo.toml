@@ -12,7 +12,7 @@ performance = []
 regex = "1.13.1"
 # UI and workspace services.
 app-theme = { workspace = true, features = ["system-accent"] }
-gpui-kit = { workspace = true, features = ["tree-sitter-languages"] }
+gpui-kit = { workspace = true, features = ["syntect"] }
 gpui-tokio.workspace = true
 pi-rpc.workspace = true
 
@@ -38,6 +38,7 @@ gupi-pi-runtime.workspace = true
 gupi-conversation.workspace = true
 
 [dev-dependencies]
+two-face = { version = "0.4.5", default-features = false, features = ["syntect-fancy"] }
 gupi-settings = { workspace = true, features = ["test-support"] }
 gupi-conversation = { workspace = true, features = ["test-support"] }
 gpui-kit = { workspace = true, features = ["test-support"] }

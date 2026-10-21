@@ -189,7 +189,8 @@ pub(in crate::home) fn language(path: &Path) -> &'static str {
         "scala" => "scala",
         "zig" => "zig",
         "svelte" => "svelte",
-        "astro" => "astro",
+        // Syntect has no Astro grammar; retain markup highlighting only.
+        "astro" => "html",
         "ex" | "exs" => "elixir",
         "erb" => "erb",
         "ejs" => "ejs",
@@ -200,6 +201,30 @@ pub(in crate::home) fn language(path: &Path) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_languages_have_syntect_syntaxes() {
+        let syntaxes = two_face::syntax::extra_newlines();
+        for file in [
+            "file.svelte",
+            "file.astro",
+            "file.erb",
+            "file.ejs",
+            "Makefile",
+            "file.jsx",
+            "file.tsx",
+            "file.sql",
+        ] {
+            let token = language(Path::new(file));
+            let alias = match token {
+                "make" => "Makefile",
+                "ejs" => "erb",
+                other => other,
+            };
+            let syntax = syntaxes.find_syntax_by_token(alias);
+            assert!(syntax.is_some(), "missing syntax for {file} ({token})");
+        }
+    }
 
     #[test]
     fn directory_and_preview_obey_file_boundaries() {
@@ -365,6 +390,9 @@ mod tests {
         for (path, expected) in [
             ("Cargo.lock", "toml"),
             ("Makefile", "make"),
+            ("component.astro", "html"),
+            ("component.svelte", "svelte"),
+            ("view.jsx", "javascript"),
             ("view.tsx", "tsx"),
             ("module.mts", "typescript"),
             ("x.h", "c"),

@@ -1302,3 +1302,6 @@ shell-show-all = Mostrar toda la salida
 shell-show-less = Mostrar menos salida
 shell-open-full-output = Abrir salida completa
 shell-display-truncated = Solo se muestra la salida más reciente.
+
+titlebar-git-branch = Rama de Git: { $name }
+titlebar-git-detached = HEAD separado: { $name }

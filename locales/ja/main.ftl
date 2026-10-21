@@ -1277,3 +1277,6 @@ shell-show-all = 出力をすべて表示
 shell-show-less = 出力を折りたたむ
 shell-open-full-output = 完全な出力を開く
 shell-display-truncated = 最新の出力のみ表示しています。
+
+titlebar-git-branch = Git ブランチ: { $name }
+titlebar-git-detached = 切り離された HEAD: { $name }

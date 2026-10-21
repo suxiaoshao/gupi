@@ -1,6 +1,7 @@
 //! Gupi internal resources capability.
 pub mod catalog;
 pub mod composer_resources;
+pub mod git;
 pub mod paths;
 pub mod persistence;
 pub mod pi_config_files;

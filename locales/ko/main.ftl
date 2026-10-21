@@ -1277,3 +1277,6 @@ shell-show-all = 전체 출력 표시
 shell-show-less = 출력 접기
 shell-open-full-output = 전체 출력 열기
 shell-display-truncated = 가장 최근 출력만 표시됩니다.
+
+titlebar-git-branch = Git 브랜치: { $name }
+titlebar-git-detached = 분리된 HEAD: { $name }

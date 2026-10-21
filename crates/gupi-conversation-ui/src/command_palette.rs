@@ -1,3 +1,4 @@
+use super::home::FileInsertion;
 use super::home::HomeView;
 use super::home::actions::Kind;
 use super::home::actions::Run;
@@ -81,6 +82,8 @@ pub struct CommandPalette {
     rows: Vec<Row>,
     completed: Option<(String, usize)>,
     files: Option<Files>,
+    files_generation: u64,
+    file_insertion: Option<FileInsertion>,
     submission: Option<Task<()>>,
     original_focus: Option<FocusHandle>,
     pub(crate) is_open: bool,
@@ -111,6 +114,15 @@ fn group_label(group: usize) -> &'static str {
         3 => "command-group-skills",
         5 => "command-group-files",
         _ => "command-group-prompts",
+    }
+}
+fn execute_label(selected: Option<&Id>, insert_mode: bool, can_send: bool) -> &'static str {
+    if insert_mode || matches!(selected, Some(Id::File(_))) {
+        "command-select-resource"
+    } else if selected.is_none() && can_send {
+        "command-send-text"
+    } else {
+        "command-execute"
     }
 }
 fn local_icon(kind: Kind) -> IconName {
@@ -162,6 +174,22 @@ impl CommandPalette {
         home: Option<Home>,
         from_composer: bool,
         initial: String,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Entity<Self> {
+        let insertion = home.as_ref().and_then(|(home, _)| {
+            home.read_with(cx, |home, cx| home.capture_file_insertion(None, cx))
+                .ok()
+                .flatten()
+        });
+        Self::open_with_file_insertion(home, from_composer, initial, insertion, window, cx)
+    }
+
+    pub(crate) fn open_with_file_insertion(
+        home: Option<Home>,
+        from_composer: bool,
+        initial: String,
+        file_insertion: Option<FileInsertion>,
         window: &mut Window,
         cx: &mut App,
     ) -> Entity<Self> {
@@ -225,6 +253,8 @@ impl CommandPalette {
                     rows: vec![],
                     completed: None,
                     files: None,
+                    files_generation: 0,
+                    file_insertion,
                     submission: None,
                     original_focus,
                     is_open: true,
@@ -255,6 +285,7 @@ impl CommandPalette {
     }
     fn finished(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.is_open = false;
+        self.files = None;
         if let Some((owner, _)) = &self.home {
             let from_composer = self.from_composer;
             let _ = owner.update(cx, |home, cx| home.commands_closed(from_composer, cx));
@@ -313,6 +344,7 @@ impl CommandPalette {
             self.close(window, cx);
             return;
         }
+        self.sync_files(cx);
         cx.notify();
     }
     fn candidates(&self, cx: &App) -> Vec<Row> {
@@ -460,12 +492,29 @@ impl CommandPalette {
             };
             match &row.id {
                 Id::File(path) => {
+                    if self.enter_directory(path, window, cx) {
+                        return;
+                    }
                     if let Some((home, _)) = &self.home {
+                        let Some(insertion) = self.file_insertion.take() else {
+                            return;
+                        };
                         let home = home.clone();
                         let path = path.clone();
+                        let target = self.target.clone();
                         self.close(window, cx);
                         window.defer(cx, move |window, cx| {
-                            let _ = home.update(cx, |home, cx| home.select_file(path, window, cx));
+                            let _ = home.update(cx, |home, cx| {
+                                let state = home.state.read(cx);
+                                if target.as_ref().is_some_and(|(key, binding)| {
+                                    state.selected().as_ref() == Some(key)
+                                        && state
+                                            .current()
+                                            .is_some_and(|session| session.binding() == *binding)
+                                }) {
+                                    home.select_file(path, insertion, window, cx);
+                                }
+                            });
                         });
                     }
                     return;
@@ -746,12 +795,12 @@ impl Render for CommandPalette {
         if self.input.read(cx).value().starts_with('@') {
             has_status = false;
             status = v_flex().gap_2().px_3().py_2();
-            match &self.files {
-                Some(Files::Loading { .. }) => {
+            match self.files.as_ref().and_then(|files| files.result.as_ref()) {
+                None => {
                     has_status = true;
                     status = status.child(t(cx, "resource-files-loading"));
                 }
-                Some(Files::Ready(Err(error))) => {
+                Some(Err(error)) => {
                     has_status = true;
                     status = status.child(error.clone());
                 }
@@ -854,6 +903,9 @@ impl Render for CommandPalette {
                     .text_color(cx.theme().muted_foreground)
                     .child(t(cx, "command-no-matches"))
             });
+        // Install Command's model before projecting its selection into the
+        // footer. The returned state entity does not reinstall it at layout.
+        let command = RenderOnce::render(command, window, cx);
         content = content
             .child(command)
             .when(has_status, |content| content.child(status));
@@ -870,13 +922,11 @@ impl Render for CommandPalette {
                     .child(t(cx, "resource-edit-in-composer")),
             );
         }
-        let execute_label = if resource_mode || matches!(selected, Some(Id::File(_))) {
-            "command-select-resource"
-        } else if selected.is_none() && self.can_send(cx) {
-            "command-send-text"
-        } else {
-            "command-execute"
-        };
+        let execute_label = execute_label(
+            selected.as_ref(),
+            resource_mode || self.input.read(cx).value().starts_with('@'),
+            self.can_send(cx),
+        );
         let input_focus = self.input.read(cx).focus_handle(cx);
         let enabled = selected
             .as_ref()
@@ -969,6 +1019,20 @@ mod tests {
     use super::complete;
     use super::local_icon;
     use super::query;
+    #[test]
+    fn file_queries_keep_insert_action_while_loading_or_empty() {
+        for can_send in [false, true] {
+            assert_eq!(
+                super::execute_label(None, true, can_send),
+                "command-select-resource"
+            );
+        }
+        assert_eq!(
+            super::execute_label(Some(&Id::File("src/main.rs".into())), false, true),
+            "command-select-resource"
+        );
+        assert_eq!(super::execute_label(None, false, true), "command-send-text");
+    }
     fn local_row(kind: Kind) -> Row {
         Row {
             id: Id::Local(kind),

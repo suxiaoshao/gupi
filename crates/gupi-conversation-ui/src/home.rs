@@ -4,6 +4,7 @@ mod composer;
 mod content;
 mod files;
 mod find;
+mod git;
 mod history;
 mod image_preview;
 mod messages;
@@ -14,6 +15,7 @@ pub mod pickers;
 mod progress;
 mod session_info;
 mod slash;
+pub(crate) use slash::FileInsertion;
 mod source;
 mod titlebar;
 mod welcome;
@@ -94,6 +96,7 @@ pub struct HomeView {
     input_questionnaire: Option<Entity<gpui_kit::component::questionnaire::QuestionnaireState>>,
     questionnaire_subscriptions: Vec<Subscription>,
     shown_key: Option<String>,
+    git: git::CurrentRepository,
     message_frame: Rc<std::cell::Cell<u64>>,
     notification_visible: bool,
     shown_request: Option<(String, String)>,
@@ -436,6 +439,7 @@ impl HomeView {
         let subscriptions = vec![
             cx.observe_window_activation(window, |this, window, cx| {
                 crate::host::present(&this.state, window, this.notification_visible, cx);
+                this.sync_git(window, cx);
                 this.sync_commands(window, cx);
             }),
             cx.observe(&history_list, |_, _, cx| cx.notify()),
@@ -524,6 +528,7 @@ impl HomeView {
             input_questionnaire: None,
             questionnaire_subscriptions: vec![],
             shown_key: None,
+            git: Default::default(),
             message_frame: Rc::default(),
             notification_visible: true,
             shown_request: None,
@@ -626,11 +631,13 @@ impl HomeView {
     ) {
         if self.notification_visible != visible {
             self.notification_visible = visible;
+            self.sync_git(window, cx);
             crate::host::present(&self.state, window, visible, cx);
             cx.notify();
         }
     }
     fn sync(&mut self, force: bool, window: &mut Window, cx: &mut Context<Self>) {
+        self.sync_git(window, cx);
         let key = self.state.read(cx).selected().clone();
         let changed = self.shown_key != key;
         if changed {

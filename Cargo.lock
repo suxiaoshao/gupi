@@ -4660,6 +4660,7 @@ dependencies = [
  "regex",
  "serde_json",
  "smol",
+ "tempfile",
  "time",
  "tracing",
  "two-face",

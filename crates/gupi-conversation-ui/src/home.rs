@@ -108,8 +108,6 @@ pub struct HomeView {
     panel_button_bounds: [Rc<std::cell::Cell<Option<Bounds<Pixels>>>>; 2],
     workspace_region: FocusHandle,
     history_region: FocusHandle,
-    source_save: Option<Task<()>>,
-    source_split_touched: bool,
     navigation: navigation::Navigation,
     projects_with_more: HashSet<PathBuf>,
     open_projects: HashSet<PathBuf>,
@@ -117,7 +115,6 @@ pub struct HomeView {
     progress: Entity<progress::RetryView>,
     pane_layout: panes::PaneLayout,
     pane_drag: Option<panes::Drag>,
-    pane_committed: Option<panes::Intent>,
     palette: Option<Entity<palette::Palette>>,
     find: Option<Entity<find::FindBar>>,
     find_subscription: Option<Subscription>,
@@ -541,8 +538,6 @@ impl HomeView {
             panel_button_bounds: [Rc::default(), Rc::default()],
             workspace_region: cx.focus_handle(),
             history_region: cx.focus_handle(),
-            source_save: None,
-            source_split_touched: false,
             navigation: Default::default(),
             projects_with_more: HashSet::new(),
             open_projects: HashSet::new(),
@@ -550,7 +545,6 @@ impl HomeView {
             progress: cx.new(progress::RetryView::new),
             pane_layout: panes::PaneLayout::default(),
             pane_drag: None,
-            pane_committed: None,
             palette: None,
             find: None,
             find_subscription: None,
@@ -562,25 +556,6 @@ impl HomeView {
             extension_focus: cx.focus_handle(),
             _subscriptions: subscriptions,
         };
-        if !view.state.read(cx).is_temporary() {
-            let directory = Self::layout_directory(cx);
-            let task = cx.background_spawn(async move {
-                directory
-                    .ok()
-                    .map(|d| gupi_settings::source_split::load(&d.join("source-split.toml")))
-                    .unwrap_or(0.4)
-            });
-            cx.spawn(async move |owner, cx| {
-                let ratio = task.await;
-                let _ = owner.update(cx, |this, cx| {
-                    if !this.source_split_touched {
-                        this.pane_layout.set_ratio(ratio);
-                        cx.notify();
-                    }
-                });
-            })
-            .detach();
-        }
         view.sync_navigation(None, cx);
         view.sync(false, window, cx);
         view.focus_composer(window, cx);
@@ -1284,12 +1259,8 @@ impl HomeView {
     pub fn flush(&mut self, cx: &mut Context<Self>) -> Task<()> {
         let save = self.state.update(cx, |s, cx| s.flush(cx));
         let layout = self.layout_save.take();
-        let source = self.source_save.take();
         cx.spawn(async move |_, _| {
             save.await;
-            if let Some(source) = source {
-                source.await;
-            }
             if let Some(layout) = layout {
                 layout.await;
             }

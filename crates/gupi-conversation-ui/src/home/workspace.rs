@@ -251,7 +251,6 @@ impl HomeView {
             self.interrupt_pane_drag(window, cx);
             self.pane_layout
                 .fit(request, cx.global::<layout::LayoutState>());
-            self.commit_pane_intent();
             if let Some(view) = self.session_view() {
                 view.workspace.reveal();
             }
@@ -527,31 +526,6 @@ impl HomeView {
         }
         cx.notify();
     }
-    pub(super) fn save_source_split(&mut self, cx: &mut Context<Self>) {
-        if self.state.read(cx).is_temporary() {
-            return;
-        }
-        self.source_split_touched = true;
-        let ratio = self.pane_layout.ratio();
-        let previous = self.source_save.take();
-        let directory = Self::layout_directory(cx);
-        self.source_save = Some(cx.spawn(async move |_, cx| {
-            if let Some(previous) = previous {
-                previous.await;
-            }
-            let result = cx
-                .background_spawn(async move {
-                    directory.and_then(|dir| {
-                        gupi_settings::source_split::save(&dir.join("source-split.toml"), ratio)
-                    })
-                })
-                .await;
-            if let Err(error) = result {
-                tracing::warn!(%error,"source split save failed");
-            }
-        }));
-    }
-
     pub(super) fn select_workspace_tab(
         &mut self,
         id: Option<String>,

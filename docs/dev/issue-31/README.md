@@ -106,11 +106,11 @@ Source 预览仍明确关闭折叠；查找、复制、选择、换行和只读�
 - 目录加载状态明确区分未读、读取中、已读和失败；对同目录去重请求。收起期间完成的有效结果可缓存，但不重新展开。
 - 首次显示文件页签时读取根目录；按用户展开状态读取子目录。隐藏对话的已启动读取及其展开子目录读取可完成，仅更新所属实例；移除对话或关闭窗口释放任务。弱 Entity 与刷新代次防止过期结果安装。
 - 枚举、排序及可见行投影在事件或结果安装阶段完成，不在 render 递归扫描、不逐帧重建完整树；对大目录结果的投影避免在 UI 线程做完整排序或大量克隆。
-- 目录缓存和页签只在当前窗口寿命内保留。侧栏保存 rem 偏好，默认左栏 14rem / 右栏 20rem；显示和拖拽共用几何边界，保存不再夹取。旧像素布局字段不迁移，旧布局重置一次。分栏比例独立保存。
+- 目录缓存和页签只在当前窗口寿命内保留。侧栏保存 rem 偏好，默认左栏 14rem / 右栏 20rem；显示和拖拽共用几何边界，保存不再夹取。旧像素布局字段不迁移，旧布局重置一次。分栏比例与其余布局偏好一起保存在 `state.toml` 的 `source_split_ratio` 字段（无量纲，默认 0.4）；启动时同步加载。
 - 可访问名称包含条目名称及目录展开状态，加载/错误有文字反馈；所有新增文案按现有 Fluent 契约同步九种语言。
 
 ## 实现与验证
 
-实现位于 `home/files.rs`、`home/files/directory.rs`、`home/source.rs`、`home/workspace.rs` 和 `home/panes.rs`；HomeView 接入标题栏与命令面板，九种语言同步维护。分栏偏好位于 `gupi-settings/source_split.rs`。没有新增依赖或升级 GPUI revision。
+实现位于 `home/files.rs`、`home/files/directory.rs`、`home/source.rs`、`home/workspace.rs` 和 `home/panes.rs`；HomeView 接入标题栏与命令面板，九种语言同步维护。分栏偏好由 `gupi-settings/layout.rs` 的 `LayoutState` 统一管理。没有新增依赖或升级 GPUI revision。
 
 验证结果和实际平台边界集中记录在 [工作区文档](ui-redesign.md#实施与验证)。语言核对中 Rust、TOML、Markdown、TSX 已观察到着色；TSX 示例的 JSX 标签/属性未完整着色，沿用组件 query，不承诺所有 token 都有高亮。

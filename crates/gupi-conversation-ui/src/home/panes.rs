@@ -30,7 +30,8 @@ pub(super) struct Request {
 #[derive(Default)]
 pub(super) struct PaneLayout {
     container: Option<Request>,
-    ratio: Option<f32>,
+    invalidated: bool,
+    ratio: f32,
     pub left: f32,
     pub right: f32,
     pub conversation: f32,
@@ -53,10 +54,10 @@ impl PaneLayout {
             .map_or(0., |r| r.width - if r.sidebar { self.left } else { 0. })
     }
     pub fn needs_fit(&self, request: Request) -> bool {
-        self.container != Some(request)
+        self.invalidated || self.container != Some(request)
     }
     pub fn fit(&mut self, request: Request, preferences: &layout::LayoutState) -> bool {
-        if self.container == Some(request) {
+        if !self.needs_fit(request) {
             return false;
         }
         let content_changed = self
@@ -64,6 +65,19 @@ impl PaneLayout {
             .is_some_and(|old| old.content != request.content);
         let was_docked = self.workspace_docked;
         self.container = Some(request);
+        self.invalidated = false;
+        self.apply_preferences(preferences);
+        if content_changed && was_docked && !request.content.dockable(self.available(), request.rem)
+        {
+            self.overlay = Some(Panel::Workspace);
+        }
+        self.allocate();
+        true
+    }
+    fn apply_preferences(&mut self, preferences: &layout::LayoutState) {
+        let Some(request) = self.container else {
+            return;
+        };
         self.left = clamp(
             preferences.sidebar_width_rem * request.rem,
             LEFT_MIN_REM * request.rem,
@@ -72,15 +86,14 @@ impl PaneLayout {
         );
         self.navigator_preference = preferences.navigator_width_rem * request.rem;
         self.history_preference = preferences.history_width_rem * request.rem;
-        if content_changed && was_docked && !request.content.dockable(self.available(), request.rem)
-        {
-            self.overlay = Some(Panel::Workspace);
-        }
+        self.ratio = preferences.source_split_ratio;
+    }
+    fn restore_preferences(&mut self, preferences: &layout::LayoutState) {
+        self.apply_preferences(preferences);
         self.allocate();
-        true
     }
     pub fn invalidate(&mut self) {
-        self.container = None;
+        self.invalidated = true;
     }
     pub fn allocate(&mut self) {
         let Some(request) = self.container else {
@@ -177,12 +190,8 @@ impl PaneLayout {
                 Panel::Workspace => self.workspace_docked,
             }
     }
-    pub fn set_ratio(&mut self, ratio: f32) {
-        self.ratio = Some(ratio);
-        self.invalidate();
-    }
     pub fn ratio(&self) -> f32 {
-        self.ratio.unwrap_or(0.4)
+        self.ratio
     }
     pub fn width(&self, side: Side) -> f32 {
         match side {
@@ -222,13 +231,11 @@ impl PaneLayout {
         match side {
             Side::Source => {
                 if self.workspace_docked && r.content.main && self.work > 0. {
-                    self.ratio = Some(
-                        clamp(
-                            requested,
-                            geometry::CONVERSATION_MIN_REM * r.rem,
-                            self.work - geometry::CONTENT_MIN_REM * r.rem,
-                        ) / self.work,
-                    );
+                    self.ratio = clamp(
+                        requested,
+                        geometry::CONVERSATION_MIN_REM * r.rem,
+                        self.work - geometry::CONTENT_MIN_REM * r.rem,
+                    ) / self.work;
                 }
             }
             Side::Left => {
@@ -253,32 +260,6 @@ impl PaneLayout {
                 )
             }
         }
-        self.allocate();
-    }
-}
-
-// Committed preferences remain separate from live drag allocation.
-#[derive(Clone, Copy)]
-pub(super) struct Intent {
-    left: f32,
-    navigator: f32,
-    history: f32,
-    ratio: Option<f32>,
-}
-impl PaneLayout {
-    fn intent(&self) -> Intent {
-        Intent {
-            left: self.left,
-            navigator: self.navigator_preference,
-            history: self.history_preference,
-            ratio: self.ratio,
-        }
-    }
-    fn restore(&mut self, intent: Intent) {
-        self.left = intent.left;
-        self.navigator_preference = intent.navigator;
-        self.history_preference = intent.history;
-        self.ratio = intent.ratio;
         self.allocate();
     }
 }
@@ -347,14 +328,11 @@ impl HomeView {
         })
     }
 
-    pub(super) fn commit_pane_intent(&mut self) {
-        self.pane_committed = Some(self.pane_layout.intent());
-    }
-
     pub(super) fn interrupt_pane_drag(&mut self, window: &mut Window, cx: &mut App) {
         if self.pane_drag.take().is_some() {
-            if let Some(intent) = self.pane_committed {
-                self.pane_layout.restore(intent);
+            if !self.state.read(cx).is_temporary() {
+                self.pane_layout
+                    .restore_preferences(cx.global::<layout::LayoutState>());
             }
             cx.stop_active_drag(window);
         }
@@ -365,11 +343,16 @@ impl HomeView {
             return;
         };
         let width = self.pane_layout.width(drag.side);
+        // Temporary windows keep transient allocation only; never change main-window preferences.
+        if self.state.read(cx).is_temporary() {
+            cx.stop_active_drag(window);
+            cx.notify();
+            return;
+        }
         if (width - drag.start_width).abs() <= 0.01 {
             // A drag held at a clamp keeps the wider preference for a larger window.
-            if let Some(intent) = self.pane_committed {
-                self.pane_layout.restore(intent);
-            }
+            self.pane_layout
+                .restore_preferences(cx.global::<layout::LayoutState>());
             cx.stop_active_drag(window);
             cx.notify();
             return;
@@ -377,19 +360,19 @@ impl HomeView {
         match drag.side {
             Side::Left => self.save_layout(Some(width), None, window, cx),
             Side::Right => self.save_layout(None, Some(width), window, cx),
-            Side::Source => self.save_source_split(cx),
+            Side::Source => {
+                cx.global_mut::<layout::LayoutState>().source_split_ratio =
+                    self.pane_layout.ratio();
+                self.save_layout(None, None, window, cx);
+            }
             Side::History => {
                 cx.global_mut::<layout::LayoutState>().history_width_rem =
                     width / f32::from(window.rem_size());
                 self.save_layout(None, None, window, cx);
             }
         }
-        match drag.side {
-            Side::Right => self.pane_layout.navigator_preference = width,
-            Side::History => self.pane_layout.history_preference = width,
-            _ => {}
-        }
-        self.commit_pane_intent();
+        self.pane_layout
+            .restore_preferences(cx.global::<layout::LayoutState>());
         cx.stop_active_drag(window);
         cx.notify();
     }
@@ -493,6 +476,18 @@ mod tests {
         gpui_kit::Entity<super::HomeView>,
         &mut gpui_kit::VisualTestContext,
     ) {
+        setup_initialized(cx, preferences, false, |_, _, _| {})
+    }
+
+    fn setup_initialized(
+        cx: &mut gpui_kit::TestAppContext,
+        preferences: layout::LayoutState,
+        temporary: bool,
+        initialize: impl FnOnce(&Entity<HomeView>, &mut Window, &mut App),
+    ) -> (
+        gpui_kit::Entity<super::HomeView>,
+        &mut gpui_kit::VisualTestContext,
+    ) {
         use crate::home::HomeView;
         use gpui_kit::AppContext;
         use gpui_kit::component::Root;
@@ -516,7 +511,13 @@ mod tests {
             gupi_pi_runtime::init(cx);
             cx.set_global(preferences);
         });
-        let state = cx.new(|cx| ConversationState::new("unused-pi".into(), cx));
+        let state = cx.new(|cx| {
+            if temporary {
+                ConversationState::temporary("unused-pi".into(), cx)
+            } else {
+                ConversationState::new("unused-pi".into(), cx)
+            }
+        });
         state.update(cx, |state, _| {
             let info = gupi_conversation::session_catalog::SessionInfo::new(
                 Default::default(),
@@ -532,6 +533,7 @@ mod tests {
         let mut home = None;
         let (_, visual) = cx.add_window_view(|window, cx| {
             let view = cx.new(|cx| HomeView::with_state(state, window, cx));
+            initialize(&view, window, cx);
             home = Some(view.clone());
             Root::new(view, window, cx)
         });
@@ -540,6 +542,83 @@ mod tests {
         visual.run_until_parked();
         visual.update(|window, cx| window.draw(cx).clear(cx));
         (home, visual)
+    }
+
+    #[gpui_kit::test]
+    fn saved_source_ratio_is_applied_before_first_frame(cx: &mut TestAppContext) {
+        let directory = std::env::temp_dir().join(format!(
+            "gupi-first-frame-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = directory.join("state.toml");
+        let mut preferences = layout::LayoutState::default();
+        preferences.source_split_ratio = 0.55;
+        layout::save(&path, &preferences).unwrap();
+        let (home, visual) =
+            setup_initialized(cx, layout::load(&path), false, |home, window, cx| {
+                home.update(cx, |home, cx| {
+                    home.show_sidebar = false;
+                    home.open_source("/tmp/gupi-first-frame.rs".into(), false, window, cx);
+                    home.views
+                        .get_mut("empty")
+                        .unwrap()
+                        .workspace
+                        .navigator_hidden = true;
+                    home.ensure_panel(Panel::Workspace, window, cx);
+                    assert!(home.pane_layout.workspace_docked);
+                    assert_eq!(home.pane_layout.ratio(), 0.55);
+                    assert_eq!(cx.global::<layout::LayoutState>().source_split_ratio, 0.55);
+                });
+                // The persisted ratio is installed before Root can paint HomeView's first frame.
+            });
+        visual.update(|window, cx| {
+            let panes = &home.read(cx).pane_layout;
+            let expected = (0.55 * panes.work).clamp(
+                geometry::CONVERSATION_MIN_REM * f32::from(window.rem_size()),
+                panes.work - geometry::CONTENT_MIN_REM * f32::from(window.rem_size()),
+            );
+            assert!((panes.conversation - expected).abs() < 0.01);
+            assert!((panes.conversation - 0.4 * panes.work).abs() > 1.);
+        });
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[gpui_kit::test]
+    fn temporary_pane_completion_keeps_memory_only_widths(cx: &mut TestAppContext) {
+        let preferences = layout::LayoutState::default();
+        setup_initialized(cx, preferences, true, |home, window, cx| {
+            let before = cx.global::<layout::LayoutState>().clone();
+            home.update(cx, |home, cx| {
+                home.pane_layout.history_width = 360.;
+                home.pane_layout.ratio = 0.65;
+                home.pane_drag = Some(Drag {
+                    side: Side::History,
+                    start_width: 320.,
+                });
+                home.finish_pane_drag(window, cx);
+                assert_eq!(home.pane_layout.history_width, 360.);
+                assert!(home.layout_save.is_none());
+                home.pane_drag = Some(Drag {
+                    side: Side::Source,
+                    start_width: 0.,
+                });
+                home.interrupt_pane_drag(window, cx);
+                assert_eq!(home.pane_layout.ratio(), 0.65);
+                assert!(home.layout_save.is_none());
+            });
+            assert_eq!(
+                cx.global::<layout::LayoutState>().history_width_rem,
+                before.history_width_rem
+            );
+            assert_eq!(
+                cx.global::<layout::LayoutState>().source_split_ratio,
+                before.source_split_ratio
+            );
+        });
     }
 
     #[gpui_kit::test]
@@ -873,10 +952,12 @@ mod tests {
         // Opening the workspace pins it; only the drag's own save matters here.
         let _ = visual.update(|_, cx| home.update(cx, |home, _| home.layout_save.take()));
         let end = start_drag(&home, visual, Side::Right, -40.);
+        visual.update(|_, cx| cx.global_mut::<layout::LayoutState>().source_split_ratio = 0.58);
         visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
         visual.update(|_, cx| {
             let home = home.read(cx);
             assert_eq!(home.pane_layout.right, before);
+            assert_eq!(home.pane_layout.ratio(), 0.58);
             assert_eq!(home.pane_layout.navigator_preference, preference);
             assert!(home.pane_drag.is_none());
             assert!(home.layout_save.is_none());
@@ -891,6 +972,7 @@ mod tests {
             home.update(cx, |home, cx| {
                 home.select_workspace_tab(None, window, cx);
                 home.ensure_panel(Panel::Workspace, window, cx);
+                home.layout_save.take();
             });
         });
         visual.run_until_parked();
@@ -908,7 +990,7 @@ mod tests {
         visual.update(|_, cx| {
             assert!(cx.has_active_drag());
             assert!(home.read(cx).pane_drag.is_none());
-            assert!(home.read(cx).source_save.is_none());
+            assert!(home.read(cx).layout_save.is_none());
         });
         visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
     }
@@ -921,7 +1003,7 @@ mod tests {
             home.update(cx, |home, cx| {
                 home.open_source("/tmp/gupi-resize-fixture.rs".into(), false, window, cx);
                 home.ensure_panel(Panel::Workspace, window, cx);
-                home.pane_layout.set_ratio(0.4);
+                home.layout_save.take();
             })
         });
         visual.run_until_parked();
@@ -972,34 +1054,28 @@ mod tests {
             }
             visual.update(|_, cx| {
                 assert!(home.read(cx).pane_drag.is_none());
-                assert!(home.read(cx).source_split_touched);
-                assert!(home.read(cx).source_save.is_some());
+                assert!(home.read(cx).layout_save.is_some());
+                assert_eq!(cx.global::<layout::LayoutState>().source_split_ratio, ratio);
                 assert_eq!(home.read(cx).pane_layout.ratio(), ratio);
             });
-            let (layout, source) = visual.update(|_, cx| {
-                home.update(cx, |home, _| {
-                    (home.layout_save.take(), home.source_save.take())
-                })
-            });
+            let save = visual.update(|_, cx| home.update(cx, |home, _| home.layout_save.take()));
             if escape {
                 visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
                 visual.update(|_, cx| {
                     assert!(home.read(cx).pane_drag.is_none());
-                    assert!(home.read(cx).source_save.is_none());
+                    assert!(home.read(cx).layout_save.is_none());
                 });
             }
-            if let Some(save) = layout {
-                save.await;
-            }
-            if let Some(save) = source {
+            if let Some(save) = save {
                 save.await;
             }
             let path = visual
                 .update(|_, cx| super::HomeView::layout_directory(cx).unwrap())
-                .join("source-split.toml");
-            assert!((gupi_settings::source_split::load(&path) - ratio).abs() < 0.0001);
+                .join("state.toml");
+            let saved = layout::load(&path);
+            assert!((saved.source_split_ratio - ratio).abs() < 0.0001);
             assert_eq!(
-                layout::load(&path.with_file_name("state.toml")).navigator_width_rem,
+                saved.navigator_width_rem,
                 visual.update(|window, _| width / f32::from(window.rem_size()))
             );
         }
@@ -1014,6 +1090,7 @@ mod tests {
             home.update(cx, |home, cx| {
                 home.open_source("/tmp/gupi-resize-fixture.rs".into(), false, window, cx);
                 home.ensure_panel(Panel::Workspace, window, cx);
+                home.layout_save.take();
             });
         });
         visual.run_until_parked();
@@ -1022,8 +1099,10 @@ mod tests {
         visual.update(|window, cx| {
             home.update(cx, |home, cx| {
                 assert!(home.pane_layout.right > before);
+                cx.global_mut::<layout::LayoutState>().source_split_ratio = 0.61;
                 home.interrupt_pane_drag(window, cx);
                 assert_eq!(home.pane_layout.right, before);
+                assert_eq!(home.pane_layout.ratio(), 0.61);
                 assert_eq!(
                     cx.global::<layout::LayoutState>().navigator_width_rem
                         * f32::from(window.rem_size()),
@@ -1040,7 +1119,7 @@ mod tests {
         visual.update(|_, cx| {
             assert!(home.read(cx).pane_drag.is_none());
             assert_eq!(home.read(cx).pane_layout.right, before);
-            assert!(home.read(cx).source_save.is_none());
+            assert!(home.read(cx).layout_save.is_none());
         });
     }
 
@@ -1052,14 +1131,15 @@ mod tests {
             home.update(cx, |home, cx| {
                 home.open_source("/tmp/gupi-resize-fixture.rs".into(), false, window, cx);
                 home.ensure_panel(Panel::Workspace, window, cx);
+                home.layout_save.take();
             })
         });
         visual.run_until_parked();
-        for initial in [None, Some(0.45)] {
+        for initial in [0.4, 0.45] {
             visual.update(|_, cx| {
                 home.update(cx, |home, cx| {
-                    home.pane_layout.ratio = initial;
-                    home.pane_layout.container = None;
+                    cx.global_mut::<layout::LayoutState>().source_split_ratio = initial;
+                    home.pane_layout.invalidate();
                     cx.notify();
                 })
             });
@@ -1070,16 +1150,16 @@ mod tests {
                 let home = home.read(cx);
                 assert!(home.pane_drag.is_none());
                 assert_eq!(home.pane_layout.ratio, initial);
-                assert!(home.source_save.is_none());
+                assert!(home.layout_save.is_none());
                 let panes = &home.pane_layout;
-                let expected = (initial.unwrap_or(0.4) * panes.work).clamp(
+                let expected = (initial * panes.work).clamp(
                     24. * f32::from(window.rem_size()),
                     panes.work - 30. * f32::from(window.rem_size()),
                 );
                 assert!((panes.conversation - expected).abs() < 0.01);
             });
             visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
-            visual.update(|_, cx| assert!(home.read(cx).source_save.is_none()));
+            visual.update(|_, cx| assert!(home.read(cx).layout_save.is_none()));
             visual.simulate_resize(size(px(1728.), px(800.)));
         }
     }

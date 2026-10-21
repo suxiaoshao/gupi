@@ -1,22 +1,74 @@
 //! Per-session worktree adapter. It never impersonates recorded tool operations.
 use super::*;
-use changes::navigator::{Delegate, Row};
+mod navigator;
+use changes::navigator::Row;
 use gpui_kit::component::input::Input;
 use gupi_resources::git::{
     Change, ChangeContent, ChangeKind, ChangeSource, ContentState, Repository,
 };
 use messages::diff::DiffBlock;
-use reader::{Command, Options};
+use navigator::{Delegate, Item};
+use reader::Options;
 use std::time::Duration;
 
 pub(super) const GIT_TAB: &str = "workspace:git";
 const CACHE_FILES: usize = 8;
+const HEADER_REM: f32 = 2.5;
+const SOURCES: [ChangeSource; 3] = [
+    ChangeSource::Staged,
+    ChangeSource::Unstaged,
+    ChangeSource::Untracked,
+];
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Entry {
+    source: ChangeSource,
+    file: Change,
+}
+impl Entry {
+    fn id(&self) -> String {
+        identity(self.source, self.file.path())
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Group {
+    Conflicts,
+    Staged,
+    Unstaged,
+}
+impl Group {
+    fn key(self) -> &'static str {
+        match self {
+            Self::Conflicts => "diff-conflicts",
+            Self::Staged => "diff-staged",
+            Self::Unstaged => "diff-unstaged",
+        }
+    }
+    fn of(entry: &Entry) -> Self {
+        if entry.file.kind() == ChangeKind::Conflict {
+            Self::Conflicts
+        } else if entry.source == ChangeSource::Staged {
+            Self::Staged
+        } else {
+            Self::Unstaged
+        }
+    }
+}
 
 pub(super) struct Loaded {
     entry: Change,
     pub content: ChangeContent,
     pub block: Option<DiffBlock>,
 }
+impl Loaded {
+    pub(super) fn copy_content(&self) -> Option<&str> {
+        if self.entry.kind() == ChangeKind::Deleted {
+            self.content.original()
+        } else {
+            self.content.modified()
+        }
+    }
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum Failure {
     Unavailable,
     Query(String),
@@ -31,9 +83,11 @@ impl From<gupi_resources::git::Error> for Failure {
 }
 pub(super) struct GitTab {
     cwd: PathBuf,
-    pub source: ChangeSource,
     repository: Option<Repository>,
-    all: Vec<Change>,
+    all: Vec<Entry>,
+    group_errors: HashMap<ChangeSource, Failure>,
+    groups_closed: HashSet<Group>,
+    known_sources: HashSet<ChangeSource>,
     pub rows: Rc<Vec<Row>>,
     pub selected: Option<String>,
     pub list: Entity<ListState<Delegate>>,
@@ -42,8 +96,7 @@ pub(super) struct GitTab {
     pub header_focus: FocusHandle,
     pub navigator_hidden: bool,
     pub options: Options,
-    pub unfolded: HashSet<String>,
-    preferences: HashMap<ChangeSource, Options>,
+    pub collapsed: HashSet<String>,
     filter: Entity<InputState>,
     _filter_subscription: Subscription,
     generation: u64,
@@ -56,6 +109,7 @@ pub(super) struct GitTab {
     list_task: Option<Task<()>>,
     body_task: Option<Task<()>>,
     body_generation: u64,
+    body_target: Option<(String, Change)>,
     poll: Option<Task<()>>,
 }
 fn identity(source: ChangeSource, path: &std::path::Path) -> String {
@@ -87,14 +141,7 @@ fn kind_key(kind: ChangeKind) -> &'static str {
 impl GitTab {
     fn new(cwd: PathBuf, window: &mut Window, cx: &mut Context<HomeView>) -> Self {
         let owner = cx.weak_entity();
-        let list = cx.new(|cx| {
-            ListState::new(
-                Delegate::new(owner, GIT_TAB.into(), Rc::new(Vec::new())),
-                window,
-                cx,
-            )
-            .searchable(false)
-        });
+        let list = cx.new(|cx| ListState::new(Delegate::new(owner), window, cx).searchable(false));
         let filter = cx.new(|cx| InputState::new(window, cx).placeholder(t(cx, "diff-filter")));
         let subscription = cx.subscribe_in(
             &filter,
@@ -107,9 +154,11 @@ impl GitTab {
         );
         Self {
             cwd,
-            source: Default::default(),
             repository: None,
             all: Vec::new(),
+            group_errors: HashMap::new(),
+            groups_closed: HashSet::new(),
+            known_sources: HashSet::new(),
             rows: Rc::new(Vec::new()),
             selected: None,
             focus: list.focus_handle(cx),
@@ -118,8 +167,7 @@ impl GitTab {
             list,
             navigator_hidden: false,
             options: Default::default(),
-            unfolded: HashSet::new(),
-            preferences: HashMap::new(),
+            collapsed: HashSet::new(),
             filter,
             _filter_subscription: subscription,
             generation: 0,
@@ -132,51 +180,165 @@ impl GitTab {
             list_task: None,
             body_task: None,
             body_generation: 0,
+            body_target: None,
             poll: None,
         }
     }
     fn sync_rows(&mut self, window: &mut Window, cx: &mut App) {
         let query = self.filter.read(cx).value().to_lowercase();
-        self.rows = Rc::new(
-            self.all
+        let mut rows = Vec::new();
+        let mut items = Vec::new();
+        let mut conflicts = HashSet::new();
+        for group in [Group::Conflicts, Group::Staged, Group::Unstaged] {
+            let entries: Vec<_> = self
+                .all
                 .iter()
-                .filter(|f| {
-                    f.path().to_string_lossy().to_lowercase().contains(&query)
-                        || f.previous_path()
-                            .is_some_and(|p| p.to_string_lossy().to_lowercase().contains(&query))
+                .filter(|entry| {
+                    Group::of(entry) == group
+                        && (entry
+                            .file
+                            .path()
+                            .to_string_lossy()
+                            .to_lowercase()
+                            .contains(&query)
+                            || entry.file.previous_path().is_some_and(|p| {
+                                p.to_string_lossy().to_lowercase().contains(&query)
+                            }))
                 })
-                .map(|f| Row {
-                    path: identity(self.source, f.path()),
-                    label: f
+                .filter(|entry| {
+                    group != Group::Conflicts || conflicts.insert(entry.file.path().to_owned())
+                })
+                .collect();
+            if group == Group::Conflicts && entries.is_empty() {
+                continue;
+            }
+            items.push(Item::Group(
+                group,
+                entries.len(),
+                self.groups_closed.contains(&group),
+            ));
+            if self.groups_closed.contains(&group) {
+                continue;
+            }
+            for entry in entries {
+                let file = &entry.file;
+                let row = Row {
+                    path: entry.id(),
+                    label: file
                         .previous_path()
-                        .map(|p| format!("{} → {}", p.display(), f.path().display()))
-                        .unwrap_or_else(|| f.path().display().to_string()),
-                    status: Some(kind_key(f.kind())),
-                    stats: f.stats(),
+                        .map(|p| format!("{} → {}", p.display(), file.path().display()))
+                        .unwrap_or_else(|| file.path().display().to_string()),
+                    status: Some(if entry.source == ChangeSource::Untracked {
+                        "diff-untracked"
+                    } else {
+                        kind_key(file.kind())
+                    }),
+                    stats: file.stats(),
                     failed: false,
-                })
-                .collect(),
-        );
-        if !self
-            .rows
-            .iter()
-            .any(|r| Some(&r.path) == self.selected.as_ref())
-        {
-            self.selected = self.rows.first().map(|r| r.path.clone());
+                };
+                items.push(Item::File(row.clone(), status_code(entry)));
+                rows.push(row);
+            }
         }
+        // Filtering changes the candidate set; collapsing a group alone keeps
+        // its selected body, while removing a record picks its nearest neighbor.
+        let eligible = self.selected.as_ref().is_some_and(|id| {
+            self.all.iter().any(|entry| {
+                entry.id() == *id
+                    && (entry
+                        .file
+                        .path()
+                        .to_string_lossy()
+                        .to_lowercase()
+                        .contains(&query)
+                        || entry.file.previous_path().is_some_and(|path| {
+                            path.to_string_lossy().to_lowercase().contains(&query)
+                        }))
+            })
+        });
+        if !eligible {
+            self.selected = rows.first().map(|r| r.path.clone());
+        }
+        self.rows = Rc::new(rows);
         self.list.update(cx, |list, cx| {
-            list.delegate_mut().files = self.rows.clone();
-            let selected = self
-                .rows
-                .iter()
-                .position(|r| Some(&r.path) == self.selected.as_ref());
-            list.set_selected_index(
-                selected.map(gpui_kit::component::IndexPath::new),
-                window,
-                cx,
-            );
+            let selected = items.iter().position(|item| matches!(item, Item::File(row, _) if Some(&row.path) == self.selected.as_ref()));
+            list.delegate_mut().items = items;
+            list.set_selected_index(selected.map(gpui_kit::component::IndexPath::new), window, cx);
             cx.notify();
         });
+    }
+    fn apply_files(
+        &mut self,
+        results: Vec<(ChangeSource, Result<Vec<Change>, Failure>)>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> bool {
+        let mut next = self.all.clone();
+        let mut errors = self.group_errors.clone();
+        let known_before = self.known_sources.clone();
+        for (source, result) in results {
+            match result {
+                Ok(files) => {
+                    self.known_sources.insert(source);
+                    next.retain(|e| e.source != source);
+                    next.extend(files.into_iter().map(|file| Entry { source, file }));
+                    errors.remove(&source);
+                }
+                Err(error) => {
+                    errors.insert(source, error);
+                }
+            }
+        }
+        next.sort_by(|a, b| {
+            source_order(a.source)
+                .cmp(&source_order(b.source))
+                .then_with(|| a.file.path().cmp(b.file.path()))
+        });
+        if next == self.all && errors == self.group_errors && known_before == self.known_sources {
+            return false;
+        }
+        let previous = self.selected.clone();
+        let position = self
+            .rows
+            .iter()
+            .position(|r| Some(&r.path) == previous.as_ref())
+            .unwrap_or(0);
+        self.all = next;
+        self.group_errors = errors;
+        self.cache
+            .retain(|id, _| self.all.iter().any(|e| e.id() == *id));
+        self.collapsed
+            .retain(|id| self.all.iter().any(|e| e.id() == *id));
+        self.sync_rows(window, cx);
+        if previous
+            .as_ref()
+            .is_some_and(|id| !self.all.iter().any(|e| e.id() == *id))
+        {
+            self.selected = self
+                .rows
+                .get(position.min(self.rows.len().saturating_sub(1)))
+                .map(|r| r.path.clone());
+            self.sync_rows(window, cx);
+        }
+        let target_valid = self.body_target.as_ref().is_none_or(|(id, file)| {
+            self.selected.as_ref() == Some(id) && self.selected_entry() == Some(file)
+        });
+        if !target_valid || previous != self.selected {
+            self.invalidate_body();
+        }
+        true
+    }
+    fn invalidate_body(&mut self) {
+        self.body_task = None;
+        self.body_target = None;
+        self.body_generation += 1;
+        self.body_error = None;
+    }
+    fn selected_source(&self) -> Option<ChangeSource> {
+        self.all
+            .iter()
+            .find(|e| Some(&e.id()) == self.selected.as_ref())
+            .map(|e| e.source)
     }
     pub fn focus_main(&self, window: &mut Window, cx: &mut App) {
         self.selected
@@ -206,7 +368,8 @@ impl GitTab {
     pub(super) fn selected_entry(&self) -> Option<&Change> {
         self.all
             .iter()
-            .find(|f| Some(identity(self.source, f.path())) == self.selected)
+            .find(|e| Some(&e.id()) == self.selected.as_ref())
+            .map(|e| &e.file)
     }
 }
 impl HomeView {
@@ -261,9 +424,12 @@ impl HomeView {
             tab.body_generation += 1;
             tab.list_task = None;
             tab.body_task = None;
+            tab.body_target = None;
             tab.poll = None;
             tab.repository = None;
             tab.all.clear();
+            tab.group_errors.clear();
+            tab.known_sources.clear();
             tab.rows = Rc::new(Vec::new());
             tab.selected = None;
             tab.cache.clear();
@@ -273,7 +439,7 @@ impl HomeView {
             tab.refreshing = false;
             tab.not_repository = false;
             tab.list.update(cx, |list, cx| {
-                list.delegate_mut().files = Rc::new(Vec::new());
+                list.delegate_mut().items.clear();
                 cx.notify();
             });
         }
@@ -291,6 +457,7 @@ impl HomeView {
                 tab.poll = None;
                 tab.list_task = None;
                 tab.body_task = None;
+                tab.body_target = None;
                 tab.refreshing = false;
             }
         }
@@ -344,9 +511,7 @@ impl HomeView {
             return;
         }
         tab.refreshing = true;
-        tab.error = None;
         let generation = tab.generation;
-        let source = tab.source;
         let cwd = tab.cwd.clone();
         tab.list_task = Some(cx.spawn_in(window, async move |home, cx| {
             let result = cx
@@ -354,43 +519,48 @@ impl HomeView {
                     let Some(repo) = gupi_resources::git::discover(&cwd).await? else {
                         return Ok(None);
                     };
-                    let list = repo.changes(source).await?;
-                    Ok::<_, gupi_resources::git::Error>(Some((repo, list)))
+                    let mut results = Vec::new();
+                    for source in SOURCES {
+                        results.push((
+                            source,
+                            repo.changes(source)
+                                .await
+                                .map(|list| list.files().to_vec())
+                                .map_err(Failure::from),
+                        ));
+                    }
+                    Ok::<_, gupi_resources::git::Error>(Some((repo, results)))
                 })
                 .await;
             let _ = home.update_in(cx, |home, window, cx| {
                 if home.shown_key.as_ref() != Some(&key) {
                     return;
                 }
-                let Some(tab) = home
-                    .git_mut()
-                    .filter(|t| t.generation == generation && t.source == source)
-                else {
+                let Some(tab) = home.git_mut().filter(|t| t.generation == generation) else {
                     return;
                 };
                 tab.list_task = None;
                 tab.refreshing = false;
                 tab.loading = false;
                 match result {
-                    Ok(Some((repo, list))) => {
-                        tab.body_task = None;
-                        tab.body_error = None;
-                        tab.body_generation += 1;
+                    Ok(Some((repo, results))) => {
+                        if tab.repository.as_ref().is_some_and(|old| *old != repo) {
+                            tab.all.clear();
+                            tab.cache.clear();
+                            tab.invalidate_body();
+                        }
                         tab.repository = Some(repo);
+                        tab.error = None;
                         tab.not_repository = false;
-                        tab.all = list.files().to_vec();
-                        tab.cache.retain(|path, body| {
-                            tab.all.iter().any(|f| {
-                                identity(tab.source, f.path()) == *path && *f == body.entry
-                            })
-                        });
-                        tab.sync_rows(window, cx);
+                        tab.apply_files(results, window, cx);
                     }
                     Ok(None) => {
                         tab.not_repository = true;
                         tab.repository = None;
                         tab.all.clear();
                         tab.cache.clear();
+                        tab.group_errors.clear();
+                        tab.invalidate_body();
                         tab.sync_rows(window, cx);
                     }
                     Err(error) => tab.error = Some(error.into()),
@@ -414,7 +584,12 @@ impl HomeView {
         let Some(path) = tab.selected.clone() else {
             return;
         };
-        if tab.cache.contains_key(&path) || tab.body_task.is_some() {
+        if tab
+            .cache
+            .get(&path)
+            .is_some_and(|loaded| Some(&loaded.entry) == tab.selected_entry())
+            || tab.body_task.is_some()
+        {
             return;
         }
         let Some(repo) = tab.repository.clone() else {
@@ -424,7 +599,8 @@ impl HomeView {
             return;
         };
         let generation = tab.generation;
-        let source = tab.source;
+        let source = tab.selected_source().unwrap();
+        tab.body_target = Some((path.clone(), entry.clone()));
         tab.body_error = None;
         tab.body_generation += 1;
         let body_generation = tab.body_generation;
@@ -440,19 +616,27 @@ impl HomeView {
                 let Some(tab) = home.git_mut().filter(|t| {
                     t.generation == generation
                         && t.body_generation == body_generation
-                        && t.source == source
                         && t.selected.as_ref() == Some(&path)
                         && t.selected_entry() == Some(&expected)
                 }) else {
                     return;
                 };
                 tab.body_task = None;
+                tab.body_target = None;
                 match result {
                     Ok(content) => {
-                        let block = content
-                            .patch()
-                            .filter(|p| !p.is_empty())
-                            .map(|p| DiffBlock::patch(p, cx));
+                        let old = tab.cache.remove(&path);
+                        let block = if old
+                            .as_ref()
+                            .is_some_and(|old| old.content.patch() == content.patch())
+                        {
+                            old.and_then(|old| old.block)
+                        } else {
+                            content
+                                .patch()
+                                .filter(|p| !p.is_empty())
+                                .map(|p| DiffBlock::patch(p, cx))
+                        };
                         if tab.cache.len() >= CACHE_FILES
                             && let Some(old) = tab.cache.keys().find(|k| **k != path).cloned()
                         {
@@ -486,11 +670,11 @@ impl HomeView {
         if let Some(tab) = self.git_mut()
             && tab.rows.iter().any(|r| r.path == path)
         {
-            tab.body_task = None;
-            tab.body_generation += 1;
-            tab.body_error = None;
-            tab.selected = Some(path);
-            tab.sync_rows(window, cx);
+            if tab.selected.as_ref() != Some(&path) {
+                tab.invalidate_body();
+                tab.selected = Some(path);
+                tab.sync_rows(window, cx);
+            }
             tab.focus_main(window, cx);
         }
         self.load_git_file(window, cx);
@@ -499,50 +683,61 @@ impl HomeView {
     }
     pub(super) fn filter_git(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(tab) = self.git_mut() {
-            tab.body_task = None;
-            tab.body_generation += 1;
-            tab.body_error = None;
+            let previous = tab.selected.clone();
             tab.sync_rows(window, cx);
+            if previous != tab.selected {
+                tab.invalidate_body();
+            }
         }
         self.load_git_file(window, cx);
         cx.notify();
     }
-    fn change_git_source(
-        &mut self,
-        source: ChangeSource,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn toggle_git_group(&mut self, group: Group, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(tab) = self.git_mut() {
-            if tab.source == source {
-                return;
+            if !tab.groups_closed.remove(&group) {
+                tab.groups_closed.insert(group);
             }
-            tab.preferences.insert(tab.source, tab.options);
-            tab.options = tab.preferences.get(&source).copied().unwrap_or_default();
-            tab.source = source;
-            tab.generation += 1;
-            tab.list_task = None;
-            tab.body_task = None;
-            tab.cache.clear();
-            tab.unfolded.clear();
-            tab.all.clear();
-            tab.selected = None;
-            tab.loading = true;
-            tab.error = None;
-            tab.body_error = None;
-            tab.not_repository = false;
             tab.sync_rows(window, cx);
+            tab.list.update(cx, |list, cx| {
+                let ix = list
+                    .delegate()
+                    .items
+                    .iter()
+                    .position(|item| matches!(item, Item::Group(value,_,_) if *value == group));
+                list.set_selected_index(ix.map(gpui_kit::component::IndexPath::new), window, cx);
+            });
         }
-        self.refresh_worktree(window, cx);
         cx.notify();
     }
-    pub(super) fn render_git_list(&self, tab: &GitTab) -> AnyElement {
+    pub(super) fn render_git_list(&self, tab: &GitTab, cx: &mut Context<Self>) -> AnyElement {
+        let stats = tab
+            .all
+            .iter()
+            .filter_map(|e| e.file.stats())
+            .fold((0, 0), |(a, r), (x, y)| (a + x, r + y));
         v_flex()
             .size_full()
             .min_h_0()
-            .p_2()
-            .gap_2()
-            .child(Input::new(&tab.filter).small())
+            .child(
+                h_flex()
+                    .h(rems(HEADER_REM))
+                    .flex_none()
+                    .px_2()
+                    .gap_2()
+                    .border_b_1()
+                    .border_color(cx.theme().border)
+                    .child(div().text_sm().child(t(cx, "diff-files")))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .text_xs()
+                            .truncate()
+                            .child(format!("+{} −{}", stats.0, stats.1)),
+                    )
+                    .child(self.git_refresh_button(tab, cx)),
+            )
+            .child(div().p_2().child(Input::new(&tab.filter).small()))
             .child(
                 div()
                     .flex_1()
@@ -551,42 +746,113 @@ impl HomeView {
             )
             .into_any_element()
     }
+    fn git_refresh_button(&self, tab: &GitTab, cx: &mut Context<Self>) -> Button {
+        let detail = tab
+            .error
+            .as_ref()
+            .or_else(|| tab.group_errors.values().next())
+            .map(|error| match error {
+                Failure::Unavailable => t(cx, "diff-git-unavailable"),
+                Failure::Query(message) => format!("{} {message}", t(cx, "diff-refresh-failed")),
+            });
+        Button::new("git-refresh")
+            .ghost()
+            .small()
+            .icon(if detail.is_some() {
+                IconName::CircleAlert
+            } else {
+                IconName::RefreshCw
+            })
+            .loading(tab.refreshing)
+            .tooltip(detail.unwrap_or_else(|| t(cx, "diff-refresh")))
+            .accessibility_label(t(cx, "diff-refresh"))
+            .on_click(cx.listener(|home, _, window, cx| home.refresh_worktree(window, cx)))
+    }
     pub(super) fn render_git_main(&self, tab: &GitTab, cx: &mut Context<Self>) -> AnyElement {
-        let mut source = h_flex().flex_wrap().gap_1().px_2().py_1();
-        for value in [
-            ChangeSource::Unstaged,
-            ChangeSource::Staged,
-            ChangeSource::Untracked,
-        ] {
-            source = source.child(
-                Button::new(source_key(value))
-                    .ghost()
-                    .small()
-                    .selected(tab.source == value)
-                    .label(t(cx, source_key(value)))
-                    .on_click(cx.listener(move |home, _, window, cx| {
-                        home.change_git_source(value, window, cx)
-                    })),
-            );
-        }
-        source = source
+        let entry = tab.selected_entry();
+        let path = entry
+            .map(|e| {
+                e.previous_path()
+                    .map(|p| format!("{} → {}", p.display(), e.path().display()))
+                    .unwrap_or_else(|| e.path().display().to_string())
+            })
+            .unwrap_or_else(|| t(cx, "diff-worktree"));
+        let source = tab
+            .selected_source()
+            .map(|s| t(cx, source_key(s)))
+            .unwrap_or_default();
+        let direction = tab
+            .selected_source()
+            .map(|s| {
+                t(
+                    cx,
+                    match s {
+                        ChangeSource::Staged => "diff-direction-staged",
+                        ChangeSource::Unstaged => "diff-direction-unstaged",
+                        ChangeSource::Untracked => "diff-direction-untracked",
+                    },
+                )
+            })
+            .unwrap_or_default();
+        let updating = tab
+            .selected
+            .as_ref()
+            .and_then(|p| tab.cache.get(p))
+            .is_some_and(|loaded| Some(&loaded.entry) != entry);
+        let path_tooltip = format!("{path} · {source} · {direction}");
+        let header = h_flex()
+            .id("git-file-header")
+            .test_support()
+            .debug_selector(|| "git-file-header".into())
+            .h(rems(HEADER_REM))
+            .flex_none()
+            .min_w_0()
+            .px_2()
+            .gap_1()
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .child(self.reader_fold_button(cx))
             .child(
-                Button::new("git-refresh")
-                    .ghost()
-                    .small()
-                    .icon(IconName::RefreshCw)
-                    .disabled(tab.refreshing)
-                    .tooltip(t(cx, "diff-refresh"))
-                    .accessibility_label(t(cx, "diff-refresh"))
-                    .on_click(cx.listener(|home, _, window, cx| home.refresh_worktree(window, cx))),
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_sm()
+                    .truncate()
+                    .id("git-path")
+                    .tooltip(move |window, cx| Tooltip::new(path_tooltip.clone()).build(window, cx))
+                    .child(path),
             )
+            .child(
+                div()
+                    .max_w_40()
+                    .min_w_0()
+                    .text_xs()
+                    .truncate()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(if tab.body_error.is_some() {
+                        t(cx, "diff-update-failed")
+                    } else if updating {
+                        t(cx, "diff-updating")
+                    } else {
+                        direction
+                    }),
+            )
+            .when(tab.navigator_hidden, |row| {
+                row.child(self.git_refresh_button(tab, cx))
+            })
+            .child(self.reader_controls(cx))
             .child(self.navigator_toggle(cx));
+        let mut content = v_flex()
+            .id("git-body")
+            .test_support()
+            .debug_selector(|| "git-body".into())
+            .flex_1()
+            .min_h_0()
+            .min_w_0();
         let message = if tab.loading {
             Some("diff-loading")
         } else if tab.not_repository {
             Some("diff-not-repository")
-        } else if tab.error.is_some() && tab.repository.is_none() {
-            None
         } else if tab.selected.is_none() {
             Some(if tab.all.is_empty() {
                 "diff-empty"
@@ -596,7 +862,61 @@ impl HomeView {
         } else {
             None
         };
-        let mut body = v_flex()
+        if let Some(error) = &tab.body_error
+            && !tab
+                .selected
+                .as_ref()
+                .is_some_and(|id| tab.cache.contains_key(id))
+        {
+            content = content.child(
+                div().p_3().text_sm().child(error.clone()).child(
+                    Button::new("git-retry")
+                        .small()
+                        .label(t(cx, "diff-retry"))
+                        .on_click(cx.listener(|home, _, window, cx| {
+                            if let Some(tab) = home.git_mut() {
+                                tab.invalidate_body();
+                            }
+                            home.refresh_worktree(window, cx);
+                            home.load_git_file(window, cx);
+                        })),
+                ),
+            );
+        }
+        if tab.body_error.is_some()
+            && !tab
+                .selected
+                .as_ref()
+                .is_some_and(|id| tab.cache.contains_key(id))
+        {
+            // The error body above owns this slot until retry; no loading row.
+        } else if let Some(message) = message {
+            if !tab.loading
+                && tab.all.is_empty()
+                && (tab.error.is_some() || !tab.group_errors.is_empty())
+            {
+                content = content.child(div().p_3().text_sm().child(t(cx, "diff-refresh-failed")));
+            } else {
+                content = content.child(div().p_3().text_sm().child(t(cx, message)));
+            }
+        } else if let Some(loaded) = tab.selected.as_ref().and_then(|p| tab.cache.get(p)) {
+            if let Some(block) = &loaded.block {
+                content = content.child(block.render_reader(tab.options.wrap));
+            } else {
+                let key = match loaded.content.state() {
+                    ContentState::Binary => "diff-binary",
+                    ContentState::TooLarge => "diff-too-large",
+                    ContentState::Conflict => "diff-conflict",
+                    ContentState::Special => "diff-special",
+                    ContentState::Renamed => "diff-renamed",
+                    ContentState::Text => "diff-empty-file",
+                };
+                content = content.child(div().p_3().text_sm().child(t(cx, key)));
+            }
+        } else {
+            content = content.child(div().p_3().text_sm().child(t(cx, "diff-loading")));
+        }
+        v_flex()
             .size_full()
             .min_w_0()
             .min_h_0()
@@ -616,109 +936,31 @@ impl HomeView {
                     cx.stop_propagation();
                 }),
             )
-            .child(div().px_3().pt_2().text_sm().child(t(cx, "diff-worktree")))
-            .child(source)
-            .child(self.reader_toolbar(cx));
-        if tab.refreshing && !tab.loading {
-            body = body.child(div().px_3().text_xs().child(t(cx, "diff-refreshing")));
-        }
-        if let Some(error) = &tab.error {
-            let text = match error {
-                Failure::Unavailable => t(cx, "diff-git-unavailable"),
-                Failure::Query(message) => format!("{} {message}", t(cx, "diff-refresh-failed")),
-            };
-            body = body.child(
-                div()
-                    .px_3()
-                    .text_sm()
-                    .text_color(cx.theme().danger)
-                    .child(text),
-            );
-        }
-        if let Some(message) = message {
-            body = body.child(
-                div()
-                    .p_4()
-                    .text_sm()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(t(cx, message)),
-            );
-        } else if let Some(entry) = tab.selected_entry() {
-            body = body.child(
-                div().px_3().py_2().text_sm().child(
-                    entry
-                        .previous_path()
-                        .map(|p| format!("{} → {}", p.display(), entry.path().display()))
-                        .unwrap_or_else(|| entry.path().display().to_string()),
-                ),
-            );
-            if let Some(error) = &tab.body_error {
-                body = body.child(
-                    div().p_3().text_sm().child(error.clone()).child(
-                        Button::new("git-retry")
-                            .small()
-                            .label(t(cx, "diff-retry"))
-                            .on_click(cx.listener(|home, _, window, cx| {
-                                if let Some(tab) = home.git_mut() {
-                                    tab.body_task = None;
-                                }
-                                home.refresh_worktree(window, cx);
-                                home.load_git_file(window, cx);
-                            })),
-                    ),
-                );
-            } else if let Some(loaded) = tab.selected.as_ref().and_then(|p| tab.cache.get(p)) {
-                body = body.child(
-                    div()
-                        .px_3()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(t(cx, "diff-current-file-note"))
-                        .when(loaded.content.disk_path().is_none(), |view| {
-                            view.child(t(cx, "diff-unavailable-file"))
-                        }),
-                );
-                if tab.options.collapsed
-                    && !tab
-                        .selected
-                        .as_ref()
-                        .is_some_and(|p| tab.unfolded.contains(p))
-                {
-                    body = body.child(
-                        Button::new("diff-expand-file")
-                            .small()
-                            .label(t(cx, "diff-expand-file"))
-                            .on_click(cx.listener(|home, _, window, cx| {
-                                home.reader_command(Command::ExpandFile, window, cx)
-                            })),
-                    );
-                }
-                if let Some(block) = &loaded.block {
-                    body = body.child(
-                        div()
-                            .flex_1()
-                            .min_h_0()
-                            .min_w_0()
-                            .child(block.render_reader(tab.options.wrap)),
-                    );
-                } else {
-                    let key = match loaded.content.state() {
-                        ContentState::Binary => "diff-binary",
-                        ContentState::TooLarge => "diff-too-large",
-                        ContentState::Conflict => "diff-conflict",
-                        ContentState::Special => "diff-special",
-                        ContentState::Renamed => "diff-renamed",
-                        ContentState::Text => "diff-empty-file",
-                    };
-                    body = body.child(div().p_3().text_sm().child(t(cx, key)));
-                }
-            } else {
-                body = body.child(div().p_3().text_sm().child(t(cx, "diff-loading")));
-            }
-        }
-        body.into_any_element()
+            .child(header)
+            .child(content)
+            .into_any_element()
     }
 }
-
+fn source_order(source: ChangeSource) -> usize {
+    match source {
+        ChangeSource::Staged => 0,
+        ChangeSource::Unstaged => 1,
+        ChangeSource::Untracked => 2,
+    }
+}
+fn status_code(entry: &Entry) -> &'static str {
+    if entry.source == ChangeSource::Untracked {
+        "U"
+    } else {
+        match entry.file.kind() {
+            ChangeKind::Added => "A",
+            ChangeKind::Deleted => "D",
+            ChangeKind::Modified => "M",
+            ChangeKind::Renamed => "R",
+            ChangeKind::Conflict => "!",
+            ChangeKind::Special => "?",
+        }
+    }
+}
 #[cfg(test)]
 mod tests;

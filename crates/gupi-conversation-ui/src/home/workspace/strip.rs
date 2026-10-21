@@ -1,6 +1,5 @@
 use super::*;
 use crate::chrome;
-use gpui_kit::component::button::ButtonCustomVariant;
 use gpui_kit::component::tab::{Tab, TabBar};
 use std::cell::RefCell;
 
@@ -127,7 +126,6 @@ impl HomeView {
         // Only domain identities escape the component's index-based presentation.
         let menu_target: Rc<RefCell<Option<String>>> = Rc::default();
         let mut tabs = TabBar::new("workspace-tabs")
-            .pill()
             .menu(true)
             .small()
             .flex_1()
@@ -218,14 +216,6 @@ impl HomeView {
                                 .ghost()
                                 .xsmall()
                                 .icon(IconName::X)
-                                .when(selected, |button| {
-                                    button.custom(
-                                        ButtonCustomVariant::new(cx)
-                                            .foreground(cx.theme().primary_foreground)
-                                            .hover(cx.theme().primary_hover)
-                                            .active(cx.theme().primary_active),
-                                    )
-                                })
                                 .accessibility_label(t(cx, "workspace-close-tab"))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     cx.stop_propagation();

@@ -703,7 +703,7 @@ impl HomeView {
         }
         if content.navigator {
             let navigator = if let Some(tab) = self.active_git() {
-                self.render_git_list(tab)
+                self.render_git_list(tab, cx)
             } else if let Some(tab) = self.active_changes() {
                 self.render_changes_list(tab, cx)
             } else {

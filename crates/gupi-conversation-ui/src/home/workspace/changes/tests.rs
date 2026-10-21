@@ -185,10 +185,10 @@ fn operation_paging_applies_retained_reader_options_immediately(cx: &mut TestApp
             home.pane_layout.main_width = 1200.;
             use super::super::reader::Command;
             for command in [
-                Command::Mode,
+                Command::Split,
                 Command::Wrap,
                 Command::Word,
-                Command::Collapse,
+                Command::ToggleFile,
             ] {
                 home.reader_command(command, window, cx);
             }
@@ -203,7 +203,7 @@ fn operation_paging_applies_retained_reader_options_immediately(cx: &mut TestApp
         let tab = home.read(cx).active_changes().unwrap();
         let file = &tab.states["a.rs"];
         assert_eq!(file.page, 3);
-        assert!(tab.options.wrap && tab.options.collapsed);
+        assert!(tab.options.wrap && tab.collapsed.contains("a.rs"));
         assert_eq!(file.operations.len(), 2);
         let state = file.operations["tool-a.rs-3"].state().unwrap().read(cx);
         assert_eq!(state.mode(), DiffMode::Split);

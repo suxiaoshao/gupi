@@ -9,7 +9,6 @@ pub(super) struct Options {
     pub split: bool,
     pub wrap: bool,
     pub word: bool,
-    pub collapsed: bool,
     pub expanded: bool,
 }
 impl Default for Options {
@@ -18,7 +17,6 @@ impl Default for Options {
             split: false,
             wrap: false,
             word: true,
-            collapsed: false,
             expanded: false,
         }
     }
@@ -27,24 +25,23 @@ impl Options {
     pub fn narrow(width: f32, rem: f32) -> bool {
         width < SPLIT_MIN_REM * rem
     }
-    pub fn apply(&self, block: &DiffBlock, narrow: bool, cx: &mut App) {
+    pub fn apply(&self, block: &DiffBlock, narrow: bool, collapsed: bool, cx: &mut App) {
         block.configure(
             self.split && !narrow,
             self.word,
             self.expanded,
-            self.collapsed,
+            collapsed,
             cx,
         );
     }
 }
 #[derive(Clone, Copy)]
 pub(super) enum Command {
-    Mode,
+    Unified,
+    Split,
     Wrap,
     Word,
-    Collapse,
-    Expand,
-    ExpandFile,
+    ToggleFile,
     Context,
     CopyPath,
     CopyPatch,
@@ -57,32 +54,17 @@ impl HomeView {
             .map(|t| t.options)
             .or_else(|| self.active_changes().map(|t| t.options))
     }
-    pub(super) fn reader_toolbar(&self, cx: &mut Context<Self>) -> AnyElement {
-        let options = self.reader_options().unwrap_or_default();
-        let owner = cx.weak_entity();
-        let narrow = Options::narrow(self.pane_layout.main_width, f32::from(cx.theme().font_size));
+    pub(super) fn reader_controls(&self, cx: &mut Context<Self>) -> AnyElement {
         let (previous, next) = self.reader_neighbors();
-        let mut row = h_flex()
-            .flex_wrap()
-            .items_center()
-            .gap_1()
-            .px_2()
-            .py_1()
-            .border_b_1()
-            .border_color(cx.theme().border);
+        let mut row = h_flex().flex_none().gap_1();
         for (forward, enabled, key, icon) in [
             (
                 false,
                 previous.is_some(),
                 "diff-previous-file",
-                IconName::ChevronLeft,
+                IconName::ArrowUp,
             ),
-            (
-                true,
-                next.is_some(),
-                "diff-next-file",
-                IconName::ChevronRight,
-            ),
+            (true, next.is_some(), "diff-next-file", IconName::ArrowDown),
         ] {
             row = row.child(
                 Button::new(key)
@@ -92,91 +74,203 @@ impl HomeView {
                     .disabled(!enabled)
                     .tooltip(t(cx, key))
                     .accessibility_label(t(cx, key))
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        let paths = this.reader_neighbors();
+                    .on_click(cx.listener(move |home, _, window, cx| {
+                        let paths = home.reader_neighbors();
                         if let Some(path) = if forward { paths.1 } else { paths.0 } {
-                            this.select_reader_file(path, window, cx);
+                            home.select_reader_file(path, window, cx);
                         }
                     })),
             );
         }
-        row = row
-            .child(
-                Button::new("diff-mode")
-                    .ghost()
-                    .small()
-                    .selected(options.split)
-                    .label(t(
+        let external = self.reader_command_available(Command::External, cx);
+        let owner = cx.weak_entity();
+        let actions_owner = owner.clone();
+        let narrow = Options::narrow(self.pane_layout.main_width, f32::from(cx.theme().font_size));
+        let options_label = t(
+            cx,
+            if narrow {
+                "diff-reading-options-narrow"
+            } else {
+                "diff-reading-options"
+            },
+        );
+        row.child(
+            Button::new("diff-external")
+                .ghost()
+                .small()
+                .icon(IconName::ExternalLink)
+                .disabled(!external)
+                .tooltip(t(
+                    cx,
+                    if external {
+                        "diff-external"
+                    } else {
+                        "diff-unavailable-file"
+                    },
+                ))
+                .accessibility_label(t(cx, "diff-external"))
+                .on_click(cx.listener(|home, _, window, cx| {
+                    home.reader_command(Command::External, window, cx)
+                })),
+        )
+        .child(
+            Button::new("diff-reading-options")
+                .ghost()
+                .small()
+                .icon(IconName::SlidersHorizontal)
+                .tooltip(options_label.clone())
+                .accessibility_label(options_label)
+                .dropdown_menu(move |menu, _, cx| {
+                    let Some(home) = owner.upgrade() else {
+                        return menu;
+                    };
+                    let entity = home.clone();
+                    let home = home.read(cx);
+                    let options = home.reader_options().unwrap_or_default();
+                    let narrow = Options::narrow(
+                        home.pane_layout.main_width,
+                        f32::from(cx.theme().font_size),
+                    );
+                    let split = options.split && !narrow;
+                    menu.label(t(cx, "diff-view"))
+                        .item(home.reader_menu_item(
+                            Command::Unified,
+                            "diff-unified",
+                            !split,
+                            &entity,
+                            cx,
+                        ))
+                        .item(home.reader_menu_item(
+                            Command::Split,
+                            "diff-split",
+                            split,
+                            &entity,
+                            cx,
+                        ))
+                        .separator()
+                        .label(t(cx, "diff-display"))
+                        .item(home.reader_menu_item(
+                            Command::Word,
+                            "diff-word",
+                            options.word,
+                            &entity,
+                            cx,
+                        ))
+                        .item(home.reader_menu_item(
+                            Command::Wrap,
+                            "diff-wrap",
+                            options.wrap,
+                            &entity,
+                            cx,
+                        ))
+                        .item(home.reader_menu_item(
+                            Command::Context,
+                            "diff-context",
+                            options.expanded,
+                            &entity,
+                            cx,
+                        ))
+                }),
+        )
+        .child(
+            Button::new("diff-more")
+                .ghost()
+                .small()
+                .icon(IconName::Ellipsis)
+                .tooltip(t(cx, "diff-actions"))
+                .accessibility_label(t(cx, "diff-actions"))
+                .dropdown_menu(move |menu, _, cx| {
+                    let Some(home) = actions_owner.upgrade() else {
+                        return menu;
+                    };
+                    let entity = home.clone();
+                    let home = home.read(cx);
+                    menu.item(home.reader_menu_item(
+                        Command::CopyPath,
+                        "diff-copy-path",
+                        false,
+                        &entity,
                         cx,
-                        if options.split && narrow {
-                            "diff-unified-narrow"
-                        } else if options.split {
-                            "diff-split"
-                        } else {
-                            "diff-unified"
-                        },
                     ))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.reader_command(Command::Mode, window, cx)
-                    })),
-            )
-            .child(
-                Button::new("diff-wrap")
-                    .ghost()
-                    .small()
-                    .selected(options.wrap)
-                    .label(t(cx, "diff-wrap"))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.reader_command(Command::Wrap, window, cx)
-                    })),
-            )
-            .child(
-                Button::new("diff-more")
-                    .ghost()
-                    .small()
-                    .icon(IconName::Ellipsis)
-                    .accessibility_label(t(cx, "diff-actions"))
-                    .dropdown_menu(move |mut menu, _, cx| {
-                        let Some(home) = owner.upgrade() else {
-                            return menu;
-                        };
-                        let this = home.read(cx);
-                        let options = this.reader_options().unwrap_or_default();
-                        let entries = [
-                            (Command::Word, "diff-word", options.word),
-                            (Command::Context, "diff-context", options.expanded),
-                            (Command::Collapse, "diff-collapse-all", false),
-                            (Command::Expand, "diff-expand-all", false),
-                            (Command::CopyPath, "diff-copy-path", false),
-                            (Command::CopyPatch, "diff-copy-patch", false),
-                            (Command::CopyContent, "diff-copy-content", false),
-                            (Command::External, "diff-external", false),
-                        ]
-                        .map(|(command, key, checked)| {
-                            (
-                                command,
-                                key,
-                                checked,
-                                this.reader_command_available(command, cx),
-                            )
-                        });
-                        for (command, key, checked, enabled) in entries {
-                            let owner = owner.clone();
-                            menu = menu.item(
-                                PopupMenuItem::new(t(cx, key))
-                                    .checked(checked)
-                                    .disabled(!enabled)
-                                    .on_click(move |_, window, cx| {
-                                        let _ = owner.update(cx, |home, cx| {
-                                            home.reader_command(command, window, cx)
-                                        });
-                                    }),
-                            );
-                        }
-                        menu
-                    }),
-            );
-        row.into_any_element()
+                    .item(home.reader_menu_item(
+                        Command::CopyPatch,
+                        "diff-copy-patch",
+                        false,
+                        &entity,
+                        cx,
+                    ))
+                    .item(home.reader_menu_item(
+                        Command::CopyContent,
+                        "diff-copy-content",
+                        false,
+                        &entity,
+                        cx,
+                    ))
+                    .separator()
+                    .item(home.reader_menu_item(
+                        Command::External,
+                        "diff-external",
+                        false,
+                        &entity,
+                        cx,
+                    ))
+                }),
+        )
+        .into_any_element()
+    }
+    pub(super) fn reader_menu_item(
+        &self,
+        command: Command,
+        key: &str,
+        checked: bool,
+        owner: &Entity<Self>,
+        cx: &App,
+    ) -> PopupMenuItem {
+        let owner = owner.downgrade();
+        PopupMenuItem::new(t(cx, key))
+            .checked(checked)
+            .disabled(!self.reader_command_available(command, cx))
+            .on_click(move |_, window, cx| {
+                let _ = owner.update(cx, |home, cx| home.reader_command(command, window, cx));
+            })
+    }
+    pub(super) fn reader_fold_button(&self, cx: &mut Context<Self>) -> Button {
+        let collapsed = self.reader_collapsed();
+        let label = t(
+            cx,
+            if collapsed {
+                "diff-expand-file"
+            } else {
+                "diff-collapse-file"
+            },
+        );
+        Button::new("diff-toggle-file")
+            .ghost()
+            .small()
+            .icon(if collapsed {
+                IconName::ChevronRight
+            } else {
+                IconName::ChevronDown
+            })
+            .disabled(self.reader_selected().is_none())
+            .tooltip(label.clone())
+            .accessibility_label(label)
+            .on_click(cx.listener(|home, _, window, cx| {
+                home.reader_command(Command::ToggleFile, window, cx)
+            }))
+    }
+    fn reader_selected(&self) -> Option<&String> {
+        self.active_git()
+            .and_then(|t| t.selected.as_ref())
+            .or_else(|| self.active_changes().and_then(|t| t.selected.as_ref()))
+    }
+    fn reader_collapsed(&self) -> bool {
+        self.reader_selected().is_some_and(|id| {
+            self.active_git().is_some_and(|t| t.collapsed.contains(id))
+                || self
+                    .active_changes()
+                    .is_some_and(|t| t.collapsed.contains(id))
+        })
     }
     fn reader_neighbors(&self) -> (Option<String>, Option<String>) {
         let (paths, selected): (Vec<_>, _) = if let Some(tab) = self.active_git() {
@@ -221,25 +315,20 @@ impl HomeView {
             if let Some(tab) = &view.workspace.git {
                 for (path, body) in &tab.cache {
                     if let Some(block) = &body.block {
-                        let mut options = tab.options;
-                        if tab.unfolded.contains(path) {
-                            options.collapsed = false;
-                        }
-                        options.apply(block, narrow, cx);
+                        tab.options
+                            .apply(block, narrow, tab.collapsed.contains(path), cx);
                     }
                 }
             }
             for tab in &view.workspace.changes {
                 for (path, body) in &tab.states {
-                    let mut options = tab.options;
-                    if tab.unfolded.contains(path) {
-                        options.collapsed = false;
-                    }
+                    let options = tab.options;
+                    let collapsed = tab.collapsed.contains(path);
                     if let Some(block) = &body.combined {
-                        options.apply(block, narrow, cx);
+                        options.apply(block, narrow, collapsed, cx);
                     }
                     for block in body.operations.values() {
-                        options.apply(block, narrow, cx);
+                        options.apply(block, narrow, collapsed, cx);
                     }
                 }
             }
@@ -260,14 +349,7 @@ impl HomeView {
             let loaded = tab.selected.as_ref().and_then(|p| tab.cache.get(p))?;
             match command {
                 Command::CopyPatch => loaded.content.patch().map(str::to_owned),
-                Command::CopyContent => {
-                    (if entry.kind() == gupi_resources::git::ChangeKind::Deleted {
-                        loaded.content.original()
-                    } else {
-                        loaded.content.modified()
-                    })
-                    .map(str::to_owned)
-                }
+                Command::CopyContent => loaded.copy_content().map(str::to_owned),
                 Command::External => tab.external_path().map(|p| p.display().to_string()),
                 _ => None,
             }
@@ -287,6 +369,9 @@ impl HomeView {
     }
     pub(super) fn reader_command_available(&self, command: Command, cx: &App) -> bool {
         match command {
+            Command::Split => {
+                !Options::narrow(self.pane_layout.main_width, f32::from(cx.theme().font_size))
+            }
             Command::CopyPath | Command::CopyPatch | Command::CopyContent | Command::External => {
                 self.reader_copy(command, cx).is_some()
             }
@@ -329,8 +414,8 @@ impl HomeView {
             }
             return;
         }
-        let (options, unfolded, selected) = if let Some(tab) = self.git_mut() {
-            (&mut tab.options, &mut tab.unfolded, &tab.selected)
+        let (options, collapsed, selected) = if let Some(tab) = self.git_mut() {
+            (&mut tab.options, &mut tab.collapsed, &tab.selected)
         } else if let Some(view) = self.shown_key.as_ref().and_then(|k| self.views.get_mut(k))
             && let Some(tab) = view
                 .workspace
@@ -338,26 +423,21 @@ impl HomeView {
                 .iter_mut()
                 .find(|t| Some(&t.id) == view.workspace.active.as_ref())
         {
-            (&mut tab.options, &mut tab.unfolded, &tab.selected)
+            (&mut tab.options, &mut tab.collapsed, &tab.selected)
         } else {
             return;
         };
         match command {
-            Command::Mode => options.split = !options.split,
+            Command::Unified => options.split = false,
+            Command::Split => options.split = true,
             Command::Wrap => options.wrap = !options.wrap,
             Command::Word => options.word = !options.word,
             Command::Context => options.expanded = !options.expanded,
-            Command::Collapse => {
-                options.collapsed = true;
-                unfolded.clear();
-            }
-            Command::Expand => {
-                options.collapsed = false;
-                unfolded.clear();
-            }
-            Command::ExpandFile => {
-                if let Some(selected) = selected {
-                    unfolded.insert(selected.clone());
+            Command::ToggleFile => {
+                if let Some(selected) = selected
+                    && !collapsed.remove(selected)
+                {
+                    collapsed.insert(selected.clone());
                 }
             }
             _ => {}

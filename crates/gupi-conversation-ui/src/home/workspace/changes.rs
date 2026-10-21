@@ -22,7 +22,7 @@ pub(in crate::home) struct ChangesTab {
     list: Entity<ListState<navigator::Delegate>>,
     pub(super) states: HashMap<String, FileDiff>,
     pub(super) options: super::reader::Options,
-    pub(super) unfolded: HashSet<String>,
+    pub(super) collapsed: HashSet<String>,
     pub(super) external: Option<PathBuf>,
     external_task: Option<Task<()>>,
     external_checked: Option<PathBuf>,
@@ -100,7 +100,7 @@ impl ChangesTab {
             list,
             states: HashMap::new(),
             options: Default::default(),
-            unfolded: HashSet::new(),
+            collapsed: HashSet::new(),
             external: None,
             external_task: None,
             external_checked: None,
@@ -459,6 +459,7 @@ impl HomeView {
             .gap_2()
             .border_b_1()
             .border_color(cx.theme().border)
+            .child(self.reader_fold_button(cx))
             .child(
                 h_flex()
                     .flex_1()
@@ -511,6 +512,7 @@ impl HomeView {
                         }
                     })),
             )
+            .child(self.reader_controls(cx))
             .child(self.navigator_toggle(cx))
             .into_any_element()
     }
@@ -541,7 +543,6 @@ impl HomeView {
                 .min_h_0()
                 .min_w_0()
                 .child(self.render_change_header(file, cx))
-                .child(self.reader_toolbar(cx))
                 .child(
                     div()
                         .px_3()
@@ -549,16 +550,6 @@ impl HomeView {
                         .text_color(cx.theme().muted_foreground)
                         .child(t(cx, "diff-recorded-context")),
                 );
-            if tab.options.collapsed && !tab.unfolded.contains(file.path()) {
-                body = body.child(
-                    Button::new("diff-expand-file")
-                        .small()
-                        .label(t(cx, "diff-expand-file"))
-                        .on_click(cx.listener(|home, _, window, cx| {
-                            home.reader_command(super::reader::Command::ExpandFile, window, cx)
-                        })),
-                );
-            }
             if state.limited {
                 body = body.child(div().p_3().text_sm().child(t(cx, "diff-too-large")));
             } else if let Some(block) = &state.combined {

@@ -68,29 +68,17 @@ impl ListDelegate for Delegate {
         cx.spawn_in(window, async move |_, cx| {
             let _ = owner.update_in(cx, |home, window, cx| {
                 let current_selection = home
-                    .active_git()
+                    .active_changes()
                     .filter(|t| t.list.entity_id() == list)
-                    .map(|t| t.list.read(cx).delegate().selected.clone())
-                    .or_else(|| {
-                        home.active_changes()
-                            .filter(|t| t.list.entity_id() == list)
-                            .map(|t| t.list.read(cx).delegate().selected.clone())
-                    })
-                    .flatten();
+                    .and_then(|t| t.list.read(cx).delegate().selected.clone());
                 if current_selection.as_ref() != Some(&path) {
                     return;
                 }
-                let changed = home.active_git().is_some_and(|t| {
-                    t.list.entity_id() == list && t.selected.as_ref() != Some(&path)
-                }) || home.active_changes().is_some_and(|t| {
+                let changed = home.active_changes().is_some_and(|t| {
                     t.list.entity_id() == list && t.in_scope && t.selected.as_ref() != Some(&path)
                 });
                 if changed {
-                    let focus = home
-                        .active_git()
-                        .map(|t| t.focus.clone())
-                        .or_else(|| home.active_changes().map(|t| t.focus.clone()))
-                        .unwrap();
+                    let focus = home.active_changes().unwrap().focus.clone();
                     let keep_focus = focus.contains_focused(window, cx);
                     home.select_reader_file(path, window, cx);
                     if keep_focus {
@@ -212,11 +200,8 @@ impl ListDelegate for Delegate {
         cx.spawn_in(window, async move |_, cx| {
             let _ = owner.update_in(cx, |home, window, cx| {
                 let current = home
-                    .active_git()
-                    .is_some_and(|t| t.list.entity_id() == list)
-                    || home
-                        .active_changes()
-                        .is_some_and(|t| t.list.entity_id() == list && t.in_scope);
+                    .active_changes()
+                    .is_some_and(|t| t.list.entity_id() == list && t.in_scope);
                 if current {
                     home.select_reader_file(path, window, cx);
                 }

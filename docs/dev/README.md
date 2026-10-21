@@ -1,5 +1,7 @@
 # Gupi 开发文档
 
+**[Diff 阅读器与工作区改动（Gupi #86）](issue-86/README.md)**：复用右侧 Changes 导航与 Kit Diff 的只读阅读能力，以及明确区分 Pi 轮次记录的未暂存、已暂存、未跟踪来源（开发方案）。
+
 **[标题栏分支与 `@` 文件补全（Gupi #85）](issue-85/README.md)**：异步只读系统 Git 查询、可复用的仓库读取边界，以及保留操作面板和资源 token 的 Pi TUI 文件补全语义（开发方案）。
 
 **[Pi 设置与项目级覆盖（Gupi #2）](issue-2/README.md)**：Pi 配置格式与接入研究、首批实施方案，以及 Gupi / Pi 分区下的 Pi 设置页面设计。

@@ -38,6 +38,7 @@ gupi-pi-runtime.workspace = true
 gupi-conversation.workspace = true
 
 [dev-dependencies]
+gupi-resources = { workspace = true, features = ["test-support"] }
 tempfile = "3.27.0"
 two-face = { version = "0.4.5", default-features = false, features = ["syntect-fancy"] }
 gupi-settings = { workspace = true, features = ["test-support"] }

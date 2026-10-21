@@ -48,6 +48,7 @@ impl HomeView {
     fn tab_title(&self, id: &Option<String>, cx: &App) -> (String, String) {
         match id.as_deref() {
             None => (t(cx, "files-title"), t(cx, "files-title")),
+            Some(GIT_TAB) => (t(cx, "diff-worktree"), t(cx, "diff-worktree")),
             Some(id) if id.starts_with(NEW_TAB) => {
                 (t(cx, "workspace-new-tab"), t(cx, "workspace-new-tab"))
             }

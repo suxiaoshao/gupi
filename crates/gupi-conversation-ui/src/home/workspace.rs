@@ -4,7 +4,10 @@ use gpui_kit::component::menu::{ContextMenuExt, PopupMenuItem};
 use gpui_kit::component::tooltip::Tooltip;
 use panes::Panel;
 mod changes;
+mod git_changes;
+mod reader;
 use changes::ChangesTab;
+use git_changes::{GIT_TAB, GitTab};
 mod launcher;
 mod strip;
 const NEW_TAB: &str = "workspace:new";
@@ -21,6 +24,7 @@ pub(super) struct Tabs {
     pub navigator_hidden: bool,
     next_new: u64,
     pub changes: Vec<ChangesTab>,
+    git: Option<GitTab>,
     pub active: Option<String>,
     pub restore_focus: bool,
     pub(super) record_revision: Option<((u64, u64, bool), u64)>,
@@ -31,6 +35,7 @@ impl Default for Tabs {
             navigator_hidden: false,
             next_new: 0,
             changes: Vec::new(),
+            git: None,
             active: Some(NEW_TAB.into()),
             restore_focus: false,
             record_revision: None,
@@ -45,6 +50,22 @@ impl Default for Tabs {
     }
 }
 impl Tabs {
+    pub(in crate::home) fn worktree_focus(&self, cx: &App) -> Option<FocusHandle> {
+        let tab = self
+            .git
+            .as_ref()
+            .filter(|_| self.active.as_deref() == Some(GIT_TAB))?;
+        Some(if tab.navigator_hidden {
+            tab.selected
+                .as_ref()
+                .and_then(|p| tab.cache.get(p))
+                .and_then(|b| b.block.as_ref())
+                .and_then(|b| b.focus_handle(cx))
+                .unwrap_or_else(|| tab.main_focus.clone())
+        } else {
+            tab.focus.clone()
+        })
+    }
     pub fn new(cx: &mut App) -> Self {
         let mut tabs = Self::default();
         tabs.activate(Some(NEW_TAB.into()), cx);
@@ -88,7 +109,9 @@ impl Tabs {
         let previous = self.order.clone();
         self.order.retain(|id| {
             id.as_deref().is_none_or(|id| {
-                id.starts_with(NEW_TAB) || self.changes.iter().any(|tab| tab.id == id)
+                id.starts_with(NEW_TAB)
+                    || (id == GIT_TAB && self.git.is_some())
+                    || self.changes.iter().any(|tab| tab.id == id)
             })
         });
         if !self.order.contains(&self.active) {
@@ -213,6 +236,12 @@ impl HomeView {
                 navigator: false,
             };
         }
+        if let Some(tab) = self.active_git() {
+            return panes::geometry::Content {
+                main: true,
+                navigator: !tab.navigator_hidden,
+            };
+        }
         if let Some(tab) = self.active_changes() {
             return panes::geometry::Content {
                 main: true,
@@ -255,6 +284,7 @@ impl HomeView {
                 view.workspace.reveal();
             }
         }
+        self.apply_reader_options(cx);
     }
     pub(super) fn ensure_panel(
         &mut self,
@@ -278,6 +308,7 @@ impl HomeView {
             self.pane_layout.allocate();
         }
         self.sync(false, window, cx);
+        self.sync_worktree(window, cx);
         cx.notify();
     }
     pub(super) fn toggle_panel(
@@ -319,6 +350,7 @@ impl HomeView {
             self.ensure_panel(panel, window, cx);
             self.focus_panel(panel, window, cx);
         }
+        self.sync_worktree(window, cx);
         cx.notify();
     }
     pub(super) fn focus_panel(&self, panel: Panel, window: &mut Window, cx: &mut Context<Self>) {
@@ -327,6 +359,12 @@ impl HomeView {
             Panel::Workspace => {
                 if self.session_view().is_none_or(|v| v.workspace.launcher()) {
                     self.workspace_region.focus(window, cx);
+                } else if let Some(tab) = self.active_git() {
+                    if tab.navigator_hidden {
+                        tab.focus_main(window, cx);
+                    } else {
+                        tab.focus_list(window, cx);
+                    }
                 } else if let Some(tab) = self.active_changes() {
                     if tab.navigator_hidden {
                         tab.focus_main(window, cx);
@@ -373,7 +411,11 @@ impl HomeView {
         else {
             return;
         };
-        if let Some(tab) = view
+        if view.workspace.active.as_deref() == Some(GIT_TAB) {
+            if let Some(tab) = &mut view.workspace.git {
+                tab.navigator_hidden = !tab.navigator_hidden;
+            }
+        } else if let Some(tab) = view
             .workspace
             .changes
             .iter_mut()
@@ -420,6 +462,7 @@ impl HomeView {
             .unwrap()
             .workspace
             .activate(None, cx);
+        self.sync_worktree(window, cx);
         self.remember_file(path.clone());
         if let Some(source) = self.source().filter(|s| s.read(cx).path == path) {
             self.fit_layout(window, cx);
@@ -524,6 +567,7 @@ impl HomeView {
             }
             self.pane_layout.allocate();
         }
+        self.sync_worktree(window, cx);
         cx.notify();
     }
     pub(super) fn select_workspace_tab(
@@ -589,6 +633,9 @@ impl HomeView {
         view.workspace
             .changes
             .retain(|tab| !removed.contains(&Some(tab.id.clone())));
+        if removed.contains(&Some(GIT_TAB.into())) {
+            view.workspace.git = None;
+        }
         if removed.contains(&None) {
             view.source = None;
             view.source_subscription = None;
@@ -633,6 +680,15 @@ impl HomeView {
         let mut columns = h_flex().items_stretch().flex_1().min_h_0().min_w_0();
         if self.session_view().is_none_or(|v| v.workspace.launcher()) {
             columns = columns.child(self.render_launcher(window, cx));
+        } else if let Some(tab) = self.active_git() {
+            columns = columns.child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .min_h_0()
+                    .h_full()
+                    .child(self.render_git_main(tab, cx)),
+            );
         } else if let Some(tab) = self.active_changes() {
             columns = columns.child(
                 div()
@@ -646,7 +702,9 @@ impl HomeView {
             columns = columns.child(div().flex_1().min_w_0().h_full().child(source));
         }
         if content.navigator {
-            let navigator = if let Some(tab) = self.active_changes() {
+            let navigator = if let Some(tab) = self.active_git() {
+                self.render_git_list(tab)
+            } else if let Some(tab) = self.active_changes() {
                 self.render_changes_list(tab, cx)
             } else {
                 self.files()

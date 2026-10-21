@@ -1,8 +1,11 @@
 //! Shared readonly operation renderer. Retained states change only with their source.
 use super::edited_files::ChangeBody;
 use super::presentation::code_fence;
-use gpui_kit::component::diff::{Diff, DiffEvent, DiffFile, DiffLineRange, DiffMode, DiffState};
-use gpui_kit::component::text::{TextView, TextViewState};
+use gpui_kit::component::diff::{
+    Diff, DiffEvent, DiffFile, DiffInlineUnit, DiffLineRange, DiffMode, DiffState,
+};
+use gpui_kit::component::text::{TextView, TextViewState, TextViewStyle};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -10,6 +13,7 @@ use std::rc::Rc;
 pub(in crate::home) struct DiffBlock {
     source: Source,
     height_rem: f32,
+    reader_collapsed: Cell<bool>,
     state: Option<Entity<DiffState>>,
     fallback: Option<Entity<TextViewState>>,
     gutter_selection: Rc<RefCell<Option<DiffLineRange>>>,
@@ -38,7 +42,7 @@ impl DiffBlock {
     }
 
     #[cfg(test)]
-    pub(super) fn state(&self) -> Option<&Entity<DiffState>> {
+    pub(in crate::home) fn state(&self) -> Option<&Entity<DiffState>> {
         self.state.as_ref()
     }
 
@@ -146,6 +150,7 @@ impl DiffBlock {
         }
         Self {
             height_rem: (source.lines().count() as f32 * 1.25 + 3.5).clamp(6., 18.),
+            reader_collapsed: Cell::new(false),
             gutter_selection,
             last_frame: Rc::default(),
             restore_pending: Rc::default(),
@@ -248,9 +253,69 @@ impl DiffBlock {
     }
     /// The workspace shows one file per view and owns its header, so the
     /// component's per-file header (and its collapse control) is hidden.
-    pub fn render_workspace(&self) -> AnyElement {
+    pub(in crate::home) fn configure(
+        &self,
+        split: bool,
+        word: bool,
+        expanded: bool,
+        collapsed: bool,
+        cx: &mut App,
+    ) {
+        self.reader_collapsed.set(collapsed);
+        if let Some(state) = &self.state {
+            state.update(cx, |state, cx| {
+                state.set_mode(
+                    if split {
+                        DiffMode::Split
+                    } else {
+                        DiffMode::Unified
+                    },
+                    cx,
+                );
+                state.set_inline_unit(word.then_some(DiffInlineUnit::Word), cx);
+                state.set_context_lines(if expanded { None } else { Some(3) }, cx);
+                let paths: Vec<_> = state.files().iter().map(|f| f.path().to_string()).collect();
+                for path in paths {
+                    state.set_file_collapsed(&path, collapsed, cx);
+                }
+            });
+        }
+    }
+    pub(in crate::home) fn copy_patch(&self) -> Option<String> {
+        match &self.source {
+            Source::Patch(patch) => Some(patch.clone()),
+            Source::Operation { body, .. } => match body.as_ref() {
+                ChangeBody::Patch { source, .. } => Some(source.clone()),
+                _ => None,
+            },
+        }
+    }
+    pub(in crate::home) fn copy_content(&self) -> Option<String> {
+        match &self.source {
+            Source::Operation { body, .. } => match body.as_ref() {
+                ChangeBody::Written { content } => Some(content.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    pub(in crate::home) fn render_reader_bounded(&self, wrap: bool) -> AnyElement {
+        div()
+            .w_full()
+            .min_w_0()
+            .when(!self.reader_collapsed.get(), |body| {
+                body.h(rems(self.height_rem))
+            })
+            .child(self.render_reader(wrap))
+            .into_any_element()
+    }
+    pub(in crate::home) fn render_reader(&self, wrap: bool) -> AnyElement {
+        if self.reader_collapsed.get() {
+            return div().into_any_element();
+        }
         if let Some(state) = &self.state {
             Diff::new(state)
+                .soft_wrap(wrap)
                 .header_visible(false)
                 .size_full()
                 .min_w_0()
@@ -264,7 +329,16 @@ impl DiffBlock {
                 ))
                 .size_full()
                 .overflow_y_scroll()
-                .child(TextView::new(self.fallback.as_ref().unwrap()).selectable(true))
+                .when(!wrap, |body| body.overflow_x_scroll())
+                .child(
+                    TextView::new(self.fallback.as_ref().unwrap())
+                        .selectable(true)
+                        .style(TextViewStyle::default().code_block(if wrap {
+                            StyleRefinement::default().whitespace_normal()
+                        } else {
+                            StyleRefinement::default().whitespace_nowrap()
+                        })),
+                )
                 .into_any_element()
         }
     }
@@ -328,6 +402,71 @@ mod tests {
             files: DiffFile::parse(&source).unwrap(),
             source,
         })
+    }
+    struct ReaderHost {
+        block: DiffBlock,
+        wrap: bool,
+    }
+    impl Render for ReaderHost {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().w(px(220.)).child(
+                div()
+                    .id("reader-operation")
+                    .debug_selector(|| "reader-operation".into())
+                    .child(self.block.render_reader_bounded(self.wrap)),
+            )
+        }
+    }
+    #[gpui_kit::test]
+    fn plaintext_reader_collapses_without_replacing_its_selection_model(cx: &mut TestAppContext) {
+        cx.update(gpui_kit::init);
+        let mut host = None;
+        let (_, visual) = cx.add_window_view(|window, cx| {
+            let view = cx.new(|cx| ReaderHost {
+                block: DiffBlock::new(
+                    &Rc::new(ChangeBody::Text {
+                        content: "long plaintext line ".repeat(50),
+                    }),
+                    "a.rs",
+                    cx,
+                ),
+                wrap: false,
+            });
+            host = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let host = host.unwrap();
+        visual.run_until_parked();
+        visual.update(|window, cx| window.draw(cx).clear(cx));
+        let height = visual.debug_bounds("reader-operation").unwrap().size.height;
+        assert!(height > px(0.));
+        let id = visual.update(|_, cx| host.read(cx).block.fallback.as_ref().unwrap().entity_id());
+        visual.update(|_, cx| {
+            host.update(cx, |host, cx| {
+                host.wrap = true;
+                host.block.configure(false, false, true, true, cx);
+                cx.notify();
+            })
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| window.draw(cx).clear(cx));
+        assert_eq!(
+            visual.debug_bounds("reader-operation").unwrap().size.height,
+            px(0.)
+        );
+        visual.update(|_, cx| {
+            host.update(cx, |host, cx| {
+                host.block.configure(false, false, true, false, cx);
+                assert_eq!(host.block.fallback.as_ref().unwrap().entity_id(), id);
+                cx.notify();
+            })
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| window.draw(cx).clear(cx));
+        assert_eq!(
+            visual.debug_bounds("reader-operation").unwrap().size.height,
+            height
+        );
     }
     #[gpui_kit::test]
     fn second_operation_copies_its_source_and_unchanged_sync_retains_selection(

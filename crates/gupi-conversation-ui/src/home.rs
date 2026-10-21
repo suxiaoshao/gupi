@@ -310,7 +310,9 @@ impl HomeView {
             tab.sync(&view.edited_files, &next, window, cx);
         }
         if std::mem::take(&mut view.workspace.restore_focus) {
-            if let Some(tab) = view
+            if let Some(focus) = view.workspace.worktree_focus(cx) {
+                focus.focus(window, cx);
+            } else if let Some(tab) = view
                 .workspace
                 .changes
                 .iter()
@@ -440,7 +442,12 @@ impl HomeView {
             cx.observe_window_activation(window, |this, window, cx| {
                 crate::host::present(&this.state, window, this.notification_visible, cx);
                 this.sync_git(window, cx);
+                this.sync_worktree(window, cx);
                 this.sync_commands(window, cx);
+            }),
+            cx.observe_window_bounds(window, |home, window, cx| {
+                home.fit_layout(window, cx);
+                home.sync_worktree(window, cx);
             }),
             cx.observe(&history_list, |_, _, cx| cx.notify()),
             cx.subscribe_in(
@@ -468,6 +475,7 @@ impl HomeView {
                             && changes.bodies.contains(&key)
                         {
                             this.sync_messages(&key, false, window, cx);
+                            this.check_run_file(window, cx);
                         }
                         for key in changes.sessions.keys() {
                             if !this.state.read(cx).sessions().contains_key(key) {
@@ -632,12 +640,14 @@ impl HomeView {
         if self.notification_visible != visible {
             self.notification_visible = visible;
             self.sync_git(window, cx);
+            self.sync_worktree(window, cx);
             crate::host::present(&self.state, window, visible, cx);
             cx.notify();
         }
     }
     fn sync(&mut self, force: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.sync_git(window, cx);
+        self.sync_worktree(window, cx);
         let key = self.state.read(cx).selected().clone();
         let changed = self.shown_key != key;
         if changed {
@@ -900,6 +910,7 @@ impl HomeView {
             )
         });
         self.sync_messages(&key, changed || force, window, cx);
+        self.check_run_file(window, cx);
         let view = self.views.get_mut(&key).unwrap();
         let Some(session) = self.state.read(cx).sessions().get(&key) else {
             return;
@@ -1150,6 +1161,8 @@ impl HomeView {
                 self.input.update(cx, |input, cx| input.focus(window, cx));
             }
         }
+        self.fit_layout(window, cx);
+        self.sync_worktree(window, cx);
         cx.notify();
     }
     fn preview_node(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {

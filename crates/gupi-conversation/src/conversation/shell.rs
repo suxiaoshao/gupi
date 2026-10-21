@@ -397,4 +397,38 @@ mod tests {
             ["shell-live-0-1", "shell-live-1-1"]
         );
     }
+
+    #[test]
+    fn current_path_previews_keep_shell_rows() {
+        let mut session = crate::conversation::Session::new(
+            crate::conversation::SessionInfo {
+                path: std::path::PathBuf::new(),
+                id: "preview".into(),
+                cwd: std::path::PathBuf::new(),
+                name: None,
+                first_message: String::new(),
+                activity: String::new(),
+                parent_session: None,
+            },
+            String::new(),
+        );
+        session.transcript.replace(serde_json::from_value(json!({
+            "leafId":"answer", "entries":[
+                {"id":"user", "timestamp":"1", "type":"message", "message":{"role":"user", "content":"question"}},
+                {"id":"answer", "timestamp":"2", "parentId":"user", "type":"message", "message":{"role":"assistant", "content":"current"}},
+                {"id":"other", "timestamp":"3", "parentId":"user", "type":"message", "message":{"role":"assistant", "content":"other branch"}}
+            ]
+        })).unwrap());
+        session.shell.active = Some(active("1"));
+        let shell_rows = |preview| {
+            session
+                .messages(preview)
+                .iter()
+                .filter(|m| m.id.starts_with("shell-live-"))
+                .count()
+        };
+        assert_eq!(shell_rows(None), 1);
+        assert_eq!(shell_rows(Some("user")), 1);
+        assert_eq!(shell_rows(Some("other")), 0);
+    }
 }

@@ -72,6 +72,7 @@ impl Command {
 /// Pi owns execution status; a missing exit code is not success.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct BashResult {
     pub output: String,
     pub exit_code: Option<i32>,

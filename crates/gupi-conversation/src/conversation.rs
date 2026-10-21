@@ -598,7 +598,9 @@ impl Session {
             .and_then(|id| self.history().preview_leaf(id))
             .or_else(|| self.history().leaf.clone());
         let mut messages = self.history().messages(leaf.as_deref());
-        if preview.is_none_or(|id| self.history().on_current_path(id)) {
+        // Live rows belong to the current leaf; previews on its path still show them.
+        let current = preview.is_none_or(|id| self.history().on_current_path(id));
+        if current {
             #[cfg(feature = "performance")]
             let _span = tracing::debug_span!(target: "gupi::performance", "messages.merge_live", history_messages = messages.len(), live_messages = self.live.len()).entered();
             for message in &self.live {
@@ -613,7 +615,7 @@ impl Session {
                 }
             }
         }
-        if preview.is_none() {
+        if current {
             messages.extend(self.shell.messages().cloned());
         }
         messages

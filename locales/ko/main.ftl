@@ -1263,3 +1263,17 @@ workspace-just-now = 방금
 workspace-minutes-ago = { $count }분 전
 workspace-maximize = 작업 공간 최대화
 workspace-restore = 작업 공간 복원
+
+# Direct Shell command output
+shell-title = Shell
+shell-running = 명령 실행 중
+shell-stopping = 명령 중지 중
+shell-stop = 명령 중지
+shell-cancelled = 취소됨
+shell-exit-code = 종료 코드 { $code }
+shell-completed = 완료 · 종료 코드 없음
+shell-excluded = 모델 컨텍스트에 포함하지 않음
+shell-show-all = 전체 출력 표시
+shell-show-less = 출력 접기
+shell-open-full-output = 전체 출력 열기
+shell-display-truncated = 가장 최근 출력만 표시됩니다.

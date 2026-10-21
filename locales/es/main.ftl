@@ -1288,3 +1288,17 @@ workspace-just-now = Ahora mismo
 workspace-minutes-ago = Hace { $count } min
 workspace-maximize = Maximizar espacio de trabajo
 workspace-restore = Restaurar espacio de trabajo
+
+# Direct Shell command output
+shell-title = Shell
+shell-running = Comando en ejecución
+shell-stopping = Deteniendo comando
+shell-stop = Detener comando
+shell-cancelled = Cancelado
+shell-exit-code = Código de salida { $code }
+shell-completed = Completado · estado de salida no disponible
+shell-excluded = No se incluye en el contexto del modelo
+shell-show-all = Mostrar toda la salida
+shell-show-less = Mostrar menos salida
+shell-open-full-output = Abrir salida completa
+shell-display-truncated = Solo se muestra la salida más reciente.

@@ -1263,3 +1263,17 @@ workspace-just-now = たった今
 workspace-minutes-ago = { $count } 分前
 workspace-maximize = ワークスペースを最大化
 workspace-restore = ワークスペースを元に戻す
+
+# Direct Shell command output
+shell-title = Shell
+shell-running = コマンドを実行中
+shell-stopping = コマンドを停止中
+shell-stop = コマンドを停止
+shell-cancelled = キャンセル済み
+shell-exit-code = 終了コード { $code }
+shell-completed = 完了 · 終了コードなし
+shell-excluded = モデルのコンテキストに含めない
+shell-show-all = 出力をすべて表示
+shell-show-less = 出力を折りたたむ
+shell-open-full-output = 完全な出力を開く
+shell-display-truncated = 最新の出力のみ表示しています。

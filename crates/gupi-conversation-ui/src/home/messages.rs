@@ -30,6 +30,7 @@ mod plugin;
 mod presentation;
 mod resources;
 pub(super) mod row_sync;
+mod shell;
 mod tool_details;
 pub(super) mod tools;
 mod viewport;
@@ -68,7 +69,8 @@ impl ChatRow {
             RowKind::Run { messages, .. } => messages.as_slice(),
             RowKind::User(message)
             | RowKind::Compaction(message)
-            | RowKind::BranchSummary(message) => std::slice::from_ref(message),
+            | RowKind::BranchSummary(message)
+            | RowKind::Shell(message) => std::slice::from_ref(message),
         };
         messages.iter().map(|message| message.id.as_str())
     }
@@ -78,7 +80,8 @@ impl ChatRow {
             RowKind::Run { messages, .. } => messages.as_mut_slice(),
             RowKind::User(message)
             | RowKind::Compaction(message)
-            | RowKind::BranchSummary(message) => std::slice::from_mut(message),
+            | RowKind::BranchSummary(message)
+            | RowKind::Shell(message) => std::slice::from_mut(message),
         };
         let Some(message) = messages.iter_mut().find(|message| message.id == updated.id) else {
             return false;
@@ -118,6 +121,9 @@ impl ChatRow {
                     process: None,
                 }]
             };
+        }
+        if let RowKind::Shell(message) = &self.kind {
+            return shell::find_sources(&self.id, message);
         }
         let RowKind::Run {
             messages, active, ..
@@ -160,6 +166,13 @@ impl ChatRow {
             }
         }
         sources
+    }
+
+    pub(super) fn reveal_find(&self, open: &mut HashMap<String, bool>) {
+        if let RowKind::Shell(message) = &self.kind {
+            open.insert(format!("shell-output-{}", message.id), true);
+            open.insert(format!("shell-full-{}", message.id), true);
+        }
     }
 
     pub(super) fn active(&self) -> bool {
@@ -214,7 +227,10 @@ impl ChatRow {
                     }
                 }
             }
-            RowKind::User(_) | RowKind::Compaction(_) | RowKind::BranchSummary(_) => {}
+            RowKind::User(_)
+            | RowKind::Compaction(_)
+            | RowKind::BranchSummary(_)
+            | RowKind::Shell(_) => {}
         }
     }
 }
@@ -228,6 +244,7 @@ enum RowKind {
     },
     Compaction(DisplayMessage),
     BranchSummary(DisplayMessage),
+    Shell(DisplayMessage),
 }
 pub(super) fn reveal_entry<'a>(
     rows: impl IntoIterator<Item = &'a ChatRow>,
@@ -280,6 +297,12 @@ fn project_rows(
                 entries,
                 kind: RowKind::User(m),
             });
+        } else if m.role() == "bashExecution" {
+            rows.push(ChatRow {
+                id: m.id.clone(),
+                entries,
+                kind: RowKind::Shell(m),
+            });
         } else if matches!(m.role(), "compaction" | "branch_summary") {
             started_at = None;
             // A compaction is a chronological assistant activity, not a container
@@ -318,7 +341,9 @@ fn project_rows(
     }
     if let Some(active_messages) = active_messages {
         if rows
-            .last()
+            .iter()
+            .rev()
+            .find(|row| !matches!(row.kind, RowKind::Shell(_)))
             .is_none_or(|row| !matches!(row.kind, RowKind::Run { .. }))
         {
             rows.push(ChatRow {
@@ -350,7 +375,10 @@ fn project_rows(
             && let Some(ChatRow {
                 kind: RowKind::Run { active, .. },
                 ..
-            }) = rows.last_mut()
+            }) = rows
+                .iter_mut()
+                .rev()
+                .find(|row| matches!(row.kind, RowKind::Run { .. }))
         {
             *active = true;
         }
@@ -727,6 +755,7 @@ impl HomeView {
                     )
                     .into_any_element()
             }
+            RowKind::Shell(message) => self.render_shell(key, row, message, cx),
             RowKind::Compaction(m) => Message::new()
                 .content(MessageContent::new().child(self.summary_trigger(m, cx)))
                 .into_any_element(),
@@ -878,6 +907,27 @@ impl HomeView {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn shell_rows_keep_real_ids_and_do_not_create_a_second_agent_run() {
+        let assistant = gupi_conversation::history::DisplayMessage::new(
+            "assistant".into(),
+            serde_json::json!({"role":"assistant","timestamp":1,"content":"working"}),
+        );
+        let active = std::collections::HashSet::from([assistant.signature()]);
+        let shell = gupi_conversation::history::DisplayMessage::new(
+            "entry-shell".into(),
+            serde_json::json!({"role":"bashExecution","command":"printf repeat","output":"done"}),
+        );
+        let mut repeated = shell.clone();
+        repeated.id = "entry-shell-2".into();
+        let rows = super::project_rows(vec![assistant, shell, repeated], Some(&active));
+        assert_eq!(rows.len(), 3);
+        assert!(rows[0].active());
+        assert_eq!(rows[1].id, "entry-shell");
+        assert!(matches!(rows[1].kind, super::RowKind::Shell(_)));
+        assert_eq!(rows.iter().filter(|row| row.active()).count(), 1);
+    }
+
     use super::ChatRow;
     use super::RowKind;
     use super::RunContent;

@@ -9,6 +9,12 @@ pub enum Command {
     GetCommands,
     Prompt(Prompt),
     Abort,
+    Bash {
+        command: String,
+        #[serde(rename = "excludeFromContext")]
+        exclude_from_context: bool,
+    },
+    AbortBash,
     Compact,
     ClearQueue,
     GetEntries,
@@ -44,6 +50,8 @@ impl Command {
             Self::GetCommands => "get_commands",
             Self::Prompt(_) => "prompt",
             Self::Abort => "abort",
+            Self::Bash { .. } => "bash",
+            Self::AbortBash => "abort_bash",
             Self::Compact => "compact",
             Self::ClearQueue => "clear_queue",
             Self::GetEntries => "get_entries",
@@ -59,6 +67,17 @@ impl Command {
             Self::GetSessionStats => "get_session_stats",
         }
     }
+}
+
+/// Pi owns execution status; a missing exit code is not success.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BashResult {
+    pub output: String,
+    pub exit_code: Option<i32>,
+    pub cancelled: bool,
+    pub truncated: bool,
+    pub full_output_path: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -329,6 +348,11 @@ pub enum Event {
         request: ExtensionRequest,
         raw: Value,
     },
+    BashExecutionUpdate {
+        id: Option<String>,
+        delta: String,
+        raw: Value,
+    },
     Agent {
         kind: String,
         raw: Value,
@@ -337,7 +361,9 @@ pub enum Event {
 impl Event {
     pub fn raw(&self) -> &Value {
         match self {
-            Self::ExtensionUi { raw, .. } | Self::Agent { raw, .. } => raw,
+            Self::ExtensionUi { raw, .. }
+            | Self::Agent { raw, .. }
+            | Self::BashExecutionUpdate { raw, .. } => raw,
         }
     }
 }

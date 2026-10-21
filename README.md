@@ -172,15 +172,15 @@ The folder selected when creating a session becomes Pi's working directory and c
 
 ### Project files and source
 
-Open the right-hand navigator and select **Files** to browse the current conversation's project directory. Click folders to expand or collapse them, refresh after external changes, and select a text file to open its read-only source preview.
+Open the right-hand workspace and choose **Files** from its New Tab page to browse the current conversation's project directory. Click folders to expand or collapse them, refresh after external changes, and select a text file to open its read-only source preview.
 
 ![Project files and read-only source beside the conversation](docs/screenshots/files-en.jpg)
 
 The preview supports syntax highlighting, line numbers, selection, copying, search and line wrapping. It shows a snapshot: use **Reload** to read changes from disk. Opening the same file again preserves its reading position and search state. Previewing does not edit or save the file, or send its content to the model; use `@` in the composer to reference it in a message.
 
-Wide windows show conversation, source and navigator side by side. Narrow windows let you switch between conversation and source while keeping the composer available. Drag dividers to adjust the layout. Files and conversation history share the navigator's tabs.
+The workspace keeps Files and each reply's Changes in separate tabs. Drag tabs to reorder them, use the tab menu to close groups, or maximize the workspace. Pin it beside the conversation when space permits; narrow windows open it as an overlay. File previews keep the file tree available. Conversation history has its own panel beside the conversation.
 
-After an agent reply, expand its file-change card to inspect the recorded edits as read-only diffs. Repeated edits to the same file are composed where possible; unsupported chains fall back to individual operations. These cards describe recorded `edit`/`write` tool calls, not a Git diff or changes made through shell commands, and provide no rollback action.
+After an agent reply, choose **View changes** on its file-change card to open that reply's Changes tab. Keep several replies' tabs open to compare recorded edits. Repeated edits to the same file are composed where possible; unsupported chains fall back to individual operations. These cards describe recorded `edit`/`write` tool calls, not a Git diff or changes made through shell commands, and provide no rollback action. Temporary conversations retain inline diffs.
 
 Use arrow keys to navigate the file tree and **Enter** to open a file. **Cmd/Ctrl+F** searches the focused source editor, composer or message area. Text previews are limited to 1 MiB and 20,000 lines; unsupported encodings, binary files and oversized files show an explanation.
 
@@ -207,6 +207,8 @@ When sending fails, Gupi keeps the draft and attachments for you to retry. Queue
 
 Responses render as Markdown with code blocks, lists, and tables. Expand a process section to inspect thinking and tool calls, or open tool details to read and copy their content. Click a local file resource to open it with the system's default application.
 
+With Pi 1.3.0, recorded direct Shell commands appear as separate rows with output, exit status and a marker when excluded from model context. Active commands can show live output and a Stop action; long output supports expansion, copying, search and opening Pi's full-output file when available. The dedicated Shell input is not available yet: typing `!` or `!!` in the composer still sends a normal message.
+
 With focus in conversation messages, **Cmd/Ctrl+F** searches that conversation. In the composer or source editor, it searches that control’s own text. Token totals and the context indicator below the composer open usage details. The model control also lets you change the thinking level when the selected model supports it.
 
 Extensions can ask you to select an option, confirm an action, enter a line of text, or edit longer text. Answer in the conversation's input area. Gupi also displays extension notifications, status text, and text widgets; custom terminal interfaces are not supported.
@@ -217,7 +219,7 @@ Open **Conversation history** in the title bar, or press **Cmd/Ctrl+Alt+B**.
 
 ![Conversation history and branch preview](docs/screenshots/history-en.jpg)
 
-- Switch between **tree** and **list**, then choose the amount of detail: Brief, Detailed, or All records.
+- Use the history panel's **⋯** menu to switch between **tree** and **list**, then choose the amount of detail: Brief, Detailed, or All records. The panel docks beside the conversation or opens as an overlay when space is limited.
 - Select a node to preview that branch. Previewing keeps your draft and the real execution position; ordinary sending is paused while you view another branch.
 - Right-click a history node and choose **Continue from here** to change the execution position within the same session. User messages return to the composer for editing; other nodes become the point to continue from. The session must be idle.
 - Use **Fork** on a user message to open a new session from before that question. Pi puts the question back in the new composer so you can revise it.

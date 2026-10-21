@@ -75,7 +75,9 @@ pub async fn discover(cwd: &Path) -> Result<Option<Repository>, Error> {
     let mut paths = Vec::new();
     for arg in ["--show-toplevel", "--absolute-git-dir", "--git-common-dir"] {
         let output = checked(cwd, &["rev-parse", "--path-format=absolute", arg]).await?;
-        paths.push(path(&output.stdout)?);
+        // Git for Windows emits slash-separated DOS paths, while filesystem
+        // identity uses canonical paths (including the verbatim Windows prefix).
+        paths.push(path(&output.stdout)?.canonicalize()?);
     }
     Ok(Some(Repository {
         root: paths.remove(0),
@@ -192,6 +194,11 @@ mod tests {
         let repository = smol::block_on(discover(&root)).unwrap().unwrap();
         assert_eq!(repository.root(), std::fs::canonicalize(&root).unwrap());
         assert_eq!(
+            repository.git_dir(),
+            std::fs::canonicalize(root.join(".git")).unwrap()
+        );
+        assert_eq!(repository.common_dir(), repository.git_dir());
+        assert_eq!(
             smol::block_on(repository.head()).unwrap(),
             Head::Branch("fixture".into())
         );
@@ -223,6 +230,11 @@ mod tests {
             &["worktree", "add", "--detach", linked.to_str().unwrap()],
         );
         let worktree = smol::block_on(discover(&linked)).unwrap().unwrap();
+        assert_eq!(worktree.root(), std::fs::canonicalize(&linked).unwrap());
+        assert_eq!(
+            worktree.git_dir(),
+            std::fs::canonicalize(worktree.git_dir()).unwrap()
+        );
         assert_ne!(worktree.git_dir(), worktree.common_dir());
         assert_eq!(worktree.common_dir(), repository.common_dir());
         assert_eq!(

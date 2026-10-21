@@ -1,9 +1,9 @@
 use super::*;
-use gupi_resources::git::{Head, Repository};
+use gupi_resources::git::Head;
 use std::time::Duration;
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
-type Projection = Result<Option<(Repository, Head)>, String>;
+type Projection = Result<Option<Head>, String>;
 
 #[derive(Default)]
 pub(super) struct CurrentRepository {
@@ -16,12 +16,7 @@ pub(super) struct CurrentRepository {
 
 impl CurrentRepository {
     pub(super) fn head(&self) -> Option<&Head> {
-        self.result
-            .as_ref()?
-            .as_ref()
-            .ok()?
-            .as_ref()
-            .map(|(_, head)| head)
+        self.result.as_ref()?.as_ref().ok()?.as_ref()
     }
 
     fn retarget(&mut self, cwd: Option<PathBuf>) {
@@ -56,7 +51,13 @@ impl HomeView {
             .current()
             .map(|session| session.info().cwd.clone());
         self.git.retarget(cwd);
-        if !self.notification_visible || !window.is_window_active() || !window.is_visible() {
+        // System process wakeups are outside GPUI's deterministic test scheduler.
+        // Tests project synthetic HEAD values; real Git queries are tested in resources.
+        if cx.is_test()
+            || !self.notification_visible
+            || !window.is_window_active()
+            || !window.is_visible()
+        {
             self.git.refresh = None;
             return;
         }
@@ -76,7 +77,7 @@ impl HomeView {
                             return Ok(None);
                         };
                         let head = repository.head().await?;
-                        Ok::<_, gupi_resources::git::Error>(Some((repository, head)))
+                        Ok::<_, gupi_resources::git::Error>(Some(head))
                     })
                     .await
                     .map_err(|error| error.to_string());
@@ -108,18 +109,7 @@ mod tests {
     #[gpui_kit::test]
     fn branch_uses_available_titlebar_space_and_shrinks_before_actions(cx: &mut TestAppContext) {
         use gpui_kit::component::Root;
-        let fixture = tempfile::tempdir().unwrap();
         let branch = "feature/titlebar-branch-check";
-        let status = std::process::Command::new("git")
-            .current_dir(fixture.path())
-            .args(["init", "--quiet", &format!("--initial-branch={branch}")])
-            .status()
-            .unwrap();
-        assert!(status.success());
-        let repository = smol::block_on(gupi_resources::git::discover(fixture.path()))
-            .unwrap()
-            .unwrap();
-        let head = smol::block_on(repository.head()).unwrap();
         cx.update(|cx| {
             gpui_kit::init(cx);
             crate::host::install_headless(cx);
@@ -134,7 +124,7 @@ mod tests {
             let mut info = gupi_conversation::session_catalog::SessionInfo::new(
                 Default::default(),
                 "fixture".into(),
-                fixture.path().to_owned(),
+                "/unused-git-fixture".into(),
             );
             info.name = Some("Short".into());
             state.sessions_for_test().insert(
@@ -146,16 +136,25 @@ mod tests {
         let mut home = None;
         let (_, visual) = cx.add_window_view(|window, cx| {
             let view = cx.new(|cx| HomeView::with_state(state, window, cx));
-            view.update(cx, |home, _| {
-                home.show_sidebar = false;
-                home.git.result = Some(Ok(Some((repository, head))));
-            });
+            view.update(cx, |home, _| home.show_sidebar = false);
             home = Some(view.clone());
             Root::new(view, window, cx)
         });
         let home = home.unwrap();
         visual.simulate_resize(size(px(760.), px(600.)));
+        visual.update(|window, _| window.activate_window());
         visual.run_until_parked();
+        visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                assert!(window.is_window_active() && window.is_visible());
+                home.notification_visible = true;
+                home.sync_git(window, cx);
+                assert!(home.git.refresh.is_none());
+                assert!(home.git.result.is_none());
+                home.git.result = Some(Ok(Some(Head::Branch(branch.into()))));
+                cx.notify();
+            });
+        });
         visual.update(|window, cx| window.draw(cx).clear(cx));
         let wide = visual.debug_bounds("session-git-head").unwrap();
         assert!(

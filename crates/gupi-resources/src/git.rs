@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn real_repository_heads_subdirectories_and_linked_worktrees() {
         let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().join("repo with spaces ");
+        let root = dir.path().join("repo with spaces");
         std::fs::create_dir(&root).unwrap();
         assert!(smol::block_on(discover(&root)).unwrap().is_none());
         git(&root, &["init", "--initial-branch=fixture"]);

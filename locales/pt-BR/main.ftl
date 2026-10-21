@@ -1274,7 +1274,6 @@ workspace-net-zero = Todas as alterações desta resposta se anularam.
 workspace-open-file = Abrir arquivo
 workspace-next-operations = Próximas operações
 workspace-open-change = Abrir { $path } no espaço de trabalho
-workspace-all-tabs = Todas as abas
 
 history-panel-title = Histórico
 history-panel-options = Opções do histórico

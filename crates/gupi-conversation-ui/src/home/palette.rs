@@ -956,9 +956,20 @@ mod tests {
             home.update(cx, |home, cx| {
                 home.close_navigator(window, cx);
                 home.open_source("/tmp/gupi-missing-find-preview.rs".into(), true, window, cx);
+                home.ensure_panel(super::super::panes::Panel::Workspace, window, cx);
             })
         });
         cx.run_until_parked();
+        cx.update(|window, cx| {
+            assert!(
+                home.read(cx)
+                    .pane_layout
+                    .visible(super::super::panes::Panel::Workspace)
+            );
+            let source = home.read(cx).source().unwrap();
+            source.update(cx, |source, cx| source.focus(window, cx));
+            assert!(source.read(cx).contains_focus(window, cx));
+        });
         cx.simulate_keystrokes("secondary-f");
         cx.update(|window, cx| {
             assert!(home.read(cx).find.is_none());

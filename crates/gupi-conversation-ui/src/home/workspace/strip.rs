@@ -1,8 +1,9 @@
 use super::*;
 use crate::chrome;
-use gpui_kit::component::Icon;
+use gpui_kit::component::button::ButtonCustomVariant;
+use gpui_kit::component::tab::{Tab, TabBar};
+use std::cell::RefCell;
 
-const TAB_MIN_REM: f32 = 8.;
 const TAB_MAX_REM: f32 = 16.;
 const DRAG_SPACE_REM: f32 = 2.;
 
@@ -122,15 +123,24 @@ impl HomeView {
             return div().into_any_element();
         };
         let order = &view.workspace.order;
-        let mut tabs = gpui_kit::base::Tabs::new("workspace-tabs")
-            .flex()
-            .items_center()
+        // Only domain identities escape the component's index-based presentation.
+        let menu_target: Rc<RefCell<Option<String>>> = Rc::default();
+        let mut tabs = TabBar::new("workspace-tabs")
+            .pill()
+            .menu(true)
+            .small()
+            .flex_1()
             .min_w_0()
             .h_full()
-            .gap_1()
-            .overflow_x_scroll()
+            .max_width(window.rem_size() * TAB_MAX_REM)
+            .selected_index(
+                order
+                    .iter()
+                    .position(|id| *id == view.workspace.active)
+                    .unwrap_or(0),
+            )
             .track_scroll(&view.workspace.scroll);
-        for (ix, id) in order.iter().enumerate() {
+        for id in order {
             let selected = *id == view.workspace.active;
             let (title, tooltip) = self.tab_title(id, cx);
             let stable = id.clone().unwrap_or_else(|| "files".into());
@@ -143,18 +153,15 @@ impl HomeView {
                 .tab_stop(selected);
             let close_id = stable.clone();
             let middle_id = stable.clone();
-            let menu_id = stable.clone();
             let activation = id.clone();
             let key_id = id.clone();
             let hover_id = id.clone();
             let drop_id = id.clone();
-            let owner = cx.weak_entity();
             let drag = TabDrag {
                 session: self.shown_key.clone().unwrap_or_default(),
                 id: id.clone(),
                 title: title.clone(),
             };
-            let group: SharedString = format!("workspace-tab-{stable}").into();
             let edge = view
                 .workspace
                 .drop_target
@@ -168,41 +175,24 @@ impl HomeView {
             };
             let drag_owner = cx.weak_entity();
             let selector = format!("workspace-tab-{stable}");
-            let tab = gpui_kit::base::Tab::new(format!("workspace-tab-{stable}"))
+            let group: SharedString = format!("workspace-tab-{stable}").into();
+            let target = menu_target.clone();
+            let context_id = stable.clone();
+            let tab = Tab::new()
+                .label(title.clone())
+                .prefix(gpui_kit::component::Icon::new(icon).size_3p5())
+                .aria_label(title.clone())
+                .group(group.clone())
                 .debug_selector(move || selector.clone())
+                .track_focus(&focus)
+                .tab_stop(selected)
+                .on_mouse_down(MouseButton::Right, move |_, _, _| {
+                    *target.borrow_mut() = Some(context_id.clone());
+                })
                 .when(
                     cx.has_active_drag() && view.workspace.dragging.as_ref() == Some(id),
                     |tab| tab.opacity(0.5),
                 )
-                .group(group.clone())
-                .track_focus(&focus)
-                .tab_stop(selected)
-                .selected(selected)
-                .set_position(ix + 1, order.len())
-                .accessibility_label(title.clone())
-                .relative()
-                .flex_none()
-                .min_w(rems(TAB_MIN_REM))
-                .max_w(rems(TAB_MAX_REM))
-                .h_7()
-                .pl_2()
-                .pr_1()
-                .gap_1p5()
-                .rounded(cx.theme().radius)
-                .border_1()
-                .border_color(gpui_kit::transparent_black())
-                .when(selected, |tab| {
-                    tab.bg(cx.theme().secondary)
-                        .border_color(cx.theme().border)
-                        .text_color(cx.theme().foreground)
-                })
-                .when(!selected, |tab| {
-                    tab.text_color(cx.theme().muted_foreground).hover(|s| {
-                        s.bg(cx.theme().secondary.opacity(0.5))
-                            .text_color(cx.theme().foreground)
-                    })
-                })
-                .focus_visible(|s| s.border_color(cx.theme().ring))
                 .when(cx.has_active_drag(), |tab| {
                     tab.when_some(edge, |tab, after| {
                         if after {
@@ -212,31 +202,29 @@ impl HomeView {
                         }
                     })
                 })
-                .child(Icon::new(icon).size_3p5().flex_none())
-                .child(
-                    div()
-                        .min_w_0()
-                        .flex_1()
-                        .truncate()
-                        .text_sm()
-                        .child(title.clone()),
-                )
-                .child(
-                    // Always laid out so the title never shifts when the close
-                    // button appears on hover.
+                .suffix(
+                    // Retain the slot while hiding an inactive tab's close action.
                     div()
                         .flex_none()
                         .when(!selected, |close| {
                             close
                                 .opacity(0.)
-                                .group_hover(group, |s| s.opacity(1.))
-                                .in_focus(|s| s.opacity(1.))
+                                .group_hover(group, |style| style.opacity(1.))
+                                .in_focus(|style| style.opacity(1.))
                         })
                         .child(
                             Button::new(format!("close-workspace-{stable}"))
                                 .ghost()
                                 .xsmall()
                                 .icon(IconName::X)
+                                .when(selected, |button| {
+                                    button.custom(
+                                        ButtonCustomVariant::new(cx)
+                                            .foreground(cx.theme().primary_foreground)
+                                            .hover(cx.theme().primary_hover)
+                                            .active(cx.theme().primary_active),
+                                    )
+                                })
                                 .accessibility_label(t(cx, "workspace-close-tab"))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     cx.stop_propagation();
@@ -322,79 +310,74 @@ impl HomeView {
                         .is_some_and(|(id, after)| *id == drop_id && *after);
                     this.reorder_workspace_tab(drag, drop_id.clone(), after, cx);
                 }))
-                .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
-                .context_menu(move |mut menu, _, cx| {
-                    for (mode, label) in [
-                        (0, "workspace-close-tab"),
-                        (1, "workspace-close-others"),
-                        (2, "workspace-close-right"),
-                    ] {
-                        let owner = owner.clone();
-                        let id = menu_id.clone();
-                        menu = menu.item(PopupMenuItem::new(t(cx, label)).on_click(
-                            move |_, window, cx| {
-                                let _ = owner.update(cx, |this, cx| {
-                                    this.close_workspace_tabs(&id, mode, window, cx)
-                                });
-                            },
-                        ));
-                    }
-                    menu
-                });
+                .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx));
             tabs = tabs.child(tab);
         }
-        let all: Vec<_> = order
-            .iter()
-            .map(|id| (id.clone(), self.tab_title(id, cx).0))
-            .collect();
-        let active = view.workspace.active.clone();
+        let add = chrome::control(
+            "workspace-add-control",
+            chrome::button("workspace-add")
+                .debug_selector(|| "workspace-add".into())
+                .icon(IconName::Plus)
+                .tooltip(t(cx, "workspace-new-tab"))
+                .accessibility_label(t(cx, "workspace-new-tab"))
+                .on_click(cx.listener(|this, _, window, cx| this.new_workspace_tab(window, cx))),
+        );
+        tabs = tabs
+            .suffix(add)
+            .last_empty_space(div().h_full().min_w(rems(DRAG_SPACE_REM)).flex_1());
+        let reset_target = menu_target.clone();
+        let guard_target = menu_target.clone();
         let owner = cx.weak_entity();
-        let controls = h_flex()
-            .gap_1()
-            .flex_none()
-            .child(chrome::control(
-                "workspace-add-control",
-                chrome::button("workspace-add")
-                    .debug_selector(|| "workspace-add".into())
-                    .icon(IconName::Plus)
-                    .tooltip(t(cx, "workspace-new-tab"))
-                    .accessibility_label(t(cx, "workspace-new-tab"))
-                    .on_click(
-                        cx.listener(|this, _, window, cx| this.new_workspace_tab(window, cx)),
-                    ),
-            ))
-            .child(chrome::control(
-                "workspace-all-control",
-                chrome::button("workspace-all-tabs")
-                    .icon(IconName::ChevronDown)
-                    .accessibility_label(t(cx, "workspace-all-tabs"))
-                    .tooltip(t(cx, "workspace-all-tabs"))
-                    .dropdown_menu(move |mut menu, _, _cx| {
-                        for (id, title) in &all {
-                            let owner = owner.clone();
-                            let id = id.clone();
-                            menu = menu.item(
-                                PopupMenuItem::new(title.clone())
-                                    .checked(id == active)
-                                    .on_click(move |_, window, cx| {
-                                        let _ = owner.update(cx, |this, cx| {
-                                            this.select_workspace_tab(id.clone(), window, cx)
-                                        });
-                                    }),
-                            );
-                        }
-                        menu
-                    }),
-            ));
+        let session = self.shown_key.clone();
+        let tabs = div()
+            .id("workspace-strip-context")
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .capture_any_mouse_down(move |event, _, _| {
+                if event.button == MouseButton::Right {
+                    reset_target.borrow_mut().take();
+                }
+            })
+            .on_mouse_down(MouseButton::Right, move |_, _, cx| {
+                // A blank titlebar remains a native drag region, not a stale tab menu.
+                if guard_target.borrow().is_none() {
+                    cx.stop_propagation();
+                }
+            })
+            .child(tabs)
+            .context_menu(move |mut menu, _, cx| {
+                let Some(id) = menu_target.borrow().clone() else {
+                    return menu;
+                };
+                for (mode, label) in [
+                    (0, "workspace-close-tab"),
+                    (1, "workspace-close-others"),
+                    (2, "workspace-close-right"),
+                ] {
+                    let owner = owner.clone();
+                    let id = id.clone();
+                    let session = session.clone();
+                    menu = menu.item(PopupMenuItem::new(t(cx, label)).on_click(
+                        move |_, window, cx| {
+                            let _ = owner.update(cx, |this, cx| {
+                                if this.shown_key == session {
+                                    this.close_workspace_tabs(&id, mode, window, cx);
+                                }
+                            });
+                        },
+                    ));
+                }
+                menu
+            });
         let mut row = h_flex()
             .h_full()
             .min_w_0()
             .items_center()
             .px_2()
             .gap_1()
-            .child(div().flex_initial().min_w_0().h_full().child(tabs))
-            .child(controls)
-            .child(div().h_full().min_w(rems(DRAG_SPACE_REM)).flex_1());
+            .child(tabs)
+            .child(div().h_full().min_w(rems(DRAG_SPACE_REM)));
         if titlebar {
             row = row
                 .child(chrome::control(

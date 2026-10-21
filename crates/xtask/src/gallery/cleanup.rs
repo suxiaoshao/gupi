@@ -122,7 +122,8 @@ fn has_running_executable(root: &Path) -> bool {
     // refresh, permission-completeness policy, or process-control operations.
     system.refresh_processes_specifics(
         ProcessesToUpdate::All,
-        ProcessRefreshKind::new()
+        true,
+        ProcessRefreshKind::nothing()
             .with_user(UpdateKind::Always)
             .with_exe(UpdateKind::Always),
     );

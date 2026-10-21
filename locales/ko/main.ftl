@@ -1249,7 +1249,6 @@ workspace-net-zero = 이 응답의 모든 변경 사항이 상쇄되었습니다
 workspace-open-file = 파일 열기
 workspace-next-operations = 다음 작업
 workspace-open-change = 작업 공간에서 { $path } 열기
-workspace-all-tabs = 모든 탭
 
 history-panel-title = 기록
 history-panel-options = 기록 옵션

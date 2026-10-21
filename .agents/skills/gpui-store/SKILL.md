@@ -5,7 +5,7 @@ description: Implement or modify gpui-store and its deliberate application integ
 
 # GPUI Store
 
-Use the [README](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/crates/gpui-store/README.md) and [guide](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/crates/gpui-store/docs/guide.md) for current APIs, then inspect the affected code and consumers.
+Use the [README](https://github.com/suxiaoshao/gpui/blob/3ade6e9f829dc96864a05a1c094767efdae6bb56/crates/gpui-store/README.md) and [guide](https://github.com/suxiaoshao/gpui/blob/3ade6e9f829dc96864a05a1c094767efdae6bb56/crates/gpui-store/docs/guide.md) for current APIs, then inspect the affected code and consumers.
 
 - Store owns authoritative in-memory state and publication. Applications own I/O, tasks, persistence and recovery; Form owns editable sessions.
 - Selectors are pure read-only projections. Retain subscriptions in their owner. A whole-store observer holds a borrow; defer mutations that would re-enter that Store.

@@ -1244,7 +1244,18 @@ fn launcher_files_changes_middle_close_and_last_tab(cx: &mut TestAppContext) {
 
 #[gpui_kit::test]
 fn workspace_maximize_escape_and_narrow_restore_preferences(cx: &mut TestAppContext) {
-    let (home, _, visual) = mount_mode(cx, &fixture(1, 1, 0), false, false);
+    let title = "Highlighter A/B: SQL, JSON, Rust, Markdown and shell";
+    let mut messages = fixture(1, 1, 0);
+    messages[0] = message("user", json!({"role":"user","timestamp":0,"content":title}));
+    let (home, state, visual) = mount_mode(cx, &messages, false, false);
+    state.update(visual, |state, _| {
+        state
+            .sessions_for_test()
+            .get_mut("a")
+            .unwrap()
+            .info_for_test()
+            .name = Some(title.into());
+    });
     visual.simulate_resize(size(px(1728.), px(900.)));
     visual.update(|window, cx| {
         let run = run(&home, cx);
@@ -1257,6 +1268,9 @@ fn workspace_maximize_escape_and_narrow_restore_preferences(cx: &mut TestAppCont
     let body = visual.debug_bounds("workspace-docked").unwrap();
     assert_eq!(segment.left(), body.left());
     assert_eq!(segment.size.width, body.size.width);
+    // A prefix icon must not turn the official tab into its icon-only mode.
+    let header = visual.debug_bounds("workspace-tab-tool-0-0").unwrap();
+    assert!(header.size.width > px(100.));
     let before = visual.update(|_, cx| {
         (
             cx.global::<layout::LayoutState>().clone(),

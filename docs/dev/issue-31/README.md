@@ -51,33 +51,26 @@ Gupi 基线为 `9f5e723`：
 
 超过 **20,000 行**的文件提示超出预览范围；单行超过 **16 KiB**时使用不高亮的纯文本只读 Editor，并说明原因。这些是初始产品上限，不是组件性能保证。限制检查在后台读取阶段完成。首期不做尾部读取、分页或截断后伪装成完整文件。
 
-### tree-sitter 与文件语言识别
+### Syntect 与文件语言识别
 
-根包和 `gupi-conversation-ui` 已启用 `gpui-kit` 的 **`tree-sitter-languages`**。该集合已经包含所有当前内置 grammar；JSON 由基础 `tree-sitter` feature 带入，Markdown 同时含 block/inline grammar。因此本功能**无需增加 tree-sitter 依赖或 Cargo feature**，也不借本次功能裁剪集合，避免影响现有回答代码块的语言覆盖。
+根包和 `gupi-conversation-ui` 只启用 GPUI Kit 0.8 的 `syntect`，依赖图不含 tree-sitter。文件预览、工具详情、Markdown 代码块与 Diff 使用官方适配器和现有主题语法颜色，不另造配色或解析器。
 
-实施需要增加的是文件名/扩展名到语言 ID 的映射。首批重点验证以下语言，其他已有语言继续复用内置注册表，未知语言回退纯文本：
+文件名优先于扩展名，完整映射以 `home/files/directory.rs` 为准；未知文件回退纯文本，不猜测内容或接入语言服务器。
 
-| 文件类型 | 语言 ID / 已有 feature | 识别重点 |
-| --- | --- | --- |
-| Rust | `rust` / `tree-sitter-rust` | `.rs` |
-| JSON | `json` / 基础 `tree-sitter` | `.json`；JSONC 不强行当作完整支持 |
-| TOML | `toml` / `tree-sitter-toml` | `.toml`、Cargo.lock |
-| YAML | `yaml` / `tree-sitter-yaml` | `.yaml`、`.yml` |
-| Markdown | `markdown` / `tree-sitter-markdown` | `.md`、`.markdown`；inline grammar 自动随 feature 包含 |
-| Shell | `bash` / `tree-sitter-bash` | `.sh`、`.bash`、`.zsh` 采用 Bash 高亮近似，不承诺 Zsh 语法完全匹配 |
-| JavaScript / JSX | `javascript` / `tree-sitter-javascript` | `.js`、`.mjs`、`.cjs`、`.jsx`；现有 `jsdoc` 支持随集合保留 |
-| TypeScript / TSX | `typescript`、`tsx` / 对应 feature | `.ts` 与 `.tsx` 分开映射；`.mts`、`.cts` 归 TypeScript |
-| HTML / CSS | `html`、`css` / 对应 feature | `.html`、`.htm`、`.css`；保留已有嵌入语言支持 |
-| Python / Go | `python`、`go` / 对应 feature | `.py`、`.pyi`、`.go` |
-| C / C++ | `c`、`cpp` / 对应 feature | `.c` 与 `.cpp/.cc/.cxx/.hpp`；`.h` 首期默认 C |
-| SQL / Diff / Make | `sql`、`diff`、`make` / 对应 feature | `.sql`、`.diff/.patch`、Makefile/GNUmakefile |
-| 普通文本 | `text` | `.txt`、无已知映射的 UTF-8 文件 |
+| 文件类型 | 语言映射 / 限制 |
+| --- | --- |
+| Rust / JSON / TOML / YAML / Markdown | `rust`、`json`、`toml`、`yaml`、`markdown`；Cargo.lock 使用 TOML |
+| Shell | `.sh/.bash/.zsh` 使用 `bash` 近似，不承诺 Zsh 完整语法 |
+| JavaScript / JSX | `javascript`；不将 catalog 中不存在的 `jsx` 当作独立语法 |
+| TypeScript / TSX | `typescript`、`tsx`（catalog TypeScriptReact）；`.mts/.cts` 使用 TypeScript |
+| HTML / CSS / Svelte | `html`、`css`、`svelte`；Svelte 有实际 catalog 语法 |
+| Astro | **HTML 标记回退**；原文不变，不保证 Astro frontmatter 或表达式语法，覆盖低于先前的专用 tree-sitter grammar |
+| ERB / EJS / Make | `erb`、`ejs`、`make`；官方别名分别解析为 HTML (Rails)、HTML (Rails)、Makefile |
+| Python / Go / C / C++ / SQL / Diff | 对应语言；`.h` 默认 C，`.patch` 使用 Diff |
+| Ruby / Java / Kotlin / Lua / PHP / Scala / Zig / Elixir | 对应源码扩展名映射 |
+| Swift / C# / GraphQL / Proto / CMake / Nix / Vue / PowerShell 等未映射文件 | 仍为纯文本；不因后端更换扩大文件映射契约 |
 
-先按特定文件名匹配，再按扩展名匹配；路径展示与语言识别分开，不仅把扩展名直接传给 Editor。首期不加入内容猜测或项目语言服务器。
-
-**当前上游限制：**0.7.1 的 Swift、C#、GraphQL、Proto、CMake 虽提供 grammar，但内置高亮查询为空，不能承诺可见语法着色；首期按纯文本预览。Nix、Vue、PowerShell 没有对应内置 language feature，同样回退纯文本。若要求这些语言高亮，需要另行接入 grammar/query 并核对许可证及版本兼容性，本次设计不默认升级依赖或复制一套高亮系统。
-
-Editor 和消息 Markdown 共用现有语言服务及主题语法颜色；不在文件预览里另造配色。实施验证区分“可识别语言”“可解析 grammar”和“有可见高亮”三件事。
+Source 预览仍明确关闭折叠；查找、复制、选择、换行和只读契约不依赖语法后端。语法颜色与 tree-sitter 可有差异，五语言的静态显示检查不能证明所有嵌入语法或流式性能等价；较大中等长度缓冲区的同步高亮成本需要按实际适配器场景验证。
 
 ## 目录规则与反馈
 
@@ -113,11 +106,11 @@ Editor 和消息 Markdown 共用现有语言服务及主题语法颜色；不在
 - 目录加载状态明确区分未读、读取中、已读和失败；对同目录去重请求。收起期间完成的有效结果可缓存，但不重新展开。
 - 首次显示文件页签时读取根目录；按用户展开状态读取子目录。隐藏对话的已启动读取及其展开子目录读取可完成，仅更新所属实例；移除对话或关闭窗口释放任务。弱 Entity 与刷新代次防止过期结果安装。
 - 枚举、排序及可见行投影在事件或结果安装阶段完成，不在 render 递归扫描、不逐帧重建完整树；对大目录结果的投影避免在 UI 线程做完整排序或大量克隆。
-- 目录缓存和页签只在当前窗口寿命内保留。侧栏保存 rem 偏好，默认左栏 14rem / 右栏 20rem；显示和拖拽共用几何边界，保存不再夹取。旧像素布局字段不迁移，旧布局重置一次。分栏比例独立保存。
+- 目录缓存和页签只在当前窗口寿命内保留。侧栏保存 rem 偏好，默认左栏 14rem / 右栏 20rem；显示和拖拽共用几何边界，保存不再夹取。旧像素布局字段不迁移，旧布局重置一次。分栏比例与其余布局偏好一起保存在 `state.toml` 的 `source_split_ratio` 字段（无量纲，默认 0.4）；启动时同步加载。
 - 可访问名称包含条目名称及目录展开状态，加载/错误有文字反馈；所有新增文案按现有 Fluent 契约同步九种语言。
 
 ## 实现与验证
 
-实现位于 `home/files.rs`、`home/files/directory.rs`、`home/source.rs`、`home/workspace.rs` 和 `home/panes.rs`；HomeView 接入标题栏与命令面板，九种语言同步维护。分栏偏好位于 `gupi-settings/source_split.rs`。没有新增依赖或升级 GPUI revision。
+实现位于 `home/files.rs`、`home/files/directory.rs`、`home/source.rs`、`home/workspace.rs` 和 `home/panes.rs`；HomeView 接入标题栏与命令面板，九种语言同步维护。分栏偏好由 `gupi-settings/layout.rs` 的 `LayoutState` 统一管理。没有新增依赖或升级 GPUI revision。
 
 验证结果和实际平台边界集中记录在 [工作区文档](ui-redesign.md#实施与验证)。语言核对中 Rust、TOML、Markdown、TSX 已观察到着色；TSX 示例的 JSX 标签/属性未完整着色，沿用组件 query，不承诺所有 token 都有高亮。

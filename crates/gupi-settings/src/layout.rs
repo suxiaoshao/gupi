@@ -19,19 +19,30 @@ pub fn default_window_size() -> Size<Pixels> {
 #[non_exhaustive]
 pub struct LayoutState {
     pub main_window: Option<WindowPlacement>,
-    #[serde(default = "default_sidebar_width_rem", deserialize_with = "read_width")]
+    #[serde(
+        default = "default_sidebar_width_rem",
+        deserialize_with = "read_number"
+    )]
     pub sidebar_width_rem: f32,
     #[serde(
         default = "default_navigator_width_rem",
-        deserialize_with = "read_width"
+        deserialize_with = "read_number"
     )]
     pub navigator_width_rem: f32,
     #[serde(default, deserialize_with = "read_pin")]
     pub workspace_pinned: bool,
     #[serde(default, deserialize_with = "read_pin")]
     pub history_pinned: bool,
-    #[serde(default = "default_history_width_rem", deserialize_with = "read_width")]
+    #[serde(
+        default = "default_history_width_rem",
+        deserialize_with = "read_number"
+    )]
     pub history_width_rem: f32,
+    #[serde(
+        default = "default_source_split_ratio",
+        deserialize_with = "read_number"
+    )]
+    pub source_split_ratio: f32,
 }
 impl Global for LayoutState {}
 impl Default for LayoutState {
@@ -43,6 +54,7 @@ impl Default for LayoutState {
             workspace_pinned: false,
             history_pinned: false,
             history_width_rem: default_history_width_rem(),
+            source_split_ratio: default_source_split_ratio(),
         }
     }
 }
@@ -55,12 +67,15 @@ fn default_navigator_width_rem() -> f32 {
 fn default_history_width_rem() -> f32 {
     20.
 }
+fn default_source_split_ratio() -> f32 {
+    0.4
+}
 fn read_pin<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
     Ok(toml::Value::deserialize(deserializer)?
         .as_bool()
         .unwrap_or(false))
 }
-fn read_width<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<f32, D::Error> {
+fn read_number<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<f32, D::Error> {
     let value = toml::Value::deserialize(deserializer)?;
     Ok(value
         .as_float()
@@ -173,6 +188,12 @@ pub fn read(path: &Path) -> Result<LayoutState, String> {
     if !value.history_width_rem.is_finite() || value.history_width_rem <= 0. {
         value.history_width_rem = default_history_width_rem();
     }
+    if !value.source_split_ratio.is_finite()
+        || value.source_split_ratio <= 0.
+        || value.source_split_ratio >= 1.
+    {
+        value.source_split_ratio = default_source_split_ratio();
+    }
     Ok(value)
 }
 pub fn capture(window: &Window, previous: &LayoutState) -> LayoutState {
@@ -193,6 +214,7 @@ pub fn capture(window: &Window, previous: &LayoutState) -> LayoutState {
         workspace_pinned: previous.workspace_pinned,
         history_pinned: previous.history_pinned,
         history_width_rem: previous.history_width_rem,
+        source_split_ratio: previous.source_split_ratio,
     }
 }
 pub fn save(path: &Path, value: &LayoutState) -> Result<(), String> {
@@ -237,6 +259,32 @@ mod tests {
         let restored = read(&path).unwrap();
         assert!(restored.workspace_pinned && restored.history_pinned);
         assert_eq!(restored.history_width_rem, 25.);
+    }
+
+    #[test]
+    fn source_split_ratio_defaults_validates_and_round_trips() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("state.toml");
+        fs::write(&path, "sidebar_width_rem = 18\n").unwrap();
+        assert_eq!(read(&path).unwrap().source_split_ratio, 0.4);
+        for invalid in ["0", "1", "-0.1", "nan", "inf", "'invalid'"] {
+            fs::write(
+                &path,
+                format!("sidebar_width_rem = 18\nsource_split_ratio = {invalid}\n"),
+            )
+            .unwrap();
+            let value = read(&path).unwrap();
+            assert_eq!(value.source_split_ratio, 0.4);
+            assert_eq!(value.sidebar_width_rem, 18.);
+        }
+        for ratio in [0.1, 0.55, 0.9] {
+            let value = LayoutState {
+                source_split_ratio: ratio,
+                ..Default::default()
+            };
+            save(&path, &value).unwrap();
+            assert_eq!(read(&path).unwrap().source_split_ratio, ratio);
+        }
     }
 
     #[test]

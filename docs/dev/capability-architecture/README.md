@@ -25,7 +25,7 @@ Gupi 按能力组织内部 crate。根包负责应用组合、原生窗口和退
 | 根包 `src/features` | 启动组合、设置界面、临时窗口组合和更新弹窗 |
 | 根包 `src/components` | 应用共用的恢复控件 |
 
-`src/state`、`src/foundation` 的实现已全部迁出，旧模块入口已删除。附件、历史和工具语义归会话能力，没有分别建包；设置和更新界面规模有限，保留在根包。`pi-rpc`、`gpui-tokio`、`gpui-lucide`、`window-ext`、`xtask` 保持原有独立职责，不增设通用 core/common crate。
+`src/state`、`src/foundation` 的实现已全部迁出，旧模块入口已删除。附件、历史和工具语义归会话能力，没有分别建包；设置和更新界面规模有限，保留在根包。`pi-rpc`、`window-ext`、`xtask` 保持原有独立职责；`gpui-tokio`、`gpui-lucide` 从固定 revision 的共享 gpui 仓库使用，不增设通用 core/common crate。
 
 ## 依赖与公共接口
 

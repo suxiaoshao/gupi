@@ -14,7 +14,7 @@
 | 内容 | 独立项目中的归属 |
 | --- | --- |
 | 产品入口、界面与业务 | 根 `gupi` 包；保留 `src/app`、`src/foundation`、`src/features`、`src/state` |
-| Pi RPC、窗口、Tokio 桥接与图标封装 | 本地内部 crate：`pi-rpc`、`window-ext`、`gpui-tokio`、`gpui-lucide` |
+| Pi RPC、窗口、Tokio 桥接与图标封装 | 本地内部 crate：`pi-rpc`、`window-ext`；固定 Git revision 的共享服务：`gpui-tokio`、`gpui-lucide` |
 | 构建和打包 | 精简的单产品 `xtask`，所有可分发产物归集 `dist/` |
 | 共享主题、平台、Store、Operation、Form 等服务 | 从 `suxiaoshao/gpui` 的上述固定 Git revision 使用；具体依赖和 features 以根 manifest 与锁文件为准 |
 | GPUI Kit | 保持当前正式依赖，分离本身不升级框架或引入 fork |

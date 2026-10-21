@@ -29,6 +29,7 @@ pub(super) mod metadata;
 mod plugin;
 mod presentation;
 mod resources;
+pub(super) mod row_sync;
 mod tool_details;
 pub(super) mod tools;
 mod viewport;

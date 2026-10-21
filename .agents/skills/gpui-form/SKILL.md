@@ -5,7 +5,7 @@ description: Implement typed forms, control bindings, validation and submission 
 
 # GPUI Form
 
-Start with the [README](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/crates/gpui-form/README.md) or [guide](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/crates/gpui-form/docs/guide.md) and affected implementation. Macros use the [macro guide](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/crates/gpui-form-macros/docs/guide.md); component adapters use the [binding guide](https://github.com/suxiaoshao/gpui/blob/ca2c45f9bd96d24e06acfb7f445dcd2f6227273d/crates/gpui-form-gpui-component/docs/guide.md).
+Start with the [README](https://github.com/suxiaoshao/gpui/blob/3ade6e9f829dc96864a05a1c094767efdae6bb56/crates/gpui-form/README.md) or [guide](https://github.com/suxiaoshao/gpui/blob/3ade6e9f829dc96864a05a1c094767efdae6bb56/crates/gpui-form/docs/guide.md) and affected implementation. Macros use the [macro guide](https://github.com/suxiaoshao/gpui/blob/3ade6e9f829dc96864a05a1c094767efdae6bb56/crates/gpui-form-macros/docs/guide.md); component adapters use the [binding guide](https://github.com/suxiaoshao/gpui/blob/3ade6e9f829dc96864a05a1c094767efdae6bb56/crates/gpui-form-gpui-component/docs/guide.md).
 
 One `Entity<Form<M>>` owns an editing session. Native controls own interaction state; applications own catalogs, persistence, operations and product policy. A component cache is not the submission source. Catalog changes do not silently replace draft values.
 

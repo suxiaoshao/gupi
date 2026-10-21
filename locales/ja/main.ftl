@@ -1249,7 +1249,6 @@ workspace-net-zero = この返信の変更はすべて相殺されました。
 workspace-open-file = ファイルを開く
 workspace-next-operations = 次の操作
 workspace-open-change = ワークスペースで { $path } を開く
-workspace-all-tabs = すべてのタブ
 
 history-panel-title = 履歴
 history-panel-options = 履歴のオプション

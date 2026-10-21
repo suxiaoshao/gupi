@@ -1256,7 +1256,6 @@ workspace-net-zero = 本輪變更已全部抵銷。
 workspace-open-file = 開啟檔案
 workspace-next-operations = 下一批操作
 workspace-open-change = 在工作區中開啟 { $path }
-workspace-all-tabs = 所有分頁
 
 history-panel-title = 歷史
 history-panel-options = 歷史選項

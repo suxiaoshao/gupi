@@ -687,7 +687,7 @@ screenshot-permission-required = Für Screenshots ist die Erlaubnis zur Bildschi
 
 # Project files and source preview
 files-title = Dateien
-files-panel = Rechtes Panel
+files-panel = Arbeitsbereich
 files-close = Panel schließen
 files-refresh = Neu laden
 files-preview = Vorschau
@@ -712,7 +712,6 @@ files-focus-source = Quelltext fokussieren
 files-conversation = Unterhaltung
 files-conversation-busy = Unterhaltung, Antwort läuft
 files-view = Ansicht
-files-show-conversation = Unterhaltung anzeigen
 files-source = Quelltext
 
 files-link-label = { $name } — symbolischer Link
@@ -1264,3 +1263,30 @@ pi-mcp-scope-project = Projekt
 pi-mcp-disabled = Deaktiviert
 pi-mcp-check-failed = Prüfung fehlgeschlagen
 pi-mcp-check-timeout = Zeitlimit der Prüfung überschritten; Ergebnisse unvollständig
+
+workspace-changes = Änderungen
+workspace-close-tab = Tab schließen
+workspace-close-others = Andere Tabs schließen
+workspace-close-right = Tabs rechts schließen
+workspace-toggle-file-tree = Dateibaum ein-/ausblenden
+workspace-toggle-change-list = Liste geänderter Dateien ein-/ausblenden
+workspace-out-of-scope = Diese Antwort liegt außerhalb des aktuellen Bereichs.
+workspace-net-zero = Alle Änderungen dieser Antwort heben sich auf.
+workspace-open-file = Datei öffnen
+workspace-next-operations = Nächste Vorgänge
+workspace-open-change = { $path } im Arbeitsbereich öffnen
+workspace-all-tabs = Alle Tabs
+
+history-panel-title = Verlauf
+history-panel-options = Verlaufsoptionen
+workspace-view-changes = Änderungen ansehen
+
+workspace-new-tab = Neuer Tab
+workspace-tools = Werkzeuge
+workspace-recent = Zuletzt geöffnet
+workspace-no-changes = In dieser Unterhaltung gibt es noch keine Änderungen.
+workspace-recent-unavailable = Diese Änderungen sind im aktuellen Bereich nicht verfügbar.
+workspace-just-now = Gerade eben
+workspace-minutes-ago = Vor { $count } Min.
+workspace-maximize = Arbeitsbereich maximieren
+workspace-restore = Arbeitsbereich wiederherstellen

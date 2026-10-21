@@ -680,7 +680,7 @@ screenshot-permission-required = 스크린샷을 찍으려면 화면 기록 권�
 
 # Project files and source preview
 files-title = 파일
-files-panel = 오른쪽 패널
+files-panel = 작업 공간
 files-close = 패널 닫기
 files-refresh = 다시 불러오기
 files-preview = 미리 보기
@@ -705,7 +705,6 @@ files-focus-source = 소스에 포커스
 files-conversation = 대화
 files-conversation-busy = 대화, 응답 중
 files-view = 보기
-files-show-conversation = 대화 표시
 files-source = 소스
 
 files-link-label = { $name } — 심볼릭 링크
@@ -1238,3 +1237,30 @@ pi-mcp-scope-project = 프로젝트
 pi-mcp-disabled = 비활성화됨
 pi-mcp-check-failed = 확인 실패
 pi-mcp-check-timeout = 확인 시간 초과; 결과가 불완전합니다
+
+workspace-changes = 변경 사항
+workspace-close-tab = 탭 닫기
+workspace-close-others = 다른 탭 닫기
+workspace-close-right = 오른쪽 탭 닫기
+workspace-toggle-file-tree = 파일 트리 표시 전환
+workspace-toggle-change-list = 변경 파일 목록 표시 전환
+workspace-out-of-scope = 이 응답은 현재 범위 밖에 있습니다.
+workspace-net-zero = 이 응답의 모든 변경 사항이 상쇄되었습니다.
+workspace-open-file = 파일 열기
+workspace-next-operations = 다음 작업
+workspace-open-change = 작업 공간에서 { $path } 열기
+workspace-all-tabs = 모든 탭
+
+history-panel-title = 기록
+history-panel-options = 기록 옵션
+workspace-view-changes = 변경 사항 보기
+
+workspace-new-tab = 새 탭
+workspace-tools = 도구
+workspace-recent = 최근 항목
+workspace-no-changes = 이 대화에는 아직 변경 사항이 없습니다.
+workspace-recent-unavailable = 현재 범위에서는 이 변경 사항을 열 수 없습니다.
+workspace-just-now = 방금
+workspace-minutes-ago = { $count }분 전
+workspace-maximize = 작업 공간 최대화
+workspace-restore = 작업 공간 복원

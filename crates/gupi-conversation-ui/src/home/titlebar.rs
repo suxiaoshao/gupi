@@ -4,7 +4,7 @@ use super::*;
 use crate::chrome;
 use gpui_kit::base::animation::EffectTransition;
 use gpui_kit::base::animation::ease_in_out_cubic;
-use gpui_kit::component::Icon;
+use gpui_kit::component::Selectable;
 use gpui_kit::component::menu::DropdownMenu;
 use gpui_kit::component::separator::Separator;
 use gpui_kit::component::tooltip::Tooltip;
@@ -36,14 +36,6 @@ impl HomeView {
         let has_actions = current.is_some_and(|session| {
             !session.info().path.as_os_str().is_empty() || session.has_instance()
         });
-        let loading = current.is_some_and(|s| s.core_read().running() || s.is_reconnecting());
-        let can_refresh = key.as_ref().is_some_and(|key| state.can_reconnect(key, cx));
-        let can_export = key.as_ref().is_some_and(|key| state.can_export(key, cx));
-        let exporting = current.is_some_and(|session| session.is_exporting());
-        let project = current
-            .filter(|_| !temporary)
-            .map(|session| session.info().cwd.clone())
-            .filter(|cwd| !cwd.as_os_str().is_empty());
         let leading = chrome::leading_space(window);
         let target_width = if self.show_sidebar {
             px(self.pane_layout.left)
@@ -135,7 +127,6 @@ impl HomeView {
             .border_color(cx.theme().border)
             // Match the resize divider below: both start at the content edge.
             .when(self.show_sidebar, |view| view.border_l_1())
-            .child(Icon::new(IconName::Folder).small())
             .child(
                 div()
                     .id("session-title")
@@ -164,88 +155,83 @@ impl HomeView {
                     }),
             ));
         }
+        let history_bounds = self.panel_button_bounds[0].clone();
+
         main = main
             .child(div().flex_1())
-            .when(!temporary, |row| {
-                row.child(chrome::control(
-                    "export-control",
-                    chrome::button("export-session")
-                        .icon(IconName::Download)
-                        .loading(exporting)
-                        .disabled(!can_export)
-                        .tooltip_with_action(
-                            t(cx, "conversation-export"),
-                            &Run::new(Kind::Export),
-                            Some("Gupi"),
-                        )
-                        .accessibility_label(t(cx, "conversation-export"))
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.run_action(&Run::new(Kind::Export), window, cx);
-                        })),
-                ))
-                .child(chrome::control(
-                    "refresh-control",
-                    chrome::button("refresh-session")
-                        .icon(IconName::RefreshCw)
-                        .loading(loading)
-                        .disabled(!can_refresh)
-                        .tooltip_with_action(
-                            t(cx, "conversation-refresh-current"),
-                            &Run::new(Kind::Reconnect),
-                            Some("Gupi"),
-                        )
-                        .accessibility_label(t(cx, "conversation-refresh-current"))
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            if let Some(key) = &key {
-                                this.state.update(cx, |state, cx| state.reconnect(key, cx));
-                            }
-                        })),
-                ))
-            })
-            .when_some(project, |row, cwd| {
-                let mut args = fluent_bundle::FluentArgs::new();
-                args.set(
-                    "folder",
-                    cwd.file_name()
-                        .unwrap_or(cwd.as_os_str())
-                        .to_string_lossy()
-                        .into_owned(),
-                );
-                let label =
-                    gupi_settings::i18n::t_with_args(cx, "pi-project-settings-folder", &args);
-                row.child(chrome::control(
-                    "project-settings-control",
-                    chrome::button("project-settings")
-                        .icon(IconName::FolderCog)
-                        .tooltip(label.clone())
-                        .accessibility_label(label)
-                        .on_click(move |_, window, cx| {
-                            window.dispatch_action(
-                                Box::new(gupi_settings::commands::ShowProjectPiSettings::new(
-                                    cwd.clone(),
-                                )),
-                                cx,
-                            );
-                        }),
-                ))
-            })
+            .child(
+                div()
+                    .track_focus(&self.history_button_focus)
+                    .on_children_prepainted(move |bounds, _, _| {
+                        history_bounds.set(bounds.first().copied())
+                    })
+                    .child(chrome::control(
+                        "history-control",
+                        chrome::button("toggle-history")
+                            .icon(IconName::ListClock)
+                            .selected(self.pane_layout.visible(panes::Panel::History))
+                            .tooltip_with_action(
+                                t(cx, "conversation-history"),
+                                &Run::new(Kind::History),
+                                Some("Gupi"),
+                            )
+                            .accessibility_label(t(cx, "conversation-history"))
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.toggle_panel(panes::Panel::History, window, cx)
+                            })),
+                    )),
+            )
+            .when(!self.pane_layout.workspace_docked, |row| {
+                row.child(self.render_workspace_toggle(cx))
+            });
+
+        chrome::page_bar(cx).child(
+            h_flex()
+                .size_full()
+                .min_w_0()
+                .child(left)
+                .when(!self.pane_layout.maximized, |row| row.child(main))
+                .when(self.pane_layout.workspace_docked, |row| {
+                    row.child(
+                        div()
+                            .id("titlebar-workspace")
+                            .debug_selector(|| "titlebar-workspace".into())
+                            .h_full()
+                            .min_w_0()
+                            .border_l_1()
+                            .border_b_1()
+                            .border_color(cx.theme().border)
+                            .when(self.pane_layout.maximized, |view| view.flex_1())
+                            .when(!self.pane_layout.maximized, |view| {
+                                view.flex_none().w(px(
+                                    self.pane_layout.workspace_width + panes::geometry::DIVIDER
+                                ))
+                            })
+                            .child(self.render_workspace_strip(true, window, cx)),
+                    )
+                }),
+        )
+    }
+    pub(super) fn render_workspace_toggle(&self, cx: &mut Context<Self>) -> AnyElement {
+        let bounds = self.panel_button_bounds[1].clone();
+        div()
+            .track_focus(&self.workspace_button_focus)
+            .on_children_prepainted(move |children, _, _| bounds.set(children.first().copied()))
             .child(chrome::control(
-                "history-control",
-                chrome::button("toggle-history")
-                    .icon(IconName::PanelRight)
+                "workspace-control",
+                chrome::button("toggle-workspace")
+                    .icon(if self.pane_layout.visible(panes::Panel::Workspace) {
+                        IconName::PanelRightClose
+                    } else {
+                        IconName::PanelRightOpen
+                    })
+                    .selected(self.pane_layout.visible(panes::Panel::Workspace))
                     .tooltip(t(cx, "files-panel"))
                     .accessibility_label(t(cx, "files-panel"))
                     .on_click(cx.listener(|this, _, window, cx| {
-                        if this.show_history {
-                            this.close_navigator(window, cx);
-                        } else {
-                            this.show_history = true;
-                            this.sync(false, window, cx);
-                            this.focus_overlay_navigator(window, cx);
-                        }
-                        cx.notify();
+                        this.toggle_panel(panes::Panel::Workspace, window, cx)
                     })),
-            ));
-        chrome::page_bar(cx).child(h_flex().size_full().min_w_0().child(left).child(main))
+            ))
+            .into_any_element()
     }
 }

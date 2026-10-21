@@ -54,8 +54,7 @@ impl Group {
             | Kind::OpenHistory
             | Kind::ProjectFiles
             | Kind::CloseSource
-            | Kind::FocusSource
-            | Kind::ShowConversation => Self::Workspace,
+            | Kind::FocusSource => Self::Workspace,
             Kind::Export | Kind::Reveal | Kind::CopyPath | Kind::Delete => Self::Files,
             Kind::TemporaryActions
             | Kind::PasteAnswer

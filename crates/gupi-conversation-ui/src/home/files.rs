@@ -648,62 +648,6 @@ impl Render for Files {
     }
 }
 
-impl HomeView {
-    pub(super) fn render_right_panel(&self, cx: &mut Context<Self>) -> AnyElement {
-        use gpui_kit::component::tab::{Tab, TabBar};
-        v_flex()
-            .size_full()
-            .min_h_0()
-            .bg(cx.theme().sidebar)
-            .text_color(cx.theme().sidebar_foreground)
-            .child(
-                h_flex()
-                    .h_10()
-                    .px_3()
-                    .gap_1()
-                    .border_b_1()
-                    .border_color(cx.theme().border)
-                    .child(
-                        TabBar::new("navigator-tabs")
-                            .segmented()
-                            .small()
-                            .selected_index(usize::from(self.files_tab))
-                            .child(Tab::new().label(t(cx, "conversation-history")))
-                            .child(Tab::new().label(t(cx, "files-title")))
-                            .on_click(cx.listener(|this, ix: &usize, window, cx| {
-                                this.files_tab = *ix == 1;
-                                this.sync(!this.files_tab, window, cx);
-                                cx.notify();
-                            })),
-                    )
-                    .child(div().flex_1())
-                    .child(
-                        Button::new("right-close")
-                            .small()
-                            .ghost()
-                            .icon(IconName::X)
-                            .accessibility_label(t(cx, "files-close"))
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.close_navigator(window, cx);
-                            })),
-                    ),
-            )
-            .child(div().flex_1().min_h_0().child(if self.files_tab {
-                self.files()
-                    .map(|files| files.into_any_element())
-                    .unwrap_or_else(|| {
-                        div()
-                            .p_3()
-                            .child(t(cx, "files-no-session"))
-                            .into_any_element()
-                    })
-            } else {
-                self.render_history(cx)
-            }))
-            .into_any_element()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::Files;
@@ -789,8 +733,7 @@ mod tests {
                     );
                     files.rebuild(window, cx);
                 });
-                home.show_history = true;
-                home.files_tab = true;
+                home.ensure_panel(super::super::panes::Panel::Workspace, window, cx);
                 home.open_source("/project-a/preview.rs".into(), false, window, cx);
                 original_tree = Some(files);
                 original_source = home.source();
@@ -851,7 +794,7 @@ mod tests {
                     files.list.read(cx).scroll_handle().base_handle().offset(),
                     offset_a
                 );
-                assert!(home.source_active());
+                assert!(home.views["a"].workspace.active.is_none());
             });
             window.render_frame(cx);
             assert_eq!(

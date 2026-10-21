@@ -71,6 +71,9 @@ impl EditOperation {
     pub fn id(&self) -> &str {
         &self.id
     }
+    pub fn failed(&self) -> bool {
+        self.status == ToolStatus::Failed
+    }
     pub fn status(&self) -> ToolStatus {
         self.status
     }
@@ -81,7 +84,7 @@ impl EditOperation {
         &self.body
     }
     /// Stable payload identity for retained renderers; sync reuses unchanged bodies.
-    pub(super) fn shared_body(&self) -> &Rc<ChangeBody> {
+    pub(in crate::home) fn shared_body(&self) -> &Rc<ChangeBody> {
         &self.body
     }
 }
@@ -108,7 +111,7 @@ impl EditedFile {
     pub fn failed(&self) -> bool {
         self.failed
     }
-    pub(super) fn combined(&self) -> Option<&Rc<ChangeBody>> {
+    pub(in crate::home) fn combined(&self) -> Option<&Rc<ChangeBody>> {
         self.combined.as_ref()
     }
     pub fn operations(&self) -> &[EditOperation] {

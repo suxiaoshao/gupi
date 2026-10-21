@@ -510,6 +510,12 @@ pub fn session_menu(
                 .map(|i| i.cwd.clone())
         })
         .filter(|cwd| !cwd.as_os_str().is_empty());
+    let export_state = state.clone();
+    let export_key = key.clone();
+    let reconnect_state = state.clone();
+    let reconnect_key = key.clone();
+    let can_export = state.read(cx).can_export(&key, cx);
+    let can_reconnect = state.read(cx).can_reconnect(&key, cx);
     let mut menu = menu
         .item(
             PopupMenuItem::new(t(cx, "conversation-session-info-command")).on_click(
@@ -521,6 +527,43 @@ pub fn session_menu(
             ),
         )
         .item(
+            PopupMenuItem::new(t(cx, "conversation-export"))
+                .disabled(!can_export)
+                .on_click(move |_, _, cx| {
+                    export_state.update(cx, |s, cx| s.export_html(&export_key, cx));
+                }),
+        )
+        .separator()
+        .item(
+            PopupMenuItem::new(t(cx, "conversation-refresh-current"))
+                .disabled(!can_reconnect)
+                .on_click(move |_, _, cx| {
+                    reconnect_state.update(cx, |s, cx| s.reconnect(&reconnect_key, cx));
+                }),
+        );
+    if connected {
+        menu = menu.item(
+            PopupMenuItem::new(t(
+                cx,
+                if busy {
+                    "conversation-stop"
+                } else {
+                    "conversation-close-run"
+                },
+            ))
+            .on_click(move |_, _, cx| {
+                state.update(cx, |s, cx| {
+                    if busy {
+                        s.abort(&key, cx);
+                    } else {
+                        s.close(&key, cx);
+                    }
+                });
+            }),
+        );
+    }
+    menu.separator()
+        .item(
             PopupMenuItem::new(t(cx, "pi-project-settings"))
                 .disabled(cwd.is_none())
                 .on_click(move |_, window, cx| {
@@ -528,8 +571,22 @@ pub fn session_menu(
                         window.dispatch_action(
                             Box::new(menus::ShowProjectPiSettings::new(cwd.clone())),
                             cx,
-                        )
+                        );
                     }
+                }),
+        )
+        .item(
+            PopupMenuItem::new(t(cx, "action-locate"))
+                .disabled(path.as_os_str().is_empty())
+                .on_click(move |_, _, cx| cx.reveal_path(&reveal)),
+        )
+        .item(
+            PopupMenuItem::new(t(cx, "conversation-copy-path"))
+                .disabled(path.as_os_str().is_empty())
+                .on_click(move |_, _, cx| {
+                    cx.write_to_clipboard(ClipboardItem::new_string(
+                        copy.to_string_lossy().into_owned(),
+                    ));
                 }),
         )
         .separator()
@@ -551,47 +608,12 @@ pub fn session_menu(
         )
         .separator()
         .item(
-            PopupMenuItem::new(t(cx, "action-locate"))
-                .disabled(path.as_os_str().is_empty())
-                .on_click(move |_, _, cx| cx.reveal_path(&reveal)),
-        )
-        .item(
-            PopupMenuItem::new(t(cx, "conversation-copy-path"))
-                .disabled(path.as_os_str().is_empty())
+            PopupMenuItem::new(t(cx, "conversation-delete"))
+                .disabled(!can_delete)
                 .on_click(move |_, _, cx| {
-                    cx.write_to_clipboard(ClipboardItem::new_string(
-                        copy.to_string_lossy().into_owned(),
-                    ))
+                    delete_state.update(cx, |s, cx| s.delete(&delete_key, cx));
                 }),
-        );
-    if connected {
-        menu = menu.separator().item(
-            PopupMenuItem::new(t(
-                cx,
-                if busy {
-                    "conversation-stop"
-                } else {
-                    "conversation-close-run"
-                },
-            ))
-            .on_click(move |_, _, cx| {
-                state.update(cx, |s, cx| {
-                    if busy {
-                        s.abort(&key, cx);
-                    } else {
-                        s.close(&key, cx);
-                    }
-                })
-            }),
-        );
-    }
-    menu.separator().item(
-        PopupMenuItem::new(t(cx, "conversation-delete"))
-            .disabled(!can_delete)
-            .on_click(move |_, _, cx| {
-                delete_state.update(cx, |s, cx| s.delete(&delete_key, cx));
-            }),
-    )
+        )
 }
 pub fn display_title(info: &SessionInfo, cx: &App) -> String {
     if info.title().is_empty() {

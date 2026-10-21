@@ -2,11 +2,7 @@ pub(super) mod canvas;
 mod graph;
 mod presentation;
 use super::*;
-use gpui_kit::component::Icon;
 use gpui_kit::component::IndexPath;
-use gpui_kit::component::button::Toggle;
-use gpui_kit::component::button::ToggleGroup;
-use gpui_kit::component::button::ToggleVariants;
 use gpui_kit::component::list::List;
 use gpui_kit::component::list::ListDelegate;
 use gpui_kit::component::menu::ContextMenuExt;
@@ -14,6 +10,7 @@ use gpui_kit::component::menu::DropdownMenu;
 use gpui_kit::component::menu::PopupMenuItem;
 use gpui_kit::component::tag::Tag;
 use gpui_kit::component::tooltip::Tooltip;
+use gpui_kit::component::{Icon, StyledExt as _};
 use gpui_kit::prelude::FluentBuilder;
 use gupi_conversation::history::HistoryGraph;
 use gupi_conversation::history::HistoryRow;
@@ -250,52 +247,40 @@ impl HomeView {
             self.history_list.focus_handle(cx)
         }
     }
+    pub(super) fn render_history_card(&self, overlay: bool, cx: &mut Context<Self>) -> AnyElement {
+        div()
+            .size_full()
+            .p_2()
+            .child(
+                div()
+                    .size_full()
+                    .min_h_0()
+                    .rounded(cx.theme().radius_lg)
+                    .border_1()
+                    .border_color(cx.theme().border)
+                    .bg(cx.theme().popover)
+                    .text_color(cx.theme().popover_foreground)
+                    .when(overlay, |card| card.shadow_md())
+                    .child(
+                        div()
+                            .size_full()
+                            .rounded(cx.theme().radius_lg)
+                            .overflow_hidden()
+                            .child(self.render_history(cx)),
+                    ),
+            )
+            .into_any_element()
+    }
     pub(super) fn render_history(&self, cx: &mut Context<Self>) -> AnyElement {
         #[cfg(feature = "performance")]
         let _span = tracing::debug_span!(target: "gupi::performance", "history.render").entered();
-        let toolbar = h_flex().px_3().h_9().gap_1().child(
-            ToggleGroup::new("history-display-mode")
-                .segmented()
-                .outline()
-                .small()
-                .child(
-                    Toggle::new("history-list")
-                        .icon(Icon::new(IconName::List).size_4())
-                        .checked(self.history_view == HistoryView::List)
-                        .when(self.history_view == HistoryView::List, |toggle| {
-                            toggle
-                                .bg(cx.theme().primary.opacity(0.12))
-                                .text_color(cx.theme().primary)
-                        })
-                        .tooltip(t(cx, "history-view-list")),
-                )
-                .child(
-                    Toggle::new("history-tree")
-                        .icon(Icon::new(IconName::GitBranch).size_4())
-                        .checked(self.history_view == HistoryView::Tree)
-                        .when(self.history_view == HistoryView::Tree, |toggle| {
-                            toggle
-                                .bg(cx.theme().primary.opacity(0.12))
-                                .text_color(cx.theme().primary)
-                        })
-                        .tooltip(t(cx, "history-view-tree")),
-                )
-                .on_click(cx.listener(|this, states: &Vec<bool>, window, cx| {
-                    let next = [HistoryView::List, HistoryView::Tree]
-                        .into_iter()
-                        .enumerate()
-                        .find(|(i, view)| {
-                            *view != this.history_view && states.get(*i) == Some(&true)
-                        })
-                        .map(|(_, view)| view)
-                        .unwrap_or(this.history_view);
-                    if next != this.history_view {
-                        this.history_view = next;
-                        this.refresh_history_options(window, cx);
-                    }
-                    cx.notify();
-                })),
+        let toolbar = h_flex().px_3().h_10().gap_2().child(
+            div()
+                .text_sm()
+                .font_medium()
+                .child(t(cx, "history-panel-title")),
         );
+        let display = self.history_view;
         let detail = self.history_detail;
         let scope = self.history_scope;
         let list = self.history_view == HistoryView::List;
@@ -303,10 +288,11 @@ impl HomeView {
         let menu = Button::new("history-options")
             .small()
             .ghost()
-            .label(t(cx, "files-view"))
+            .icon(IconName::Ellipsis)
+            .tooltip(t(cx, "history-panel-options"))
             .accessibility_label(format!(
                 "{}: {}, {}",
-                t(cx, "files-view"),
+                t(cx, "history-panel-options"),
                 t(
                     cx,
                     match detail {
@@ -324,8 +310,24 @@ impl HomeView {
                     }
                 )
             ))
-            .dropdown_caret(true)
             .dropdown_menu(move |mut menu, _, cx| {
+                for (value, key) in [
+                    (HistoryView::List, "history-view-list"),
+                    (HistoryView::Tree, "history-view-tree"),
+                ] {
+                    let owner = owner.clone();
+                    menu = menu.item(
+                        PopupMenuItem::new(t(cx, key))
+                            .checked(value == display)
+                            .on_click(move |_, window, cx| {
+                                let _ = owner.update(cx, |this, cx| {
+                                    this.history_view = value;
+                                    this.refresh_history_options(window, cx);
+                                });
+                            }),
+                    );
+                }
+                menu = menu.separator();
                 for (value, key) in [
                     (HistoryDetail::Brief, "history-level-brief"),
                     (HistoryDetail::Detailed, "history-level-detailed"),
@@ -364,11 +366,7 @@ impl HomeView {
                 }
                 menu
             });
-        let toolbar = toolbar
-            .child(div().flex_1())
-            .child(menu)
-            .border_b_1()
-            .border_color(cx.theme().border);
+        let toolbar = toolbar.child(div().flex_1()).child(menu);
         let mut panel = v_flex().size_full().min_h_0().child(toolbar);
         if let Some(session) = self.state.read(cx).current() {
             use gupi_conversation::conversation::BodyState;
@@ -388,7 +386,11 @@ impl HomeView {
                 BodyState::Loading(stage) => {
                     return panel
                         .track_focus(&self.history_focus_handle(cx))
-                        .child(content::skeleton(stage, cx))
+                        .child(content::skeleton(
+                            stage,
+                            px(self.pane_layout.history_width),
+                            cx,
+                        ))
                         .into_any_element();
                 }
                 BodyState::Failed(error) => {

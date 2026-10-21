@@ -21,7 +21,7 @@ mod activity;
 pub(super) mod changes;
 mod composition;
 mod details;
-mod diff;
+pub(super) mod diff;
 pub(super) mod edited_files;
 mod images;
 pub(super) mod markdown;
@@ -50,6 +50,18 @@ pub(super) struct ChatRow {
     kind: RowKind,
 }
 impl ChatRow {
+    pub(super) fn user_text(&self) -> Option<String> {
+        match &self.kind {
+            RowKind::User(message) => Some(message.text()),
+            _ => None,
+        }
+    }
+    pub(super) fn started_at(&self) -> Option<i64> {
+        match &self.kind {
+            RowKind::Run { started_at, .. } => *started_at,
+            _ => None,
+        }
+    }
     pub(super) fn message_ids(&self) -> impl Iterator<Item = &str> {
         let messages = match &self.kind {
             RowKind::Run { messages, .. } => messages.as_slice(),
@@ -364,6 +376,7 @@ impl HomeView {
     }
     pub(super) fn render_messages(
         &self,
+        max_width: Pixels,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -391,7 +404,9 @@ impl HomeView {
                     .into_any_element();
             }
             BodyState::Loading(stage) => {
-                return body.child(content::skeleton(stage, cx)).into_any_element();
+                return body
+                    .child(content::skeleton(stage, max_width, cx))
+                    .into_any_element();
             }
             BodyState::Failed(error) => {
                 return body
@@ -523,7 +538,7 @@ impl HomeView {
                                                     .and_then(|i| rows.get(i))
                                                     .map(Rc::as_ref),
                                             ))
-                                            .child(div().w_full().max_w(px(820.)).child(content))
+                                            .child(div().w_full().max_w(max_width).child(content))
                                             .into_any_element()
                                     })
                                     .unwrap_or_else(|_| div().into_any_element())

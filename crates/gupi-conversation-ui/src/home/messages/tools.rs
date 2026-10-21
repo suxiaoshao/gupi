@@ -409,9 +409,16 @@ impl ToolProjection {
 }
 
 fn call_id(message: &DisplayMessage, part: usize) -> String {
-    match message.value["content"][part]["id"].as_str() {
+    tool_call_id(
+        &message.id,
+        part,
+        message.value["content"][part]["id"].as_str(),
+    )
+}
+pub(in crate::home) fn tool_call_id(message_id: &str, part: usize, id: Option<&str>) -> String {
+    match id {
         Some(id) => format!("tool-{id}"),
-        None => format!("tool-part-{}-{part}", message.id),
+        None => format!("tool-part-{message_id}-{part}"),
     }
 }
 fn result_id(message: &DisplayMessage) -> String {

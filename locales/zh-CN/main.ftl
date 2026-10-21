@@ -687,7 +687,7 @@ screenshot-permission-required = 截图需要屏幕录制权限。请在“系�
 
 # Project files and source preview
 files-title = 文件
-files-panel = 右侧面板
+files-panel = 工作区
 files-close = 关闭面板
 files-refresh = 重新读取
 files-preview = 预览
@@ -712,7 +712,6 @@ files-focus-source = 聚焦源码
 files-conversation = 会话
 files-conversation-busy = 会话，正在回复
 files-view = 视图
-files-show-conversation = 显示会话
 files-source = 源码
 
 files-link-label = { $name } — 符号链接
@@ -1245,3 +1244,30 @@ pi-mcp-scope-project = 项目
 pi-mcp-disabled = 已停用
 pi-mcp-check-failed = 检查失败
 pi-mcp-check-timeout = 检查超时，结果不完整
+
+workspace-changes = 改动
+workspace-close-tab = 关闭标签
+workspace-close-others = 关闭其他标签
+workspace-close-right = 关闭右侧标签
+workspace-toggle-file-tree = 显示或隐藏文件树
+workspace-toggle-change-list = 显示或隐藏改动列表
+workspace-out-of-scope = 此回复不在当前范围内。
+workspace-net-zero = 本轮改动已全部抵消。
+workspace-open-file = 打开文件
+workspace-next-operations = 下一批操作
+workspace-open-change = 在工作区中打开 { $path }
+workspace-all-tabs = 所有标签
+
+history-panel-title = 历史
+history-panel-options = 历史选项
+workspace-view-changes = 查看变更
+
+workspace-new-tab = 新标签页
+workspace-tools = 工具
+workspace-recent = 最近
+workspace-no-changes = 此对话还没有改动。
+workspace-recent-unavailable = 当前范围内无法打开这些改动。
+workspace-just-now = 刚刚
+workspace-minutes-ago = { $count } 分钟前
+workspace-maximize = 最大化工作区
+workspace-restore = 还原工作区

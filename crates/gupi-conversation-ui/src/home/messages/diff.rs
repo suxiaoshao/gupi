@@ -7,7 +7,7 @@ use gpui_kit::*;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-pub(super) struct DiffBlock {
+pub(in crate::home) struct DiffBlock {
     source: Source,
     height_rem: f32,
     state: Option<Entity<DiffState>>,
@@ -31,7 +31,7 @@ impl DiffBlock {
         self.gutter_selection.borrow().clone()
     }
 
-    pub(super) fn focus_handle(&self, cx: &App) -> Option<FocusHandle> {
+    pub(in crate::home) fn focus_handle(&self, cx: &App) -> Option<FocusHandle> {
         self.state
             .as_ref()
             .map(|state| state.read(cx).focus_handle(cx))
@@ -245,6 +245,28 @@ impl DiffBlock {
                 }
             })
             .into_any_element()
+    }
+    /// The workspace shows one file per view and owns its header, so the
+    /// component's per-file header (and its collapse control) is hidden.
+    pub fn render_workspace(&self) -> AnyElement {
+        if let Some(state) = &self.state {
+            Diff::new(state)
+                .header_visible(false)
+                .size_full()
+                .min_w_0()
+                .min_h_0()
+                .into_any_element()
+        } else {
+            div()
+                .id(format!(
+                    "workspace-diff-{}",
+                    self.fallback.as_ref().unwrap().entity_id().as_u64()
+                ))
+                .size_full()
+                .overflow_y_scroll()
+                .child(TextView::new(self.fallback.as_ref().unwrap()).selectable(true))
+                .into_any_element()
+        }
     }
     pub fn render(&self) -> AnyElement {
         if let Some(state) = &self.state {

@@ -16,6 +16,8 @@ pub(super) struct Preview {
     loaded: bool,
     long_line: bool,
     wrap: bool,
+    /// Mirrors the owning Files tab's tree visibility for the header toggle.
+    pub(super) navigator_visible: bool,
     task: Option<Task<()>>,
 }
 
@@ -47,6 +49,7 @@ impl Preview {
             loaded: false,
             long_line: false,
             wrap: false,
+            navigator_visible: true,
             task: None,
         };
         if keyboard_open {
@@ -101,6 +104,7 @@ pub(super) enum Event {
     Close,
     Return,
     Reveal,
+    ToggleNavigator,
 }
 impl EventEmitter<Event> for Preview {}
 impl Preview {
@@ -125,9 +129,6 @@ impl Preview {
         } else {
             self.focus.focus(window, cx);
         }
-    }
-    pub(super) fn focus_container(&self, window: &mut Window, cx: &mut App) {
-        self.focus.focus(window, cx);
     }
     pub(super) fn contains_focus(&self, window: &Window, cx: &App) -> bool {
         self.focus.contains_focused(window, cx)
@@ -275,6 +276,16 @@ impl Render for Preview {
                                     )
                                 }
                             }),
+                    )
+                    .child(
+                        Button::new("source-navigator")
+                            .small()
+                            .ghost()
+                            .selected(self.navigator_visible)
+                            .icon(IconName::FolderTree)
+                            .tooltip(t(cx, "workspace-toggle-file-tree"))
+                            .accessibility_label(t(cx, "workspace-toggle-file-tree"))
+                            .on_click(cx.listener(|_, _, _, cx| cx.emit(Event::ToggleNavigator))),
                     )
                     .child(
                         Button::new("source-close")

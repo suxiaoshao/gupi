@@ -285,6 +285,8 @@ impl PaneLayout {
 
 pub(super) struct Drag {
     side: Side,
+    // Allocated at drag start: preferences outside the window's constraints are clamped.
+    start_width: f32,
 }
 
 struct DragPreview;
@@ -333,7 +335,10 @@ impl HomeView {
         )
         .on_drag(side, move |_, _, window, cx| {
             let _ = owner.update(cx, |this, cx| {
-                this.pane_drag = Some(Drag { side });
+                this.pane_drag = Some(Drag {
+                    side,
+                    start_width: this.pane_layout.width(side),
+                });
                 this.pane_layout
                     .drag_to(side, f32::from(window.mouse_position().x));
                 cx.notify();
@@ -360,23 +365,23 @@ impl HomeView {
             return;
         };
         let width = self.pane_layout.width(drag.side);
-        let before = self.pane_committed;
-        let changed = before.is_none_or(|intent| match drag.side {
-            Side::Left => (width - intent.left).abs() > 0.01,
-            Side::Right => (width - intent.navigator).abs() > 0.01,
-            Side::History => (width - intent.history).abs() > 0.01,
-            Side::Source => self.pane_layout.ratio != intent.ratio,
-        });
-        if changed {
-            match drag.side {
-                Side::Left => self.save_layout(Some(width), None, window, cx),
-                Side::Right => self.save_layout(None, Some(width), window, cx),
-                Side::Source => self.save_source_split(cx),
-                Side::History => {
-                    cx.global_mut::<layout::LayoutState>().history_width_rem =
-                        width / f32::from(window.rem_size());
-                    self.save_layout(None, None, window, cx);
-                }
+        if (width - drag.start_width).abs() <= 0.01 {
+            // A drag held at a clamp keeps the wider preference for a larger window.
+            if let Some(intent) = self.pane_committed {
+                self.pane_layout.restore(intent);
+            }
+            cx.stop_active_drag(window);
+            cx.notify();
+            return;
+        }
+        match drag.side {
+            Side::Left => self.save_layout(Some(width), None, window, cx),
+            Side::Right => self.save_layout(None, Some(width), window, cx),
+            Side::Source => self.save_source_split(cx),
+            Side::History => {
+                cx.global_mut::<layout::LayoutState>().history_width_rem =
+                    width / f32::from(window.rem_size());
+                self.save_layout(None, None, window, cx);
             }
         }
         match drag.side {
@@ -845,6 +850,37 @@ mod tests {
             assert!(home.pane_drag.is_none());
             assert!(!cx.has_active_drag());
             assert!(home.layout_save.is_none());
+        });
+    }
+
+    #[gpui_kit::test]
+    fn drag_held_at_clamp_keeps_wider_preference(cx: &mut TestAppContext) {
+        let mut preferences = layout::LayoutState::default();
+        preferences.navigator_width_rem = 200.;
+        let (home, visual) = setup_with_preferences(cx, preferences);
+        visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                home.open_source("/tmp/gupi-resize-fixture.rs".into(), false, window, cx);
+                home.ensure_panel(Panel::Workspace, window, cx);
+            })
+        });
+        visual.run_until_parked();
+        let (before, preference) = visual.update(|_, cx| {
+            let panes = &home.read(cx).pane_layout;
+            (panes.right, panes.navigator_preference)
+        });
+        assert!(before < preference);
+        // Opening the workspace pins it; only the drag's own save matters here.
+        let _ = visual.update(|_, cx| home.update(cx, |home, _| home.layout_save.take()));
+        let end = start_drag(&home, visual, Side::Right, -40.);
+        visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+        visual.update(|_, cx| {
+            let home = home.read(cx);
+            assert_eq!(home.pane_layout.right, before);
+            assert_eq!(home.pane_layout.navigator_preference, preference);
+            assert!(home.pane_drag.is_none());
+            assert!(home.layout_save.is_none());
+            assert_eq!(cx.global::<layout::LayoutState>().navigator_width_rem, 200.);
         });
     }
 

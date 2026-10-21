@@ -14,6 +14,7 @@ mod queue;
 mod reads;
 mod reconnect;
 mod renaming;
+mod shell;
 mod temporary;
 use crate::history::DisplayMessage;
 use crate::session_catalog;
@@ -232,6 +233,7 @@ pub struct Session {
     state: Option<protocol::SessionState>,
     transcript: Transcript,
     live: Vec<DisplayMessage>,
+    shell: shell::Shell,
     message_stream: Option<messages::MessageStream>,
     last_message_update: Option<(u64, usize)>,
     run: RunState,
@@ -432,6 +434,7 @@ impl Session {
             state: None,
             transcript,
             live: vec![],
+            shell: shell::Shell::default(),
             message_stream: None,
             last_message_update: None,
             run: RunState::Idle,
@@ -529,7 +532,7 @@ impl Session {
             Activity::Waiting
         } else if self.error.is_some() || self.state.is_none() && self.core_read.error().is_some() {
             Activity::Failed
-        } else if self.busy() {
+        } else if self.busy() || self.shell_running() {
             Activity::Running
         } else if matches!(self.command, SessionCommand::Deleting { .. })
             || matches!(self.core_read, CoreRead::CheckingFile { .. })
@@ -595,7 +598,9 @@ impl Session {
             .and_then(|id| self.history().preview_leaf(id))
             .or_else(|| self.history().leaf.clone());
         let mut messages = self.history().messages(leaf.as_deref());
-        if preview.is_none_or(|id| self.history().on_current_path(id)) {
+        // Live rows belong to the current leaf; previews on its path still show them.
+        let current = preview.is_none_or(|id| self.history().on_current_path(id));
+        if current {
             #[cfg(feature = "performance")]
             let _span = tracing::debug_span!(target: "gupi::performance", "messages.merge_live", history_messages = messages.len(), live_messages = self.live.len()).entered();
             for message in &self.live {
@@ -609,6 +614,9 @@ impl Session {
                     messages.push(message.clone());
                 }
             }
+        }
+        if current {
+            messages.extend(self.shell.messages().cloned());
         }
         messages
     }
@@ -1524,6 +1532,7 @@ impl ConversationState {
                                 }
                             }),
                         ));
+                        s.disconnect_shell();
                         s.instance = None;
                         s.run = RunState::Idle;
                         s.compacting = false;
@@ -1571,6 +1580,7 @@ impl ConversationState {
                 Err(error) => {
                     let s = self.sessions.get_mut(&key).unwrap();
                     s.error = Some(SessionError::Runtime(error.to_string()));
+                    s.disconnect_shell();
                     s.finish_submission(false);
                     s.instance = None;
                     s.reset_reads();
@@ -1635,6 +1645,7 @@ impl ConversationState {
         let event_revision = s.event_revision;
         let model_revision = s.model_revision;
         let history_revision = s.history().revision;
+        let shell_completed = s.shell.completed_count();
         let task_key = key.to_owned();
         let task = cx.spawn(async move |owner, cx| {
             let key = task_key;
@@ -1657,9 +1668,22 @@ impl ConversationState {
                 let s = this.sessions.get_mut(&key).unwrap();
                 let stale =
                     s.event_revision != event_revision || s.model_revision != model_revision;
-                let again = s
+                let mut again = s
                     .core_read
                     .finish(result.as_ref().err().map(ToString::to_string));
+                let mut result = result;
+                if let Ok(snapshot) = &mut result
+                    && snapshot.entries.is_some()
+                    && s.shell
+                        .defer_history(shell_completed, snapshot.state.is_streaming)
+                {
+                    // Never combine authoritative shell rows with the temporary
+                    // results that this particular read cannot yet replace.
+                    snapshot.entries = None;
+                    if s.shell.completed_count() > shell_completed {
+                        again = Some(again.unwrap_or(ReadScope::History).max(ReadScope::History));
+                    }
+                }
                 match result {
                     Ok(mut snapshot) if stale => {
                         // Deltas invalidate get_state, not the persisted entries returned
@@ -1668,6 +1692,11 @@ impl ConversationState {
                         let accept_entries = s.history().revision == history_revision;
                         let idle = !s.running() && !s.compacting && !s.retrying;
                         if accept_entries && let Some(entries) = snapshot.entries.take() {
+                            if s.shell
+                                .refreshed(shell_completed, snapshot.state.is_streaming)
+                            {
+                                s.content_revision += 1;
+                            }
                             this.apply_history(&key, entries, cx);
                         }
                         // A queued append still needs its read while streaming. Without
@@ -1679,6 +1708,12 @@ impl ConversationState {
                         }
                     }
                     Ok(snapshot) => {
+                        if snapshot.entries.is_some()
+                            && s.shell
+                                .refreshed(shell_completed, snapshot.state.is_streaming)
+                        {
+                            s.content_revision += 1;
+                        }
                         this.apply_snapshot(&key, snapshot, scope, cx);
                         if let Some(next) = again {
                             this.read_session(&key, next, cx);
@@ -2281,6 +2316,13 @@ impl ConversationState {
         let mut history_event = false;
         let mut name_changed = false;
         match event.event() {
+            Event::BashExecutionUpdate { id, delta, .. } => {
+                if id.as_deref().is_some_and(|id| s.shell.update(id, delta)) {
+                    s.content_revision += 1;
+                    notify_body(&key, cx);
+                }
+                return;
+            }
             Event::Agent { kind, raw } => {
                 match kind.as_str() {
                     "queue_update" => {

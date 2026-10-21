@@ -46,6 +46,7 @@ impl Session {
     }
     pub fn settings_busy(&self) -> bool {
         self.busy()
+            || self.shell_running()
             || self.command.running()
             || self.model_change.running()
             || !self.pending_ui.is_empty()

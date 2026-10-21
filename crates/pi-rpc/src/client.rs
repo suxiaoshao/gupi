@@ -136,6 +136,30 @@ impl EventStream {
         self.receiver.recv().await
     }
 }
+/// A direct bash request exposes its stream identity before awaiting completion.
+pub struct BashRequest {
+    request: PreparedRequest,
+}
+impl BashRequest {
+    pub fn id(&self) -> &str {
+        &self.request.waiting.id
+    }
+    pub async fn result(self) -> Result<BashResult, Error> {
+        Ok(serde_json::from_value(self.request.response().await?.data)?)
+    }
+}
+struct PreparedRequest {
+    receive: oneshot::Receiver<Result<Response, Error>>,
+    waiting: Waiting,
+}
+impl PreparedRequest {
+    async fn response(self) -> Result<Response, Error> {
+        let result = self.receive.await.map_err(|_| Error::Closed)?;
+        drop(self.waiting);
+        result
+    }
+}
+
 struct Waiting {
     shared: Arc<Shared>,
     id: String,
@@ -244,7 +268,21 @@ impl Client {
         self.request_raw(serde_json::to_value(command)?).await
     }
     /// Escape hatch for commands not yet typed by this crate. The client owns id.
-    pub async fn request_raw(&self, mut value: Value) -> Result<Response, Error> {
+    pub async fn request_raw(&self, value: Value) -> Result<Response, Error> {
+        self.prepare_request(value)?.response().await
+    }
+    pub fn bash(&self, command: String, exclude_from_context: bool) -> Result<BashRequest, Error> {
+        Ok(BashRequest {
+            request: self.prepare_request(serde_json::to_value(Command::Bash {
+                command,
+                exclude_from_context,
+            })?)?,
+        })
+    }
+    pub async fn abort_bash(&self) -> Result<Response, Error> {
+        self.request(Command::AbortBash).await
+    }
+    fn prepare_request(&self, mut value: Value) -> Result<PreparedRequest, Error> {
         let name = value
             .get("type")
             .and_then(Value::as_str)
@@ -286,9 +324,7 @@ impl Client {
             );
             self.enqueue(bytes)?;
         }
-        let result = receive.await.map_err(|_| Error::Closed)?;
-        drop(waiting);
-        result
+        Ok(PreparedRequest { receive, waiting })
     }
     pub async fn get_state(&self) -> Result<SessionState, Error> {
         self.data(Command::GetState).await
@@ -739,6 +775,15 @@ impl Owner {
                 request: serde_json::from_value(raw.clone())?,
                 raw,
             }
+        } else if kind == "bash_execution_update" {
+            Event::BashExecutionUpdate {
+                id: raw["id"].as_str().map(str::to_owned),
+                delta: raw["delta"]
+                    .as_str()
+                    .ok_or_else(|| Error::Protocol("bash update missing delta".into()))?
+                    .to_owned(),
+                raw,
+            }
         } else {
             Event::Agent {
                 kind: kind.to_owned(),
@@ -752,5 +797,193 @@ fn rejection(response: &Response) -> Error {
     Error::Rejected {
         command: response.command.clone(),
         message: response.error.clone().unwrap_or_default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn bash_identity_is_available_before_stream_delivery_and_result_wait() {
+        let shared = Arc::new(Shared {
+            requests: Mutex::new(Requests {
+                accepting: true,
+                pending: HashMap::new(),
+            }),
+            next_id: AtomicU64::new(1),
+        });
+        let (writes, mut receive) = mpsc::channel(4);
+        let (close, _) = watch::channel(false);
+        let (_, state) = watch::channel(ConnectionState::Starting);
+        let client = Client {
+            inner: Arc::new(Inner {
+                shared: shared.clone(),
+                writes,
+                close,
+                state,
+                limits: Limits::default(),
+            }),
+        };
+        let request = client.bash("printf hello".into(), true).unwrap();
+        let id = request.id().to_owned();
+        let command: Value = serde_json::from_slice(&receive.recv().await.unwrap().bytes).unwrap();
+        assert_eq!(
+            command,
+            json!({"type":"bash","id":id,"command":"printf hello","excludeFromContext":true})
+        );
+        let pending = shared.requests.lock().unwrap().pending.remove(&id).unwrap();
+        assert_eq!(pending.command, "bash");
+        pending.reply.send(Ok(serde_json::from_value(json!({"id":id,"command":"bash","success":true,"data":{"output":"hello","cancelled":false,"truncated":false}})).unwrap())).unwrap();
+        let result = request.result().await.unwrap();
+        assert_eq!(result.output, "hello");
+        assert_eq!(result.exit_code, None);
+        let dropped = client.bash("printf again".into(), false).unwrap();
+        let dropped_id = dropped.id().to_owned();
+        drop(dropped);
+        assert!(
+            !shared
+                .requests
+                .lock()
+                .unwrap()
+                .pending
+                .contains_key(&dropped_id)
+        );
+    }
+    /// Uses only fixed printf/sleep commands in a disposable repository-local fixture.
+    #[tokio::test]
+    #[ignore = "requires installed Pi CLI"]
+    async fn installed_pi_bash_stream_abort_and_authoritative_history() {
+        struct Fixture(PathBuf);
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let root = Fixture(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!(
+                ".shell-test-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            )));
+        std::fs::create_dir_all(root.0.join("home")).unwrap();
+        let mut options = LaunchOptions::new("pi", &root.0);
+        options.clear_env = true;
+        options.env = vec![
+            ("PATH".into(), std::env::var_os("PATH").unwrap()),
+            ("HOME".into(), root.0.join("home").into_os_string()),
+            (
+                "PI_CODING_AGENT_DIR".into(),
+                root.0.join("agent").into_os_string(),
+            ),
+            ("TMPDIR".into(), root.0.clone().into_os_string()),
+        ];
+        options.args = [
+            "--offline",
+            "--no-extensions",
+            "--no-skills",
+            "--no-prompt-templates",
+            "--no-themes",
+        ]
+        .map(Into::into)
+        .into();
+        let (client, mut events) = Client::spawn(options).await.unwrap();
+        client.ready().await.unwrap();
+        let mut previous = None;
+        for _ in 0..2 {
+            let request = client
+                .bash(
+                    "printf 'first\\n'; sleep 0.05; printf 'last\\n'".into(),
+                    true,
+                )
+                .unwrap();
+            let id = request.id().to_owned();
+            let result = request.result();
+            tokio::pin!(result);
+            let mut output = String::new();
+            loop {
+                tokio::select! {
+                    result = &mut result => {
+                        let result = result.unwrap();
+                        assert_eq!(result.exit_code, Some(0));
+                        assert_eq!(result.output, "first\nlast\n");
+                        assert!(!result.cancelled);
+                        break;
+                    }
+                    event = events.recv() => match event.unwrap() {
+                        Event::BashExecutionUpdate { id: source, delta, .. } => { assert_eq!(source.as_deref(), Some(id.as_str())); output.push_str(&delta); }
+                        event => assert!(!matches!(event.raw()["type"].as_str(), Some("message_start" | "message_end" | "agent_end"))),
+                    }
+                }
+            }
+            // The request response alone is sufficient: there is no agent-end dependency.
+            assert!(!client.get_state().await.unwrap().is_streaming);
+            let entries = client.get_entries().await.unwrap();
+            let record = entries.entries.last().unwrap();
+            assert_eq!(record.data["message"]["role"], "bashExecution");
+            assert_eq!(record.data["message"]["excludeFromContext"], true);
+            assert_eq!(record.data["message"]["output"], "first\nlast\n");
+            assert_ne!(previous.as_ref(), Some(&record.id));
+            previous = Some(record.id.clone());
+            while let Ok(event) = events.receiver.try_recv() {
+                if let Event::BashExecutionUpdate {
+                    id: source, delta, ..
+                } = event
+                {
+                    assert_eq!(source.as_deref(), Some(id.as_str()));
+                    output.push_str(&delta);
+                }
+            }
+            assert_eq!(output, "first\nlast\n");
+        }
+        // Drain any chunks delivered beside a response before starting another request.
+        while events.receiver.try_recv().is_ok() {}
+        let request = client
+            .bash("printf waiting; sleep 5".into(), false)
+            .unwrap();
+        let id = request.id().to_owned();
+        loop {
+            if let Event::BashExecutionUpdate { id: source, .. } = events.recv().await.unwrap() {
+                assert_eq!(source.as_deref(), Some(id.as_str()));
+                break;
+            }
+        }
+        client.abort_bash().await.unwrap();
+        let result = request.result().await.unwrap();
+        assert!(result.cancelled);
+        assert_eq!(result.exit_code, None);
+        assert_eq!(result.output, "waiting");
+        assert_eq!(
+            client
+                .get_entries()
+                .await
+                .unwrap()
+                .entries
+                .last()
+                .unwrap()
+                .data["message"]["cancelled"],
+            true
+        );
+        while events.receiver.try_recv().is_ok() {}
+        client
+            .enqueue(
+                serde_json::to_vec(&json!({"type":"bash","command":"printf unowned"})).unwrap(),
+            )
+            .unwrap();
+        timeout(Duration::from_secs(5), async {
+            loop {
+                if let Event::BashExecutionUpdate { id, delta, .. } = events.recv().await.unwrap() {
+                    assert_eq!(id, None);
+                    assert_eq!(delta, "unowned");
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert!(matches!(client.state(), ConnectionState::Ready(_)));
+        client.close().await;
     }
 }

@@ -64,7 +64,8 @@ impl Session {
     }
 
     pub fn empty_conversation(&self) -> bool {
-        self.live.is_empty()
+        self.shell.messages().next().is_none()
+            && self.live.is_empty()
             && !self
                 .history()
                 .entries

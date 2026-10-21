@@ -414,6 +414,7 @@ impl HomeView {
                         if let Some(process) = process {
                             view.process_open.insert(process.clone(), true);
                         }
+                        view.rows[ix].reveal_find(&mut view.process_open);
                         view.scroller.update(cx, |scroller, cx| {
                             scroller.remeasure_items(ix..ix + 1, cx);
                             scroller.scroll_to_item(ix, cx);

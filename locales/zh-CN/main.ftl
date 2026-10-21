@@ -1270,3 +1270,17 @@ workspace-just-now = 刚刚
 workspace-minutes-ago = { $count } 分钟前
 workspace-maximize = 最大化工作区
 workspace-restore = 还原工作区
+
+# Direct Shell command output
+shell-title = Shell
+shell-running = 命令运行中
+shell-stopping = 正在停止命令
+shell-stop = 停止命令
+shell-cancelled = 已取消
+shell-exit-code = 退出码 { $code }
+shell-completed = 已完成 · 未提供退出码
+shell-excluded = 不加入模型上下文
+shell-show-all = 显示全部输出
+shell-show-less = 收起输出
+shell-open-full-output = 查看完整输出
+shell-display-truncated = 仅显示最近的输出。

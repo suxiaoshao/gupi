@@ -4,7 +4,7 @@ mod graph;
 mod nodes;
 use crate::session_catalog::text_content;
 pub use graph::HistoryGraph;
-pub use nodes::HistoryKind;
+pub use nodes::{HistoryKind, plain_summary};
 use pi_rpc::protocol::Entries;
 use pi_rpc::protocol::SessionEntry;
 use serde_json::Value;

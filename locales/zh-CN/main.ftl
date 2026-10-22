@@ -1353,3 +1353,8 @@ diff-external-failed = 无法打开文件。文件可能已不存在，或没有
 
 diff-conflict-label = 冲突
 diff-read-failed = 读取失败，请重试。
+
+# Conversation navigation
+conversation-navigation-jump = 跳到第 { $number } 条用户消息：{ $question }
+conversation-navigation-current = 当前区间。跳到第 { $number } 条用户消息：{ $question }
+conversation-navigation-no-text = 无文本内容

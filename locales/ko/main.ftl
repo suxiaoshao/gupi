@@ -1346,3 +1346,8 @@ diff-external-failed = 파일을 열 수 없습니다. 파일이 더 이상 존�
 
 diff-conflict-label = 충돌
 diff-read-failed = 변경 사항을 읽지 못했습니다. 다시 시도하세요.
+
+# Conversation navigation
+conversation-navigation-jump = 사용자 메시지 { $number }(으)로 이동: { $question }
+conversation-navigation-current = 현재 구간. 사용자 메시지 { $number }(으)로 이동: { $question }
+conversation-navigation-no-text = 텍스트 없음

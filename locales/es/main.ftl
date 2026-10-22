@@ -1371,3 +1371,8 @@ diff-external-failed = No se pudo abrir el archivo. Puede que ya no exista o que
 
 diff-conflict-label = Conflicto
 diff-read-failed = No se pudieron leer los cambios. Vuelve a intentarlo.
+
+# Conversation navigation
+conversation-navigation-jump = Ir al mensaje del usuario { $number }: { $question }
+conversation-navigation-current = Intervalo actual. Ir al mensaje del usuario { $number }: { $question }
+conversation-navigation-no-text = Sin contenido de texto

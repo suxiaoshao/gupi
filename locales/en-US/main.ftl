@@ -1372,3 +1372,8 @@ diff-external-failed = Could not open the file. It may no longer exist, or no ap
 
 diff-conflict-label = Conflict
 diff-read-failed = Couldn’t read changes. Retry.
+
+# Conversation navigation
+conversation-navigation-jump = Jump to user message { $number }: { $question }
+conversation-navigation-current = Current interval. Jump to user message { $number }: { $question }
+conversation-navigation-no-text = No text content

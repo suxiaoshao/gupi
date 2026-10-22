@@ -901,6 +901,10 @@ impl HomeView {
                 .child(self.render_file_workspace(window, cx))
                 .into_any_element();
         }
+        let navigator = self.session_view().map(|view| view.navigator.clone());
+        let navigator_frame = navigator
+            .as_ref()
+            .map(|navigator| navigator.read(cx).frame.clone());
         let conversation = v_flex()
             .size_full()
             .min_h_0()
@@ -922,6 +926,18 @@ impl HomeView {
             .flex_none()
             .h_full()
             .min_w_0()
+            .when_some(navigator_frame, |center, frame| {
+                center.child(
+                    canvas(
+                        move |bounds, _, _| {
+                            frame.borrow_mut().host = Some(bounds);
+                        },
+                        |_, _, _, _| {},
+                    )
+                    .absolute()
+                    .size_full(),
+                )
+            })
             .child(
                 div()
                     .absolute()
@@ -931,6 +947,7 @@ impl HomeView {
                     .w(px(self.pane_layout.body_width))
                     .child(conversation),
             )
+            .children(navigator)
             .when(self.pane_layout.history_docked, |view| {
                 view.child(
                     div()

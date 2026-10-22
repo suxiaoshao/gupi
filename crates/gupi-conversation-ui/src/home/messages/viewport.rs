@@ -42,7 +42,7 @@ impl RenderOnce for ActivityViewport {
     }
 }
 
-fn edge_fades(scroll: ScrollHandle, background: Hsla) -> impl IntoElement {
+pub(super) fn edge_fades(scroll: ScrollHandle, background: Hsla) -> impl IntoElement {
     canvas(
         move |_, _, _| {
             let bounds = scroll.bounds();

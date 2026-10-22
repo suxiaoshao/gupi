@@ -334,7 +334,7 @@ fn parse_status(bytes: &[u8], source: ChangeSource) -> Result<Vec<Change>, Error
             b'1' => record.splitn(9, |b| *b == b' ').collect::<Vec<_>>(),
             b'u' => {
                 let parts = record.splitn(11, |b| *b == b' ').collect::<Vec<_>>();
-                if source != ChangeSource::Untracked && parts.len() == 11 {
+                if source == ChangeSource::Unstaged && parts.len() == 11 {
                     files.push(Change {
                         path: record_path(parts[10])?,
                         kind: ChangeKind::Conflict,
@@ -454,6 +454,24 @@ mod tests {
         assert!(list.stats_error.is_none());
         list
     }
+    #[test]
+    fn conflict_status_has_one_unstaged_carrier() {
+        let bytes = b"u UU N... 100644 100644 100644 100644 a b c conflict.rs\0";
+        assert!(
+            parse_status(bytes, ChangeSource::Staged)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            parse_status(bytes, ChangeSource::Untracked)
+                .unwrap()
+                .is_empty()
+        );
+        let files = parse_status(bytes, ChangeSource::Unstaged).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].kind(), ChangeKind::Conflict);
+    }
+
     #[test]
     fn text_policy_bounds_bytes_lines_and_long_lines() {
         assert!(text_within_limits("let value = 1;\n"));

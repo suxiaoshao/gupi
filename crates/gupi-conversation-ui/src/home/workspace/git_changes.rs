@@ -116,7 +116,6 @@ pub(super) struct GitTab {
     pub collapsed: HashSet<String>,
     filter: Entity<InputState>,
     _filter_subscription: Subscription,
-    generation: u64,
     pub body: Option<(String, Loaded)>,
     loading: bool,
     refreshing: bool,
@@ -188,7 +187,6 @@ impl GitTab {
             collapsed: HashSet::new(),
             filter,
             _filter_subscription: subscription,
-            generation: 0,
             body: None,
             loading: true,
             refreshing: false,
@@ -200,6 +198,12 @@ impl GitTab {
             body_generation: 0,
             poll: None,
         }
+    }
+    pub(in crate::home) fn stop_tasks(&mut self) {
+        self.poll = None;
+        self.list_task = None;
+        self.body_task = None;
+        self.refreshing = false;
     }
     fn sync_rows(&mut self, window: &mut Window, cx: &mut App) {
         let query = self.filter.read(cx).value().to_lowercase();
@@ -222,17 +226,10 @@ impl GitTab {
             .collect();
         // Filtering changes the candidate set; collapsing a group alone keeps
         // its selected body, while removing a record picks its nearest neighbor.
-        let eligible = self.selected.as_ref().is_some_and(|id| {
-            self.all.iter().any(|entry| {
-                entry.id() == *id
-                    && (entry
-                        .file
-                        .path()
-                        .to_string_lossy()
-                        .to_lowercase()
-                        .contains(&query))
-            })
-        });
+        let eligible = self
+            .selected
+            .as_ref()
+            .is_some_and(|id| self.order.contains(id));
         if !eligible {
             self.selected = rows.first().map(|r| r.path.clone());
         }
@@ -463,6 +460,55 @@ impl HomeView {
         }
         view.workspace.git.as_mut()
     }
+    pub(in crate::home) fn stop_shown_git_tasks(&mut self) {
+        if let Some(tab) = self
+            .shown_key
+            .as_ref()
+            .and_then(|key| self.views.get_mut(key))
+            .and_then(|view| view.workspace.git.as_mut())
+        {
+            tab.stop_tasks();
+        }
+    }
+    pub(in crate::home) fn reconcile_git_tab_for_session(
+        &mut self,
+        key: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(cwd) = self
+            .state
+            .read(cx)
+            .sessions()
+            .get(key)
+            .map(|s| s.info().cwd.clone())
+        else {
+            return;
+        };
+        let Some(view) = self.views.get_mut(key) else {
+            return;
+        };
+        let Some(tab) = view.workspace.git.as_ref() else {
+            return;
+        };
+        if tab.cwd == cwd {
+            return;
+        }
+        let focused = tab.focus.contains_focused(window, cx)
+            || tab.header_focus.contains_focused(window, cx)
+            || tab.main_focus.contains_focused(window, cx)
+            || tab
+                .current_body()
+                .and_then(|body| body.block.as_ref())
+                .and_then(|block| block.focus_handle(cx))
+                .is_some_and(|focus| focus.contains_focused(window, cx));
+        let tab = GitTab::new(cwd, window, cx);
+        view.workspace
+            .headers
+            .insert(Some(GIT_TAB.into()), tab.header_focus.clone());
+        view.workspace.git = Some(tab);
+        view.workspace.restore_focus |= focused;
+    }
     pub(in crate::home) fn open_git_changes(
         &mut self,
         window: &mut Window,
@@ -471,13 +517,20 @@ impl HomeView {
         let Some(key) = self.shown_key.clone() else {
             return;
         };
-        let Some(cwd) = self.state.read(cx).current().map(|s| s.info().cwd.clone()) else {
+        self.reconcile_git_tab_for_session(&key, window, cx);
+        let Some(cwd) = self
+            .state
+            .read(cx)
+            .sessions()
+            .get(&key)
+            .map(|s| s.info().cwd.clone())
+        else {
             return;
         };
         let Some(view) = self.views.get_mut(&key) else {
             return;
         };
-        if view.workspace.git.as_ref().is_none_or(|g| g.cwd != cwd) {
+        if view.workspace.git.is_none() {
             view.workspace.git = Some(GitTab::new(cwd, window, cx));
         }
         view.workspace.activate(Some(GIT_TAB.into()), cx);
@@ -492,37 +545,6 @@ impl HomeView {
     }
     /// Called from lifecycle/sync hooks, never render. TestScheduler owns no Git I/O.
     pub(in crate::home) fn sync_worktree(&mut self, window: &Window, cx: &mut Context<Self>) {
-        let cwd = self.state.read(cx).current().map(|s| s.info().cwd.clone());
-        if let Some(cwd) = cwd
-            && let Some(tab) = self.git_mut()
-            && tab.cwd != cwd
-        {
-            tab.cwd = cwd;
-            tab.generation += 1;
-            tab.body_generation += 1;
-            tab.list_task = None;
-            tab.body_task = None;
-            tab.poll = None;
-            tab.repository = None;
-            tab.all.clear();
-            tab.directories_closed.clear();
-            tab.groups_closed.clear();
-            tab.order.clear();
-            tab.group_errors.clear();
-            tab.known_sources.clear();
-            tab.rows = Rc::new(Vec::new());
-            tab.selected = None;
-            tab.body = None;
-            tab.loading = true;
-            tab.error = None;
-            tab.body_error = None;
-            tab.refreshing = false;
-            tab.not_repository = false;
-            tab.list.update(cx, |list, cx| {
-                list.delegate_mut().items.clear();
-                cx.notify();
-            });
-        }
         let visible = self.shown_key == *self.state.read(cx).selected()
             && self.notification_visible
             && window.is_window_active()
@@ -534,10 +556,7 @@ impl HomeView {
                     || Some(key) != self.shown_key.as_ref()
                     || view.workspace.active.as_deref() != Some(GIT_TAB))
             {
-                tab.poll = None;
-                tab.list_task = None;
-                tab.body_task = None;
-                tab.refreshing = false;
+                tab.stop_tasks();
             }
         }
         if cx.is_test() || !visible {
@@ -573,7 +592,6 @@ impl HomeView {
             return;
         }
         tab.refreshing = true;
-        let generation = tab.generation;
         let cwd = tab.cwd.clone();
         tab.list_task = Some(cx.spawn_in(window, async move |home, cx| {
             let result = cx
@@ -589,7 +607,7 @@ impl HomeView {
                 if home.shown_key.as_ref() != Some(&key) {
                     return;
                 }
-                let Some(tab) = home.git_mut().filter(|t| t.generation == generation) else {
+                let Some(tab) = home.git_mut() else {
                     return;
                 };
                 let success = result.is_ok();
@@ -624,7 +642,6 @@ impl HomeView {
         let Some(entry) = tab.selected_entry().cloned() else {
             return;
         };
-        let generation = tab.generation;
         let previous = tab.current_body().map(|body| body.normalized.clone());
         let source = tab.selected_source().unwrap();
         tab.body_error = None;
@@ -646,9 +663,7 @@ impl HomeView {
                     return;
                 }
                 let Some(tab) = home.git_mut().filter(|t| {
-                    t.generation == generation
-                        && t.body_generation == body_generation
-                        && t.selected.as_ref() == Some(&path)
+                    t.body_generation == body_generation && t.selected.as_ref() == Some(&path)
                 }) else {
                     return;
                 };

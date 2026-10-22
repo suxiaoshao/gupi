@@ -1073,13 +1073,13 @@ fn conflict_header_identifies_conflict_instead_of_staged_comparison(cx: &mut Tes
             let file = Change::for_test("conflict.rs".into(), ChangeKind::Conflict);
             tab.apply_files(
                 vec![
-                    (ChangeSource::Staged, vec![file.clone()], None),
+                    (ChangeSource::Staged, vec![], None),
                     (ChangeSource::Unstaged, vec![file], None),
                 ],
                 window,
                 cx,
             );
-            assert_eq!(tab.selected_source(), Some(ChangeSource::Staged));
+            assert_eq!(tab.selected_source(), Some(ChangeSource::Unstaged));
             cx.notify();
         });
     });
@@ -1192,6 +1192,127 @@ fn statistics_failure_marks_group_without_retaining_obsolete_membership(cx: &mut
             assert_eq!(tab.all[0].file.path(), std::path::Path::new("moved.rs"));
             assert_eq!(tab.group_errors.len(), 2);
             assert!(tab.known_sources.contains(&ChangeSource::Unstaged));
+        })
+    });
+}
+
+#[gpui_kit::test]
+fn session_switch_retains_git_body_and_cwd_rebuild_is_owner_scoped(cx: &mut TestAppContext) {
+    let (home, visual, fixture) = mount(cx);
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            ready(home, window, cx);
+            let tab = home.git_mut().unwrap();
+            tab.groups_closed.insert(Group::Unstaged);
+            let selected = tab.selected.clone();
+            let body = tab
+                .current_body()
+                .unwrap()
+                .block
+                .as_ref()
+                .unwrap()
+                .state()
+                .unwrap()
+                .entity_id();
+            let a_list = tab.list.entity_id();
+            let state = home.state.clone();
+            state.update(cx, |state, _| {
+                let info = gupi_conversation::session_catalog::SessionInfo::new(
+                    Default::default(),
+                    "b".into(),
+                    fixture.path().join("b"),
+                );
+                state.sessions_for_test().insert(
+                    "b".into(),
+                    gupi_conversation::conversation::Session::new(info, String::new()),
+                );
+                *state.selected_for_test() = Some("b".into());
+            });
+            home.sync(false, window, cx);
+            home.open_git_changes(window, cx);
+            let b_list = home.git_mut().unwrap().list.entity_id();
+            state.update(cx, |state, _| {
+                *state.selected_for_test() = Some("fixture".into())
+            });
+            home.sync(false, window, cx);
+            let tab = home.git_mut().unwrap();
+            assert_eq!(tab.cwd, fixture.path());
+            assert_eq!(tab.selected, selected);
+            assert!(tab.groups_closed.contains(&Group::Unstaged));
+            assert_eq!(tab.list.entity_id(), a_list);
+            assert_eq!(
+                tab.current_body()
+                    .unwrap()
+                    .block
+                    .as_ref()
+                    .unwrap()
+                    .state()
+                    .unwrap()
+                    .entity_id(),
+                body
+            );
+            tab.header_focus.focus(window, cx);
+            state.update(cx, |state, _| {
+                state
+                    .sessions_for_test()
+                    .get_mut("fixture")
+                    .unwrap()
+                    .info_for_test()
+                    .cwd = fixture.path().join("changed");
+            });
+            home.sync(false, window, cx);
+            let tab = home.active_git().unwrap();
+            assert_eq!(tab.cwd, fixture.path().join("changed"));
+            assert_ne!(tab.list.entity_id(), a_list);
+            assert!(tab.body.is_none());
+            assert_eq!(
+                home.views["b"]
+                    .workspace
+                    .git
+                    .as_ref()
+                    .unwrap()
+                    .list
+                    .entity_id(),
+                b_list
+            );
+            let header = &home.views["fixture"].workspace.headers[&Some(GIT_TAB.into())];
+            assert_eq!(header, &tab.header_focus);
+            assert!(
+                tab.focus.contains_focused(window, cx)
+                    || tab.main_focus.contains_focused(window, cx)
+            );
+        });
+    });
+}
+
+#[gpui_kit::test]
+fn modified_file_becoming_conflict_selects_projected_row(cx: &mut TestAppContext) {
+    let (home, visual, _fixture) = mount(cx);
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            ready(home, window, cx);
+            let tab = home.git_mut().unwrap();
+            tab.apply_files(
+                vec![
+                    (ChangeSource::Staged, vec![], None),
+                    (
+                        ChangeSource::Unstaged,
+                        vec![Change::for_test("a.rs".into(), ChangeKind::Conflict)],
+                        None,
+                    ),
+                ],
+                window,
+                cx,
+            );
+            let conflict = tab
+                .all
+                .iter()
+                .find(|entry| entry.file.kind() == ChangeKind::Conflict)
+                .unwrap()
+                .id();
+            assert!(tab.order.contains(&conflict));
+            assert!(tab.rows.iter().any(|row| row.path == conflict));
+            assert_eq!(tab.selected.as_ref(), Some(&conflict));
         })
     });
 }

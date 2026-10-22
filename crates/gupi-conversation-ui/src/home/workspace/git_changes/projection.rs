@@ -93,7 +93,6 @@ pub(super) fn build(
 ) -> (Vec<Item>, Vec<String>) {
     let mut items = Vec::new();
     let mut order = Vec::new();
-    let mut conflicts = HashSet::new();
     for group in [Group::Conflicts, Group::Staged, Group::Unstaged] {
         let matching: Vec<_> = entries
             .iter()
@@ -105,9 +104,6 @@ pub(super) fn build(
                         .to_string_lossy()
                         .to_lowercase()
                         .contains(query))
-            })
-            .filter(|entry| {
-                group != Group::Conflicts || conflicts.insert(entry.file.path().to_owned())
             })
             .collect();
         if group == Group::Conflicts && matching.is_empty() {

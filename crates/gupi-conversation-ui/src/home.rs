@@ -639,10 +639,10 @@ impl HomeView {
     }
     fn sync(&mut self, force: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.sync_git(window, cx);
-        self.sync_worktree(window, cx);
         let key = self.state.read(cx).selected().clone();
         let changed = self.shown_key != key;
         if changed {
+            self.stop_shown_git_tasks();
             self.end_workspace_tab_drag(window, cx);
             self.close_find(false, window, cx);
             self.slash = Default::default();
@@ -862,6 +862,7 @@ impl HomeView {
                 },
             );
         }
+        self.reconcile_git_tab_for_session(&key, window, cx);
         if self.pane_layout.visible(panes::Panel::Workspace) {
             self.views[&key]
                 .files

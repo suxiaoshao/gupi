@@ -14,10 +14,20 @@ pub fn default_window_size() -> Size<Pixels> {
     size(px(960.), px(740.))
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GitView {
+    #[default]
+    List,
+    Tree,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[non_exhaustive]
 pub struct LayoutState {
+    #[serde(default)]
+    pub git_view: GitView,
     pub main_window: Option<WindowPlacement>,
     #[serde(
         default = "default_sidebar_width_rem",
@@ -48,6 +58,7 @@ impl Global for LayoutState {}
 impl Default for LayoutState {
     fn default() -> Self {
         Self {
+            git_view: GitView::List,
             main_window: None,
             sidebar_width_rem: default_sidebar_width_rem(),
             navigator_width_rem: default_navigator_width_rem(),
@@ -202,6 +213,7 @@ pub fn capture(window: &Window, previous: &LayoutState) -> LayoutState {
         WindowBounds::Maximized(b) | WindowBounds::Fullscreen(b) => (b, true),
     };
     LayoutState {
+        git_view: previous.git_view,
         main_window: Some(WindowPlacement {
             x: bounds.origin.x.into(),
             y: bounds.origin.y.into(),
@@ -318,5 +330,24 @@ mod tests {
         assert_eq!(loaded.sidebar_width_rem, 14.);
         assert_eq!(loaded.navigator_width_rem, 20.);
         assert!(!path.exists());
+    }
+}
+
+#[cfg(test)]
+mod git_view_tests {
+    use super::*;
+    use core::prelude::v1::test;
+    #[test]
+    fn git_view_defaults_and_round_trips_with_other_layout_preferences() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("state.toml");
+        fs::write(&path, "source_split_ratio = 0.55\n").unwrap();
+        let mut state = read(&path).unwrap();
+        assert_eq!(state.git_view, GitView::List);
+        state.git_view = GitView::Tree;
+        save(&path, &state).unwrap();
+        let restored = read(&path).unwrap();
+        assert_eq!(restored.git_view, GitView::Tree);
+        assert_eq!(restored.source_split_ratio, 0.55);
     }
 }

@@ -439,8 +439,14 @@ impl HomeView {
         });
         crate::host::present(&state, window, true, cx);
         let subscriptions = vec![
+            cx.observe_global_in::<layout::LayoutState>(window, |home, window, cx| {
+                home.sync_git_view(window, cx)
+            }),
             cx.observe_window_activation(window, |this, window, cx| {
                 crate::host::present(&this.state, window, this.notification_visible, cx);
+                if !window.is_window_active() {
+                    this.end_workspace_tab_drag(window, cx);
+                }
                 this.sync_git(window, cx);
                 this.sync_worktree(window, cx);
                 this.sync_commands(window, cx);
@@ -604,7 +610,10 @@ impl HomeView {
                     return;
                 }
                 let _ = resize_owner.update(cx, |this, cx| {
-                    if this.pane_drag.is_some() {
+                    if this.workspace_tab_drag_active() {
+                        this.end_workspace_tab_drag(window, cx);
+                        cx.stop_propagation();
+                    } else if this.pane_drag.is_some() {
                         this.finish_pane_drag(window, cx);
                         cx.stop_active_drag(window);
                         cx.stop_propagation();
@@ -651,6 +660,7 @@ impl HomeView {
         let key = self.state.read(cx).selected().clone();
         let changed = self.shown_key != key;
         if changed {
+            self.end_workspace_tab_drag(window, cx);
             self.close_find(false, window, cx);
             self.slash = Default::default();
         }
@@ -1328,6 +1338,7 @@ impl Render for HomeView {
             let content = crate::performance::measure("home", false, content);
             return content;
         }
+        self.validate_workspace_tab_drag(window, cx);
         self.fit_layout(window, cx);
         let titlebar = self.render_titlebar(window, cx);
         let window_titlebar = crate::chrome::window_title_bar(window, cx);
@@ -1415,7 +1426,9 @@ impl Render for HomeView {
                     }),
             );
         }
-        shell = shell.child(panes::ResizeEvents(cx.weak_entity()));
+        shell = shell
+            .child(panes::ResizeEvents(cx.weak_entity()))
+            .child(workspace::strip_events(cx.weak_entity()));
         let content = v_flex()
             .key_context("Gupi")
             .when(self.pane_layout.maximized, |view| {

@@ -1281,6 +1281,7 @@ history-panel-options = Verlaufsoptionen
 workspace-view-changes = Änderungen ansehen
 
 workspace-new-tab = Neuer Tab
+workspace-all-tabs = Alle Tabs
 workspace-tools = Werkzeuge
 workspace-recent = Zuletzt geöffnet
 workspace-no-changes = In dieser Unterhaltung gibt es noch keine Änderungen.
@@ -1357,3 +1358,6 @@ diff-reading-options = Leseoptionen
 diff-reading-options-narrow = Leseoptionen: Der Inhaltsbereich ist für die geteilte Ansicht zu schmal; Verbreitern stellt die bevorzugte Ansicht wieder her
 diff-view = Ansicht
 diff-display = Anzeige
+diff-list-view = Liste
+diff-tree-view = Baum
+diff-stats-incomplete = Unvollständige Statistik

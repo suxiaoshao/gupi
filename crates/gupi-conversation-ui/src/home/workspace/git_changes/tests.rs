@@ -7,7 +7,17 @@ use gpui_kit::component::{
 use gpui_kit::test::{TestQueryExt, TestWindowExt};
 
 fn mount(cx: &mut TestAppContext) -> (Entity<HomeView>, &mut VisualTestContext, tempfile::TempDir) {
+    mount_view(cx, GitView::List)
+}
+fn mount_view(
+    cx: &mut TestAppContext,
+    view: GitView,
+) -> (Entity<HomeView>, &mut VisualTestContext, tempfile::TempDir) {
     let fixture = tempfile::tempdir().unwrap();
+    let path = fixture.path().join("state.toml");
+    let mut saved = layout::LayoutState::default();
+    saved.git_view = view;
+    layout::save(&path, &saved).unwrap();
     cx.update(|cx| {
         gpui_kit::init(cx);
         crate::host::install_headless(cx);
@@ -15,7 +25,7 @@ fn mount(cx: &mut TestAppContext) -> (Entity<HomeView>, &mut VisualTestContext, 
         gupi_settings::theme::init(cx);
         gupi_settings::i18n::apply(Default::default(), cx);
         gupi_pi_runtime::init(cx);
-        cx.set_global(layout::LayoutState::default());
+        cx.set_global(layout::read(&path).unwrap());
         cx.set_global(TestLayoutDirectory(fixture.path().to_owned()));
     });
     let state = cx.new(|cx| ConversationState::new("unused-pi".into(), cx));
@@ -571,5 +581,209 @@ fn file_header_separates_reading_options_and_actions(cx: &mut TestAppContext) {
             ));
         });
         assert!(window.try_find_by_label(&t(cx, "diff-wrap")).is_none());
+    });
+}
+
+#[gpui_kit::test]
+fn tree_first_projection_keyboard_search_and_hidden_file_neighbors(cx: &mut TestAppContext) {
+    let (home, visual, fixture) = mount_view(cx, GitView::Tree);
+    let directory = Directory {
+        group: Group::Unstaged,
+        path: "dir".into(),
+    };
+    let file = identity(ChangeSource::Unstaged, std::path::Path::new("dir/c.rs"));
+    let body = visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            ready(home, window, cx);
+            assert_eq!(home.active_git().unwrap().projection_view, GitView::Tree);
+            assert!(
+                home.active_git()
+                    .unwrap()
+                    .list
+                    .read(cx)
+                    .delegate()
+                    .items
+                    .iter()
+                    .any(|i| matches!(i, Item::Directory(..)))
+            );
+            home.select_git_file(file.clone(), window, cx);
+            home.active_git().unwrap().focus_list(window, cx);
+            home.active_git().unwrap().cache[&file]
+                .block
+                .as_ref()
+                .unwrap()
+                .state()
+                .unwrap()
+                .clone()
+        })
+    });
+    visual.run_until_parked();
+    visual.simulate_keystrokes("left");
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        window.draw(cx).clear(cx);
+        assert_eq!(window.find(directory.id()).expanded(), Some(true));
+        assert_eq!(
+            home.read(cx)
+                .active_git()
+                .unwrap()
+                .list
+                .read(cx)
+                .delegate()
+                .items[home
+                .read(cx)
+                .active_git()
+                .unwrap()
+                .list
+                .read(cx)
+                .delegate()
+                .index
+                .unwrap()]
+            .id(),
+            directory.id()
+        );
+    });
+    visual.simulate_keystrokes("left");
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        window.draw(cx).clear(cx);
+        assert_eq!(window.find(directory.id()).expanded(), Some(false));
+        home.update(cx, |home, cx| {
+            let tab = home.active_git().unwrap();
+            assert_eq!(tab.selected.as_ref(), Some(&file));
+            assert_eq!(
+                tab.cache[&file].block.as_ref().unwrap().state().unwrap(),
+                &body
+            );
+            assert!(!tab.rows.iter().any(|row| row.path == file));
+            let (previous, next) = tab.neighbors();
+            assert_eq!(
+                previous,
+                Some(identity(ChangeSource::Staged, std::path::Path::new("a.rs")))
+            );
+            assert_eq!(
+                next,
+                Some(identity(
+                    ChangeSource::Unstaged,
+                    std::path::Path::new("a.rs")
+                ))
+            );
+            let tab = home.git_mut().unwrap();
+            tab.filter
+                .update(cx, |input, cx| input.set_value("c.rs", window, cx));
+            home.filter_git(window, cx);
+            assert!(
+                home.active_git()
+                    .unwrap()
+                    .rows
+                    .iter()
+                    .any(|row| row.path == file)
+            );
+            home.toggle_git_directory(directory.clone(), window, cx);
+            assert!(
+                home.active_git()
+                    .unwrap()
+                    .directories_closed
+                    .contains(&directory)
+            );
+            home.git_mut()
+                .unwrap()
+                .filter
+                .update(cx, |input, cx| input.set_value("", window, cx));
+            home.filter_git(window, cx);
+            assert!(
+                !home
+                    .active_git()
+                    .unwrap()
+                    .rows
+                    .iter()
+                    .any(|row| row.path == file)
+            );
+            home.set_git_view(GitView::List, window, cx);
+            assert_eq!(
+                home.active_git().unwrap().cache[&file]
+                    .block
+                    .as_ref()
+                    .unwrap()
+                    .state()
+                    .unwrap(),
+                &body
+            );
+            home.set_git_view(GitView::Tree, window, cx);
+            assert!(
+                !home
+                    .active_git()
+                    .unwrap()
+                    .directories_closed
+                    .contains(&directory)
+            );
+            assert!(
+                home.active_git()
+                    .unwrap()
+                    .rows
+                    .iter()
+                    .any(|row| row.path == file)
+            );
+            assert!(home.active_git().unwrap().list_task.is_none());
+        });
+    });
+    visual.run_until_parked();
+    assert_eq!(
+        layout::read(&fixture.path().join("state.toml"))
+            .unwrap()
+            .git_view,
+        GitView::Tree
+    );
+}
+
+#[gpui_kit::test]
+fn tree_unchanged_refresh_preserves_projection_scroll_and_prunes_removed_directories(
+    cx: &mut TestAppContext,
+) {
+    let (home, visual, _fixture) = mount_view(cx, GitView::Tree);
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            ready(home, window, cx);
+            let directory = Directory {
+                group: Group::Unstaged,
+                path: "dir".into(),
+            };
+            home.toggle_git_directory(directory.clone(), window, cx);
+            let tab = home.git_mut().unwrap();
+            let rows = tab.rows.clone();
+            let generation = tab.body_generation;
+            let selected = tab.selected.clone();
+            let offset = point(px(0.), px(-20.));
+            tab.list
+                .read(cx)
+                .scroll_handle()
+                .base_handle()
+                .set_offset(offset);
+            let results = SOURCES
+                .into_iter()
+                .map(|source| {
+                    (
+                        source,
+                        Ok(tab
+                            .all
+                            .iter()
+                            .filter(|entry| entry.source == source)
+                            .map(|entry| entry.file.clone())
+                            .collect()),
+                    )
+                })
+                .collect();
+            assert!(!tab.apply_files(results, window, cx));
+            assert!(Rc::ptr_eq(&rows, &tab.rows));
+            assert_eq!(tab.selected, selected);
+            assert_eq!(tab.body_generation, generation);
+            assert!(tab.directories_closed.contains(&directory));
+            assert_eq!(
+                tab.list.read(cx).scroll_handle().base_handle().offset(),
+                offset
+            );
+            tab.apply_files(vec![(ChangeSource::Unstaged, Ok(vec![]))], window, cx);
+            assert!(!tab.directories_closed.contains(&directory));
+        })
     });
 }

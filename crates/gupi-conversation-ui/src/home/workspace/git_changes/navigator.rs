@@ -6,13 +6,14 @@ use gpui_kit::component::{
 
 pub(super) enum Item {
     Group(Group, usize, bool),
-    File(Row, &'static str),
+    File(Row, &'static str, usize),
+    Directory(Directory, usize, bool, Option<(usize, usize)>),
 }
 pub(in crate::home::workspace) struct Delegate {
     owner: WeakEntity<HomeView>,
     pub(super) items: Vec<Item>,
     selected: Option<String>,
-    index: Option<usize>,
+    pub(super) index: Option<usize>,
 }
 impl Delegate {
     pub fn new(owner: WeakEntity<HomeView>) -> Self {
@@ -44,7 +45,7 @@ impl ListDelegate for Delegate {
     ) {
         self.index = ix.map(|i| i.row);
         let selected = self.index.and_then(|ix| match self.items.get(ix) {
-            Some(Item::File(row, _)) => Some(row.path.clone()),
+            Some(Item::File(row, _, _)) => Some(row.path.clone()),
             _ => None,
         });
         if self.selected == selected {
@@ -138,7 +139,53 @@ impl ListDelegate for Delegate {
                         .into_any_element(),
                 )
             }
-            Item::File(row, code) => {
+            Item::Directory(key, count, closed, stats) => {
+                let label = format!("{}  {count}", key.path.display());
+                detail = Some(match stats {
+                    Some((added, removed)) => format!("{label}\n+{added} −{removed}"),
+                    None => format!("{label}\n{}", t(cx, "diff-stats-incomplete")),
+                });
+                (
+                    key.id(),
+                    label,
+                    h_flex()
+                        .h_7()
+                        .min_w_0()
+                        .w_full()
+                        .gap_1()
+                        .pl(rems(key.path.components().count() as f32 * 0.75))
+                        .child(
+                            Icon::new(if *closed {
+                                IconName::ChevronRight
+                            } else {
+                                IconName::ChevronDown
+                            })
+                            .size_3(),
+                        )
+                        .child(
+                            Icon::new(IconName::Folder)
+                                .size_3()
+                                .text_color(cx.theme().muted_foreground),
+                        )
+                        .child(
+                            div().flex_1().min_w_0().text_sm().truncate().child(
+                                key.path
+                                    .file_name()
+                                    .unwrap_or_default()
+                                    .to_string_lossy()
+                                    .into_owned(),
+                            ),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(count.to_string()),
+                        )
+                        .into_any_element(),
+                )
+            }
+            Item::File(row, code, depth) => {
                 let path = std::path::Path::new(&row.label);
                 let name = path
                     .file_name()
@@ -149,6 +196,7 @@ impl ListDelegate for Delegate {
                     .parent()
                     .filter(|p| !p.as_os_str().is_empty())
                     .map(|p| p.display().to_string())
+                    .filter(|_| *depth == 0)
                     .unwrap_or_default();
                 let label = format!("{} · {}", row.label, t(cx, row.status.unwrap()));
                 (
@@ -159,6 +207,7 @@ impl ListDelegate for Delegate {
                         .min_w_0()
                         .w_full()
                         .gap_2()
+                        .pl(rems(*depth as f32 * 0.75))
                         .child(
                             div()
                                 .w_3()
@@ -189,22 +238,7 @@ impl ListDelegate for Delegate {
                                 .child(directory),
                         )
                         .when_some(row.stats, |body, (added, removed)| {
-                            body.child(
-                                h_flex()
-                                    .flex_none()
-                                    .gap_1()
-                                    .text_xs()
-                                    .child(
-                                        div()
-                                            .text_color(cx.theme().success)
-                                            .child(format!("+{added}")),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_color(cx.theme().danger)
-                                            .child(format!("−{removed}")),
-                                    ),
-                            )
+                            body.child(reader::line_stats(added, removed, cx))
                         })
                         .into_any_element(),
                 )
@@ -217,8 +251,10 @@ impl ListDelegate for Delegate {
                 .role(Role::Button)
                 .when_some(
                     match item {
-                        Item::Group(_, _, closed) => Some(!closed),
-                        Item::File(_, _) => None,
+                        Item::Group(_, _, closed) | Item::Directory(_, _, closed, _) => {
+                            Some(!closed)
+                        }
+                        Item::File(..) => None,
                     },
                     |row, expanded| row.aria_expanded(expanded),
                 )
@@ -244,8 +280,9 @@ impl ListDelegate for Delegate {
             return;
         };
         let action = match item {
-            Item::Group(group, _, _) => Ok(*group),
-            Item::File(row, _) => Err(row.path.clone()),
+            Item::Group(group, _, _) => Navigation::Group(*group),
+            Item::Directory(key, _, _, _) => Navigation::Directory(key.clone()),
+            Item::File(row, _, _) => Navigation::File(row.path.clone()),
         };
         cx.spawn_in(window, async move |_, cx| {
             let _ = owner.update_in(cx, |home, window, cx| {
@@ -254,12 +291,36 @@ impl ListDelegate for Delegate {
                     .is_some_and(|t| t.list.entity_id() == list)
                 {
                     match action {
-                        Ok(group) => home.toggle_git_group(group, window, cx),
-                        Err(path) => home.select_git_file(path, window, cx),
+                        Navigation::Group(group) => home.toggle_git_group(group, window, cx),
+                        Navigation::Directory(key) => home.toggle_git_directory(key, window, cx),
+                        Navigation::File(path) => home.select_git_file(path, window, cx),
                     }
                 }
             });
         })
         .detach();
+    }
+}
+
+enum Navigation {
+    Group(Group),
+    Directory(Directory),
+    File(String),
+}
+impl Item {
+    pub(super) fn depth(&self) -> usize {
+        match self {
+            Self::Group(..) => 0,
+            Self::Directory(key, ..) => key.path.components().count(),
+            Self::File(_, _, depth) => *depth,
+        }
+    }
+
+    pub(super) fn id(&self) -> String {
+        match self {
+            Self::Group(group, _, _) => format!("git-group-{}", group.key()),
+            Self::Directory(key, _, _, _) => key.id(),
+            Self::File(row, _, _) => format!("git-file-{}", row.path),
+        }
     }
 }

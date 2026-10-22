@@ -4,6 +4,23 @@ use gpui_kit::component::menu::DropdownMenu;
 use messages::diff::DiffBlock;
 
 const SPLIT_MIN_REM: f32 = 48.;
+/// Added and removed line counts in the theme's success and danger colors.
+pub(super) fn line_stats(added: usize, removed: usize, cx: &App) -> Div {
+    h_flex()
+        .flex_none()
+        .gap_1()
+        .text_xs()
+        .child(
+            div()
+                .text_color(cx.theme().success)
+                .child(format!("+{added}")),
+        )
+        .child(
+            div()
+                .text_color(cx.theme().danger)
+                .child(format!("−{removed}")),
+        )
+}
 #[derive(Clone, Copy)]
 pub(super) struct Options {
     pub split: bool,
@@ -273,12 +290,10 @@ impl HomeView {
         })
     }
     fn reader_neighbors(&self) -> (Option<String>, Option<String>) {
-        let (paths, selected): (Vec<_>, _) = if let Some(tab) = self.active_git() {
-            (
-                tab.rows.iter().map(|r| r.path.clone()).collect(),
-                tab.selected.as_ref(),
-            )
-        } else if let Some(tab) = self.active_changes() {
+        if let Some(tab) = self.active_git() {
+            return tab.neighbors();
+        }
+        let (paths, selected): (Vec<_>, _) = if let Some(tab) = self.active_changes() {
             (
                 tab.visible_files()
                     .iter()

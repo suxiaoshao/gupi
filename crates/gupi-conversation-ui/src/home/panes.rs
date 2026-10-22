@@ -234,7 +234,7 @@ impl PaneLayout {
                     self.ratio = clamp(
                         requested,
                         geometry::CONVERSATION_MIN_REM * r.rem,
-                        self.work - geometry::CONTENT_MIN_REM * r.rem,
+                        self.work - r.content.workspace_minimum(r.rem),
                     ) / self.work;
                 }
             }
@@ -932,6 +932,12 @@ mod tests {
         });
     }
 
+    fn navigator_room(panes: &PaneLayout, window: &Window) -> f32 {
+        panes.workspace_width
+            - geometry::DIVIDER
+            - geometry::CONTENT_MIN_REM * f32::from(window.rem_size())
+    }
+
     #[gpui_kit::test]
     fn drag_held_at_clamp_keeps_wider_preference(cx: &mut TestAppContext) {
         let mut preferences = layout::LayoutState::default();
@@ -954,9 +960,13 @@ mod tests {
         let end = start_drag(&home, visual, Side::Right, -40.);
         visual.update(|_, cx| cx.global_mut::<layout::LayoutState>().source_split_ratio = 0.58);
         visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
-        visual.update(|_, cx| {
+        visual.update(|window, cx| {
             let home = home.read(cx);
-            assert_eq!(home.pane_layout.right, before);
+            // The navigator stays clamped inside the workspace the new ratio leaves.
+            assert_eq!(
+                home.pane_layout.right,
+                before.min(navigator_room(&home.pane_layout, window))
+            );
             assert_eq!(home.pane_layout.ratio(), 0.58);
             assert_eq!(home.pane_layout.navigator_preference, preference);
             assert!(home.pane_drag.is_none());
@@ -966,7 +976,7 @@ mod tests {
     }
 
     #[gpui_kit::test]
-    fn tab_drag_reflow_does_not_acquire_pane_ownership(cx: &mut TestAppContext) {
+    fn tab_drag_reflow_ends_tab_without_acquiring_pane_ownership(cx: &mut TestAppContext) {
         let (home, visual) = setup(cx);
         visual.update(|window, cx| {
             home.update(cx, |home, cx| {
@@ -988,7 +998,8 @@ mod tests {
         visual.simulate_resize(size(px(1800.), px(800.)));
         visual.run_until_parked();
         visual.update(|_, cx| {
-            assert!(cx.has_active_drag());
+            assert!(!cx.has_active_drag());
+            assert!(!home.read(cx).workspace_tab_drag_active());
             assert!(home.read(cx).pane_drag.is_none());
             assert!(home.read(cx).layout_save.is_none());
         });
@@ -1101,7 +1112,10 @@ mod tests {
                 assert!(home.pane_layout.right > before);
                 cx.global_mut::<layout::LayoutState>().source_split_ratio = 0.61;
                 home.interrupt_pane_drag(window, cx);
-                assert_eq!(home.pane_layout.right, before);
+                assert_eq!(
+                    home.pane_layout.right,
+                    before.min(navigator_room(&home.pane_layout, window))
+                );
                 assert_eq!(home.pane_layout.ratio(), 0.61);
                 assert_eq!(
                     cx.global::<layout::LayoutState>().navigator_width_rem
@@ -1116,9 +1130,12 @@ mod tests {
             Modifiers::default(),
         );
         visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
-        visual.update(|_, cx| {
+        visual.update(|window, cx| {
             assert!(home.read(cx).pane_drag.is_none());
-            assert_eq!(home.read(cx).pane_layout.right, before);
+            assert_eq!(
+                home.read(cx).pane_layout.right,
+                before.min(navigator_room(&home.read(cx).pane_layout, window))
+            );
             assert!(home.read(cx).layout_save.is_none());
         });
     }

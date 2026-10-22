@@ -10,6 +10,7 @@ use changes::ChangesTab;
 use git_changes::{GIT_TAB, GitTab};
 mod launcher;
 mod strip;
+pub(in crate::home) use strip::events as strip_events;
 const NEW_TAB: &str = "workspace:new";
 const RECENT_LIMIT: usize = 8;
 
@@ -17,10 +18,11 @@ pub(super) struct Tabs {
     pub order: Vec<Option<String>>,
     recent: Vec<launcher::Recent>,
     pub scroll: ScrollHandle,
+    /// Whether the last layout clipped tabs, which shows the all-tabs menu.
+    pub overflowing: std::rc::Rc<std::cell::Cell<bool>>,
     pub headers: HashMap<Option<String>, FocusHandle>,
-    pub dragging: Option<Option<String>>,
+    pub strip: strip::Interaction,
     pub exit_maximized: bool,
-    pub drop_target: Option<(Option<String>, bool)>,
     pub navigator_hidden: bool,
     next_new: u64,
     pub changes: Vec<ChangesTab>,
@@ -42,9 +44,9 @@ impl Default for Tabs {
             order: vec![Some(NEW_TAB.into())],
             recent: Vec::new(),
             scroll: ScrollHandle::new(),
+            overflowing: Default::default(),
             headers: HashMap::new(),
-            drop_target: None,
-            dragging: None,
+            strip: Default::default(),
             exit_maximized: false,
         }
     }
@@ -576,6 +578,7 @@ impl HomeView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.end_workspace_tab_drag(window, cx);
         if let Some(view) = self
             .shown_key
             .as_ref()
@@ -594,6 +597,7 @@ impl HomeView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.end_workspace_tab_drag(window, cx);
         let Some(view) = self
             .shown_key
             .as_ref()

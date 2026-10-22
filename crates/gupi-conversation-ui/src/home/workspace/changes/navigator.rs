@@ -149,20 +149,7 @@ impl ListDelegate for Delegate {
                 )
             })
             .child(match file.stats {
-                Some((added, removed)) => h_flex()
-                    .gap_1()
-                    .text_xs()
-                    .child(
-                        div()
-                            .text_color(cx.theme().success)
-                            .child(format!("+{added}")),
-                    )
-                    .child(
-                        div()
-                            .text_color(cx.theme().danger)
-                            .child(format!("−{removed}")),
-                    )
-                    .into_any_element(),
+                Some((added, removed)) => reader::line_stats(added, removed, cx).into_any_element(),
                 None => div()
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)

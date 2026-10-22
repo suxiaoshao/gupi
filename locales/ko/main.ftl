@@ -1255,6 +1255,7 @@ history-panel-options = 기록 옵션
 workspace-view-changes = 변경 사항 보기
 
 workspace-new-tab = 새 탭
+workspace-all-tabs = 모든 탭
 workspace-tools = 도구
 workspace-recent = 최근 항목
 workspace-no-changes = 이 대화에는 아직 변경 사항이 없습니다.
@@ -1331,3 +1332,6 @@ diff-reading-options = 읽기 옵션
 diff-reading-options-narrow = 읽기 옵션: 본문 영역이 너무 좁아 나란히 볼 수 없습니다. 넓히면 선호하는 보기로 돌아갑니다
 diff-view = 보기
 diff-display = 표시
+diff-list-view = 목록
+diff-tree-view = 트리
+diff-stats-incomplete = 불완전한 통계

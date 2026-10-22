@@ -24,17 +24,16 @@ pub(in crate::home) struct Content {
 }
 impl Content {
     pub fn minimum(self, rem: f32) -> f32 {
-        CONVERSATION_MIN_REM * rem
-            + if self.main {
-                CONTENT_MIN_REM * rem + DIVIDER
-            } else {
-                0.
-            }
-            + if self.navigator {
-                NAVIGATOR_MIN_REM * rem + DIVIDER
-            } else {
-                0.
-            }
+        CONVERSATION_MIN_REM * rem + DIVIDER + self.workspace_minimum(rem)
+    }
+    /// The narrowest workspace beside the conversation, excluding its leading divider.
+    pub fn workspace_minimum(self, rem: f32) -> f32 {
+        match (self.main, self.navigator) {
+            (true, true) => CONTENT_MIN_REM * rem + DIVIDER + NAVIGATOR_MIN_REM * rem,
+            (true, false) => CONTENT_MIN_REM * rem,
+            (false, true) => NAVIGATOR_MIN_REM * rem,
+            (false, false) => 0.,
+        }
     }
     pub fn dockable(self, available: f32, rem: f32) -> bool {
         available >= self.minimum(rem)
@@ -50,42 +49,39 @@ pub(in crate::home) struct Workspace {
     pub ratio_width: f32,
 }
 impl Workspace {
+    /// The source split divides the whole workspace from the conversation, so
+    /// showing or hiding the navigator only redistributes space inside it.
     pub fn docked(available: f32, content: Content, navigator: f32, ratio: f32, rem: f32) -> Self {
         let mut result = Self::default();
-        let dividers =
-            (usize::from(content.main) + usize::from(content.navigator)) as f32 * DIVIDER;
+        if !content.main {
+            result.navigator = clamp(
+                navigator,
+                NAVIGATOR_MIN_REM * rem,
+                available - DIVIDER - CONVERSATION_MIN_REM * rem,
+            );
+            result.conversation = (available - result.navigator - DIVIDER).max(0.);
+            result.width = result.navigator;
+            return result;
+        }
+        result.ratio_width = (available - DIVIDER).max(0.);
+        result.conversation = clamp(
+            ratio * result.ratio_width,
+            CONVERSATION_MIN_REM * rem,
+            result.ratio_width - content.workspace_minimum(rem),
+        );
+        result.width = result.ratio_width - result.conversation;
         result.navigator = if content.navigator {
             clamp(
                 navigator,
                 NAVIGATOR_MIN_REM * rem,
-                available
-                    - dividers
-                    - CONVERSATION_MIN_REM * rem
-                    - if content.main {
-                        CONTENT_MIN_REM * rem
-                    } else {
-                        0.
-                    },
+                result.width - DIVIDER - CONTENT_MIN_REM * rem,
             )
         } else {
             0.
         };
-        result.ratio_width = (available - result.navigator - dividers).max(0.);
-        result.conversation = if content.main {
-            clamp(
-                ratio * result.ratio_width,
-                CONVERSATION_MIN_REM * rem,
-                result.ratio_width - CONTENT_MIN_REM * rem,
-            )
-        } else {
-            result.ratio_width
-        };
-        result.main = if content.main {
-            result.ratio_width - result.conversation
-        } else {
-            0.
-        };
-        result.width = (available - result.conversation - DIVIDER).max(0.);
+        result.main =
+            (result.width - result.navigator - if content.navigator { DIVIDER } else { 0. })
+                .max(0.);
         result
     }
     pub fn overlay(available: f32, content: Content, navigator: f32, rem: f32) -> Self {
@@ -193,6 +189,23 @@ mod tests {
                 }
             }
         }
+    }
+    #[test]
+    fn navigator_visibility_keeps_the_source_split() {
+        let rem = 16.;
+        let with = Content {
+            main: true,
+            navigator: true,
+        };
+        let without = Content {
+            main: true,
+            navigator: false,
+        };
+        let available = with.minimum(rem) + 500.;
+        let a = Workspace::docked(available, with, 20. * rem, 0.5, rem);
+        let b = Workspace::docked(available, without, 20. * rem, 0.5, rem);
+        assert_eq!(a.conversation, b.conversation);
+        assert_eq!(a.width, b.width);
     }
     #[test]
     fn overlays_remain_finite_at_infeasible_sizes() {

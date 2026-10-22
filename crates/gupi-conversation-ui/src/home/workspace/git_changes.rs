@@ -1,13 +1,16 @@
 //! Per-session worktree adapter. It never impersonates recorded tool operations.
 use super::*;
 mod navigator;
+mod projection;
 use changes::navigator::Row;
-use gpui_kit::component::input::Input;
+use gpui_kit::component::{input::Input, menu::DropdownMenu};
 use gupi_resources::git::{
     Change, ChangeContent, ChangeKind, ChangeSource, ContentState, Repository,
 };
+use gupi_settings::layout::GitView;
 use messages::diff::DiffBlock;
 use navigator::{Delegate, Item};
+use projection::Directory;
 use reader::Options;
 use std::time::Duration;
 
@@ -87,6 +90,10 @@ pub(super) struct GitTab {
     all: Vec<Entry>,
     group_errors: HashMap<ChangeSource, Failure>,
     groups_closed: HashSet<Group>,
+    directories_closed: HashSet<Directory>,
+    // Identifies the derived projection, never an independent preference.
+    projection_view: GitView,
+    order: Vec<String>,
     known_sources: HashSet<ChangeSource>,
     pub rows: Rc<Vec<Row>>,
     pub selected: Option<String>,
@@ -158,6 +165,9 @@ impl GitTab {
             all: Vec::new(),
             group_errors: HashMap::new(),
             groups_closed: HashSet::new(),
+            directories_closed: HashSet::new(),
+            projection_view: cx.global::<layout::LayoutState>().git_view,
+            order: Vec::new(),
             known_sources: HashSet::new(),
             rows: Rc::new(Vec::new()),
             selected: None,
@@ -186,60 +196,23 @@ impl GitTab {
     }
     fn sync_rows(&mut self, window: &mut Window, cx: &mut App) {
         let query = self.filter.read(cx).value().to_lowercase();
-        let mut rows = Vec::new();
-        let mut items = Vec::new();
-        let mut conflicts = HashSet::new();
-        for group in [Group::Conflicts, Group::Staged, Group::Unstaged] {
-            let entries: Vec<_> = self
-                .all
-                .iter()
-                .filter(|entry| {
-                    Group::of(entry) == group
-                        && (entry
-                            .file
-                            .path()
-                            .to_string_lossy()
-                            .to_lowercase()
-                            .contains(&query)
-                            || entry.file.previous_path().is_some_and(|p| {
-                                p.to_string_lossy().to_lowercase().contains(&query)
-                            }))
-                })
-                .filter(|entry| {
-                    group != Group::Conflicts || conflicts.insert(entry.file.path().to_owned())
-                })
-                .collect();
-            if group == Group::Conflicts && entries.is_empty() {
-                continue;
-            }
-            items.push(Item::Group(
-                group,
-                entries.len(),
-                self.groups_closed.contains(&group),
-            ));
-            if self.groups_closed.contains(&group) {
-                continue;
-            }
-            for entry in entries {
-                let file = &entry.file;
-                let row = Row {
-                    path: entry.id(),
-                    label: file
-                        .previous_path()
-                        .map(|p| format!("{} → {}", p.display(), file.path().display()))
-                        .unwrap_or_else(|| file.path().display().to_string()),
-                    status: Some(if entry.source == ChangeSource::Untracked {
-                        "diff-untracked"
-                    } else {
-                        kind_key(file.kind())
-                    }),
-                    stats: file.stats(),
-                    failed: false,
-                };
-                items.push(Item::File(row.clone(), status_code(entry)));
-                rows.push(row);
-            }
-        }
+        let view = cx.global::<layout::LayoutState>().git_view;
+        self.projection_view = view;
+        let (items, order) = projection::build(
+            &self.all,
+            view,
+            &self.groups_closed,
+            &self.directories_closed,
+            &query,
+        );
+        self.order = order;
+        let rows: Vec<Row> = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::File(row, _, _) => Some(row.clone()),
+                _ => None,
+            })
+            .collect();
         // Filtering changes the candidate set; collapsing a group alone keeps
         // its selected body, while removing a record picks its nearest neighbor.
         let eligible = self.selected.as_ref().is_some_and(|id| {
@@ -261,7 +234,7 @@ impl GitTab {
         }
         self.rows = Rc::new(rows);
         self.list.update(cx, |list, cx| {
-            let selected = items.iter().position(|item| matches!(item, Item::File(row, _) if Some(&row.path) == self.selected.as_ref()));
+            let selected = items.iter().position(|item| matches!(item, Item::File(row, _, _) if Some(&row.path) == self.selected.as_ref()));
             list.delegate_mut().items = items;
             list.set_selected_index(selected.map(gpui_kit::component::IndexPath::new), window, cx);
             cx.notify();
@@ -304,6 +277,9 @@ impl GitTab {
             .position(|r| Some(&r.path) == previous.as_ref())
             .unwrap_or(0);
         self.all = next;
+        let directories = projection::directories(&self.all);
+        self.directories_closed
+            .retain(|key| directories.contains(key));
         self.group_errors = errors;
         self.cache
             .retain(|id, _| self.all.iter().any(|e| e.id() == *id));
@@ -327,6 +303,47 @@ impl GitTab {
             self.invalidate_body();
         }
         true
+    }
+    pub(super) fn neighbors(&self) -> (Option<String>, Option<String>) {
+        let Some(ix) = self
+            .order
+            .iter()
+            .position(|id| Some(id) == self.selected.as_ref())
+        else {
+            return (None, None);
+        };
+        let visible = |id: &&String| self.rows.iter().any(|row| &row.path == *id);
+        (
+            self.order[..ix].iter().rev().find(visible).cloned(),
+            self.order[ix + 1..].iter().find(visible).cloned(),
+        )
+    }
+    fn select_navigation(&self, id: &str, window: &mut Window, cx: &mut App) {
+        self.list.update(cx, |list, cx| {
+            let ix = list
+                .delegate()
+                .items
+                .iter()
+                .position(|item| item.id() == id);
+            list.set_selected_index(ix.map(gpui_kit::component::IndexPath::new), window, cx);
+            list.scroll_to_selected_item(window, cx);
+        });
+    }
+    fn reveal_selected(&mut self) {
+        if let Some(entry) = self
+            .all
+            .iter()
+            .find(|entry| Some(&entry.id()) == self.selected.as_ref())
+        {
+            let group = Group::of(entry);
+            self.groups_closed.remove(&group);
+            for path in entry.file.path().ancestors().skip(1) {
+                self.directories_closed.remove(&Directory {
+                    group,
+                    path: path.into(),
+                });
+            }
+        }
     }
     fn invalidate_body(&mut self) {
         self.body_task = None;
@@ -428,6 +445,9 @@ impl HomeView {
             tab.poll = None;
             tab.repository = None;
             tab.all.clear();
+            tab.directories_closed.clear();
+            tab.groups_closed.clear();
+            tab.order.clear();
             tab.group_errors.clear();
             tab.known_sources.clear();
             tab.rows = Rc::new(Vec::new());
@@ -546,6 +566,8 @@ impl HomeView {
                     Ok(Some((repo, results))) => {
                         if tab.repository.as_ref().is_some_and(|old| *old != repo) {
                             tab.all.clear();
+                            tab.directories_closed.clear();
+                            tab.groups_closed.clear();
                             tab.cache.clear();
                             tab.invalidate_body();
                         }
@@ -555,6 +577,8 @@ impl HomeView {
                         tab.apply_files(results, window, cx);
                     }
                     Ok(None) => {
+                        tab.directories_closed.clear();
+                        tab.groups_closed.clear();
                         tab.not_repository = true;
                         tab.repository = None;
                         tab.all.clear();
@@ -709,6 +733,134 @@ impl HomeView {
         }
         cx.notify();
     }
+    pub(in crate::home) fn sync_git_view(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let view = cx.global::<layout::LayoutState>().git_view;
+        for session in self.views.values_mut() {
+            if let Some(tab) = &mut session.workspace.git
+                && tab.projection_view != view
+            {
+                if view == GitView::Tree {
+                    tab.reveal_selected();
+                }
+                tab.sync_rows(window, cx);
+                tab.list
+                    .update(cx, |list, cx| list.scroll_to_selected_item(window, cx));
+            }
+        }
+        cx.notify();
+    }
+    fn set_git_view(&mut self, view: GitView, window: &mut Window, cx: &mut Context<Self>) {
+        if cx.global::<layout::LayoutState>().git_view == view {
+            return;
+        }
+        cx.update_global::<layout::LayoutState, _>(|layout, _| layout.git_view = view);
+        self.sync_git_view(window, cx);
+        self.save_layout(None, None, window, cx);
+    }
+    fn toggle_git_directory(
+        &mut self,
+        key: Directory,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(tab) = self.git_mut() {
+            if !tab.filter.read(cx).value().is_empty() {
+                return;
+            }
+            if !tab.directories_closed.remove(&key) {
+                tab.directories_closed.insert(key.clone());
+            }
+            tab.sync_rows(window, cx);
+            tab.select_navigation(&key.id(), window, cx);
+        }
+        cx.notify();
+    }
+    fn git_horizontal(&mut self, right: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(tab) = self.active_git() else {
+            return;
+        };
+        let list = tab.list.read(cx).delegate();
+        let Some(item) = list.index.and_then(|ix| list.items.get(ix)) else {
+            return;
+        };
+        let id = item.id();
+        let (closed, parent) = match item {
+            Item::Group(_, _, closed) => (Some(*closed), None),
+            Item::Directory(key, _, closed, _) => (Some(*closed), Some(key.parent_id())),
+            Item::File(row, _, depth) => {
+                let entry = tab.all.iter().find(|e| e.id() == row.path).unwrap();
+                let parent = if *depth > 1 {
+                    Directory {
+                        group: Group::of(entry),
+                        path: entry.file.path().parent().unwrap().into(),
+                    }
+                    .id()
+                } else {
+                    format!("git-group-{}", Group::of(entry).key())
+                };
+                (None, Some(parent))
+            }
+        };
+        if closed == Some(right) {
+            let action = match item {
+                Item::Group(group, _, _) => Some((*group, None)),
+                Item::Directory(key, _, _, _) => Some((key.group, Some(key.clone()))),
+                _ => None,
+            };
+            if let Some((group, directory)) = action {
+                if let Some(key) = directory {
+                    self.toggle_git_directory(key, window, cx);
+                } else {
+                    self.toggle_git_group(group, window, cx);
+                }
+            }
+        } else if !right {
+            if let Some(parent) = parent {
+                tab.select_navigation(&parent, window, cx);
+            }
+        } else if closed == Some(false) {
+            let next = list
+                .items
+                .iter()
+                .position(|item| item.id() == id)
+                .and_then(|ix| list.items.get(ix + 1))
+                .filter(|next| next.depth() > item.depth())
+                .map(Item::id);
+            if let Some(next) = next {
+                tab.select_navigation(&next, window, cx);
+            }
+        }
+        cx.notify();
+    }
+    fn git_view_button(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let owner = cx.weak_entity();
+        Button::new("git-view")
+            .ghost()
+            .small()
+            .label(t(cx, "diff-view"))
+            .icon(IconName::ChevronDown)
+            .tooltip(t(cx, "diff-view"))
+            .accessibility_label(t(cx, "diff-view"))
+            .dropdown_menu(move |menu, _, cx| {
+                let selected = cx.global::<layout::LayoutState>().git_view;
+                [
+                    (GitView::List, "diff-list-view"),
+                    (GitView::Tree, "diff-tree-view"),
+                ]
+                .into_iter()
+                .fold(menu, |menu, (view, key)| {
+                    let owner = owner.clone();
+                    menu.item(
+                        PopupMenuItem::new(t(cx, key))
+                            .checked(selected == view)
+                            .on_click(move |_, window, cx| {
+                                let _ = owner
+                                    .update(cx, |home, cx| home.set_git_view(view, window, cx));
+                            }),
+                    )
+                })
+            })
+    }
     pub(super) fn render_git_list(&self, tab: &GitTab, cx: &mut Context<Self>) -> AnyElement {
         let stats = tab
             .all
@@ -727,14 +879,9 @@ impl HomeView {
                     .border_b_1()
                     .border_color(cx.theme().border)
                     .child(div().text_sm().child(t(cx, "diff-files")))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .text_xs()
-                            .truncate()
-                            .child(format!("+{} −{}", stats.0, stats.1)),
-                    )
+                    .child(reader::line_stats(stats.0, stats.1, cx))
+                    .child(div().flex_1())
+                    .child(self.git_view_button(cx))
                     .child(self.git_refresh_button(tab, cx)),
             )
             .child(div().p_2().child(Input::new(&tab.filter).small()))
@@ -742,6 +889,20 @@ impl HomeView {
                 div()
                     .flex_1()
                     .min_h_0()
+                    .on_key_down(cx.listener(|home, event: &KeyDownEvent, window, cx| {
+                        if home
+                            .active_git()
+                            .is_some_and(|t| t.focus.contains_focused(window, cx))
+                        {
+                            match event.keystroke.key.as_str() {
+                                "left" | "right" => {
+                                    home.git_horizontal(event.keystroke.key == "right", window, cx);
+                                    cx.stop_propagation();
+                                }
+                                _ => {}
+                            }
+                        }
+                    }))
                     .child(gpui_kit::component::list::List::new(&tab.list)),
             )
             .into_any_element()

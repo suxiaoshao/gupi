@@ -1255,6 +1255,7 @@ history-panel-options = 履歴のオプション
 workspace-view-changes = 変更を表示
 
 workspace-new-tab = 新しいタブ
+workspace-all-tabs = すべてのタブ
 workspace-tools = ツール
 workspace-recent = 最近使った項目
 workspace-no-changes = この会話にはまだ変更がありません。
@@ -1331,3 +1332,6 @@ diff-reading-options = 表示オプション
 diff-reading-options-narrow = 表示オプション：本文領域が狭いため左右表示できません。広げると設定した表示に戻ります
 diff-view = ビュー
 diff-display = 表示
+diff-list-view = リスト
+diff-tree-view = ツリー
+diff-stats-incomplete = 統計は不完全です

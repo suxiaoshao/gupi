@@ -600,7 +600,7 @@ impl HomeView {
                                 row.child(t(cx, "conversation-edit-error"))
                             })
                             .when_some(operation.stats(), |row, stats| {
-                                row.child(format!("+{} −{}", stats.added(), stats.removed()))
+                                row.child(reader::line_stats(stats.added(), stats.removed(), cx))
                             });
                         operations = operations.child(
                             v_flex()

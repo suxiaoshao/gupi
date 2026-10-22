@@ -1262,6 +1262,7 @@ history-panel-options = 歷史選項
 workspace-view-changes = 檢視變更
 
 workspace-new-tab = 新分頁
+workspace-all-tabs = 所有分頁
 workspace-tools = 工具
 workspace-recent = 最近
 workspace-no-changes = 此對話還沒有變更。
@@ -1338,3 +1339,6 @@ diff-reading-options = 閱讀選項
 diff-reading-options-narrow = 閱讀選項：正文區域過窄，無法並排顯示；擴大後恢復並排偏好
 diff-view = 檢視
 diff-display = 顯示
+diff-list-view = 列表
+diff-tree-view = 樹
+diff-stats-incomplete = 統計不完整

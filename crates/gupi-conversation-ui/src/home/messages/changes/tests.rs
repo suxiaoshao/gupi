@@ -8,6 +8,11 @@ use gupi_conversation::session_catalog::SessionInfo;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
+struct CardTestDirectory {
+    _directory: tempfile::TempDir,
+}
+impl Global for CardTestDirectory {}
+
 fn message(id: &str, value: Value) -> DisplayMessage {
     DisplayMessage::new(id.into(), value)
 }
@@ -104,16 +109,11 @@ fn mount_mode<'a>(
         gpui_tokio::init(cx);
         gupi_pi_runtime::init(cx);
         cx.set_global(layout::LayoutState::default());
-        let directory = std::env::temp_dir().join(format!(
-            "gupi-card-tests-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(&directory).unwrap();
-        cx.set_global(TestLayoutDirectory(directory));
+        let directory = tempfile::tempdir().unwrap();
+        cx.set_global(TestLayoutDirectory(directory.path().into()));
+        cx.set_global(CardTestDirectory {
+            _directory: directory,
+        });
     });
     let state = cx.new(|cx| {
         if temporary {
@@ -1304,7 +1304,7 @@ fn workspace_maximize_escape_and_narrow_restore_preferences(cx: &mut TestAppCont
 }
 
 #[gpui_kit::test]
-fn workspace_tab_drag_reorders_and_outside_drop_cancels(cx: &mut TestAppContext) {
+fn workspace_tab_drag_reorders_live_inside_the_strip(cx: &mut TestAppContext) {
     let (home, state, visual) = mount_mode(cx, &fixture(1, 1, 0), false, false);
     visual.simulate_resize(size(px(1728.), px(900.)));
     visual.update(|window, cx| {
@@ -1316,7 +1316,9 @@ fn workspace_tab_drag_reorders_and_outside_drop_cancels(cx: &mut TestAppContext)
     });
     visual.run_until_parked();
     let id = visual.update(|_, cx| home.read(cx).views["a"].workspace.changes[0].id.clone());
-    let start = visual.debug_bounds("workspace-tab-files").unwrap().center();
+    let tab = visual.debug_bounds("workspace-tab-files").unwrap();
+    let strip = visual.debug_bounds("workspace-add").unwrap();
+    let start = tab.center();
     let target = visual.debug_bounds("workspace-tab-tool-0-0").unwrap();
     let end = point(target.right() - px(3.), target.center().y);
     visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
@@ -1326,26 +1328,38 @@ fn workspace_tab_drag_reorders_and_outside_drop_cancels(cx: &mut TestAppContext)
         Modifiers::default(),
     );
     visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
-    visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
+    // Neighbors make room while the pointer is still down.
     visual.update(|_, cx| {
         assert_eq!(
             home.read(cx).views["a"].workspace.order,
             vec![Some(id.clone()), None]
         )
     });
-    let start = visual.debug_bounds("workspace-tab-files").unwrap().center();
-    let end = point(start.x, px(400.));
-    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
-    visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
-    visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+    // Leaving the strip keeps the tab on its row, inside the strip, at its own size.
+    visual.simulate_mouse_move(
+        point(px(1700.), px(400.)),
+        MouseButton::Left,
+        Modifiers::default(),
+    );
+    visual.run_until_parked();
+    let lifted = visual.debug_bounds("workspace-tab-files").unwrap();
+    assert_eq!(lifted.size, tab.size);
+    assert_eq!(lifted.top(), tab.top());
+    assert!(lifted.right() <= strip.left());
+    visual.simulate_mouse_up(
+        point(px(1700.), px(400.)),
+        MouseButton::Left,
+        Modifiers::default(),
+    );
     visual.run_until_parked();
     visual.update(|_, cx| {
-        assert_eq!(
-            home.read(cx).views["a"].workspace.order,
-            vec![Some(id.clone()), None]
-        )
+        let workspace = &home.read(cx).views["a"].workspace;
+        assert_eq!(workspace.order, vec![Some(id.clone()), None]);
+        assert!(!workspace.strip.active());
     });
+    let settled = visual.debug_bounds("workspace-tab-files").unwrap();
+    assert_eq!(settled.size, tab.size);
     visual.update(|window, cx| {
         home.update(cx, |home, cx| home.toggle_workspace_maximized(window, cx));
         assert!(home.read(cx).pane_layout.maximized);
@@ -1467,4 +1481,433 @@ fn changes_navigator_virtualizes_rows_and_restores_keyboard_selection(cx: &mut T
             .debug_bounds("changes-file-tool-0-0-dir/99.rs")
             .is_some()
     );
+}
+
+#[gpui_kit::test]
+fn tab_drag_single_queued_move_and_final_release_reorder_and_finish(cx: &mut TestAppContext) {
+    let (home, _, visual) = mount_mode(cx, &fixture(1, 1, 0), false, false);
+    visual.simulate_resize(size(px(1728.), px(900.)));
+    visual.update(|window, cx| {
+        let run = run(&home, cx);
+        home.update(cx, |home, cx| {
+            home.select_workspace_tab(None, window, cx);
+            home.open_changes("a", &run, "dir/0.rs", window, cx);
+            home.select_workspace_tab(Some("workspace:new:test".into()), window, cx);
+        });
+    });
+    visual.run_until_parked();
+    let start = visual.debug_bounds("workspace-tab-files").unwrap().center();
+    let target = visual.debug_bounds("workspace-tab-tool-0-0").unwrap();
+    let before = visual.update(|_, cx| home.read(cx).views["a"].workspace.order.clone());
+    visual.update(|window, cx| {
+        window.dispatch_event(
+            PlatformInput::MouseDown(MouseDownEvent {
+                position: start,
+                button: MouseButton::Left,
+                ..Default::default()
+            }),
+            cx,
+        );
+        // The first move only starts the framework drag. No painted Pressed frame.
+        window.dispatch_event(
+            PlatformInput::MouseMove(MouseMoveEvent {
+                position: start + point(px(8.), px(0.)),
+                pressed_button: Some(MouseButton::Left),
+                modifiers: Modifiers::default(),
+            }),
+            cx,
+        );
+        // Only the final release crosses the neighbor midpoint.
+        window.dispatch_event(
+            PlatformInput::MouseUp(MouseUpEvent {
+                position: target.center(),
+                button: MouseButton::Left,
+                ..Default::default()
+            }),
+            cx,
+        );
+        let workspace = &home.read(cx).views["a"].workspace;
+        assert_eq!(
+            workspace.order,
+            vec![before[1].clone(), before[0].clone(), before[2].clone()]
+        );
+        assert!(!cx.has_active_drag());
+    });
+}
+
+fn mount_tab_drag(
+    cx: &mut TestAppContext,
+) -> (
+    Entity<HomeView>,
+    Entity<ConversationState>,
+    &mut VisualTestContext,
+) {
+    let (home, state, visual) = mount_mode(cx, &fixture(1, 1, 0), false, false);
+    visual.simulate_resize(size(px(1728.), px(900.)));
+    visual.update(|window, cx| {
+        window.activate_window();
+        let run = run(&home, cx);
+        home.update(cx, |home, cx| {
+            home.select_workspace_tab(None, window, cx);
+            home.open_changes("a", &run, "dir/0.rs", window, cx);
+            home.select_workspace_tab(Some("workspace:new:test".into()), window, cx);
+        });
+    });
+    visual.run_until_parked();
+    (home, state, visual)
+}
+fn tab_selector(id: &Option<String>) -> &'static str {
+    match id.as_deref() {
+        None => "workspace-tab-files",
+        Some("tool-0-0") => "workspace-tab-tool-0-0",
+        Some("workspace:new:test") => "workspace-tab-workspace:new:test",
+        Some("workspace:new:added") => "workspace-tab-workspace:new:added",
+        Some("workspace:new:overflow0") => "workspace-tab-workspace:new:overflow0",
+        Some("workspace:new:overflow1") => "workspace-tab-workspace:new:overflow1",
+        Some("workspace:new:overflow2") => "workspace-tab-workspace:new:overflow2",
+        Some("workspace:new:overflow3") => "workspace-tab-workspace:new:overflow3",
+        Some("workspace:new:overflow4") => "workspace-tab-workspace:new:overflow4",
+        Some("workspace:new:overflow5") => "workspace-tab-workspace:new:overflow5",
+        Some("workspace:new:overflow6") => "workspace-tab-workspace:new:overflow6",
+        Some("workspace:new:overflow7") => "workspace-tab-workspace:new:overflow7",
+        _ => panic!("unexpected fixture tab {id:?}"),
+    }
+}
+fn tab_bounds(visual: &mut VisualTestContext, id: &Option<String>) -> Bounds<Pixels> {
+    visual.debug_bounds(tab_selector(id)).unwrap()
+}
+fn queued_tab_move(
+    visual: &mut VisualTestContext,
+    start: Point<Pixels>,
+    end: Point<Pixels>,
+    release: Option<Point<Pixels>>,
+) {
+    visual.update(|window, cx| {
+        window.dispatch_event(
+            PlatformInput::MouseDown(MouseDownEvent {
+                position: start,
+                button: MouseButton::Left,
+                ..Default::default()
+            }),
+            cx,
+        );
+        window.dispatch_event(
+            PlatformInput::MouseMove(MouseMoveEvent {
+                position: end,
+                pressed_button: Some(MouseButton::Left),
+                modifiers: Modifiers::default(),
+            }),
+            cx,
+        );
+        if let Some(position) = release {
+            window.dispatch_event(
+                PlatformInput::MouseUp(MouseUpEvent {
+                    position,
+                    button: MouseButton::Left,
+                    ..Default::default()
+                }),
+                cx,
+            );
+        }
+    });
+}
+#[gpui_kit::test]
+fn tab_drag_adjacent_real_hit_paths_preserve_size_and_release_ownership(cx: &mut TestAppContext) {
+    let (home, _, visual) = mount_tab_drag(cx);
+    let original = visual.update(|_, cx| home.read(cx).views["a"].workspace.order.clone());
+    for ix in 0..2 {
+        for right in [true, false] {
+            visual.update(|_, cx| {
+                home.update(cx, |home, cx| {
+                    home.views.get_mut("a").unwrap().workspace.order = original.clone();
+                    cx.notify();
+                })
+            });
+            visual.run_until_parked();
+            let bounds: Vec<_> = original.iter().map(|id| tab_bounds(visual, id)).collect();
+            let from = if right { ix } else { ix + 1 };
+            let to = if right { ix + 1 } else { ix };
+            queued_tab_move(
+                visual,
+                bounds[from].center(),
+                bounds[to].center(),
+                Some(bounds[to].center()),
+            );
+            let mut expected = original.clone();
+            expected.swap(ix, ix + 1);
+            visual.update(|_, cx| {
+                assert_eq!(home.read(cx).views["a"].workspace.order, expected);
+                assert!(!home.read(cx).workspace_tab_drag_active());
+                assert!(!cx.has_active_drag());
+            });
+            visual.run_until_parked();
+            for (id, before) in original.iter().zip(bounds) {
+                let after = tab_bounds(visual, id);
+                assert_eq!(before.size, after.size);
+            }
+        }
+    }
+}
+#[gpui_kit::test]
+fn tab_drag_lifted_release_and_immediate_reverse_before_settle(cx: &mut TestAppContext) {
+    let (home, _, visual) = mount_tab_drag(cx);
+    let original = visual.update(|_, cx| home.read(cx).views["a"].workspace.order.clone());
+    let first = visual.debug_bounds("workspace-tab-files").unwrap();
+    let second = tab_bounds(visual, &original[1]);
+    queued_tab_move(visual, first.center(), second.center(), None);
+    visual.run_until_parked();
+    let lifted = visual.debug_bounds("workspace-tab-files").unwrap();
+    assert_eq!(lifted.size, first.size);
+    assert_eq!(lifted.center().x, second.center().x);
+    // Capture must run before this actual lifted tab's left-up Bubble handler.
+    visual.update(|window, cx| {
+        window.dispatch_event(
+            PlatformInput::MouseUp(MouseUpEvent {
+                position: lifted.center(),
+                button: MouseButton::Left,
+                ..Default::default()
+            }),
+            cx,
+        );
+        assert!(!home.read(cx).workspace_tab_drag_active());
+        assert!(!cx.has_active_drag());
+        // Regrab using the still-painted lifted hitbox, before any new frame.
+        window.dispatch_event(
+            PlatformInput::MouseDown(MouseDownEvent {
+                position: lifted.center(),
+                button: MouseButton::Left,
+                ..Default::default()
+            }),
+            cx,
+        );
+        window.dispatch_event(
+            PlatformInput::MouseMove(MouseMoveEvent {
+                position: first.center(),
+                pressed_button: Some(MouseButton::Left),
+                modifiers: Modifiers::default(),
+            }),
+            cx,
+        );
+        assert!(home.read(cx).workspace_tab_drag_active());
+        window.dispatch_event(
+            PlatformInput::MouseUp(MouseUpEvent {
+                position: first.center(),
+                button: MouseButton::Left,
+                ..Default::default()
+            }),
+            cx,
+        );
+        assert_eq!(home.read(cx).views["a"].workspace.order, original);
+        assert!(!home.read(cx).workspace_tab_drag_active());
+        assert!(!cx.has_active_drag());
+    });
+    visual.run_until_parked();
+    let final_bounds = visual.debug_bounds("workspace-tab-files").unwrap();
+    assert_eq!(final_bounds.size, first.size);
+    visual.simulate_mouse_down(
+        final_bounds.center(),
+        MouseButton::Left,
+        Modifiers::default(),
+    );
+    visual.simulate_mouse_up(
+        final_bounds.center(),
+        MouseButton::Left,
+        Modifiers::default(),
+    );
+    visual.update(|_, cx| assert_eq!(home.read(cx).views["a"].workspace.active, None));
+}
+#[gpui_kit::test]
+fn tab_drag_escape_structure_session_and_deactivation_end_both_owners(cx: &mut TestAppContext) {
+    let (home, state, visual) = mount_tab_drag(cx);
+    for kind in 0..5 {
+        visual.update(|window, _| window.activate_window());
+        visual.run_until_parked();
+        let order = visual.update(|_, cx| home.read(cx).views["a"].workspace.order.clone());
+        let bounds = tab_bounds(visual, &order[0]);
+        queued_tab_move(
+            visual,
+            bounds.center(),
+            bounds.center() + point(px(8.), px(0.)),
+            None,
+        );
+        visual.update(|_, cx| assert!(home.read(cx).workspace_tab_drag_active()));
+        match kind {
+            0 => visual.simulate_keystrokes("escape"),
+            1 => visual.update(|window, cx| {
+                home.update(cx, |home, cx| {
+                    home.select_workspace_tab(Some("workspace:new:added".into()), window, cx)
+                })
+            }),
+            2 => visual.update(|window, cx| {
+                home.update(cx, |home, cx| {
+                    home.close_workspace_tabs(
+                        &order.last().unwrap().clone().unwrap(),
+                        0,
+                        window,
+                        cx,
+                    )
+                })
+            }),
+            3 => {
+                visual.update(|window, cx| {
+                    state.update(cx, |state, _| {
+                        state
+                            .sessions_for_test()
+                            .insert("b".into(), session("b", &fixture(1, 1, 0), false));
+                        *state.selected_for_test() = Some("b".into());
+                    });
+                    home.update(cx, |home, cx| home.sync(true, window, cx));
+                });
+            }
+            _ => visual.deactivate_window(),
+        }
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert!(!home.read(cx).workspace_tab_drag_active());
+            assert!(!cx.has_active_drag());
+            window.dispatch_event(
+                PlatformInput::MouseUp(MouseUpEvent {
+                    position: point(px(1700.), px(700.)),
+                    button: MouseButton::Left,
+                    ..Default::default()
+                }),
+                cx,
+            );
+            assert!(!home.read(cx).workspace_tab_drag_active());
+            assert!(!cx.has_active_drag());
+            if kind == 3 {
+                state.update(cx, |state, _| *state.selected_for_test() = Some("a".into()));
+                home.update(cx, |home, cx| home.sync(true, window, cx));
+            }
+        });
+    }
+}
+#[gpui_kit::test]
+fn tab_drag_nonzero_scroll_and_scroll_change_finish_without_stale_slots(cx: &mut TestAppContext) {
+    let (home, _, visual) = mount_tab_drag(cx);
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            for i in 0..8 {
+                home.select_workspace_tab(Some(format!("workspace:new:overflow{i}")), window, cx);
+            }
+        })
+    });
+    visual.run_until_parked();
+    visual.update(|_, cx| {
+        home.update(cx, |home, cx| {
+            home.views["a"]
+                .workspace
+                .scroll
+                .set_offset(point(px(-160.), px(0.)));
+            cx.notify();
+        })
+    });
+    visual.run_until_parked();
+    let (order, viewport) = visual.update(|_, cx| {
+        let workspace = &home.read(cx).views["a"].workspace;
+        assert!(workspace.scroll.offset().x < px(0.));
+        (workspace.order.clone(), workspace.scroll.bounds())
+    });
+    let visible: Vec<_> = order
+        .iter()
+        .filter_map(|id| {
+            let bounds = tab_bounds(visual, id);
+            (bounds.left() >= viewport.left() && bounds.right() <= viewport.right())
+                .then_some(bounds)
+        })
+        .collect();
+    assert!(visible.len() >= 2);
+    queued_tab_move(visual, visible[0].center(), visible[1].center(), None);
+    let live = visual.update(|_, cx| {
+        assert!(home.read(cx).workspace_tab_drag_active());
+        home.read(cx).views["a"].workspace.order.clone()
+    });
+    assert_ne!(live, order);
+    visual.update(|_, cx| {
+        home.update(cx, |home, cx| {
+            let scroll = &home.views["a"].workspace.scroll;
+            scroll.set_offset(scroll.offset() - point(px(30.), px(0.)));
+            cx.notify();
+        })
+    });
+    visual.run_until_parked();
+    visual.update(|_, cx| {
+        assert_eq!(home.read(cx).views["a"].workspace.order, live);
+        assert!(!home.read(cx).workspace_tab_drag_active());
+        assert!(!cx.has_active_drag());
+    });
+}
+
+#[gpui_kit::test]
+fn tab_drag_queued_multicross_and_reverse_keep_mixed_width_hit_targets(cx: &mut TestAppContext) {
+    let (home, _, visual) = mount_tab_drag(cx);
+    let original = visual.update(|_, cx| home.read(cx).views["a"].workspace.order.clone());
+    let bounds: Vec<_> = original.iter().map(|id| tab_bounds(visual, id)).collect();
+    assert_ne!(bounds[0].size.width, bounds[1].size.width);
+    queued_tab_move(
+        visual,
+        bounds[0].center(),
+        bounds[2].center(),
+        Some(bounds[2].center()),
+    );
+    visual.update(|_, cx| {
+        assert_eq!(
+            home.read(cx).views["a"].workspace.order,
+            vec![
+                original[1].clone(),
+                original[2].clone(),
+                original[0].clone()
+            ]
+        );
+        assert!(!cx.has_active_drag());
+        assert!(!home.read(cx).workspace_tab_drag_active());
+    });
+    visual.run_until_parked();
+    let lifted = tab_bounds(visual, &original[0]);
+    assert_eq!(lifted.size, bounds[0].size);
+    queued_tab_move(
+        visual,
+        lifted.center(),
+        bounds[0].center(),
+        Some(bounds[0].center()),
+    );
+    visual.update(|_, cx| {
+        assert_eq!(home.read(cx).views["a"].workspace.order, original);
+        assert!(!cx.has_active_drag());
+        assert!(!home.read(cx).workspace_tab_drag_active());
+    });
+}
+
+#[gpui_kit::test]
+fn tab_drag_escape_after_swap_keeps_live_order_and_ignores_stale_release(cx: &mut TestAppContext) {
+    let (home, _, visual) = mount_tab_drag(cx);
+    let original = visual.update(|_, cx| home.read(cx).views["a"].workspace.order.clone());
+    let first = tab_bounds(visual, &original[0]);
+    let last = tab_bounds(visual, &original[2]);
+    queued_tab_move(visual, first.center(), last.center(), None);
+    visual.update(|window, cx| {
+        let live = home.read(cx).views["a"].workspace.order.clone();
+        assert_ne!(live, original);
+        window.dispatch_event(
+            PlatformInput::KeyDown(KeyDownEvent {
+                keystroke: Keystroke::parse("escape").unwrap(),
+                is_held: false,
+                prefer_character_input: false,
+            }),
+            cx,
+        );
+        assert!(!home.read(cx).workspace_tab_drag_active());
+        assert!(!cx.has_active_drag());
+        window.dispatch_event(
+            PlatformInput::MouseUp(MouseUpEvent {
+                position: first.center(),
+                button: MouseButton::Left,
+                ..Default::default()
+            }),
+            cx,
+        );
+        assert_eq!(home.read(cx).views["a"].workspace.order, live);
+        assert!(!home.read(cx).workspace_tab_drag_active());
+        assert!(!cx.has_active_drag());
+    });
 }

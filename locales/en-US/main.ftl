@@ -1281,6 +1281,7 @@ history-panel-options = History options
 workspace-view-changes = View changes
 
 workspace-new-tab = New tab
+workspace-all-tabs = All tabs
 workspace-tools = Tools
 workspace-recent = Recent
 workspace-no-changes = No changes in this conversation yet.
@@ -1357,3 +1358,6 @@ diff-reading-options = Reading options
 diff-reading-options-narrow = Reading options: the content area is too narrow for split view; widening restores your preferred mode
 diff-view = View
 diff-display = Display
+diff-list-view = List
+diff-tree-view = Tree
+diff-stats-incomplete = Statistics incomplete

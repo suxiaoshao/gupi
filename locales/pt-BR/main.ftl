@@ -1280,6 +1280,7 @@ history-panel-options = Opções do histórico
 workspace-view-changes = Ver alterações
 
 workspace-new-tab = Nova aba
+workspace-all-tabs = Todas as abas
 workspace-tools = Ferramentas
 workspace-recent = Recentes
 workspace-no-changes = Esta conversa ainda não tem alterações.
@@ -1356,3 +1357,6 @@ diff-reading-options = Opções de leitura
 diff-reading-options-narrow = Opções de leitura: a área é estreita demais para a visão lado a lado; ampliá-la restaura a visão preferida
 diff-view = Visão
 diff-display = Exibição
+diff-list-view = Lista
+diff-tree-view = Árvore
+diff-stats-incomplete = Estatísticas incompletas

@@ -362,7 +362,7 @@ impl HomeView {
         if let Some(tab) = self.active_git() {
             let entry = tab.selected_entry()?;
             if matches!(command, Command::CopyPath) {
-                return Some(entry.path().display().to_string());
+                return entry.path().to_str().map(str::to_owned);
             }
             if matches!(command, Command::External) {
                 return tab.external_path().map(|p| p.display().to_string());

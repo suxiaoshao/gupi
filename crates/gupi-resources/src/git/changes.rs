@@ -21,14 +21,12 @@ pub enum ChangeKind {
     Modified,
     Added,
     Deleted,
-    Renamed,
     Conflict,
     Special,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Change {
     path: PathBuf,
-    previous: Option<PathBuf>,
     kind: ChangeKind,
     stats: Option<(usize, usize)>,
     head: String,
@@ -41,20 +39,16 @@ impl Change {
     pub fn path(&self) -> &Path {
         &self.path
     }
-    pub fn previous_path(&self) -> Option<&Path> {
-        self.previous.as_deref()
-    }
     pub fn kind(&self) -> ChangeKind {
         self.kind
     }
     pub fn can_open_worktree(&self) -> bool {
-        self.disk
+        self.disk && self.path.to_str().is_some()
     }
     #[cfg(feature = "test-support")]
     pub fn for_test(path: PathBuf, kind: ChangeKind) -> Self {
         Self {
             path,
-            previous: None,
             kind,
             stats: Some((1, 1)),
             head: String::new(),
@@ -88,7 +82,8 @@ pub enum ContentState {
     Special,
     Conflict,
     TooLarge,
-    Renamed,
+    InvalidPath,
+    NoTextChanges,
 }
 #[derive(Clone, Debug)]
 pub struct ChangeContent {
@@ -102,10 +97,24 @@ impl ChangeContent {
     #[cfg(feature = "test-support")]
     pub fn for_test(original: String, modified: String, patch: String) -> Self {
         Self {
-            state: ContentState::Text,
+            state: if original == modified {
+                ContentState::NoTextChanges
+            } else {
+                ContentState::Text
+            },
             original: Some(original),
             modified: Some(modified),
             patch: Some(patch),
+            disk: None,
+        }
+    }
+    #[cfg(feature = "test-support")]
+    pub fn unavailable_for_test(state: ContentState) -> Self {
+        Self {
+            state,
+            patch: None,
+            original: None,
+            modified: None,
             disk: None,
         }
     }
@@ -132,6 +141,7 @@ impl Repository {
             &[
                 "status",
                 "--porcelain=v2",
+                "--no-renames",
                 "-z",
                 "--untracked-files=all",
                 "--ignore-submodules=none",
@@ -150,7 +160,7 @@ impl Repository {
                 "--no-color",
                 "--numstat",
                 "-z",
-                "--find-renames",
+                "--no-renames",
             ];
             if source == ChangeSource::Staged {
                 args.push("--cached");
@@ -165,9 +175,13 @@ impl Repository {
             } else {
                 stats.get(&file.path).copied().flatten()
             };
+            if file.path.to_str().is_none() {
+                continue;
+            }
             let metadata = std::fs::symlink_metadata(self.root.join(&file.path)).ok();
             file.disk = metadata.as_ref().is_some_and(|m| m.is_file());
             if source != ChangeSource::Staged
+                && file.kind != ChangeKind::Deleted
                 && metadata
                     .as_ref()
                     .is_some_and(|m| !m.is_file() && !m.file_type().is_symlink())
@@ -188,6 +202,15 @@ impl Repository {
         source: ChangeSource,
         file: &Change,
     ) -> Result<ChangeContent, Error> {
+        let Some(path) = file.path.to_str() else {
+            return Ok(ChangeContent {
+                state: ContentState::InvalidPath,
+                patch: None,
+                original: None,
+                modified: None,
+                disk: None,
+            });
+        };
         self.validate(source, file).await?;
         let full = self.root.join(&file.path);
         let disk = std::fs::symlink_metadata(&full)
@@ -215,6 +238,8 @@ impl Repository {
                 .await;
             let modified = if source == ChangeSource::Staged {
                 self.blob(&file.index).await
+            } else if file.kind == ChangeKind::Deleted {
+                Ok(Vec::new())
             } else {
                 read_worktree(&full)
             };
@@ -229,11 +254,7 @@ impl Repository {
                             content.state = ContentState::TooLarge;
                         } else {
                             let patch = if source == ChangeSource::Untracked {
-                                Some(added_patch(
-                                    &file.path,
-                                    &new,
-                                    if file.disk { "100644" } else { "120000" },
-                                ))
+                                Some(added_patch(path, &new, worktree_mode(&full)?))
                             } else {
                                 let mut args = vec![
                                     "--literal-pathspecs",
@@ -242,21 +263,13 @@ impl Repository {
                                     "--no-textconv",
                                     "--no-color",
                                     "--unified=50000",
-                                    "--find-renames",
+                                    "--no-renames",
                                 ];
                                 if source == ChangeSource::Staged {
                                     args.push("--cached");
                                 }
                                 args.push("--");
-                                let path = file
-                                    .path
-                                    .to_str()
-                                    .ok_or_else(|| Error::Failed("Non-Unicode diff path".into()))?;
                                 args.push(path);
-                                let previous = file.previous.as_ref().and_then(|p| p.to_str());
-                                if let Some(previous) = previous {
-                                    args.push(previous);
-                                }
                                 match checked(self.root(), &args).await {
                                     Ok(out) => Some(
                                         String::from_utf8(out.stdout)
@@ -268,8 +281,16 @@ impl Repository {
                             };
                             content.state = if patch.is_none() {
                                 ContentState::TooLarge
-                            } else if old == new && file.kind == ChangeKind::Renamed {
-                                ContentState::Renamed
+                            } else if file.kind == ChangeKind::Modified
+                                && patch.as_ref().is_some_and(|patch| {
+                                    !patch.lines().any(|line| {
+                                        line.starts_with("@@ ")
+                                            || line.starts_with("Binary files ")
+                                            || line == "GIT binary patch"
+                                    })
+                                })
+                            {
+                                ContentState::NoTextChanges
                             } else {
                                 ContentState::Text
                             };
@@ -349,9 +370,39 @@ pub fn text_within_limits(text: &str) -> bool {
         && text.lines().take(MAX_LINES + 1).count() <= MAX_LINES
         && text.lines().all(|l| l.len() <= MAX_LINE)
 }
-fn added_patch(path: &Path, text: &str, mode: &str) -> String {
-    let old = serde_json::to_string(&format!("a/{}", path.to_string_lossy())).unwrap();
-    let new = serde_json::to_string(&format!("b/{}", path.to_string_lossy())).unwrap();
+fn worktree_mode(path: &Path) -> Result<&'static str, Error> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink() {
+        return Ok("120000");
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o100 != 0 {
+            return Ok("100755");
+        }
+    }
+    Ok("100644")
+}
+/// Git's quoted paths use C-style byte escapes, not JSON Unicode escapes.
+fn quote_path(prefix: &str, path: &str) -> String {
+    let mut result = String::from("\"");
+    for byte in prefix.bytes().chain(path.bytes()) {
+        match byte {
+            b'"' | b'\\' => {
+                result.push('\\');
+                result.push(char::from(byte));
+            }
+            0x20..=0x7e => result.push(char::from(byte)),
+            _ => result.push_str(&format!("\\{byte:03o}")),
+        }
+    }
+    result.push('"');
+    result
+}
+fn added_patch(path: &str, text: &str, mode: &str) -> String {
+    let old = quote_path("a/", path);
+    let new = quote_path("b/", path);
     let mut patch =
         format!("diff --git {old} {new}\nnew file mode {mode}\n--- /dev/null\n+++ {new}\n");
     if text.is_empty() {
@@ -368,15 +419,13 @@ fn added_patch(path: &Path, text: &str, mode: &str) -> String {
     patch
 }
 fn parse_status(bytes: &[u8], source: ChangeSource) -> Result<Vec<Change>, Error> {
-    let mut records = bytes.split(|b| *b == 0).filter(|r| !r.is_empty());
     let mut files = Vec::new();
-    while let Some(record) = records.next() {
-        let (parts, previous) = match record[0] {
+    for record in bytes.split(|b| *b == 0).filter(|r| !r.is_empty()) {
+        let parts = match record[0] {
             b'?' => {
                 if source == ChangeSource::Untracked {
                     files.push(Change {
                         path: record_path(&record[2..])?,
-                        previous: None,
                         kind: ChangeKind::Added,
                         stats: None,
                         head: String::new(),
@@ -388,19 +437,12 @@ fn parse_status(bytes: &[u8], source: ChangeSource) -> Result<Vec<Change>, Error
                 }
                 continue;
             }
-            b'1' => (record.splitn(9, |b| *b == b' ').collect::<Vec<_>>(), None),
-            b'2' => (
-                record.splitn(10, |b| *b == b' ').collect::<Vec<_>>(),
-                Some(record_path(records.next().ok_or_else(|| {
-                    Error::Failed("Missing rename path".into())
-                })?)?),
-            ),
+            b'1' => record.splitn(9, |b| *b == b' ').collect::<Vec<_>>(),
             b'u' => {
                 let parts = record.splitn(11, |b| *b == b' ').collect::<Vec<_>>();
                 if source != ChangeSource::Untracked && parts.len() == 11 {
                     files.push(Change {
                         path: record_path(parts[10])?,
-                        previous: None,
                         kind: ChangeKind::Conflict,
                         stats: None,
                         head: String::new(),
@@ -425,18 +467,12 @@ fn parse_status(bytes: &[u8], source: ChangeSource) -> Result<Vec<Change>, Error
             parts[2].first() == Some(&b'S') || parts[3] == b"160000" || parts[4] == b"160000";
         files.push(Change {
             path: record_path(parts[parts.len() - 1])?,
-            previous: if source == ChangeSource::Staged {
-                previous
-            } else {
-                None
-            },
             kind: if special {
                 ChangeKind::Special
             } else {
                 match code {
                     b'A' => ChangeKind::Added,
                     b'D' => ChangeKind::Deleted,
-                    b'R' | b'C' => ChangeKind::Renamed,
                     _ => ChangeKind::Modified,
                 }
             },
@@ -454,25 +490,14 @@ fn parse_status(bytes: &[u8], source: ChangeSource) -> Result<Vec<Change>, Error
     Ok(files)
 }
 fn numstats(bytes: &[u8]) -> Result<HashMap<PathBuf, Option<(usize, usize)>>, Error> {
-    let mut records = bytes.split(|b| *b == 0).filter(|r| !r.is_empty());
     let mut result = HashMap::new();
-    while let Some(record) = records.next() {
+    for record in bytes.split(|b| *b == 0).filter(|r| !r.is_empty()) {
         let mut parts = record.splitn(3, |b| *b == b'\t');
         let added = parts.next().unwrap_or_default();
         let removed = parts.next().unwrap_or_default();
         let name = parts
             .next()
             .ok_or_else(|| Error::Failed("Invalid Git numstat".into()))?;
-        let name = if name.is_empty() {
-            records
-                .next()
-                .ok_or_else(|| Error::Failed("Missing rename source".into()))?;
-            records
-                .next()
-                .ok_or_else(|| Error::Failed("Missing rename target".into()))?
-        } else {
-            name
-        };
         let stats = std::str::from_utf8(added)
             .ok()
             .and_then(|a| a.parse().ok())
@@ -634,17 +659,26 @@ mod tests {
             std::fs::write(root.join("huge"), vec![b'x'; MAX_TEXT + 1]).unwrap();
             let repo = discover(root).await.unwrap().unwrap();
             let staged = repo.changes(ChangeSource::Staged).await.unwrap();
-            assert_eq!(
-                staged.files()[0].previous_path(),
-                Some(Path::new("old.txt"))
-            );
-            assert_eq!(
-                repo.change_content(ChangeSource::Staged, &staged.files()[0])
+            assert_eq!(staged.files().len(), 2);
+            for (path, kind, old, new) in [
+                ("old.txt", ChangeKind::Deleted, "base\n", ""),
+                ("renamed file.txt", ChangeKind::Added, "", "base\n"),
+            ] {
+                let file = staged
+                    .files()
+                    .iter()
+                    .find(|f| f.path() == Path::new(path))
+                    .unwrap();
+                assert_eq!(file.kind(), kind);
+                let body = repo
+                    .change_content(ChangeSource::Staged, file)
                     .await
-                    .unwrap()
-                    .state(),
-                ContentState::Renamed
-            );
+                    .unwrap();
+                assert_eq!((body.original(), body.modified()), (Some(old), Some(new)));
+                let patch = body.patch().unwrap();
+                assert!(!patch.contains("rename from"));
+                assert!(!patch.contains("similarity index"));
+            }
             let list = repo.changes(ChangeSource::Unstaged).await.unwrap();
             for file in list.files() {
                 let body = repo
@@ -715,6 +749,370 @@ mod tests {
                 .unwrap();
             assert_eq!(body.modified(), Some("/gupi-nonexistent-outside-target"));
             assert!(body.disk_path().is_none());
+        });
+    }
+
+    #[test]
+    fn intent_to_add_move_is_two_unstaged_paths_without_rename_detection() {
+        smol::block_on(async {
+            let fixture = tempfile::tempdir().unwrap();
+            let root = fixture.path();
+            git(root, &["init", "--quiet"]);
+            std::fs::write(root.join("old.txt"), "same\n").unwrap();
+            git(root, &["add", "."]);
+            git(root, &["commit", "--quiet", "-m", "base"]);
+            std::fs::rename(root.join("old.txt"), root.join("new.txt")).unwrap();
+            git(root, &["add", "-N", "new.txt"]);
+            // Even an explicit user rename setting cannot override the reader's policy.
+            git(root, &["config", "diff.renames", "copies"]);
+            let repo = discover(root).await.unwrap().unwrap();
+            let list = repo.changes(ChangeSource::Unstaged).await.unwrap();
+            assert_eq!(list.files().len(), 2);
+            for (path, kind, old, new) in [
+                ("old.txt", ChangeKind::Deleted, "same\n", ""),
+                ("new.txt", ChangeKind::Added, "", "same\n"),
+            ] {
+                let file = list
+                    .files()
+                    .iter()
+                    .find(|f| f.path() == Path::new(path))
+                    .unwrap();
+                assert_eq!(file.kind(), kind);
+                let content = repo
+                    .change_content(ChangeSource::Unstaged, file)
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    (content.original(), content.modified()),
+                    (Some(old), Some(new))
+                );
+                let patch = content.patch().unwrap();
+                assert!(!patch.contains("rename from") && !patch.contains("similarity index"));
+                assert!(patch.contains(if kind == ChangeKind::Added {
+                    "new file mode"
+                } else {
+                    "deleted file mode"
+                }));
+            }
+        });
+    }
+
+    #[test]
+    fn deleted_file_replaced_by_directory_keeps_deleted_body_and_untracked_child() {
+        smol::block_on(async {
+            let fixture = tempfile::tempdir().unwrap();
+            let root = fixture.path();
+            git(root, &["init", "--quiet"]);
+            std::fs::write(root.join("replaced"), "deleted text\n").unwrap();
+            git(root, &["add", "."]);
+            git(root, &["commit", "--quiet", "-m", "base"]);
+            std::fs::remove_file(root.join("replaced")).unwrap();
+            std::fs::create_dir(root.join("replaced")).unwrap();
+            std::fs::write(root.join("replaced/child.txt"), "child\n").unwrap();
+            let repo = discover(root).await.unwrap().unwrap();
+            let list = repo.changes(ChangeSource::Unstaged).await.unwrap();
+            let file = list
+                .files()
+                .iter()
+                .find(|f| f.path() == Path::new("replaced"))
+                .unwrap();
+            assert_eq!(file.kind(), ChangeKind::Deleted);
+            let content = repo
+                .change_content(ChangeSource::Unstaged, file)
+                .await
+                .unwrap();
+            assert_eq!(content.state(), ContentState::Text);
+            assert_eq!(
+                (content.original(), content.modified()),
+                (Some("deleted text\n"), Some(""))
+            );
+            assert!(content.patch().unwrap().contains("-deleted text"));
+            assert!(content.disk_path().is_none() && !file.can_open_worktree());
+            let untracked = repo.changes(ChangeSource::Untracked).await.unwrap();
+            assert_eq!(untracked.files().len(), 1);
+            assert_eq!(untracked.files()[0].path(), Path::new("replaced/child.txt"));
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn untracked_modes_preserve_regular_executable_and_symlink_patches() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        smol::block_on(async {
+            let fixture = tempfile::tempdir().unwrap();
+            let root = fixture.path();
+            git(root, &["init", "--quiet"]);
+            git(root, &["config", "core.fileMode", "true"]);
+            for (name, mode) in [
+                ("plain.txt", 0o644),
+                ("other-exec.txt", 0o645),
+                ("group-exec.txt", 0o654),
+                ("executable.sh", 0o744),
+            ] {
+                std::fs::write(root.join(name), "text\n").unwrap();
+                std::fs::set_permissions(root.join(name), std::fs::Permissions::from_mode(mode))
+                    .unwrap();
+            }
+            symlink("plain.txt", root.join("link")).unwrap();
+            let repo = discover(root).await.unwrap().unwrap();
+            let list = repo.changes(ChangeSource::Untracked).await.unwrap();
+            for (path, mode) in [
+                ("plain.txt", "100644"),
+                ("other-exec.txt", "100644"),
+                ("group-exec.txt", "100644"),
+                ("executable.sh", "100755"),
+                ("link", "120000"),
+            ] {
+                let file = list
+                    .files()
+                    .iter()
+                    .find(|f| f.path() == Path::new(path))
+                    .unwrap();
+                let content = repo
+                    .change_content(ChangeSource::Untracked, file)
+                    .await
+                    .unwrap();
+                let patch = content.patch().unwrap();
+                git(root, &["add", "--", path]);
+                let indexed = std::process::Command::new("git")
+                    .current_dir(root)
+                    .args(["ls-files", "--stage", "--", path])
+                    .output()
+                    .unwrap();
+                assert!(indexed.status.success());
+                let indexed = String::from_utf8(indexed.stdout).unwrap();
+                let indexed_mode = indexed.split_whitespace().next().unwrap();
+                assert_eq!(indexed_mode, mode);
+                assert!(patch.contains(&format!("new file mode {indexed_mode}\n")));
+                let target = tempfile::tempdir().unwrap();
+                git(target.path(), &["init", "--quiet"]);
+                let input = target.path().join("fixture.patch");
+                std::fs::write(&input, patch).unwrap();
+                git(target.path(), &["apply", "fixture.patch"]);
+                let metadata = std::fs::symlink_metadata(target.path().join(path)).unwrap();
+                if mode == "120000" {
+                    assert!(metadata.file_type().is_symlink());
+                    assert_eq!(
+                        std::fs::read_link(target.path().join(path)).unwrap(),
+                        Path::new("plain.txt")
+                    );
+                } else {
+                    assert_eq!(metadata.permissions().mode() & 0o100 != 0, mode == "100755");
+                }
+            }
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn mode_only_staged_and_unstaged_keep_raw_patch_without_text_changes() {
+        use std::os::unix::fs::PermissionsExt;
+        smol::block_on(async {
+            let fixture = tempfile::tempdir().unwrap();
+            let root = fixture.path();
+            git(root, &["init", "--quiet"]);
+            git(root, &["config", "core.fileMode", "true"]);
+            std::fs::write(root.join("mode.sh"), "echo same\n").unwrap();
+            std::fs::set_permissions(root.join("mode.sh"), std::fs::Permissions::from_mode(0o644))
+                .unwrap();
+            git(root, &["add", "."]);
+            git(root, &["commit", "--quiet", "-m", "base"]);
+            std::fs::set_permissions(root.join("mode.sh"), std::fs::Permissions::from_mode(0o755))
+                .unwrap();
+            let repo = discover(root).await.unwrap().unwrap();
+            for source in [ChangeSource::Unstaged, ChangeSource::Staged] {
+                if source == ChangeSource::Staged {
+                    git(root, &["add", "mode.sh"]);
+                }
+                let list = repo.changes(source).await.unwrap();
+                assert_eq!(list.files()[0].kind(), ChangeKind::Modified);
+                let content = repo.change_content(source, &list.files()[0]).await.unwrap();
+                assert_eq!(content.state(), ContentState::NoTextChanges);
+                assert_eq!(
+                    (content.original(), content.modified()),
+                    (Some("echo same\n"), Some("echo same\n"))
+                );
+                let patch = content.patch().unwrap();
+                assert!(patch.contains("old mode 100644\nnew mode 100755\n"));
+                assert!(!patch.contains("@@"));
+            }
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_unicode_status_paths_are_retained_but_rejected_before_any_git_or_body_read() {
+        use std::os::unix::ffi::OsStrExt;
+        smol::block_on(async {
+            let fixture = tempfile::tempdir().unwrap();
+            // No Git repository: unsupported names must be rejected before validation or I/O.
+            let repo = Repository {
+                root: fixture.path().into(),
+                git_dir: fixture.path().join(".git"),
+                common_dir: fixture.path().join(".git"),
+            };
+            for (source, bytes) in [
+                (ChangeSource::Untracked, b"? bad-\xff.txt\0".as_slice()),
+                (
+                    ChangeSource::Unstaged,
+                    b"1 .M N... 100644 100644 100644 1111 1111 bad-\xff.txt\0".as_slice(),
+                ),
+                (
+                    ChangeSource::Staged,
+                    b"1 M. N... 100644 100644 100644 1111 1111 bad-\xff.txt\0".as_slice(),
+                ),
+            ] {
+                let mut files = parse_status(bytes, source).unwrap();
+                assert_eq!(files.len(), 1);
+                files[0].disk = true;
+                assert_eq!(files[0].path().as_os_str().as_bytes(), b"bad-\xff.txt");
+                assert!(!files[0].can_open_worktree());
+                let content = repo.change_content(source, &files[0]).await.unwrap();
+                assert_eq!(content.state(), ContentState::InvalidPath);
+                assert!(
+                    content.patch().is_none()
+                        && content.original().is_none()
+                        && content.modified().is_none()
+                        && content.disk_path().is_none()
+                );
+            }
+        });
+    }
+    #[cfg(unix)]
+    #[test]
+    fn unicode_control_names_generate_git_compatible_patch_headers() {
+        smol::block_on(async {
+            let source = tempfile::tempdir().unwrap();
+            let target = tempfile::tempdir().unwrap();
+            git(source.path(), &["init", "--quiet"]);
+            git(target.path(), &["init", "--quiet"]);
+            let name = "line-\u{1}-é\n.txt";
+            std::fs::write(source.path().join(name), "contents\n").unwrap();
+            let repo = discover(source.path()).await.unwrap().unwrap();
+            let list = repo.changes(ChangeSource::Untracked).await.unwrap();
+            let content = repo
+                .change_content(ChangeSource::Untracked, &list.files()[0])
+                .await
+                .unwrap();
+            std::fs::write(
+                target.path().join("fixture.patch"),
+                content.patch().unwrap(),
+            )
+            .unwrap();
+            git(target.path(), &["apply", "fixture.patch"]);
+            assert_eq!(
+                std::fs::read(target.path().join(name)).unwrap(),
+                b"contents\n"
+            );
+        });
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn filesystem_non_unicode_files_stay_listed_without_readable_bodies() {
+        use std::os::unix::ffi::OsStringExt;
+        smol::block_on(async {
+            let fixture = tempfile::tempdir().unwrap();
+            let root = fixture.path();
+            git(root, &["init", "--quiet"]);
+            let tracked = PathBuf::from(std::ffi::OsString::from_vec(b"tracked-\xff.txt".to_vec()));
+            let untracked = PathBuf::from(std::ffi::OsString::from_vec(b"new-\xfe.txt".to_vec()));
+            std::fs::write(root.join(&tracked), "base\n").unwrap();
+            git(root, &["add", "."]);
+            git(root, &["commit", "--quiet", "-m", "base"]);
+            std::fs::write(root.join(&tracked), "modified\n").unwrap();
+            std::fs::write(root.join(&untracked), "new\n").unwrap();
+            let repo = discover(root).await.unwrap().unwrap();
+            for (source, path) in [
+                (ChangeSource::Unstaged, &tracked),
+                (ChangeSource::Untracked, &untracked),
+                (ChangeSource::Staged, &tracked),
+            ] {
+                if source == ChangeSource::Staged {
+                    git(root, &["add", "."]);
+                }
+                let list = repo.changes(source).await.unwrap();
+                let file = list.files().iter().find(|f| f.path() == path).unwrap();
+                let content = repo.change_content(source, file).await.unwrap();
+                assert_eq!(content.state(), ContentState::InvalidPath);
+                assert!(content.patch().is_none() && content.modified().is_none());
+                assert!(!file.can_open_worktree());
+            }
+        });
+    }
+    #[cfg(unix)]
+    #[test]
+    fn mode_only_with_git_line_ending_normalization_still_has_no_text_changes() {
+        use std::os::unix::fs::PermissionsExt;
+        smol::block_on(async {
+            let fixture = tempfile::tempdir().unwrap();
+            let root = fixture.path();
+            git(root, &["init", "--quiet"]);
+            git(root, &["config", "core.fileMode", "true"]);
+            std::fs::write(root.join(".gitattributes"), "mode.sh text eol=crlf\n").unwrap();
+            std::fs::write(root.join("mode.sh"), "same\n").unwrap();
+            std::fs::set_permissions(root.join("mode.sh"), std::fs::Permissions::from_mode(0o644))
+                .unwrap();
+            git(root, &["add", "."]);
+            git(root, &["commit", "--quiet", "-m", "base"]);
+            std::fs::write(root.join("mode.sh"), "same\r\n").unwrap();
+            std::fs::set_permissions(root.join("mode.sh"), std::fs::Permissions::from_mode(0o755))
+                .unwrap();
+            let repo = discover(root).await.unwrap().unwrap();
+            let files = repo.changes(ChangeSource::Unstaged).await.unwrap();
+            let content = repo
+                .change_content(ChangeSource::Unstaged, &files.files()[0])
+                .await
+                .unwrap();
+            assert_ne!(content.original(), content.modified());
+            assert_eq!(content.state(), ContentState::NoTextChanges);
+            assert!(!content.patch().unwrap().contains("@@"));
+        });
+    }
+    #[cfg(unix)]
+    #[test]
+    fn index_non_unicode_paths_stay_listed_on_hosts_that_cannot_create_the_name() {
+        use std::io::Write;
+        use std::os::unix::ffi::OsStrExt;
+        smol::block_on(async {
+            let fixture = tempfile::tempdir().unwrap();
+            let root = fixture.path();
+            git(root, &["init", "--quiet", "--object-format=sha1"]);
+            std::fs::write(root.join("empty"), "").unwrap();
+            git(root, &["hash-object", "-w", "empty"]);
+            let mut child = std::process::Command::new("git")
+                .current_dir(root)
+                .args(["update-index", "-z", "--index-info"])
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .unwrap();
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(b"100644 e69de29bb2d1d6434b8b29ae775ad8c2e48c5391\tbad-\xff.txt\0")
+                .unwrap();
+            let output = child.wait_with_output().unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let repo = discover(root).await.unwrap().unwrap();
+            for source in [ChangeSource::Staged, ChangeSource::Unstaged] {
+                let list = repo.changes(source).await.unwrap();
+                let file = list
+                    .files()
+                    .iter()
+                    .find(|f| f.path().as_os_str().as_bytes() == b"bad-\xff.txt")
+                    .unwrap();
+                assert!(!file.can_open_worktree());
+                assert_eq!(
+                    repo.change_content(source, file).await.unwrap().state(),
+                    ContentState::InvalidPath
+                );
+            }
         });
     }
 }

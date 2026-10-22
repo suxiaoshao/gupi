@@ -1337,7 +1337,6 @@ diff-recorded-context = Alterações desta execução · somente contexto regist
 diff-added = Adicionado
 diff-deleted = Excluído
 diff-modified = Modificado
-diff-renamed = Renomeado
 diff-conflict = Conflito · somente leitura
 diff-special = Arquivo especial · somente leitura
 diff-binary = Arquivo binário
@@ -1365,3 +1364,6 @@ workspace-back-conversation = Voltar à conversa
 workspace-back-content = Voltar ao conteúdo
 workspace-open = Abrir espaço de trabalho
 workspace-close = Fechar espaço de trabalho
+
+diff-invalid-path = O nome do arquivo não é UTF-8 válido e não pode ser lido
+diff-no-text-changes = Nenhuma alteração de texto

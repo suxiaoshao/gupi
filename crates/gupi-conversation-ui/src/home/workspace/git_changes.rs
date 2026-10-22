@@ -63,6 +63,29 @@ pub(super) struct Loaded {
     pub block: Option<DiffBlock>,
 }
 impl Loaded {
+    fn new(entry: Change, content: ChangeContent, previous: Option<Self>, cx: &mut App) -> Self {
+        let block =
+            if content.state() == ContentState::Text && content.original() != content.modified() {
+                if previous
+                    .as_ref()
+                    .is_some_and(|old| old.content.patch() == content.patch())
+                {
+                    previous.and_then(|old| old.block)
+                } else {
+                    content
+                        .patch()
+                        .filter(|patch| !patch.is_empty())
+                        .map(|patch| DiffBlock::patch(patch, cx))
+                }
+            } else {
+                None
+            };
+        Self {
+            entry,
+            content,
+            block,
+        }
+    }
     pub(super) fn copy_content(&self) -> Option<&str> {
         if self.entry.kind() == ChangeKind::Deleted {
             self.content.original()
@@ -140,7 +163,6 @@ fn kind_key(kind: ChangeKind) -> &'static str {
         ChangeKind::Added => "diff-added",
         ChangeKind::Deleted => "diff-deleted",
         ChangeKind::Modified => "diff-modified",
-        ChangeKind::Renamed => "diff-renamed",
         ChangeKind::Conflict => "diff-conflict",
         ChangeKind::Special => "diff-special",
     }
@@ -223,10 +245,7 @@ impl GitTab {
                         .path()
                         .to_string_lossy()
                         .to_lowercase()
-                        .contains(&query)
-                        || entry.file.previous_path().is_some_and(|path| {
-                            path.to_string_lossy().to_lowercase().contains(&query)
-                        }))
+                        .contains(&query))
             })
         });
         if !eligible {
@@ -654,30 +673,13 @@ impl HomeView {
                 match result {
                     Ok(content) => {
                         let old = tab.cache.remove(&path);
-                        let block = if old
-                            .as_ref()
-                            .is_some_and(|old| old.content.patch() == content.patch())
-                        {
-                            old.and_then(|old| old.block)
-                        } else {
-                            content
-                                .patch()
-                                .filter(|p| !p.is_empty())
-                                .map(|p| DiffBlock::patch(p, cx))
-                        };
                         if tab.cache.len() >= CACHE_FILES
                             && let Some(old) = tab.cache.keys().find(|k| **k != path).cloned()
                         {
                             tab.cache.remove(&old);
                         }
-                        tab.cache.insert(
-                            path,
-                            Loaded {
-                                entry: expected,
-                                content,
-                                block,
-                            },
-                        );
+                        tab.cache
+                            .insert(path, Loaded::new(expected, content, old, cx));
                     }
                     Err(error) => tab.body_error = Some(error.to_string()),
                 }
@@ -940,11 +942,7 @@ impl HomeView {
     pub(super) fn render_git_main(&self, tab: &GitTab, cx: &mut Context<Self>) -> AnyElement {
         let entry = tab.selected_entry();
         let path = entry
-            .map(|e| {
-                e.previous_path()
-                    .map(|p| format!("{} → {}", p.display(), e.path().display()))
-                    .unwrap_or_else(|| e.path().display().to_string())
-            })
+            .map(|e| e.path().display().to_string())
             .unwrap_or_else(|| t(cx, "diff-worktree"));
         let source = tab
             .selected_source()
@@ -1077,10 +1075,20 @@ impl HomeView {
                     ContentState::TooLarge => "diff-too-large",
                     ContentState::Conflict => "diff-conflict",
                     ContentState::Special => "diff-special",
-                    ContentState::Renamed => "diff-renamed",
+                    ContentState::InvalidPath => "diff-invalid-path",
+                    ContentState::NoTextChanges => "diff-no-text-changes",
                     ContentState::Text => "diff-empty-file",
                 };
-                content = content.child(div().p_3().text_sm().child(t(cx, key)));
+                content = content.child(
+                    div()
+                        .id("git-content-state")
+                        .test_support()
+                        .role(Role::Status)
+                        .aria_label(t(cx, key))
+                        .p_3()
+                        .text_sm()
+                        .child(t(cx, key)),
+                );
             }
         } else {
             content = content.child(div().p_3().text_sm().child(t(cx, "diff-loading")));
@@ -1117,7 +1125,6 @@ fn status_code(entry: &Entry) -> &'static str {
             ChangeKind::Added => "A",
             ChangeKind::Deleted => "D",
             ChangeKind::Modified => "M",
-            ChangeKind::Renamed => "R",
             ChangeKind::Conflict => "!",
             ChangeKind::Special => "?",
         }

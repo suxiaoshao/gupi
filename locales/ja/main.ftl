@@ -1312,7 +1312,6 @@ diff-recorded-context = この実行の変更 · 記録されたコンテキス�
 diff-added = 追加
 diff-deleted = 削除
 diff-modified = 変更
-diff-renamed = 名前変更
 diff-conflict = 競合 · 読み取り専用
 diff-special = 特殊ファイル · 読み取り専用
 diff-binary = バイナリファイル
@@ -1340,3 +1339,6 @@ workspace-back-conversation = 会話に戻る
 workspace-back-content = 本文に戻る
 workspace-open = ワークスペースを開く
 workspace-close = ワークスペースを閉じる
+
+diff-invalid-path = ファイル名が有効な UTF-8 ではないため読み取れません
+diff-no-text-changes = テキストの変更はありません

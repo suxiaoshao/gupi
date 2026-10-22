@@ -787,3 +787,99 @@ fn tree_unchanged_refresh_preserves_projection_scroll_and_prunes_removed_directo
         })
     });
 }
+
+#[gpui_kit::test]
+fn mode_only_body_has_localized_state_and_copies_original_metadata_patch(cx: &mut TestAppContext) {
+    let (home, visual, _fixture) = mount(cx);
+    let patch = "diff --git a/mode.sh b/mode.sh\nold mode 100644\nnew mode 100755\n";
+    for source in [ChangeSource::Unstaged, ChangeSource::Staged] {
+        visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                let file = Change::for_test("mode.sh".into(), ChangeKind::Modified);
+                let tab = home.git_mut().unwrap();
+                tab.loading = false;
+                tab.all.clear();
+                tab.apply_files(vec![(source, Ok(vec![file.clone()]))], window, cx);
+                let id = identity(source, file.path());
+                tab.selected = Some(id.clone());
+                let body = ChangeContent::for_test("same\n".into(), "same\n".into(), patch.into());
+                let loaded = Loaded::new(file, body, None, cx);
+                assert!(loaded.block.is_none());
+                tab.cache.insert(id, loaded);
+                home.reader_command(reader::Command::CopyPatch, window, cx);
+                assert_eq!(
+                    cx.read_from_clipboard().unwrap().text().as_deref(),
+                    Some(patch)
+                );
+                assert!(home.reader_command_available(reader::Command::CopyContent, cx));
+                cx.notify();
+            })
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            window.draw(cx).clear(cx);
+            assert_eq!(
+                window.find("git-content-state").label(),
+                Some(t(cx, "diff-no-text-changes").as_str())
+            );
+        });
+    }
+}
+
+#[cfg(unix)]
+#[gpui_kit::test]
+fn non_unicode_rows_keep_byte_identity_show_localized_state_and_disable_copy(
+    cx: &mut TestAppContext,
+) {
+    use std::os::unix::ffi::OsStringExt;
+    let (home, visual, _fixture) = mount(cx);
+    let raw = PathBuf::from(std::ffi::OsString::from_vec(b"bad-\xff.txt".to_vec()));
+    let displayed = PathBuf::from("bad-\u{fffd}.txt");
+    assert_ne!(
+        identity(ChangeSource::Untracked, &raw),
+        identity(ChangeSource::Untracked, &displayed)
+    );
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            let file = Change::for_test(raw.clone(), ChangeKind::Added);
+            let tab = home.git_mut().unwrap();
+            tab.loading = false;
+            tab.apply_files(
+                vec![(
+                    ChangeSource::Untracked,
+                    Ok(vec![
+                        file.clone(),
+                        Change::for_test(displayed, ChangeKind::Added),
+                    ]),
+                )],
+                window,
+                cx,
+            );
+            assert_eq!(tab.rows.len(), 2);
+            let id = identity(ChangeSource::Untracked, &raw);
+            tab.selected = Some(id.clone());
+            tab.sync_rows(window, cx);
+            let body = ChangeContent::unavailable_for_test(ContentState::InvalidPath);
+            let loaded = Loaded::new(file, body, None, cx);
+            assert!(loaded.block.is_none());
+            tab.cache.insert(id, loaded);
+            for command in [
+                reader::Command::CopyPath,
+                reader::Command::CopyPatch,
+                reader::Command::CopyContent,
+                reader::Command::External,
+            ] {
+                assert!(!home.reader_command_available(command, cx));
+            }
+            cx.notify();
+        })
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        window.draw(cx).clear(cx);
+        assert_eq!(
+            window.find("git-content-state").label(),
+            Some(t(cx, "diff-invalid-path").as_str())
+        );
+    });
+}

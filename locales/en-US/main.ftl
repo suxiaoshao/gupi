@@ -1338,7 +1338,6 @@ diff-recorded-context = Recorded changes · only recorded context is available
 diff-added = Added
 diff-deleted = Deleted
 diff-modified = Modified
-diff-renamed = Renamed
 diff-conflict = Conflict · read-only
 diff-special = Special file · read-only
 diff-binary = Binary file
@@ -1366,3 +1365,6 @@ workspace-back-conversation = Back to conversation
 workspace-back-content = Back to content
 workspace-open = Open workspace
 workspace-close = Close workspace
+
+diff-invalid-path = The file name is not valid UTF-8 and cannot be read
+diff-no-text-changes = No text changes

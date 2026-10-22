@@ -74,10 +74,7 @@ fn row(entry: &Entry) -> Row {
     let file = &entry.file;
     Row {
         path: entry.id(),
-        label: file
-            .previous_path()
-            .map(|p| format!("{} → {}", p.display(), file.path().display()))
-            .unwrap_or_else(|| file.path().display().to_string()),
+        label: file.path().display().to_string(),
         status: Some(if entry.source == ChangeSource::Untracked {
             "diff-untracked"
         } else {
@@ -107,11 +104,7 @@ pub(super) fn build(
                         .path()
                         .to_string_lossy()
                         .to_lowercase()
-                        .contains(query)
-                        || entry
-                            .file
-                            .previous_path()
-                            .is_some_and(|p| p.to_string_lossy().to_lowercase().contains(query)))
+                        .contains(query))
             })
             .filter(|entry| {
                 group != Group::Conflicts || conflicts.insert(entry.file.path().to_owned())
@@ -227,7 +220,7 @@ mod tests {
                 ChangeKind::Deleted,
             ),
             (ChangeSource::Untracked, "notes.md", ChangeKind::Added),
-            (ChangeSource::Unstaged, "new/place.rs", ChangeKind::Renamed),
+            (ChangeSource::Untracked, "new/place.rs", ChangeKind::Added),
         ]
         .into_iter()
         .map(|(source, path, kind)| Entry {

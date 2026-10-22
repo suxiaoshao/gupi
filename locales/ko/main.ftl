@@ -1312,7 +1312,6 @@ diff-recorded-context = 이번 실행의 변경 · 기록된 문맥만 표시
 diff-added = 추가
 diff-deleted = 삭제
 diff-modified = 수정
-diff-renamed = 이름 변경
 diff-conflict = 충돌 · 읽기 전용
 diff-special = 특수 파일 · 읽기 전용
 diff-binary = 바이너리 파일
@@ -1340,3 +1339,6 @@ workspace-back-conversation = 대화로 돌아가기
 workspace-back-content = 본문으로 돌아가기
 workspace-open = 작업 영역 열기
 workspace-close = 작업 영역 닫기
+
+diff-invalid-path = 파일 이름이 올바른 UTF-8이 아니므로 읽을 수 없습니다
+diff-no-text-changes = 텍스트 변경 없음

@@ -1319,7 +1319,6 @@ diff-recorded-context = 本輪變更 · 僅提供記錄中的上下文
 diff-added = 新增
 diff-deleted = 刪除
 diff-modified = 修改
-diff-renamed = 重新命名
 diff-conflict = 衝突 · 唯讀
 diff-special = 特殊檔案 · 唯讀
 diff-binary = 二進位檔案
@@ -1347,3 +1346,6 @@ workspace-back-conversation = 返回對話
 workspace-back-content = 返回內容
 workspace-open = 開啟工作區
 workspace-close = 關閉工作區
+
+diff-invalid-path = 檔名不是有效 UTF-8，無法讀取
+diff-no-text-changes = 沒有文字變更

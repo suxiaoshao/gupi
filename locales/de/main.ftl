@@ -1370,3 +1370,6 @@ diff-invalid-path = Der Dateiname ist kein gültiges UTF-8 und kann nicht gelese
 diff-no-text-changes = Keine Textänderungen
 
 diff-external-failed = Die Datei konnte nicht geöffnet werden. Sie existiert möglicherweise nicht mehr oder es ist keine geeignete Anwendung verfügbar.
+
+diff-conflict-label = Konflikt
+diff-read-failed = Änderungen konnten nicht gelesen werden. Bitte erneut versuchen.

@@ -1351,3 +1351,6 @@ diff-invalid-path = 檔名不是有效 UTF-8，無法讀取
 diff-no-text-changes = 沒有文字變更
 
 diff-external-failed = 無法開啟檔案。檔案可能已不存在，或沒有可用的應用程式。
+
+diff-conflict-label = 衝突
+diff-read-failed = 讀取失敗，請重試。

@@ -1020,6 +1020,62 @@ fn fold_tracks_displayed_snapshot_during_updates_and_errors(cx: &mut TestAppCont
 }
 
 #[gpui_kit::test]
+fn conflict_header_identifies_conflict_instead_of_staged_comparison(cx: &mut TestAppContext) {
+    let (home, visual, _fixture) = mount(cx);
+    visual.update(|_, cx| {
+        gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::Chinese, cx);
+    });
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            let tab = home.git_mut().unwrap();
+            tab.loading = false;
+            let file = Change::for_test("conflict.rs".into(), ChangeKind::Conflict);
+            tab.apply_files(
+                vec![
+                    (ChangeSource::Staged, vec![file.clone()], None),
+                    (ChangeSource::Unstaged, vec![file], None),
+                ],
+                window,
+                cx,
+            );
+            assert_eq!(tab.selected_source(), Some(ChangeSource::Staged));
+            cx.notify();
+        });
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        window.draw(cx).clear(cx);
+        assert_eq!(window.find("git-file-comparison").label(), Some("冲突"));
+    });
+}
+
+#[gpui_kit::test]
+fn uncached_read_error_shows_localized_failure_and_retry(cx: &mut TestAppContext) {
+    let (home, visual, _fixture) = mount(cx);
+    visual.update(|_, cx| {
+        gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::Chinese, cx);
+    });
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            ready(home, window, cx);
+            let tab = home.git_mut().unwrap();
+            tab.cache.clear();
+            tab.body_error = Some("Git query timed out".into());
+            cx.notify();
+        });
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        window.draw(cx).clear(cx);
+        assert_eq!(
+            window.find("git-read-error").label(),
+            Some("读取失败，请重试。")
+        );
+        assert_ne!(window.find("git-retry").disabled(), Some(true));
+    });
+}
+
+#[gpui_kit::test]
 fn status_failure_preserves_complete_list_selection_and_body(cx: &mut TestAppContext) {
     let (home, visual, _fixture) = mount(cx);
     visual.update(|window, cx| {
@@ -1055,6 +1111,10 @@ fn status_failure_preserves_complete_list_selection_and_body(cx: &mut TestAppCon
             );
             assert!(tab.error.is_some());
             assert!(!tab.refreshing);
+            tab.apply_refresh(Ok(None), window, cx);
+            assert!(tab.error.is_none());
+            assert!(tab.not_repository);
+            assert!(tab.all.is_empty() && tab.cache.is_empty());
         })
     });
 }

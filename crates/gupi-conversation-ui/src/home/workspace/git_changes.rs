@@ -324,6 +324,9 @@ impl GitTab {
         self.list_task = None;
         self.refreshing = false;
         self.loading = false;
+        if result.is_ok() {
+            self.error = None;
+        }
         match result {
             Ok(Some((repo, results))) => {
                 if self.repository.as_ref().is_some_and(|old| *old != repo) {
@@ -334,7 +337,6 @@ impl GitTab {
                     self.invalidate_body();
                 }
                 self.repository = Some(repo);
-                self.error = None;
                 self.not_repository = false;
                 self.apply_files(
                     results
@@ -675,7 +677,10 @@ impl HomeView {
                         tab.cache
                             .insert(path, Loaded::new(expected, content, old, cx));
                     }
-                    Err(error) => tab.body_error = Some(error.to_string()),
+                    Err(error) => {
+                        tracing::warn!(%error, "Git change read failed");
+                        tab.body_error = Some(error.to_string());
+                    }
                 }
                 if tab.main_focus.is_focused(window) {
                     tab.focus_main(window, cx);
@@ -936,12 +941,10 @@ impl HomeView {
         let path = entry
             .map(|e| e.path().display().to_string())
             .unwrap_or_else(|| t(cx, "diff-worktree"));
-        let source = tab
-            .selected_source()
-            .map(|s| t(cx, source_key(s)))
-            .unwrap_or_default();
-        let direction = tab
-            .selected_source()
+        let conflict = entry.is_some_and(|entry| entry.kind() == ChangeKind::Conflict);
+        let comparison = tab.selected_source().filter(|_| !conflict);
+        let source = comparison.map(|s| t(cx, source_key(s))).unwrap_or_default();
+        let direction = comparison
             .map(|s| {
                 t(
                     cx,
@@ -952,13 +955,30 @@ impl HomeView {
                     },
                 )
             })
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                if conflict {
+                    t(cx, "diff-conflict-label")
+                } else {
+                    String::new()
+                }
+            });
         let updating = tab
             .selected
             .as_ref()
             .and_then(|p| tab.cache.get(p))
             .is_some_and(|loaded| Some(&loaded.entry) != entry);
-        let path_tooltip = format!("{path} · {source} · {direction}");
+        let path_tooltip = [path.as_str(), source.as_str(), direction.as_str()]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(" · ");
+        let status = if tab.body_error.is_some() {
+            t(cx, "diff-update-failed")
+        } else if updating {
+            t(cx, "diff-updating")
+        } else {
+            direction
+        };
         let header = h_flex()
             .id("git-file-header")
             .test_support()
@@ -983,18 +1003,15 @@ impl HomeView {
             )
             .child(
                 div()
+                    .id("git-file-comparison")
+                    .test_support()
+                    .aria_label(status.clone())
                     .max_w_40()
                     .min_w_0()
                     .text_xs()
                     .truncate()
                     .text_color(cx.theme().muted_foreground)
-                    .child(if tab.body_error.is_some() {
-                        t(cx, "diff-update-failed")
-                    } else if updating {
-                        t(cx, "diff-updating")
-                    } else {
-                        direction
-                    }),
+                    .child(status),
             )
             .when(!self.workspace_layout.navigator_visible(), |row| {
                 row.child(self.git_refresh_button(tab, cx))
@@ -1021,25 +1038,33 @@ impl HomeView {
         } else {
             None
         };
-        if let Some(error) = &tab.body_error
+        if tab.body_error.is_some()
             && !tab
                 .selected
                 .as_ref()
                 .is_some_and(|id| tab.cache.contains_key(id))
         {
             content = content.child(
-                div().p_3().text_sm().child(error.clone()).child(
-                    Button::new("git-retry")
-                        .small()
-                        .label(t(cx, "diff-retry"))
-                        .on_click(cx.listener(|home, _, window, cx| {
-                            if let Some(tab) = home.git_mut() {
-                                tab.invalidate_body();
-                            }
-                            home.refresh_worktree(window, cx);
-                            home.load_git_file(window, cx);
-                        })),
-                ),
+                div()
+                    .id("git-read-error")
+                    .test_support()
+                    .role(Role::Status)
+                    .aria_label(t(cx, "diff-read-failed"))
+                    .p_3()
+                    .text_sm()
+                    .child(t(cx, "diff-read-failed"))
+                    .child(
+                        Button::new("git-retry")
+                            .small()
+                            .label(t(cx, "diff-retry"))
+                            .on_click(cx.listener(|home, _, window, cx| {
+                                if let Some(tab) = home.git_mut() {
+                                    tab.invalidate_body();
+                                }
+                                home.refresh_worktree(window, cx);
+                                home.load_git_file(window, cx);
+                            })),
+                    ),
             );
         }
         if tab.body_error.is_some()

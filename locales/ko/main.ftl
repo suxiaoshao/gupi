@@ -1344,3 +1344,6 @@ diff-invalid-path = 파일 이름이 올바른 UTF-8이 아니므로 읽을 수 
 diff-no-text-changes = 텍스트 변경 없음
 
 diff-external-failed = 파일을 열 수 없습니다. 파일이 더 이상 존재하지 않거나 사용할 수 있는 앱이 없습니다.
+
+diff-conflict-label = 충돌
+diff-read-failed = 변경 사항을 읽지 못했습니다. 다시 시도하세요.

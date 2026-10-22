@@ -26,13 +26,13 @@ impl HomeView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.pane_layout.workspace_docked {
+        if self.pane_layout.visible(Panel::Workspace) {
+            self.interrupt_pane_drag(window, cx);
+            self.end_workspace_tab_drag(window, cx);
             self.pane_layout.maximized = !self.pane_layout.maximized;
-            if self.pane_layout.maximized {
-                self.pane_layout.overlay = None;
-            }
-            self.pane_layout.invalidate();
-            self.fit_layout(window, cx);
+            self.pane_layout.foreground = panes::Foreground::Workspace;
+            self.pane_layout.allocate();
+            self.fit_workspace_layout(window, cx);
             cx.notify();
         }
     }
@@ -139,7 +139,6 @@ impl HomeView {
     }
     pub(in crate::home) fn render_workspace_strip(
         &self,
-        titlebar: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -214,6 +213,18 @@ impl HomeView {
                 }
             })
             .child(tabs);
+        let back = (!self.pane_layout.workspace_docked).then(|| {
+            chrome::control(
+                "workspace-back-control",
+                chrome::button("workspace-back")
+                    .icon(IconName::ArrowLeft)
+                    .tooltip(t(cx, "workspace-back-conversation"))
+                    .accessibility_label(t(cx, "workspace-back-conversation"))
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.show_conversation(window, cx)),
+                    ),
+            )
+        });
         let add = chrome::control(
             "workspace-add-control",
             chrome::button("workspace-add")
@@ -254,48 +265,49 @@ impl HomeView {
                     }),
             )
         });
-        let mut row = h_flex()
+        let row = h_flex()
+            .key_context("GupiWorkspace")
+            .on_action(
+                cx.listener(|this, _: &actions::CloseNavigator, window, cx| {
+                    this.return_from_source(window, cx)
+                }),
+            )
             .size_full()
             .min_w_0()
             .items_center()
             .px_2()
             .gap_1()
+            .children(back)
             .child(tabs)
             .child(add)
             .child(div().h_full().min_w(rems(DRAG_SPACE_REM)).flex_1())
             .children(all);
-        if titlebar {
-            let maximize = if self.pane_layout.maximized {
-                "workspace-restore"
-            } else {
-                "workspace-maximize"
-            };
-            row = row
-                .child(chrome::control(
-                    "workspace-maximize-control",
-                    chrome::button("workspace-maximize")
-                        .debug_selector(|| "workspace-maximize".into())
-                        .icon(if self.pane_layout.maximized {
-                            IconName::Minimize2
-                        } else {
-                            IconName::Maximize2
-                        })
-                        .tooltip(t(cx, maximize))
-                        .accessibility_label(t(cx, maximize))
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.toggle_workspace_maximized(window, cx)
-                        })),
-                ))
-                .child(self.render_workspace_toggle(cx));
-        }
-        let _ = window;
+        let maximize = if self.pane_layout.maximized {
+            "workspace-restore"
+        } else {
+            "workspace-maximize"
+        };
+        let row = row
+            .child(chrome::control(
+                "workspace-maximize-control",
+                chrome::button("workspace-maximize")
+                    .debug_selector(|| "workspace-maximize".into())
+                    .icon(if self.pane_layout.maximized {
+                        IconName::Minimize2
+                    } else {
+                        IconName::Maximize2
+                    })
+                    .tooltip(t(cx, maximize))
+                    .accessibility_label(t(cx, maximize))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.toggle_workspace_maximized(window, cx)
+                    })),
+            ))
+            .child(self.render_workspace_toggle(cx));
         div()
             .h(chrome::HEIGHT)
             .flex_none()
             .min_w_0()
-            .when(!titlebar, |strip| {
-                strip.border_b_1().border_color(cx.theme().border)
-            })
             .child(row)
             .into_any_element()
     }

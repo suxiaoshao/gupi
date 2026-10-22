@@ -1361,3 +1361,8 @@ diff-display = Display
 diff-list-view = List
 diff-tree-view = Tree
 diff-stats-incomplete = Statistics incomplete
+
+workspace-back-conversation = Back to conversation
+workspace-back-content = Back to content
+workspace-open = Open workspace
+workspace-close = Close workspace

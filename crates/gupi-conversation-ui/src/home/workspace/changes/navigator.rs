@@ -81,7 +81,7 @@ impl ListDelegate for Delegate {
                     let focus = home.active_changes().unwrap().focus.clone();
                     let keep_focus = focus.contains_focused(window, cx);
                     home.select_reader_file(path, window, cx);
-                    if keep_focus {
+                    if keep_focus && home.workspace_layout.navigator_visible() {
                         focus.focus(window, cx);
                     }
                 }

@@ -49,7 +49,7 @@ fn mount(
         gupi_settings::theme::init(cx);
         gupi_settings::i18n::apply(Default::default(), cx);
         gupi_pi_runtime::init(cx);
-        cx.set_global(layout::LayoutState::default());
+        cx.set_global(gupi_settings::layout::LayoutState::default());
         cx.set_global(TestLayoutDirectory(fixture.path().into()));
     });
     let state = cx.new(|cx| ConversationState::new("unused".into(), cx));
@@ -180,9 +180,9 @@ fn implicit_run_selection_never_keeps_another_files_external_path(cx: &mut TestA
 #[gpui_kit::test]
 fn operation_paging_applies_retained_reader_options_immediately(cx: &mut TestAppContext) {
     let (home, visual, _fixture) = mount(cx, 5);
+    visual.simulate_resize(size(px(3000.), px(900.)));
     visual.update(|window, cx| {
         home.update(cx, |home, cx| {
-            home.pane_layout.main_width = 1200.;
             use super::super::reader::Command;
             for command in [
                 Command::Split,
@@ -213,4 +213,112 @@ fn operation_paging_applies_retained_reader_options_immediately(cx: &mut TestApp
         assert!(file.operations["tool-a.rs-4"].state().is_none());
     });
     visual.run_until_parked();
+}
+
+#[gpui_kit::test]
+fn diff_open_file_restores_files_body_after_cross_tab_temporary_list(cx: &mut TestAppContext) {
+    let (home, visual, fixture) = mount(cx, 1);
+    visual.simulate_resize(size(px(1000.), px(900.)));
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            let run = home.active_changes().unwrap().id.clone();
+            home.open_source(fixture.path().join("a.rs"), true, window, cx);
+            home.toggle_workspace_navigator(window, cx);
+            assert!(home.temporary_list());
+            home.select_workspace_tab(Some(run), window, cx);
+            assert!(!home.temporary_list());
+        })
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        window.draw(cx).clear(cx);
+        window.click("change-open-file", cx);
+        assert!(home.read(cx).workspace_layout.main_width > 0.);
+        assert!(!home.read(cx).temporary_list());
+    });
+    visual.run_until_parked();
+    assert!(visual.debug_bounds("source-pane").is_some());
+    visual.update(|window, cx| {
+        assert!(
+            home.read(cx)
+                .source()
+                .unwrap()
+                .read(cx)
+                .contains_focus(window, cx)
+        );
+        assert!(
+            home.read(cx).views["fixture"]
+                .workspace
+                .temporary_lists
+                .is_empty()
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn compact_sync_restores_only_rendered_focus_after_selection_and_mode_changes(
+    cx: &mut TestAppContext,
+) {
+    let (home, visual, _fixture) = mount(cx, 1);
+    visual.simulate_resize(size(px(1000.), px(900.)));
+    visual.run_until_parked();
+    for (paths, operations) in [(&["b.rs"][..], 1), (&["b.rs"][..], 5)] {
+        visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                assert!(!home.workspace_layout.navigator_visible());
+                home.active_changes().unwrap().focus_main(window, cx);
+                assert!(home.active_changes().unwrap().contains_focus(window, cx));
+                home.state.update(cx, |state, _| {
+                    let session = state.sessions_for_test().get_mut("fixture").unwrap();
+                    session.replace_entries_for_test(records(paths, operations));
+                    *session.content_revision_for_test() += 1;
+                });
+                home.sync(true, window, cx);
+                home.fit_layout(window, cx);
+                assert_eq!(
+                    home.active_changes().unwrap().selected.as_deref(),
+                    Some("b.rs")
+                );
+                assert!(home.workspace_layout.main_width > 0.);
+                assert!(!home.workspace_layout.navigator_visible());
+            })
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            let tab = home.read(cx).active_changes().unwrap();
+            assert!(tab.contains_focus(window, cx));
+            assert!(
+                !tab.focus.contains_focused(window, cx),
+                "the automatically hidden list never receives focus"
+            );
+            assert!(tab.main_focus.contains_focused(window, cx));
+        });
+    }
+}
+
+#[gpui_kit::test]
+fn temporary_list_scope_loss_never_focuses_hidden_body(cx: &mut TestAppContext) {
+    let (home, visual, _fixture) = mount(cx, 1);
+    visual.simulate_resize(size(px(1000.), px(900.)));
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| home.toggle_workspace_navigator(window, cx))
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            home.active_changes().unwrap().focus_list(window, cx);
+            let tab = &mut home.views.get_mut("fixture").unwrap().workspace.changes[0];
+            tab.sync(&EditedFiles::default(), &ToolIndex::default(), window, cx);
+            home.fit_layout(window, cx);
+            assert_eq!(home.workspace_layout.main_width, 0.);
+            assert!(home.workspace_layout.navigator_visible());
+        })
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        let tab = home.read(cx).active_changes().unwrap();
+        assert!(!tab.in_scope);
+        assert!(tab.focus.contains_focused(window, cx));
+        assert!(!tab.main_focus.contains_focused(window, cx));
+    });
 }

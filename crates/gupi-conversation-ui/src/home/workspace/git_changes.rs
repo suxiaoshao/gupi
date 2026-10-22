@@ -166,7 +166,7 @@ impl GitTab {
             group_errors: HashMap::new(),
             groups_closed: HashSet::new(),
             directories_closed: HashSet::new(),
-            projection_view: cx.global::<layout::LayoutState>().git_view,
+            projection_view: cx.global::<gupi_settings::layout::LayoutState>().git_view,
             order: Vec::new(),
             known_sources: HashSet::new(),
             rows: Rc::new(Vec::new()),
@@ -196,7 +196,7 @@ impl GitTab {
     }
     fn sync_rows(&mut self, window: &mut Window, cx: &mut App) {
         let query = self.filter.read(cx).value().to_lowercase();
-        let view = cx.global::<layout::LayoutState>().git_view;
+        let view = cx.global::<gupi_settings::layout::LayoutState>().git_view;
         self.projection_view = view;
         let (items, order) = projection::build(
             &self.all,
@@ -406,7 +406,11 @@ impl HomeView {
         }
         view.workspace.git.as_mut()
     }
-    pub(super) fn open_git_changes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(in crate::home) fn open_git_changes(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(key) = self.shown_key.clone() else {
             return;
         };
@@ -691,6 +695,8 @@ impl HomeView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.set_temporary_list(false);
+        self.fit_workspace_layout(window, cx);
         if let Some(tab) = self.git_mut()
             && tab.rows.iter().any(|r| r.path == path)
         {
@@ -734,7 +740,7 @@ impl HomeView {
         cx.notify();
     }
     pub(in crate::home) fn sync_git_view(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let view = cx.global::<layout::LayoutState>().git_view;
+        let view = cx.global::<gupi_settings::layout::LayoutState>().git_view;
         for session in self.views.values_mut() {
             if let Some(tab) = &mut session.workspace.git
                 && tab.projection_view != view
@@ -750,10 +756,12 @@ impl HomeView {
         cx.notify();
     }
     fn set_git_view(&mut self, view: GitView, window: &mut Window, cx: &mut Context<Self>) {
-        if cx.global::<layout::LayoutState>().git_view == view {
+        if cx.global::<gupi_settings::layout::LayoutState>().git_view == view {
             return;
         }
-        cx.update_global::<layout::LayoutState, _>(|layout, _| layout.git_view = view);
+        cx.update_global::<gupi_settings::layout::LayoutState, _>(|layout, _| {
+            layout.git_view = view
+        });
         self.sync_git_view(window, cx);
         self.save_layout(None, None, window, cx);
     }
@@ -842,7 +850,7 @@ impl HomeView {
             .tooltip(t(cx, "diff-view"))
             .accessibility_label(t(cx, "diff-view"))
             .dropdown_menu(move |menu, _, cx| {
-                let selected = cx.global::<layout::LayoutState>().git_view;
+                let selected = cx.global::<gupi_settings::layout::LayoutState>().git_view;
                 [
                     (GitView::List, "diff-list-view"),
                     (GitView::Tree, "diff-tree-view"),
@@ -998,7 +1006,7 @@ impl HomeView {
                         direction
                     }),
             )
-            .when(tab.navigator_hidden, |row| {
+            .when(!self.workspace_layout.navigator_visible(), |row| {
                 row.child(self.git_refresh_button(tab, cx))
             })
             .child(self.reader_controls(cx))
@@ -1085,15 +1093,7 @@ impl HomeView {
             .key_context("GupiWorkspaceDiff")
             .on_action(
                 cx.listener(|home, _: &actions::ReturnFromSource, window, cx| {
-                    if home.pane_layout.maximized {
-                        home.toggle_workspace_maximized(window, cx);
-                    } else if home.pane_layout.overlay == Some(Panel::Workspace) {
-                        home.close_navigator(window, cx);
-                    } else if let Some(tab) = home.active_git().filter(|t| !t.navigator_hidden) {
-                        tab.focus_list(window, cx);
-                    } else {
-                        home.focus_composer(window, cx);
-                    }
+                    home.return_from_source(window, cx);
                     cx.stop_propagation();
                 }),
             )

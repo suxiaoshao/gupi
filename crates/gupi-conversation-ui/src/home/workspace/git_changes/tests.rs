@@ -15,9 +15,9 @@ fn mount_view(
 ) -> (Entity<HomeView>, &mut VisualTestContext, tempfile::TempDir) {
     let fixture = tempfile::tempdir().unwrap();
     let path = fixture.path().join("state.toml");
-    let mut saved = layout::LayoutState::default();
+    let mut saved = gupi_settings::layout::LayoutState::default();
     saved.git_view = view;
-    layout::save(&path, &saved).unwrap();
+    gupi_settings::layout::save(&path, &saved).unwrap();
     cx.update(|cx| {
         gpui_kit::init(cx);
         crate::host::install_headless(cx);
@@ -25,7 +25,7 @@ fn mount_view(
         gupi_settings::theme::init(cx);
         gupi_settings::i18n::apply(Default::default(), cx);
         gupi_pi_runtime::init(cx);
-        cx.set_global(layout::read(&path).unwrap());
+        cx.set_global(gupi_settings::layout::read(&path).unwrap());
         cx.set_global(TestLayoutDirectory(fixture.path().to_owned()));
     });
     let state = cx.new(|cx| ConversationState::new("unused-pi".into(), cx));
@@ -164,14 +164,14 @@ fn reader_preferences_preserve_selection_and_collapse_only_current_file(cx: &mut
                     cx,
                 )
             });
-            home.pane_layout.main_width = 1000.;
+            home.workspace_layout.main_width = 1000.;
             home.reader_command(reader::Command::Split, window, cx);
             assert_eq!(state.read(cx).mode(), DiffMode::Split);
-            home.pane_layout.main_width = 300.;
+            home.workspace_layout.main_width = 300.;
             home.apply_reader_options(cx);
             assert_eq!(state.read(cx).mode(), DiffMode::Unified);
             assert!(home.active_git().unwrap().options.split);
-            home.pane_layout.main_width = 1000.;
+            home.workspace_layout.main_width = 1000.;
             home.apply_reader_options(cx);
             assert_eq!(state.read(cx).mode(), DiffMode::Split);
             let selected = state.read(cx).selected_lines();
@@ -729,7 +729,7 @@ fn tree_first_projection_keyboard_search_and_hidden_file_neighbors(cx: &mut Test
     });
     visual.run_until_parked();
     assert_eq!(
-        layout::read(&fixture.path().join("state.toml"))
+        gupi_settings::layout::read(&fixture.path().join("state.toml"))
             .unwrap()
             .git_view,
         GitView::Tree

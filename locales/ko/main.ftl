@@ -1335,3 +1335,8 @@ diff-display = 표시
 diff-list-view = 목록
 diff-tree-view = 트리
 diff-stats-incomplete = 불완전한 통계
+
+workspace-back-conversation = 대화로 돌아가기
+workspace-back-content = 본문으로 돌아가기
+workspace-open = 작업 영역 열기
+workspace-close = 작업 영역 닫기

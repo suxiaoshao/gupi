@@ -19,6 +19,7 @@ pub(in crate::home) struct ChangesTab {
     pub focus: FocusHandle,
     pub main_focus: FocusHandle,
     pub header_focus: FocusHandle,
+    pub(super) restore_focus: bool,
     list: Entity<ListState<navigator::Delegate>>,
     pub(super) states: HashMap<String, FileDiff>,
     pub(super) options: super::reader::Options,
@@ -97,6 +98,7 @@ impl ChangesTab {
             focus: list.focus_handle(cx),
             main_focus: cx.focus_handle(),
             header_focus: cx.focus_handle(),
+            restore_focus: false,
             list,
             states: HashMap::new(),
             options: Default::default(),
@@ -196,9 +198,7 @@ impl ChangesTab {
         let Some(run) = owner else {
             self.invalidate_external();
             self.sync_list(window, cx);
-            if was_in_scope && self.contains_focus(window, cx) {
-                self.main_focus.focus(window, cx);
-            }
+            self.restore_focus |= was_in_scope && self.contains_focus(window, cx);
             return;
         };
         self.run = run;
@@ -237,13 +237,7 @@ impl ChangesTab {
             .retain(|path, _| files.iter().any(|f| f.path() == path));
         self.prepare(cx);
         self.sync_list(window, cx);
-        if (selection_gone || mode_changed) && focused {
-            if self.navigator_hidden {
-                self.main_focus.focus(window, cx);
-            } else {
-                self.focus.focus(window, cx);
-            }
-        }
+        self.restore_focus |= (selection_gone || mode_changed) && focused;
     }
     fn invalidate_external(&mut self) {
         self.external = None;
@@ -423,6 +417,8 @@ impl HomeView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.set_temporary_list(false);
+        self.fit_workspace_layout(window, cx);
         if let Some(view) = self
             .shown_key
             .as_ref()
@@ -690,17 +686,7 @@ impl HomeView {
             .key_context("GupiWorkspaceDiff")
             .on_action(
                 cx.listener(|this, _: &actions::ReturnFromSource, window, cx| {
-                    if this.pane_layout.maximized {
-                        this.toggle_workspace_maximized(window, cx);
-                    } else if this.pane_layout.overlay == Some(Panel::Workspace) {
-                        this.close_navigator(window, cx);
-                    } else if let Some(tab) =
-                        this.active_changes().filter(|tab| !tab.navigator_hidden)
-                    {
-                        tab.focus_list(window, cx);
-                    } else {
-                        this.focus_composer(window, cx);
-                    }
+                    this.return_from_source(window, cx);
                     cx.stop_propagation();
                 }),
             )

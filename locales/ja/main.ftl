@@ -1335,3 +1335,8 @@ diff-display = 表示
 diff-list-view = リスト
 diff-tree-view = ツリー
 diff-stats-incomplete = 統計は不完全です
+
+workspace-back-conversation = 会話に戻る
+workspace-back-content = 本文に戻る
+workspace-open = ワークスペースを開く
+workspace-close = ワークスペースを閉じる

@@ -47,7 +47,11 @@ impl HomeView {
     pub(super) fn remember_change(&mut self, id: String, title: String) {
         self.remember(Destination::Changes(id), title);
     }
-    pub(super) fn new_workspace_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(in crate::home) fn new_workspace_tab(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(view) = self
             .shown_key
             .as_ref()

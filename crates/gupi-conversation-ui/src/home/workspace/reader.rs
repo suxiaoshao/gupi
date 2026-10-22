@@ -102,7 +102,10 @@ impl HomeView {
         let external = self.reader_command_available(Command::External, cx);
         let owner = cx.weak_entity();
         let actions_owner = owner.clone();
-        let narrow = Options::narrow(self.pane_layout.main_width, f32::from(cx.theme().font_size));
+        let narrow = Options::narrow(
+            self.workspace_layout.main_width,
+            f32::from(cx.theme().font_size),
+        );
         let options_label = t(
             cx,
             if narrow {
@@ -145,7 +148,7 @@ impl HomeView {
                     let home = home.read(cx);
                     let options = home.reader_options().unwrap_or_default();
                     let narrow = Options::narrow(
-                        home.pane_layout.main_width,
+                        home.workspace_layout.main_width,
                         f32::from(cx.theme().font_size),
                     );
                     let split = options.split && !narrow;
@@ -325,7 +328,10 @@ impl HomeView {
         }
     }
     pub(super) fn apply_reader_options(&mut self, cx: &mut Context<Self>) {
-        let narrow = Options::narrow(self.pane_layout.main_width, f32::from(cx.theme().font_size));
+        let narrow = Options::narrow(
+            self.workspace_layout.main_width,
+            f32::from(cx.theme().font_size),
+        );
         if let Some(view) = self.shown_key.as_ref().and_then(|k| self.views.get_mut(k)) {
             if let Some(tab) = &view.workspace.git {
                 for (path, body) in &tab.cache {
@@ -384,9 +390,10 @@ impl HomeView {
     }
     pub(super) fn reader_command_available(&self, command: Command, cx: &App) -> bool {
         match command {
-            Command::Split => {
-                !Options::narrow(self.pane_layout.main_width, f32::from(cx.theme().font_size))
-            }
+            Command::Split => !Options::narrow(
+                self.workspace_layout.main_width,
+                f32::from(cx.theme().font_size),
+            ),
             Command::CopyPath | Command::CopyPatch | Command::CopyContent | Command::External => {
                 self.reader_copy(command, cx).is_some()
             }

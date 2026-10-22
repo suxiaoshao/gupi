@@ -1342,3 +1342,8 @@ diff-display = 顯示
 diff-list-view = 列表
 diff-tree-view = 樹
 diff-stats-incomplete = 統計不完整
+
+workspace-back-conversation = 返回對話
+workspace-back-content = 返回內容
+workspace-open = 開啟工作區
+workspace-close = 關閉工作區

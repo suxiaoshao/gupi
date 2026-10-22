@@ -270,7 +270,6 @@ impl Files {
             self.rebuild(window, cx);
         }
     }
-    #[cfg(test)]
     pub(super) fn is_focused(&self, window: &Window, cx: &App) -> bool {
         self.list.focus_handle(cx).is_focused(window)
     }

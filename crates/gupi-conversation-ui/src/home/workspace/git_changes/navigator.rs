@@ -65,7 +65,7 @@ impl ListDelegate for Delegate {
                     let focus = home.active_git().unwrap().focus.clone();
                     let retained = focus.contains_focused(window, cx);
                     home.select_git_file(path, window, cx);
-                    if retained {
+                    if retained && home.workspace_layout.navigator_visible() {
                         focus.focus(window, cx);
                     }
                 }

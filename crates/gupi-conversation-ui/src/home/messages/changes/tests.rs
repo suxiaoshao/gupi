@@ -1138,9 +1138,7 @@ fn idless_change_tab_survives_record_reconciliation(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn multiple_runs_keep_tabs_and_closing_main_only_tab_promotes_files_to_overlay(
-    cx: &mut TestAppContext,
-) {
+fn multiple_runs_keep_tabs_and_closing_tab_keeps_outer_split(cx: &mut TestAppContext) {
     let mut source = fixture(1, 1, 0);
     let second = fixture(1, 1, 0).into_iter().map(|mut message| {
         message.id = format!("second-{}", message.id);
@@ -1181,13 +1179,16 @@ fn multiple_runs_keep_tabs_and_closing_main_only_tab_promotes_files_to_overlay(
                 .header_focus
                 .focus(window, cx);
             home.close_workspace_tabs(&id, 0, window, cx);
-            assert!(home.views["a"].files.read(cx).is_focused(window, cx));
+            if home.workspace_layout.navigator_visible() {
+                assert!(home.views["a"].files.read(cx).is_focused(window, cx));
+            } else {
+                assert!(home.source().unwrap().read(cx).contains_focus(window, cx));
+            }
             assert!(home.views["a"].workspace.active.is_none());
-            assert_eq!(
-                home.pane_layout.overlay,
-                Some(crate::home::panes::Panel::Workspace)
+            assert!(home.pane_layout.workspace_docked);
+            assert!(
+                home.workspace_layout.main_width > 0. || home.workspace_layout.navigator_width > 0.
             );
-            assert!(home.pane_layout.right > 0.);
             assert_eq!(home.views["a"].workspace.changes.len(), 1);
         })
     });
@@ -1290,7 +1291,7 @@ fn workspace_maximize_escape_and_narrow_restore_preferences(cx: &mut TestAppCont
     visual.simulate_resize(size(px(850.), px(900.)));
     visual.run_until_parked();
     visual.update(|_, cx| {
-        assert!(!home.read(cx).pane_layout.maximized);
+        assert!(home.read(cx).pane_layout.maximized);
         assert_eq!(home.read(cx).pane_layout.ratio(), before.1);
         assert_eq!(
             cx.global::<layout::LayoutState>().workspace_pinned,

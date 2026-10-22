@@ -16,7 +16,7 @@ actions!(
 pub(super) fn init(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("escape", CloseNavigator, Some("GupiNavigatorOverlay")),
-        KeyBinding::new("escape", CloseNavigator, Some("GupiWorkspaceMaximized")),
+        KeyBinding::new("escape", CloseNavigator, Some("GupiWorkspace")),
         KeyBinding::new("escape", ReturnFromSource, Some("SourcePreview")),
         KeyBinding::new("escape", ReturnFromSource, Some("GupiWorkspaceDiff")),
         KeyBinding::new("enter", ConfirmExtension, Some("GupiExtension")),
@@ -145,12 +145,14 @@ impl HomeView {
             Kind::CloseSource => self.close_source(window, cx),
             Kind::FocusSource => {
                 self.select_workspace_tab(None, window, cx);
+                self.set_temporary_list(false);
                 self.ensure_panel(panes::Panel::Workspace, window, cx);
                 if let Some(source) = self.source() {
                     source.update(cx, |s, cx| s.focus(window, cx));
                 }
             }
             Kind::Find => {
+                self.show_conversation(window, cx);
                 // This explicitly named command targets conversation messages.
                 // The shortcut is owned by the messages region, never the window.
 
@@ -167,6 +169,8 @@ impl HomeView {
                 if !self.show_sidebar {
                     self.focus_composer(window, cx);
                 }
+                self.fit_layout(window, cx);
+                self.sync_worktree(window, cx);
             }
             Kind::History => self.toggle_history(window, cx),
             Kind::ProjectFiles => {

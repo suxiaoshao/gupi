@@ -1255,6 +1255,7 @@ history-panel-options = 기록 옵션
 workspace-view-changes = 변경 사항 보기
 
 workspace-new-tab = 새 탭
+workspace-all-tabs = 모든 탭
 workspace-tools = 도구
 workspace-recent = 최근 항목
 workspace-no-changes = 이 대화에는 아직 변경 사항이 없습니다.
@@ -1280,3 +1281,68 @@ shell-display-truncated = 가장 최근 출력만 표시됩니다.
 
 titlebar-git-branch = Git 브랜치: { $name }
 titlebar-git-detached = 분리된 HEAD: { $name }
+
+# Diff reader
+diff-worktree = Git
+diff-unstaged = 스테이징 안 됨
+diff-staged = 스테이징됨
+diff-untracked = 추적 안 됨
+diff-filter = 경로 필터…
+diff-previous-file = 이전 파일
+diff-next-file = 다음 파일
+diff-unified = 통합
+diff-split = 나란히
+diff-wrap = 줄 바꿈
+diff-actions = 파일 작업
+diff-word = 단어 내부 차이
+diff-context = 변경되지 않은 모든 줄
+diff-expand-file = 이 파일 펼치기
+diff-copy-path = 파일 경로 복사
+diff-copy-patch = 패치 복사
+diff-copy-content = 파일 전체 텍스트 복사
+diff-external = 외부 편집기에서 열기
+diff-refresh = 변경 새로 고침
+diff-refresh-failed = 변경을 새로 고칠 수 없습니다. 이전 결과가 오래되었을 수 있습니다.
+diff-loading = 변경을 불러오는 중…
+diff-not-repository = 이 폴더는 Git 작업 트리에 없습니다
+diff-empty = 변경 없음
+diff-no-results = 일치하는 파일 없음
+diff-retry = 다시 시도
+diff-recorded-context = 이번 실행의 변경 · 기록된 문맥만 표시
+diff-added = 추가
+diff-deleted = 삭제
+diff-modified = 수정
+diff-conflict = 충돌 · 읽기 전용
+diff-special = 특수 파일 · 읽기 전용
+diff-binary = 바이너리 파일
+diff-too-large = 텍스트 읽기 제한을 초과한 파일
+diff-unavailable-file = 현재 파일을 사용할 수 없어 외부에서 열 수 없습니다.
+diff-git-unavailable = Git을 사용할 수 없습니다. Git을 설치한 후 새로 고치세요.
+diff-files = 파일
+diff-conflicts = 충돌
+diff-direction-staged = HEAD → 인덱스
+diff-direction-unstaged = 인덱스 → 작업 트리
+diff-direction-untracked = 빈 버전 → 작업 트리
+diff-updating = 이전 버전 업데이트 중…
+diff-collapse-file = 이 파일 접기
+diff-update-failed = 이 버전을 업데이트하지 못함
+diff-reading-options = 읽기 옵션
+diff-reading-options-narrow = 읽기 옵션: 본문 영역이 너무 좁아 나란히 볼 수 없습니다. 넓히면 선호하는 보기로 돌아갑니다
+diff-view = 보기
+diff-display = 표시
+diff-list-view = 목록
+diff-tree-view = 트리
+diff-stats-incomplete = 불완전한 통계
+
+workspace-back-conversation = 대화로 돌아가기
+workspace-back-content = 본문으로 돌아가기
+workspace-open = 작업 영역 열기
+workspace-close = 작업 영역 닫기
+
+diff-invalid-path = 파일 이름이 올바른 UTF-8이 아니므로 읽을 수 없습니다
+diff-no-text-changes = 텍스트 변경 없음
+
+diff-external-failed = 파일을 열 수 없습니다. 파일이 더 이상 존재하지 않거나 사용할 수 있는 앱이 없습니다.
+
+diff-conflict-label = 충돌
+diff-read-failed = 변경 사항을 읽지 못했습니다. 다시 시도하세요.

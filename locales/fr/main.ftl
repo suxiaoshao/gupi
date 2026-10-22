@@ -1281,6 +1281,7 @@ history-panel-options = Options de l’historique
 workspace-view-changes = Voir les modifications
 
 workspace-new-tab = Nouvel onglet
+workspace-all-tabs = Tous les onglets
 workspace-tools = Outils
 workspace-recent = Récents
 workspace-no-changes = Cette conversation ne contient pas encore de modifications.
@@ -1306,3 +1307,68 @@ shell-display-truncated = Seule la sortie la plus récente est affichée.
 
 titlebar-git-branch = Branche Git : { $name }
 titlebar-git-detached = HEAD détachée : { $name }
+
+# Diff reader
+diff-worktree = Git
+diff-unstaged = Non indexées
+diff-staged = Indexées
+diff-untracked = Non suivies
+diff-filter = Filtrer les chemins…
+diff-previous-file = Fichier précédent
+diff-next-file = Fichier suivant
+diff-unified = Unifié
+diff-split = Côte à côte
+diff-wrap = Retour à la ligne
+diff-actions = Actions du fichier
+diff-word = Différences par mot
+diff-context = Toutes les lignes inchangées
+diff-expand-file = Déplier ce fichier
+diff-copy-path = Copier le chemin du fichier
+diff-copy-patch = Copier le patch
+diff-copy-content = Copier le texte intégral du fichier
+diff-external = Ouvrir dans un éditeur externe
+diff-refresh = Actualiser les modifications
+diff-refresh-failed = Impossible d’actualiser les modifications. Les résultats précédents peuvent être périmés.
+diff-loading = Chargement des modifications…
+diff-not-repository = Ce dossier n’appartient pas à un arbre de travail Git
+diff-empty = Aucune modification
+diff-no-results = Aucun fichier correspondant
+diff-retry = Réessayer
+diff-recorded-context = Modifications de cette exécution · contexte enregistré uniquement
+diff-added = Ajouté
+diff-deleted = Supprimé
+diff-modified = Modifié
+diff-conflict = Conflit · lecture seule
+diff-special = Fichier spécial · lecture seule
+diff-binary = Fichier binaire
+diff-too-large = Ce fichier dépasse les limites du lecteur de texte
+diff-unavailable-file = Le fichier actuel est indisponible ; l’ouverture externe est désactivée.
+diff-git-unavailable = Git est indisponible. Installez Git puis actualisez.
+diff-files = Fichiers
+diff-conflicts = Conflits
+diff-direction-staged = HEAD → index
+diff-direction-unstaged = Index → arbre de travail
+diff-direction-untracked = Vide → arbre de travail
+diff-updating = Actualisation de la version précédente…
+diff-collapse-file = Replier ce fichier
+diff-update-failed = Cette version n’a pas pu être actualisée
+diff-reading-options = Options de lecture
+diff-reading-options-narrow = Options de lecture : la zone est trop étroite pour la vue côte à côte ; son élargissement rétablit la vue préférée
+diff-view = Vue
+diff-display = Affichage
+diff-list-view = Liste
+diff-tree-view = Arborescence
+diff-stats-incomplete = Statistiques incomplètes
+
+workspace-back-conversation = Revenir à la conversation
+workspace-back-content = Revenir au contenu
+workspace-open = Ouvrir l’espace de travail
+workspace-close = Fermer l’espace de travail
+
+diff-invalid-path = Le nom du fichier n’est pas en UTF-8 valide et ne peut pas être lu
+diff-no-text-changes = Aucune modification de texte
+
+diff-external-failed = Impossible d’ouvrir le fichier. Il n’existe peut-être plus ou aucune application adaptée n’est disponible.
+
+diff-conflict-label = Conflit
+diff-read-failed = Impossible de lire les modifications. Réessayez.

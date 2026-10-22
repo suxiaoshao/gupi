@@ -1255,6 +1255,7 @@ history-panel-options = 履歴のオプション
 workspace-view-changes = 変更を表示
 
 workspace-new-tab = 新しいタブ
+workspace-all-tabs = すべてのタブ
 workspace-tools = ツール
 workspace-recent = 最近使った項目
 workspace-no-changes = この会話にはまだ変更がありません。
@@ -1280,3 +1281,68 @@ shell-display-truncated = 最新の出力のみ表示しています。
 
 titlebar-git-branch = Git ブランチ: { $name }
 titlebar-git-detached = 切り離された HEAD: { $name }
+
+# Diff reader
+diff-worktree = Git
+diff-unstaged = 未ステージ
+diff-staged = ステージ済み
+diff-untracked = 未追跡
+diff-filter = パスを絞り込み…
+diff-previous-file = 前のファイル
+diff-next-file = 次のファイル
+diff-unified = 統合
+diff-split = 左右比較
+diff-wrap = 折り返し
+diff-actions = ファイル操作
+diff-word = 単語内の差分
+diff-context = 変更のないすべての行
+diff-expand-file = このファイルを展開
+diff-copy-path = ファイルパスをコピー
+diff-copy-patch = パッチをコピー
+diff-copy-content = ファイル全文をコピー
+diff-external = 外部エディターで開く
+diff-refresh = 変更を更新
+diff-refresh-failed = 変更を更新できません。表示結果が古い可能性があります。
+diff-loading = 変更を読み込み中…
+diff-not-repository = このフォルダーは Git 作業ツリーにありません
+diff-empty = 変更なし
+diff-no-results = 一致するファイルなし
+diff-retry = 再試行
+diff-recorded-context = この実行の変更 · 記録されたコンテキストのみ
+diff-added = 追加
+diff-deleted = 削除
+diff-modified = 変更
+diff-conflict = 競合 · 読み取り専用
+diff-special = 特殊ファイル · 読み取り専用
+diff-binary = バイナリファイル
+diff-too-large = テキスト表示の制限を超えています
+diff-unavailable-file = 現在のファイルを利用できないため、外部で開けません。
+diff-git-unavailable = Git を利用できません。Git をインストールして更新してください。
+diff-files = ファイル
+diff-conflicts = 競合
+diff-direction-staged = HEAD → インデックス
+diff-direction-unstaged = インデックス → 作業ツリー
+diff-direction-untracked = 空 → 作業ツリー
+diff-updating = 以前の版を更新中…
+diff-collapse-file = このファイルを折りたたむ
+diff-update-failed = この版を更新できませんでした
+diff-reading-options = 表示オプション
+diff-reading-options-narrow = 表示オプション：本文領域が狭いため左右表示できません。広げると設定した表示に戻ります
+diff-view = ビュー
+diff-display = 表示
+diff-list-view = リスト
+diff-tree-view = ツリー
+diff-stats-incomplete = 統計は不完全です
+
+workspace-back-conversation = 会話に戻る
+workspace-back-content = 本文に戻る
+workspace-open = ワークスペースを開く
+workspace-close = ワークスペースを閉じる
+
+diff-invalid-path = ファイル名が有効な UTF-8 ではないため読み取れません
+diff-no-text-changes = テキストの変更はありません
+
+diff-external-failed = ファイルを開けませんでした。ファイルが存在しないか、対応するアプリがありません。
+
+diff-conflict-label = 競合
+diff-read-failed = 変更を読み込めませんでした。再試行してください。

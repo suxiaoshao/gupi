@@ -726,10 +726,7 @@ mod tests {
                     .pane_layout
                     .visible(super::panes::Panel::History)
             );
-            assert_eq!(
-                home.read(cx).pane_layout.overlay,
-                Some(super::panes::Panel::History)
-            );
+            assert!(home.read(cx).pane_layout.history_overlay);
             assert!(
                 home.read(cx)
                     .history_list
@@ -756,25 +753,19 @@ mod tests {
         cx.simulate_keystrokes("escape");
         cx.run_until_parked();
         cx.update(|window, cx| {
-            window.draw(cx).clear(cx);
+            assert!(home.read(cx).pane_layout.conversation > 0.);
             assert!(
                 !home
                     .read(cx)
                     .pane_layout
-                    .visible(super::panes::Panel::History)
+                    .visible(super::panes::Panel::Workspace)
             );
             assert!(
                 home.read(cx)
-                    .workspace_button_focus
-                    .contains_focused(window, cx)
-            );
-            assert!(
-                !home
-                    .read(cx)
                     .input
                     .read(cx)
                     .focus_handle(cx)
-                    .is_focused(window)
+                    .contains_focused(window, cx)
             );
         });
     }
@@ -836,7 +827,7 @@ mod tests {
                     .pane_layout
                     .visible(super::panes::Panel::History)
             );
-            assert!(home.read(cx).pane_layout.overlay.is_none());
+            assert!(!home.read(cx).pane_layout.history_overlay);
             assert!(
                 home.read(cx)
                     .history_list
@@ -921,12 +912,8 @@ mod tests {
         cx.update(|_, cx| assert!(home.read(cx).find.is_some()));
         cx.simulate_keystrokes("escape");
 
-        cx.update(|window, cx| {
-            home.read(cx)
-                .input
-                .clone()
-                .update(cx, |input, cx| input.focus(window, cx))
-        });
+        cx.update(|window, cx| home.update(cx, |home, cx| home.show_conversation(window, cx)));
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         cx.simulate_keystrokes("secondary-f");
         cx.update(|_, cx| {
             assert!(home.read(cx).input.read(cx).search_session().open);
@@ -982,12 +969,8 @@ mod tests {
                     .contains_focus(window, cx)
             );
         });
-        cx.update(|window, cx| {
-            home.read(cx)
-                .input
-                .clone()
-                .update(cx, |input, cx| input.focus(window, cx))
-        });
+        cx.update(|window, cx| home.update(cx, |home, cx| home.show_conversation(window, cx)));
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         cx.simulate_keystrokes("secondary-f");
         cx.update(|_, cx| {
             assert!(home.read(cx).input.read(cx).search_session().open);

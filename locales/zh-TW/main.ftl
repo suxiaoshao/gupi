@@ -1262,6 +1262,7 @@ history-panel-options = 歷史選項
 workspace-view-changes = 檢視變更
 
 workspace-new-tab = 新分頁
+workspace-all-tabs = 所有分頁
 workspace-tools = 工具
 workspace-recent = 最近
 workspace-no-changes = 此對話還沒有變更。
@@ -1287,3 +1288,68 @@ shell-display-truncated = 僅顯示最近的輸出。
 
 titlebar-git-branch = Git 分支：{ $name }
 titlebar-git-detached = 分離 HEAD：{ $name }
+
+# Diff reader
+diff-worktree = Git
+diff-unstaged = 未暫存
+diff-staged = 已暫存
+diff-untracked = 未追蹤
+diff-filter = 篩選路徑…
+diff-previous-file = 上一個檔案
+diff-next-file = 下一個檔案
+diff-unified = 統一
+diff-split = 並排
+diff-wrap = 自動換行
+diff-actions = 檔案操作
+diff-word = 字內差異
+diff-context = 所有未變更行
+diff-expand-file = 展開此檔案
+diff-copy-path = 複製檔案路徑
+diff-copy-patch = 複製 patch
+diff-copy-content = 複製檔案全文
+diff-external = 在外部編輯器開啟
+diff-refresh = 重新整理變更
+diff-refresh-failed = 無法重新整理變更，現有結果可能已過期。
+diff-loading = 正在載入變更…
+diff-not-repository = 此資料夾不在 Git 工作樹中
+diff-empty = 沒有變更
+diff-no-results = 沒有符合的檔案
+diff-retry = 重試
+diff-recorded-context = 本輪變更 · 僅提供記錄中的上下文
+diff-added = 新增
+diff-deleted = 刪除
+diff-modified = 修改
+diff-conflict = 衝突 · 唯讀
+diff-special = 特殊檔案 · 唯讀
+diff-binary = 二進位檔案
+diff-too-large = 此檔案超出文字閱讀限制
+diff-unavailable-file = 目前檔案不存在或無法使用，無法在外部開啟。
+diff-git-unavailable = Git 無法使用，請安裝 Git 後重新整理。
+diff-files = 檔案
+diff-conflicts = 衝突
+diff-direction-staged = HEAD → 暫存區
+diff-direction-unstaged = 暫存區 → 工作樹
+diff-direction-untracked = 空 → 工作樹
+diff-updating = 正在更新舊版本…
+diff-collapse-file = 摺疊此檔案
+diff-update-failed = 此版本尚未更新
+diff-reading-options = 閱讀選項
+diff-reading-options-narrow = 閱讀選項：正文區域過窄，無法並排顯示；擴大後恢復並排偏好
+diff-view = 檢視
+diff-display = 顯示
+diff-list-view = 列表
+diff-tree-view = 樹
+diff-stats-incomplete = 統計不完整
+
+workspace-back-conversation = 返回對話
+workspace-back-content = 返回內容
+workspace-open = 開啟工作區
+workspace-close = 關閉工作區
+
+diff-invalid-path = 檔名不是有效 UTF-8，無法讀取
+diff-no-text-changes = 沒有文字變更
+
+diff-external-failed = 無法開啟檔案。檔案可能已不存在，或沒有可用的應用程式。
+
+diff-conflict-label = 衝突
+diff-read-failed = 讀取失敗，請重試。

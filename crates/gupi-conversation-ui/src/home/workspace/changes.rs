@@ -1,4 +1,4 @@
-mod navigator;
+pub(super) mod navigator;
 
 use super::*;
 use gpui_kit::component::Icon;
@@ -19,13 +19,20 @@ pub(in crate::home) struct ChangesTab {
     pub focus: FocusHandle,
     pub main_focus: FocusHandle,
     pub header_focus: FocusHandle,
+    pub(super) restore_focus: bool,
     list: Entity<ListState<navigator::Delegate>>,
-    states: HashMap<String, FileDiff>,
+    pub(super) states: HashMap<String, FileDiff>,
+    pub(super) options: super::reader::Options,
+    pub(super) collapsed: HashSet<String>,
+    filter: Entity<InputState>,
+    filter_text: String,
+    _filter_subscription: Subscription,
 }
-struct FileDiff {
-    combined: Option<DiffBlock>,
-    operations: HashMap<String, DiffBlock>,
+pub(super) struct FileDiff {
+    pub(super) combined: Option<DiffBlock>,
+    pub(super) operations: HashMap<String, DiffBlock>,
     page: usize,
+    limited: bool,
 }
 impl ChangesTab {
     pub fn new(
@@ -52,12 +59,29 @@ impl ChangesTab {
         let owner = cx.weak_entity();
         let list = cx.new(|inner| {
             ListState::new(
-                navigator::Delegate::new(owner, id.clone(), files.clone()),
+                navigator::Delegate::new(
+                    owner,
+                    id.clone(),
+                    Rc::new(files.iter().map(navigator::Row::from).collect()),
+                ),
                 window,
                 inner,
             )
             .searchable(false)
         });
+        let filter = cx.new(|cx| InputState::new(window, cx).placeholder(t(cx, "diff-filter")));
+        let tab_id = id.clone();
+        let subscription = cx.subscribe_in(
+            &filter,
+            window,
+            move |home, _, event: &InputEvent, window, cx| {
+                if matches!(event, InputEvent::Change)
+                    && home.active_changes().is_some_and(|t| t.id == tab_id)
+                {
+                    home.filter_reader(window, cx);
+                }
+            },
+        );
         let mut tab = Self {
             id,
             run: run.to_owned(),
@@ -71,12 +95,28 @@ impl ChangesTab {
             focus: list.focus_handle(cx),
             main_focus: cx.focus_handle(),
             header_focus: cx.focus_handle(),
+            restore_focus: false,
             list,
             states: HashMap::new(),
+            options: Default::default(),
+            collapsed: HashSet::new(),
+            filter,
+            filter_text: String::new(),
+            _filter_subscription: subscription,
         };
         tab.prepare(cx);
         tab.sync_list(window, cx);
         tab
+    }
+    pub(super) fn visible_files(&self) -> Vec<&EditedFile> {
+        self.files
+            .iter()
+            .filter(|f| {
+                f.path()
+                    .to_lowercase()
+                    .contains(&self.filter_text.to_lowercase())
+            })
+            .collect()
     }
     pub fn contains_focus(&self, window: &Window, cx: &App) -> bool {
         self.focus.contains_focused(window, cx) || self.main_focus.contains_focused(window, cx)
@@ -84,7 +124,7 @@ impl ChangesTab {
     pub fn focus_list(&self, window: &mut Window, cx: &mut App) {
         self.list.update(cx, |list, cx| {
             let ix = self
-                .files
+                .visible_files()
                 .iter()
                 .position(|file| Some(file.path()) == self.selected.as_deref());
             list.set_selected_index(ix.map(gpui_kit::component::IndexPath::new), window, cx);
@@ -96,33 +136,52 @@ impl ChangesTab {
         self.list.update(cx, |list, cx| {
             let delegate = list.delegate_mut();
             delegate.files = if self.in_scope {
-                self.files.clone()
+                Rc::new(
+                    self.visible_files()
+                        .iter()
+                        .map(|f| navigator::Row::from(*f))
+                        .collect(),
+                )
             } else {
                 Rc::new(Vec::new())
             };
             let ix = delegate
                 .files
                 .iter()
-                .position(|file| Some(file.path()) == self.selected.as_deref());
+                .position(|file| Some(file.path.as_str()) == self.selected.as_deref());
             list.set_selected_index(ix.map(gpui_kit::component::IndexPath::new), window, cx);
             cx.notify();
         });
     }
-    pub fn focus_main(&self, window: &mut Window, cx: &mut App) {
-        let state = self
-            .selected
+    pub(super) fn can_fold(&self) -> bool {
+        self.in_scope
+            && self
+                .files
+                .iter()
+                .find(|file| Some(file.path()) == self.selected.as_deref())
+                .and_then(|file| self.states.get(file.path()))
+                .is_some_and(|state| {
+                    !state.limited && (state.combined.is_some() || !state.operations.is_empty())
+                })
+    }
+    pub(super) fn combined_block(&self) -> Option<&DiffBlock> {
+        self.selected
             .as_ref()
-            .and_then(|path| self.states.get(path));
-        let block = state.and_then(|state| {
-            state.combined.as_ref().or_else(|| {
-                self.files
-                    .iter()
-                    .find(|f| Some(f.path()) == self.selected.as_deref())
-                    .and_then(|f| f.operations().get(state.page))
-                    .and_then(|op| state.operations.get(op.id()))
-            })
-        });
-        block
+            .and_then(|p| self.states.get(p))
+            .and_then(|s| s.combined.as_ref())
+    }
+    pub(super) fn block(&self) -> Option<&DiffBlock> {
+        let file = self.selected.as_ref().and_then(|p| self.states.get(p))?;
+        file.combined.as_ref().or_else(|| {
+            self.files
+                .iter()
+                .find(|f| Some(f.path()) == self.selected.as_deref())
+                .and_then(|f| f.operations().get(file.page))
+                .and_then(|op| file.operations.get(op.id()))
+        })
+    }
+    pub fn focus_main(&self, window: &mut Window, cx: &mut App) {
+        self.block()
             .and_then(|block| block.focus_handle(cx))
             .unwrap_or_else(|| self.main_focus.clone())
             .focus(window, cx);
@@ -143,9 +202,7 @@ impl ChangesTab {
         self.in_scope = owner.is_some();
         let Some(run) = owner else {
             self.sync_list(window, cx);
-            if was_in_scope && self.contains_focus(window, cx) {
-                self.main_focus.focus(window, cx);
-            }
+            self.restore_focus |= was_in_scope && self.contains_focus(window, cx);
             return;
         };
         self.run = run;
@@ -174,24 +231,33 @@ impl ChangesTab {
         );
         self.files = Rc::new(files.to_vec());
         if selection_gone {
-            self.selected = files
-                .get(position.min(files.len().saturating_sub(1)))
+            let visible = self.visible_files();
+            self.selected = visible
+                .get(position.min(visible.len().saturating_sub(1)))
                 .map(|f| f.path().to_owned());
         }
         self.states
             .retain(|path, _| files.iter().any(|f| f.path() == path));
         self.prepare(cx);
         self.sync_list(window, cx);
-        if (selection_gone || mode_changed) && focused {
-            if self.navigator_hidden {
-                self.main_focus.focus(window, cx);
-            } else {
-                self.focus.focus(window, cx);
-            }
-        }
+        self.restore_focus |= (selection_gone || mode_changed) && focused;
     }
+
     fn prepare(&mut self, cx: &mut App) {
-        for file in self.files.iter() {
+        if self.states.len() >= 16
+            && let Some(path) = self
+                .states
+                .keys()
+                .find(|p| Some(*p) != self.selected.as_ref())
+                .cloned()
+        {
+            self.states.remove(&path);
+        }
+        for file in self
+            .files
+            .iter()
+            .filter(|f| Some(f.path()) == self.selected.as_deref())
+        {
             let state = self
                 .states
                 .entry(file.path().to_owned())
@@ -199,7 +265,31 @@ impl ChangesTab {
                     combined: None,
                     operations: HashMap::new(),
                     page: 0,
+                    limited: false,
                 });
+            state.page = state
+                .page
+                .min(file.operations().len().saturating_sub(1) / 3 * 3);
+            let supported = |body: &ChangeBody| {
+                let text = match body {
+                    ChangeBody::Patch { source, .. } => source,
+                    ChangeBody::Written { content } | ChangeBody::Text { content } => content,
+                };
+                gupi_resources::git::text_within_limits(text)
+            };
+            state.limited = file.combined().is_some_and(|b| !supported(b))
+                || (file.combined().is_none()
+                    && file
+                        .operations()
+                        .iter()
+                        .skip(state.page)
+                        .take(3)
+                        .any(|op| !supported(op.body())));
+            if state.limited {
+                state.combined = None;
+                state.operations.clear();
+                continue;
+            }
             if let Some(body) = file.combined() {
                 if let Some(block) = state.combined.as_mut() {
                     block.update(body, file.path(), cx);
@@ -212,7 +302,14 @@ impl ChangesTab {
                 state
                     .operations
                     .retain(|id, _| file.operations().iter().any(|op| op.id() == id));
-                for operation in file.operations() {
+                state.operations.retain(|id, _| {
+                    file.operations()
+                        .iter()
+                        .skip(state.page)
+                        .take(3)
+                        .any(|op| op.id() == id)
+                });
+                for operation in file.operations().iter().skip(state.page).take(3) {
                     if let Some(block) = state.operations.get_mut(operation.id()) {
                         block.update(operation.shared_body(), file.path(), cx);
                     } else {
@@ -223,9 +320,6 @@ impl ChangesTab {
                     }
                 }
             }
-            state.page = state
-                .page
-                .min(file.operations().len().saturating_sub(1) / 3 * 3);
         }
     }
 }
@@ -286,6 +380,7 @@ impl HomeView {
             };
         let tab = &mut view.workspace.changes[index];
         tab.selected = Some(path.to_owned());
+        tab.prepare(cx);
         tab.sync_list(window, cx);
         let id = tab.id.clone();
         let title = tab.title.clone();
@@ -319,6 +414,8 @@ impl HomeView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.set_temporary_list(false);
+        self.fit_workspace_layout(window, cx);
         if let Some(view) = self
             .shown_key
             .as_ref()
@@ -330,9 +427,11 @@ impl HomeView {
                 .find(|tab| Some(&tab.id) == view.workspace.active.as_ref())
         {
             tab.selected = Some(path);
+            tab.prepare(cx);
             tab.sync_list(window, cx);
             tab.focus_main(window, cx);
         }
+        self.apply_reader_options(cx);
         cx.notify();
     }
     fn render_change_header(&self, file: &EditedFile, cx: &mut Context<Self>) -> AnyElement {
@@ -351,6 +450,7 @@ impl HomeView {
             .gap_2()
             .border_b_1()
             .border_color(cx.theme().border)
+            .child(self.reader_fold_button(cx))
             .child(
                 h_flex()
                     .flex_1()
@@ -403,6 +503,7 @@ impl HomeView {
                         }
                     })),
             )
+            .child(self.reader_controls(cx))
             .child(self.navigator_toggle(cx))
             .into_any_element()
     }
@@ -432,9 +533,23 @@ impl HomeView {
                 .size_full()
                 .min_h_0()
                 .min_w_0()
-                .child(self.render_change_header(file, cx));
-            if let Some(block) = &state.combined {
-                body = body.child(div().flex_1().min_h_0().child(block.render_workspace()));
+                .child(self.render_change_header(file, cx))
+                .child(
+                    div()
+                        .px_3()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(t(cx, "diff-recorded-context")),
+                );
+            if state.limited {
+                body = body.child(div().p_3().text_sm().child(t(cx, "diff-too-large")));
+            } else if let Some(block) = &state.combined {
+                body = body.child(
+                    div()
+                        .flex_1()
+                        .min_h_0()
+                        .child(block.render_reader(tab.options.wrap)),
+                );
             } else {
                 let mut operations = v_flex()
                     .id(format!("workspace-operations-{}", tab.id))
@@ -476,10 +591,14 @@ impl HomeView {
                                 row.child(t(cx, "conversation-edit-error"))
                             })
                             .when_some(operation.stats(), |row, stats| {
-                                row.child(format!("+{} −{}", stats.added(), stats.removed()))
+                                row.child(reader::line_stats(stats.added(), stats.removed(), cx))
                             });
-                        operations = operations
-                            .child(v_flex().min_w_0().child(header).child(block.render()));
+                        operations = operations.child(
+                            v_flex()
+                                .min_w_0()
+                                .child(header)
+                                .child(block.render_reader_bounded(tab.options.wrap)),
+                        );
                     }
                 }
                 let mut controls = h_flex().gap_2().px_3();
@@ -525,7 +644,9 @@ impl HomeView {
                                 } else {
                                     state.page.saturating_sub(3)
                                 };
+                                tab.prepare(cx);
                             }
+                            this.apply_reader_options(cx);
                             cx.notify();
                         })),
                     );
@@ -542,7 +663,14 @@ impl HomeView {
                 .gap_3()
                 .text_color(cx.theme().muted_foreground)
                 .child(Icon::new(IconName::FileDiff).size_6())
-                .child(t(cx, "workspace-net-zero"))
+                .child(t(
+                    cx,
+                    if tab.files.is_empty() {
+                        "workspace-net-zero"
+                    } else {
+                        "diff-no-results"
+                    },
+                ))
                 .into_any_element()
         };
         div()
@@ -553,17 +681,7 @@ impl HomeView {
             .key_context("GupiWorkspaceDiff")
             .on_action(
                 cx.listener(|this, _: &actions::ReturnFromSource, window, cx| {
-                    if this.pane_layout.maximized {
-                        this.toggle_workspace_maximized(window, cx);
-                    } else if this.pane_layout.overlay == Some(Panel::Workspace) {
-                        this.close_navigator(window, cx);
-                    } else if let Some(tab) =
-                        this.active_changes().filter(|tab| !tab.navigator_hidden)
-                    {
-                        tab.focus_list(window, cx);
-                    } else {
-                        this.focus_composer(window, cx);
-                    }
+                    this.return_from_source(window, cx);
                     cx.stop_propagation();
                 }),
             )
@@ -575,12 +693,51 @@ impl HomeView {
         tab: &ChangesTab,
         _: &mut Context<Self>,
     ) -> AnyElement {
-        div()
+        v_flex()
             .id(format!("changes-list-{}", tab.id))
             .size_full()
             .min_h_0()
             .p_2()
-            .child(gpui_kit::component::list::List::new(&tab.list))
+            .gap_2()
+            .child(gpui_kit::component::input::Input::new(&tab.filter).small())
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .child(gpui_kit::component::list::List::new(&tab.list)),
+            )
             .into_any_element()
     }
 }
+
+impl HomeView {
+    pub(super) fn filter_reader(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.active_git().is_some() {
+            self.filter_git(window, cx);
+            return;
+        }
+        if let Some(view) = self.shown_key.as_ref().and_then(|k| self.views.get_mut(k))
+            && let Some(tab) = view
+                .workspace
+                .changes
+                .iter_mut()
+                .find(|t| Some(&t.id) == view.workspace.active.as_ref())
+        {
+            tab.filter_text = tab.filter.read(cx).value().to_string();
+            if !tab
+                .visible_files()
+                .iter()
+                .any(|f| Some(f.path()) == tab.selected.as_deref())
+            {
+                tab.selected = tab.visible_files().first().map(|f| f.path().to_owned());
+            }
+            tab.prepare(cx);
+            tab.sync_list(window, cx);
+        }
+        self.apply_reader_options(cx);
+        cx.notify();
+    }
+}
+
+#[cfg(test)]
+mod tests;

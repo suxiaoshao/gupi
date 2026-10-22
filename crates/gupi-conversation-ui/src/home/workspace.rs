@@ -4,9 +4,15 @@ use gpui_kit::component::menu::{ContextMenuExt, PopupMenuItem};
 use gpui_kit::component::tooltip::Tooltip;
 use panes::Panel;
 mod changes;
+mod git_changes;
+pub(super) mod layout;
+mod reader;
 use changes::ChangesTab;
+use git_changes::{GIT_TAB, GitTab};
+use layout as internal;
 mod launcher;
 mod strip;
+pub(in crate::home) use strip::events as strip_events;
 const NEW_TAB: &str = "workspace:new";
 const RECENT_LIMIT: usize = 8;
 
@@ -14,13 +20,15 @@ pub(super) struct Tabs {
     pub order: Vec<Option<String>>,
     recent: Vec<launcher::Recent>,
     pub scroll: ScrollHandle,
+    /// Whether the last layout clipped tabs, which shows the all-tabs menu.
+    pub overflowing: std::rc::Rc<std::cell::Cell<bool>>,
     pub headers: HashMap<Option<String>, FocusHandle>,
-    pub dragging: Option<Option<String>>,
-    pub exit_maximized: bool,
-    pub drop_target: Option<(Option<String>, bool)>,
+    pub strip: strip::Interaction,
+    temporary_lists: HashSet<Option<String>>,
     pub navigator_hidden: bool,
     next_new: u64,
     pub changes: Vec<ChangesTab>,
+    git: Option<GitTab>,
     pub active: Option<String>,
     pub restore_focus: bool,
     pub(super) record_revision: Option<((u64, u64, bool), u64)>,
@@ -31,16 +39,17 @@ impl Default for Tabs {
             navigator_hidden: false,
             next_new: 0,
             changes: Vec::new(),
+            git: None,
             active: Some(NEW_TAB.into()),
             restore_focus: false,
             record_revision: None,
             order: vec![Some(NEW_TAB.into())],
             recent: Vec::new(),
             scroll: ScrollHandle::new(),
+            overflowing: Default::default(),
             headers: HashMap::new(),
-            drop_target: None,
-            dragging: None,
-            exit_maximized: false,
+            strip: Default::default(),
+            temporary_lists: HashSet::new(),
         }
     }
 }
@@ -88,7 +97,9 @@ impl Tabs {
         let previous = self.order.clone();
         self.order.retain(|id| {
             id.as_deref().is_none_or(|id| {
-                id.starts_with(NEW_TAB) || self.changes.iter().any(|tab| tab.id == id)
+                id.starts_with(NEW_TAB)
+                    || (id == GIT_TAB && self.git.is_some())
+                    || self.changes.iter().any(|tab| tab.id == id)
             })
         });
         if !self.order.contains(&self.active) {
@@ -110,6 +121,7 @@ impl Tabs {
         }
         self.headers
             .retain(|id, _| id.as_deref() == Some(NEW_TAB) || self.order.contains(id));
+        self.temporary_lists.retain(|id| self.order.contains(id));
         self.reveal();
     }
     pub(super) fn reconcile_records(
@@ -186,13 +198,6 @@ impl Tabs {
             keep
         });
         self.reconcile_order();
-        if self
-            .order
-            .iter()
-            .all(|id| id.as_deref().is_some_and(|id| id.starts_with(NEW_TAB)))
-        {
-            self.exit_maximized = true;
-        }
         self.restore_focus |= restore;
     }
 }
@@ -206,21 +211,27 @@ impl HomeView {
     pub(super) fn source(&self) -> Option<Entity<source::Preview>> {
         self.session_view().and_then(|view| view.source.clone())
     }
-    fn workspace_content(&self) -> panes::geometry::Content {
+    pub(super) fn workspace_content(&self) -> internal::Content {
         if self.session_view().is_none_or(|v| v.workspace.launcher()) {
-            return panes::geometry::Content {
+            return internal::Content {
                 main: true,
                 navigator: false,
             };
         }
+        if let Some(tab) = self.active_git() {
+            return internal::Content {
+                main: tab.selected.is_some() || tab.rows.is_empty(),
+                navigator: tab.selected.is_none() || !tab.navigator_hidden,
+            };
+        }
         if let Some(tab) = self.active_changes() {
-            return panes::geometry::Content {
-                main: true,
-                navigator: !tab.navigator_hidden,
+            return internal::Content {
+                main: tab.selected.is_some() || tab.files.is_empty() || !tab.in_scope,
+                navigator: tab.selected.is_none() || !tab.navigator_hidden,
             };
         }
         let main = self.source().is_some();
-        panes::geometry::Content {
+        internal::Content {
             main,
             navigator: !main
                 || self
@@ -229,20 +240,25 @@ impl HomeView {
         }
     }
     pub(super) fn fit_layout(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self
-            .shown_key
-            .as_ref()
-            .and_then(|key| self.views.get_mut(key))
-            .is_some_and(|v| std::mem::take(&mut v.workspace.exit_maximized))
+        if self.pane_layout.workspace_docked
+            && (self.workspace_region.contains_focused(window, cx)
+                || self.session_view().is_some_and(|view| {
+                    view.workspace
+                        .headers
+                        .values()
+                        .any(|focus| focus.contains_focused(window, cx))
+                }))
         {
-            self.pane_layout.maximized = false;
-            self.pane_layout.invalidate();
+            self.pane_layout.foreground = panes::Foreground::Workspace;
+        } else if self.pane_layout.workspace_docked
+            && self.focus_handle.contains_focused(window, cx)
+        {
+            self.pane_layout.foreground = panes::Foreground::Conversation;
         }
-        let preferences = cx.global::<layout::LayoutState>();
+        let preferences = cx.global::<gupi_settings::layout::LayoutState>();
         let request = panes::Request {
             width: f32::from(window.viewport_size().width),
             sidebar: self.show_sidebar,
-            content: self.workspace_content(),
             rem: f32::from(window.rem_size()),
             workspace_pinned: preferences.workspace_pinned,
             history_pinned: preferences.history_pinned,
@@ -250,11 +266,117 @@ impl HomeView {
         if self.pane_layout.needs_fit(request) {
             self.interrupt_pane_drag(window, cx);
             self.pane_layout
-                .fit(request, cx.global::<layout::LayoutState>());
+                .fit(request, cx.global::<gupi_settings::layout::LayoutState>());
             if let Some(view) = self.session_view() {
                 view.workspace.reveal();
             }
         }
+        self.fit_workspace_layout(window, cx);
+        let restore_focus = self
+            .shown_key
+            .as_ref()
+            .and_then(|key| self.views.get_mut(key))
+            .is_some_and(|view| {
+                let mut restore = std::mem::take(&mut view.workspace.restore_focus);
+                for tab in &mut view.workspace.changes {
+                    let pending = std::mem::take(&mut tab.restore_focus);
+                    restore |= pending && view.workspace.active.as_deref() == Some(&tab.id);
+                }
+                restore
+            });
+        if restore_focus && self.pane_layout.visible(Panel::Workspace) {
+            self.focus_panel(Panel::Workspace, window, cx);
+        }
+        self.apply_reader_options(cx);
+    }
+    pub(super) fn temporary_list(&self) -> bool {
+        self.session_view()
+            .is_some_and(|v| v.workspace.temporary_lists.contains(&v.workspace.active))
+    }
+    pub(super) fn set_temporary_list(&mut self, value: bool) {
+        if let Some(view) = self
+            .shown_key
+            .as_ref()
+            .and_then(|key| self.views.get_mut(key))
+        {
+            let active = view.workspace.active.clone();
+            if value {
+                view.workspace.temporary_lists.insert(active);
+            } else {
+                view.workspace.temporary_lists.remove(&active);
+            }
+        }
+    }
+    pub(super) fn fit_workspace_layout(&mut self, window: &mut Window, cx: &mut App) {
+        let preference = if self
+            .pane_drag
+            .as_ref()
+            .is_some_and(|drag| drag.side == panes::Side::Right)
+        {
+            self.workspace_layout.navigator_width
+        } else {
+            cx.global::<gupi_settings::layout::LayoutState>()
+                .navigator_width_rem
+                * f32::from(window.rem_size())
+        };
+        let allocation = internal::Layout::new(
+            self.pane_layout.workspace_width,
+            f32::from(window.rem_size()),
+            self.workspace_content(),
+            self.temporary_list(),
+            preference,
+        );
+        if self
+            .pane_drag
+            .as_ref()
+            .is_some_and(|drag| drag.side == panes::Side::Right)
+            && !allocation.split
+        {
+            self.interrupt_pane_drag(window, cx);
+            return;
+        }
+        let list_focused = self
+            .active_git()
+            .is_some_and(|tab| tab.focus.contains_focused(window, cx))
+            || self
+                .active_changes()
+                .is_some_and(|tab| tab.focus.contains_focused(window, cx))
+            || (self.active_git().is_none()
+                && self.active_changes().is_none()
+                && self
+                    .files()
+                    .is_some_and(|files| files.read(cx).is_focused(window, cx)));
+        let move_focus = self.workspace_layout.navigator_visible()
+            && !allocation.navigator_visible()
+            && allocation.main_width > 0.
+            && list_focused;
+        self.workspace_layout = allocation;
+        if !allocation.compact {
+            self.set_temporary_list(false);
+        }
+        if move_focus {
+            self.focus_workspace_main(window, cx);
+        }
+        if let Some(source) = self.source() {
+            let visible = self.workspace_layout.navigator_visible();
+            if source.read(cx).navigator_visible != visible {
+                source.update(cx, |source, cx| {
+                    source.navigator_visible = visible;
+                    cx.notify();
+                });
+            }
+        }
+    }
+    pub(super) fn show_conversation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.interrupt_pane_drag(window, cx);
+        self.end_workspace_tab_drag(window, cx);
+        self.pane_layout.maximized = false;
+        self.pane_layout.foreground = panes::Foreground::Conversation;
+        self.pane_layout.allocate();
+        self.fit_workspace_layout(window, cx);
+        self.focus_composer(window, cx);
+        self.sync_worktree(window, cx);
+        cx.notify();
     }
     pub(super) fn ensure_panel(
         &mut self,
@@ -263,21 +385,31 @@ impl HomeView {
         cx: &mut Context<Self>,
     ) {
         self.fit_layout(window, cx);
-        if self.pane_layout.dockable(panel) {
-            if self.pane_layout.overlay.take().is_some() {
+        match panel {
+            Panel::Workspace => {
+                self.pane_layout.foreground = panes::Foreground::Workspace;
+                cx.global_mut::<gupi_settings::layout::LayoutState>()
+                    .workspace_pinned = true;
                 self.pane_layout.allocate();
+                self.fit_layout(window, cx);
+                self.save_layout(None, None, window, cx);
             }
-            match panel {
-                Panel::History => cx.global_mut::<layout::LayoutState>().history_pinned = true,
-                Panel::Workspace => cx.global_mut::<layout::LayoutState>().workspace_pinned = true,
+            Panel::History => {
+                if self.pane_layout.conversation == 0. {
+                    self.show_conversation(window, cx);
+                }
+                if self.pane_layout.dockable(panel) {
+                    cx.global_mut::<gupi_settings::layout::LayoutState>()
+                        .history_pinned = true;
+                    self.fit_layout(window, cx);
+                    self.save_layout(None, None, window, cx);
+                } else {
+                    self.pane_layout.history_overlay = true;
+                }
             }
-            self.fit_layout(window, cx);
-            self.save_layout(None, None, window, cx);
-        } else {
-            self.pane_layout.overlay = Some(panel);
-            self.pane_layout.allocate();
         }
         self.sync(false, window, cx);
+        self.sync_worktree(window, cx);
         cx.notify();
     }
     pub(super) fn toggle_panel(
@@ -287,7 +419,7 @@ impl HomeView {
         cx: &mut Context<Self>,
     ) {
         self.fit_layout(window, cx);
-        if self.pane_layout.overlay == Some(panel) {
+        if panel == Panel::History && self.pane_layout.history_overlay {
             self.close_navigator(window, cx);
         } else if self.pane_layout.visible(panel) {
             let region = match panel {
@@ -310,8 +442,15 @@ impl HomeView {
                 window.focus_next(cx);
             }
             match panel {
-                Panel::History => cx.global_mut::<layout::LayoutState>().history_pinned = false,
-                Panel::Workspace => cx.global_mut::<layout::LayoutState>().workspace_pinned = false,
+                Panel::History => {
+                    cx.global_mut::<gupi_settings::layout::LayoutState>()
+                        .history_pinned = false
+                }
+                Panel::Workspace => {
+                    cx.global_mut::<gupi_settings::layout::LayoutState>()
+                        .workspace_pinned = false;
+                    self.pane_layout.maximized = false;
+                }
             }
             self.fit_layout(window, cx);
             self.save_layout(None, None, window, cx);
@@ -319,6 +458,7 @@ impl HomeView {
             self.ensure_panel(panel, window, cx);
             self.focus_panel(panel, window, cx);
         }
+        self.sync_worktree(window, cx);
         cx.notify();
     }
     pub(super) fn focus_panel(&self, panel: Panel, window: &mut Window, cx: &mut Context<Self>) {
@@ -327,13 +467,19 @@ impl HomeView {
             Panel::Workspace => {
                 if self.session_view().is_none_or(|v| v.workspace.launcher()) {
                     self.workspace_region.focus(window, cx);
-                } else if let Some(tab) = self.active_changes() {
-                    if tab.navigator_hidden {
+                } else if let Some(tab) = self.active_git() {
+                    if !self.workspace_layout.navigator_visible() {
                         tab.focus_main(window, cx);
                     } else {
-                        tab.focus.focus(window, cx);
+                        tab.focus_list(window, cx);
                     }
-                } else if self.workspace_content().navigator {
+                } else if let Some(tab) = self.active_changes() {
+                    if !self.workspace_layout.navigator_visible() {
+                        tab.focus_main(window, cx);
+                    } else {
+                        tab.focus_list(window, cx);
+                    }
+                } else if self.workspace_layout.navigator_visible() {
                     if let Some(files) = self.files() {
                         files.update(cx, |files, cx| files.focus(window, cx));
                     }
@@ -343,7 +489,7 @@ impl HomeView {
             }
         }
     }
-    fn set_files_navigator_hidden(&mut self, hidden: bool, cx: &mut Context<Self>) {
+    pub(super) fn set_files_navigator_hidden(&mut self, hidden: bool, cx: &mut Context<Self>) {
         let Some(view) = self
             .shown_key
             .as_ref()
@@ -366,6 +512,13 @@ impl HomeView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.workspace_layout.compact {
+            self.set_temporary_list(!self.temporary_list());
+            self.fit_workspace_layout(window, cx);
+            self.focus_panel(Panel::Workspace, window, cx);
+            cx.notify();
+            return;
+        }
         let Some(view) = self
             .shown_key
             .as_ref()
@@ -373,7 +526,11 @@ impl HomeView {
         else {
             return;
         };
-        if let Some(tab) = view
+        if view.workspace.active.as_deref() == Some(GIT_TAB) {
+            if let Some(tab) = &mut view.workspace.git {
+                tab.navigator_hidden = !tab.navigator_hidden;
+            }
+        } else if let Some(tab) = view
             .workspace
             .changes
             .iter_mut()
@@ -389,7 +546,7 @@ impl HomeView {
     }
     /// The Changes header's toggle; the Files tab renders its own in the source header.
     pub(super) fn navigator_toggle(&self, cx: &mut Context<Self>) -> Button {
-        let visible = self.workspace_content().navigator;
+        let visible = self.workspace_layout.navigator_visible();
         Button::new("workspace-navigator")
             .small()
             .ghost()
@@ -420,6 +577,11 @@ impl HomeView {
             .unwrap()
             .workspace
             .activate(None, cx);
+        // Opening a file targets Files; the originating tab keeps its own list state.
+        let temporary_list = self.temporary_list();
+        self.set_temporary_list(false);
+        let keyboard = keyboard || temporary_list;
+        self.sync_worktree(window, cx);
         self.remember_file(path.clone());
         if let Some(source) = self.source().filter(|s| s.read(cx).path == path) {
             self.fit_layout(window, cx);
@@ -453,6 +615,10 @@ impl HomeView {
                     source::Event::Reveal => {
                         this.set_files_navigator_hidden(false, cx);
                         this.fit_layout(window, cx);
+                        if !this.workspace_layout.navigator_visible() {
+                            this.set_temporary_list(true);
+                            this.fit_workspace_layout(window, cx);
+                        }
                         if let Some(path) = this.source().map(|s| s.read(cx).path.clone()) {
                             this.files()
                                 .unwrap()
@@ -470,18 +636,32 @@ impl HomeView {
         cx.notify();
     }
     pub(super) fn return_from_source(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.pane_layout.maximized {
-            self.toggle_workspace_maximized(window, cx);
-            return;
-        }
-        if self.pane_layout.overlay == Some(Panel::Workspace) {
+        if self.temporary_list() {
+            self.set_temporary_list(false);
+            self.fit_workspace_layout(window, cx);
+            self.focus_workspace_main(window, cx);
+        } else if self.pane_layout.history_overlay
+            && self.history_region.contains_focused(window, cx)
+        {
             self.close_navigator(window, cx);
-        } else if self.pane_layout.workspace_docked && self.workspace_content().navigator {
-            if let Some(files) = self.files() {
-                files.update(cx, |files, cx| files.focus_open(window, cx));
-            }
+        } else if self.pane_layout.maximized {
+            self.toggle_workspace_maximized(window, cx);
+        } else if !self.pane_layout.workspace_docked && self.pane_layout.visible(Panel::Workspace) {
+            self.show_conversation(window, cx);
+        } else if self.workspace_layout.navigator_visible() {
+            self.focus_panel(Panel::Workspace, window, cx);
         } else {
             self.focus_composer(window, cx);
+        }
+        cx.stop_propagation();
+    }
+    fn focus_workspace_main(&self, window: &mut Window, cx: &mut App) {
+        if let Some(tab) = self.active_git() {
+            tab.focus_main(window, cx);
+        } else if let Some(tab) = self.active_changes() {
+            tab.focus_main(window, cx);
+        } else if let Some(source) = self.source() {
+            source.update(cx, |source, cx| source.focus(window, cx));
         }
     }
     pub(super) fn close_source(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -505,25 +685,17 @@ impl HomeView {
         cx.notify();
     }
     pub(super) fn close_navigator(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.pane_layout.maximized {
-            self.toggle_workspace_maximized(window, cx);
-            return;
-        }
-        if let Some(panel) = self.pane_layout.overlay.take() {
-            let region = match panel {
-                Panel::History => &self.history_region,
-                Panel::Workspace => &self.workspace_region,
-            };
-            if region.contains_focused(window, cx) {
-                match panel {
-                    Panel::History => &self.history_button_focus,
-                    Panel::Workspace => &self.workspace_button_focus,
-                }
-                .focus(window, cx);
+        if self.pane_layout.history_overlay {
+            self.pane_layout.history_overlay = false;
+            if self.history_region.contains_focused(window, cx) {
+                self.history_button_focus.focus(window, cx);
                 window.focus_next(cx);
             }
-            self.pane_layout.allocate();
+        } else {
+            self.return_from_source(window, cx);
+            return;
         }
+        self.sync_worktree(window, cx);
         cx.notify();
     }
     pub(super) fn select_workspace_tab(
@@ -532,6 +704,14 @@ impl HomeView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.end_workspace_tab_drag(window, cx);
+        if self
+            .pane_drag
+            .as_ref()
+            .is_some_and(|drag| drag.side == panes::Side::Right)
+        {
+            self.interrupt_pane_drag(window, cx);
+        }
         if let Some(view) = self
             .shown_key
             .as_ref()
@@ -550,6 +730,7 @@ impl HomeView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.end_workspace_tab_drag(window, cx);
         let Some(view) = self
             .shown_key
             .as_ref()
@@ -589,6 +770,9 @@ impl HomeView {
         view.workspace
             .changes
             .retain(|tab| !removed.contains(&Some(tab.id.clone())));
+        if removed.contains(&Some(GIT_TAB.into())) {
+            view.workspace.git = None;
+        }
         if removed.contains(&None) {
             view.source = None;
             view.source_subscription = None;
@@ -609,19 +793,11 @@ impl HomeView {
                 .unwrap_or(Some(NEW_TAB.into()));
         }
         view.workspace.reconcile_order();
-        if view
-            .workspace
-            .order
-            .iter()
-            .all(|id| id.as_deref().is_some_and(|id| id.starts_with(NEW_TAB)))
-        {
-            self.pane_layout.maximized = false;
-            self.pane_layout.invalidate();
-        }
         self.fit_layout(window, cx);
         if focused {
             self.focus_panel(Panel::Workspace, window, cx);
         }
+        self.sync_worktree(window, cx);
         cx.notify();
     }
     pub(super) fn render_file_workspace(
@@ -629,11 +805,20 @@ impl HomeView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let content = self.workspace_content();
+        let allocation = self.workspace_layout;
         let mut columns = h_flex().items_stretch().flex_1().min_h_0().min_w_0();
         if self.session_view().is_none_or(|v| v.workspace.launcher()) {
             columns = columns.child(self.render_launcher(window, cx));
-        } else if let Some(tab) = self.active_changes() {
+        } else if let Some(tab) = self.active_git().filter(|_| allocation.main_width > 0.) {
+            columns = columns.child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .min_h_0()
+                    .h_full()
+                    .child(self.render_git_main(tab, cx)),
+            );
+        } else if let Some(tab) = self.active_changes().filter(|_| allocation.main_width > 0.) {
             columns = columns.child(
                 div()
                     .flex_1()
@@ -642,11 +827,13 @@ impl HomeView {
                     .h_full()
                     .child(self.render_changes_main(tab, cx)),
             );
-        } else if let Some(source) = self.source() {
+        } else if let Some(source) = self.source().filter(|_| allocation.main_width > 0.) {
             columns = columns.child(div().flex_1().min_w_0().h_full().child(source));
         }
-        if content.navigator {
-            let navigator = if let Some(tab) = self.active_changes() {
+        if allocation.navigator_visible() {
+            let navigator = if let Some(tab) = self.active_git() {
+                self.render_git_list(tab, cx)
+            } else if let Some(tab) = self.active_changes() {
                 self.render_changes_list(tab, cx)
             } else {
                 self.files()
@@ -661,14 +848,14 @@ impl HomeView {
             columns = columns.child(
                 div()
                     .relative()
-                    .w(px(self.pane_layout.right))
+                    .w(px(allocation.navigator_width))
                     .flex_none()
                     .h_full()
-                    .when(content.main, |view| {
+                    .when(allocation.split, |view| {
                         view.border_l_1().border_color(cx.theme().border)
                     })
                     .child(navigator)
-                    .when(content.main, |view| {
+                    .when(allocation.split, |view| {
                         view.child(self.pane_handle(panes::Side::Right, cx))
                     }),
             );
@@ -678,18 +865,27 @@ impl HomeView {
             .min_h_0()
             .min_w_0()
             .track_focus(&self.workspace_region)
-            .when(self.pane_layout.maximized, |view| {
-                view.key_context("GupiWorkspaceMaximized")
-                    .on_action(
-                        cx.listener(|this, _: &actions::CloseNavigator, window, cx| {
-                            this.toggle_workspace_maximized(window, cx);
-                            cx.stop_propagation();
-                        }),
-                    )
-            })
+            .key_context("GupiWorkspace")
+            .on_action(
+                cx.listener(|this, _: &actions::CloseNavigator, window, cx| {
+                    this.return_from_source(window, cx);
+                }),
+            )
             .bg(cx.theme().background)
-            .when(!self.pane_layout.workspace_docked, |view| {
-                view.child(self.render_workspace_strip(false, window, cx))
+            .when(self.temporary_list(), |view| {
+                view.child(
+                    Button::new("workspace-list-back")
+                        .small()
+                        .ghost()
+                        .icon(IconName::ArrowLeft)
+                        .label(t(cx, "workspace-back-content"))
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.set_temporary_list(false);
+                            this.fit_workspace_layout(window, cx);
+                            this.focus_workspace_main(window, cx);
+                            cx.notify();
+                        })),
+                )
             })
             .child(columns)
             .into_any_element()
@@ -699,7 +895,7 @@ impl HomeView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        if self.pane_layout.maximized {
+        if self.pane_layout.conversation == 0. {
             return div()
                 .size_full()
                 .child(self.render_file_workspace(window, cx))

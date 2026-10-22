@@ -215,7 +215,7 @@ impl HomeView {
                             })),
                     )),
             )
-            .when(!self.pane_layout.workspace_docked, |row| {
+            .when(!self.pane_layout.visible(panes::Panel::Workspace), |row| {
                 row.child(self.render_workspace_toggle(cx))
             });
 
@@ -225,24 +225,24 @@ impl HomeView {
                 .min_w_0()
                 .max_w(window.viewport_size().width)
                 .child(left)
-                .when(!self.pane_layout.maximized, |row| row.child(main))
-                .when(self.pane_layout.workspace_docked, |row| {
+                .when(self.pane_layout.conversation > 0., |row| row.child(main))
+                .when(self.pane_layout.visible(panes::Panel::Workspace), |row| {
                     row.child(
                         div()
                             .id("titlebar-workspace")
                             .debug_selector(|| "titlebar-workspace".into())
                             .h_full()
                             .min_w_0()
-                            .border_l_1()
+                            .when(self.pane_layout.workspace_docked, |view| view.border_l_1())
                             .border_b_1()
                             .border_color(cx.theme().border)
-                            .when(self.pane_layout.maximized, |view| view.flex_1())
-                            .when(!self.pane_layout.maximized, |view| {
+                            .when(!self.pane_layout.workspace_docked, |view| view.flex_1())
+                            .when(self.pane_layout.workspace_docked, |view| {
                                 view.flex_none().w(px(
                                     self.pane_layout.workspace_width + panes::geometry::DIVIDER
                                 ))
                             })
-                            .child(self.render_workspace_strip(true, window, cx)),
+                            .child(self.render_workspace_strip(window, cx)),
                     )
                 }),
         )
@@ -261,8 +261,22 @@ impl HomeView {
                         IconName::PanelRightOpen
                     })
                     .selected(self.pane_layout.visible(panes::Panel::Workspace))
-                    .tooltip(t(cx, "files-panel"))
-                    .accessibility_label(t(cx, "files-panel"))
+                    .tooltip(t(
+                        cx,
+                        if self.pane_layout.visible(panes::Panel::Workspace) {
+                            "workspace-close"
+                        } else {
+                            "workspace-open"
+                        },
+                    ))
+                    .accessibility_label(t(
+                        cx,
+                        if self.pane_layout.visible(panes::Panel::Workspace) {
+                            "workspace-close"
+                        } else {
+                            "workspace-open"
+                        },
+                    ))
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.toggle_panel(panes::Panel::Workspace, window, cx)
                     })),

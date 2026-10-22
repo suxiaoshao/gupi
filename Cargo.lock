@@ -4659,6 +4659,7 @@ dependencies = [
  "pi-rpc",
  "regex",
  "serde_json",
+ "similar",
  "smol",
  "tempfile",
  "time",

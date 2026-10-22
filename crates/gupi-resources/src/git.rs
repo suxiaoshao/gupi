@@ -1,5 +1,11 @@
 //! Read-only system Git queries. No shell, Pi process, or repository mutations.
+use smol::io::AsyncReadExt;
 use smol::process::Command;
+
+mod changes;
+pub use changes::{
+    Change, ChangeContent, ChangeKind, ChangeList, ChangeSource, ContentState, text_within_limits,
+};
 use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
 use std::time::Duration;
@@ -55,6 +61,10 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("Git query timed out")]
     Timeout,
+    #[error("Git is unavailable")]
+    Unavailable,
+    #[error("Git output exceeds the reader limit")]
+    TooLarge,
     #[error("Git: {0}")]
     Failed(String),
 }
@@ -100,12 +110,30 @@ async fn run(cwd: &Path, args: &[&str]) -> Result<Output, Error> {
 }
 
 async fn run_program(cwd: &Path, args: &[&str], program: &str) -> Result<Output, Error> {
+    run_bounded(cwd, args, program, 2 * 1024 * 1024).await
+}
+
+async fn run_bounded(
+    cwd: &Path,
+    args: &[&str],
+    program: &str,
+    limit: usize,
+) -> Result<Output, Error> {
     let mut command = Command::new(program);
     command
         .current_dir(cwd)
-        .args(["--no-optional-locks", "-c", "core.fsmonitor=false"])
+        .args([
+            "--no-pager",
+            "--no-optional-locks",
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "color.ui=false",
+        ])
         .args(args)
         .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .kill_on_drop(true)
         .env("LC_ALL", "C");
     // The caller's Git shell environment must not redirect a session cwd query.
@@ -117,14 +145,30 @@ async fn run_program(cwd: &Path, args: &[&str], program: &str) -> Result<Output,
         "GIT_OBJECT_DIRECTORY",
         "GIT_ALTERNATE_OBJECT_DIRECTORIES",
         "GIT_NAMESPACE",
+        "GIT_DIFF_OPTS",
     ] {
         command.env_remove(key);
     }
-    smol::future::race(async { command.output().await.map_err(Error::Io) }, async {
+    smol::future::race(async {
+        let mut child = command.spawn().map_err(|error| {
+            if error.kind()==std::io::ErrorKind::NotFound && cwd.is_dir() { Error::Unavailable }else{Error::Io(error)}
+        })?;
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+        let read = |stream: Box<dyn smol::io::AsyncRead + Unpin + Send>, limit: usize| async move {
+            let mut bytes = Vec::new();
+            stream.take(limit as u64 + 1).read_to_end(&mut bytes).await?;
+            if bytes.len() > limit { return Err(Error::TooLarge); }
+            Ok(bytes)
+        };
+        let (stdout, stderr) = smol::future::try_zip(
+            read(Box::new(stdout), limit), read(Box::new(stderr), 64 * 1024)
+        ).await?;
+        Ok(Output { status: child.status().await?, stdout, stderr })
+    }, async {
         smol::Timer::after(Duration::from_secs(5)).await;
         Err(Error::Timeout)
-    })
-    .await
+    }).await
 }
 
 fn failure(output: Output) -> Error {
@@ -268,7 +312,7 @@ mod tests {
                 &["rev-parse"],
                 "gupi-nonexistent-git-fixture"
             )),
-            Err(Error::Io(_))
+            Err(Error::Unavailable)
         ));
     }
 }

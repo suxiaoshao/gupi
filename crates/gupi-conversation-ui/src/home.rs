@@ -117,6 +117,7 @@ pub struct HomeView {
     layout_save: Option<Task<()>>,
     progress: Entity<progress::RetryView>,
     pane_layout: panes::PaneLayout,
+    workspace_layout: workspace::layout::Layout,
     pane_drag: Option<panes::Drag>,
     palette: Option<Entity<palette::Palette>>,
     find: Option<Entity<find::FindBar>>,
@@ -309,22 +310,6 @@ impl HomeView {
         for tab in &mut view.workspace.changes {
             tab.sync(&view.edited_files, &next, window, cx);
         }
-        if std::mem::take(&mut view.workspace.restore_focus) {
-            if let Some(tab) = view
-                .workspace
-                .changes
-                .iter()
-                .find(|tab| Some(&tab.id) == view.workspace.active.as_ref())
-            {
-                tab.focus.focus(window, cx);
-            } else if view.workspace.launcher() {
-                if let Some(focus) = view.workspace.headers.get(&view.workspace.active) {
-                    focus.focus(window, cx);
-                }
-            } else {
-                view.files.update(cx, |files, cx| files.focus(window, cx));
-            }
-        }
         if view.changes.sync(&view.edited_files, &next, window, cx) {
             view.input.update(cx, |input, cx| input.focus(window, cx));
         }
@@ -437,10 +422,21 @@ impl HomeView {
         });
         crate::host::present(&state, window, true, cx);
         let subscriptions = vec![
+            cx.observe_global_in::<layout::LayoutState>(window, |home, window, cx| {
+                home.sync_git_view(window, cx)
+            }),
             cx.observe_window_activation(window, |this, window, cx| {
                 crate::host::present(&this.state, window, this.notification_visible, cx);
+                if !window.is_window_active() {
+                    this.end_workspace_tab_drag(window, cx);
+                }
                 this.sync_git(window, cx);
+                this.sync_worktree(window, cx);
                 this.sync_commands(window, cx);
+            }),
+            cx.observe_window_bounds(window, |home, window, cx| {
+                home.fit_layout(window, cx);
+                home.sync_worktree(window, cx);
             }),
             cx.observe(&history_list, |_, _, cx| cx.notify()),
             cx.subscribe_in(
@@ -549,6 +545,7 @@ impl HomeView {
             layout_save: None,
             progress: cx.new(progress::RetryView::new),
             pane_layout: panes::PaneLayout::default(),
+            workspace_layout: workspace::layout::Layout::default(),
             pane_drag: None,
             palette: None,
             find: None,
@@ -596,7 +593,10 @@ impl HomeView {
                     return;
                 }
                 let _ = resize_owner.update(cx, |this, cx| {
-                    if this.pane_drag.is_some() {
+                    if this.workspace_tab_drag_active() {
+                        this.end_workspace_tab_drag(window, cx);
+                        cx.stop_propagation();
+                    } else if this.pane_drag.is_some() {
                         this.finish_pane_drag(window, cx);
                         cx.stop_active_drag(window);
                         cx.stop_propagation();
@@ -632,6 +632,7 @@ impl HomeView {
         if self.notification_visible != visible {
             self.notification_visible = visible;
             self.sync_git(window, cx);
+            self.sync_worktree(window, cx);
             crate::host::present(&self.state, window, visible, cx);
             cx.notify();
         }
@@ -641,6 +642,8 @@ impl HomeView {
         let key = self.state.read(cx).selected().clone();
         let changed = self.shown_key != key;
         if changed {
+            self.stop_shown_git_tasks();
+            self.end_workspace_tab_drag(window, cx);
             self.close_find(false, window, cx);
             self.slash = Default::default();
         }
@@ -859,6 +862,7 @@ impl HomeView {
                 },
             );
         }
+        self.reconcile_git_tab_for_session(&key, window, cx);
         if self.pane_layout.visible(panes::Panel::Workspace) {
             self.views[&key]
                 .files
@@ -1150,6 +1154,8 @@ impl HomeView {
                 self.input.update(cx, |input, cx| input.focus(window, cx));
             }
         }
+        self.fit_layout(window, cx);
+        self.sync_worktree(window, cx);
         cx.notify();
     }
     fn preview_node(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
@@ -1315,6 +1321,7 @@ impl Render for HomeView {
             let content = crate::performance::measure("home", false, content);
             return content;
         }
+        self.validate_workspace_tab_drag(window, cx);
         self.fit_layout(window, cx);
         let titlebar = self.render_titlebar(window, cx);
         let window_titlebar = crate::chrome::window_title_bar(window, cx);
@@ -1336,33 +1343,12 @@ impl Render for HomeView {
             .child(self.render_sidebar(window, cx))
             .child(center_panel);
         let mut shell = div().relative().flex_1().min_h_0().w_full().child(columns);
-        if let Some(panel) = self.pane_layout.overlay {
-            let width = match panel {
-                panes::Panel::History => self.pane_layout.history_width,
-                panes::Panel::Workspace => self.pane_layout.workspace_width,
-            };
-            let right = if panel == panes::Panel::History && self.pane_layout.workspace_docked {
+        if self.pane_layout.history_overlay && self.pane_layout.conversation > 0. {
+            let right = if self.pane_layout.workspace_docked {
                 self.pane_layout.workspace_width + panes::geometry::DIVIDER
             } else {
                 0.
             };
-            if panel == panes::Panel::Workspace {
-                // The workspace overlay covers nearly the whole column; dim the
-                // uncovered strip so it reads as the click-away area rather than
-                // clipped conversation.
-                shell = shell.child(
-                    div()
-                        .id("panel-overlay-scrim")
-                        .occlude()
-                        .absolute()
-                        .inset_0()
-                        .bg(cx.theme().overlay)
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(|this, _, window, cx| this.close_navigator(window, cx)),
-                        ),
-                );
-            }
             shell = shell.child(
                 div()
                     .id("panel-overlay")
@@ -1371,10 +1357,7 @@ impl Render for HomeView {
                     .right(px(right))
                     .top_0()
                     .bottom_0()
-                    .w(px(width))
-                    .when(panel == panes::Panel::Workspace, |view| {
-                        view.bg(cx.theme().background).shadow_md()
-                    })
+                    .w(px(self.pane_layout.history_width))
                     .key_context("GupiNavigatorOverlay")
                     .on_action(
                         cx.listener(|this, _: &actions::CloseNavigator, window, cx| {
@@ -1382,8 +1365,6 @@ impl Render for HomeView {
                         }),
                     )
                     .on_mouse_down_out(cx.listener(|this, event: &MouseDownEvent, window, cx| {
-                        // The titlebar button handles its own toggle on click. Dismissing
-                        // on mouse-down first would make that click reopen the overlay.
                         if !this.panel_button_bounds.iter().any(|bounds| {
                             bounds
                                 .get()
@@ -1392,28 +1373,19 @@ impl Render for HomeView {
                             this.close_navigator(window, cx);
                         }
                     }))
-                    .child(match panel {
-                        panes::Panel::History => div()
+                    .child(
+                        div()
                             .size_full()
                             .track_focus(&self.history_region)
-                            .child(self.render_history_card(true, cx))
-                            .into_any_element(),
-                        panes::Panel::Workspace => self.render_file_workspace(window, cx),
-                    }),
+                            .child(self.render_history_card(true, cx)),
+                    ),
             );
         }
-        shell = shell.child(panes::ResizeEvents(cx.weak_entity()));
+        shell = shell
+            .child(panes::ResizeEvents(cx.weak_entity()))
+            .child(workspace::strip_events(cx.weak_entity()));
         let content = v_flex()
             .key_context("Gupi")
-            .when(self.pane_layout.maximized, |view| {
-                view.key_context("Gupi GupiWorkspaceMaximized")
-                    .on_action(
-                        cx.listener(|this, _: &actions::CloseNavigator, window, cx| {
-                            this.toggle_workspace_maximized(window, cx);
-                            cx.stop_propagation();
-                        }),
-                    )
-            })
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::run_action))
             .on_action(cx.listener(

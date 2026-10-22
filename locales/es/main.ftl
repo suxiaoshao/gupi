@@ -1280,6 +1280,7 @@ history-panel-options = Opciones del historial
 workspace-view-changes = Ver cambios
 
 workspace-new-tab = Nueva pestaña
+workspace-all-tabs = Todas las pestañas
 workspace-tools = Herramientas
 workspace-recent = Recientes
 workspace-no-changes = Esta conversación aún no tiene cambios.
@@ -1305,3 +1306,68 @@ shell-display-truncated = Solo se muestra la salida más reciente.
 
 titlebar-git-branch = Rama de Git: { $name }
 titlebar-git-detached = HEAD separado: { $name }
+
+# Diff reader
+diff-worktree = Git
+diff-unstaged = Sin preparar
+diff-staged = Preparados
+diff-untracked = Sin seguimiento
+diff-filter = Filtrar rutas…
+diff-previous-file = Archivo anterior
+diff-next-file = Archivo siguiente
+diff-unified = Unificado
+diff-split = En paralelo
+diff-wrap = Ajustar líneas
+diff-actions = Acciones del archivo
+diff-word = Diferencias por palabra
+diff-context = Todas las líneas sin cambios
+diff-expand-file = Expandir este archivo
+diff-copy-path = Copiar ruta del archivo
+diff-copy-patch = Copiar parche
+diff-copy-content = Copiar texto completo del archivo
+diff-external = Abrir en editor externo
+diff-refresh = Actualizar cambios
+diff-refresh-failed = No se pudieron actualizar los cambios. Los resultados anteriores pueden estar desactualizados.
+diff-loading = Cargando cambios…
+diff-not-repository = Esta carpeta no está en un árbol de trabajo de Git
+diff-empty = Sin cambios
+diff-no-results = Ningún archivo coincide
+diff-retry = Reintentar
+diff-recorded-context = Cambios de esta ejecución · solo contexto registrado
+diff-added = Añadido
+diff-deleted = Eliminado
+diff-modified = Modificado
+diff-conflict = Conflicto · solo lectura
+diff-special = Archivo especial · solo lectura
+diff-binary = Archivo binario
+diff-too-large = Este archivo supera los límites del lector de texto
+diff-unavailable-file = El archivo actual no está disponible; la apertura externa está desactivada.
+diff-git-unavailable = Git no está disponible. Instala Git y actualiza.
+diff-files = Archivos
+diff-conflicts = Conflictos
+diff-direction-staged = HEAD → índice
+diff-direction-unstaged = Índice → árbol de trabajo
+diff-direction-untracked = Vacío → árbol de trabajo
+diff-updating = Actualizando la versión anterior…
+diff-collapse-file = Contraer este archivo
+diff-update-failed = No se pudo actualizar esta versión
+diff-reading-options = Opciones de lectura
+diff-reading-options-narrow = Opciones de lectura: el área es demasiado estrecha para la vista en paralelo; al ampliarla se restaura la vista preferida
+diff-view = Vista
+diff-display = Visualización
+diff-list-view = Lista
+diff-tree-view = Árbol
+diff-stats-incomplete = Estadísticas incompletas
+
+workspace-back-conversation = Volver a la conversación
+workspace-back-content = Volver al contenido
+workspace-open = Abrir espacio de trabajo
+workspace-close = Cerrar espacio de trabajo
+
+diff-invalid-path = El nombre del archivo no es UTF-8 válido y no se puede leer
+diff-no-text-changes = Sin cambios de texto
+
+diff-external-failed = No se pudo abrir el archivo. Puede que ya no exista o que no haya una aplicación disponible.
+
+diff-conflict-label = Conflicto
+diff-read-failed = No se pudieron leer los cambios. Vuelve a intentarlo.

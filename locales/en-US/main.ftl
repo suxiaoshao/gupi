@@ -1281,6 +1281,7 @@ history-panel-options = History options
 workspace-view-changes = View changes
 
 workspace-new-tab = New tab
+workspace-all-tabs = All tabs
 workspace-tools = Tools
 workspace-recent = Recent
 workspace-no-changes = No changes in this conversation yet.
@@ -1306,3 +1307,68 @@ shell-display-truncated = Only the most recent output is shown.
 
 titlebar-git-branch = Git branch: { $name }
 titlebar-git-detached = Detached HEAD: { $name }
+
+# Diff reader
+diff-worktree = Git
+diff-unstaged = Unstaged
+diff-staged = Staged
+diff-untracked = Untracked
+diff-filter = Filter paths…
+diff-previous-file = Previous file
+diff-next-file = Next file
+diff-unified = Unified
+diff-split = Side by side
+diff-wrap = Wrap lines
+diff-actions = File actions
+diff-word = Word differences
+diff-context = All unchanged lines
+diff-expand-file = Expand this file
+diff-copy-path = Copy file path
+diff-copy-patch = Copy patch
+diff-copy-content = Copy full file text
+diff-external = Open in external editor
+diff-refresh = Refresh changes
+diff-refresh-failed = Couldn’t refresh changes. Previous results may be outdated.
+diff-loading = Loading changes…
+diff-not-repository = This folder is not in a Git worktree
+diff-empty = No changes
+diff-no-results = No matching files
+diff-retry = Retry
+diff-recorded-context = Recorded changes · only recorded context is available
+diff-added = Added
+diff-deleted = Deleted
+diff-modified = Modified
+diff-conflict = Conflict · read-only
+diff-special = Special file · read-only
+diff-binary = Binary file
+diff-too-large = This file exceeds the text reader limits
+diff-unavailable-file = The current file is unavailable; external open is disabled.
+diff-git-unavailable = Git is unavailable. Install Git and refresh.
+diff-files = Files
+diff-conflicts = Conflicts
+diff-direction-staged = HEAD → index
+diff-direction-unstaged = index → worktree
+diff-direction-untracked = empty → worktree
+diff-updating = Updating previous version…
+diff-collapse-file = Collapse this file
+diff-update-failed = Couldn’t update this version
+diff-reading-options = Reading options
+diff-reading-options-narrow = Reading options: the content area is too narrow for split view; widening restores your preferred mode
+diff-view = View
+diff-display = Display
+diff-list-view = List
+diff-tree-view = Tree
+diff-stats-incomplete = Statistics incomplete
+
+workspace-back-conversation = Back to conversation
+workspace-back-content = Back to content
+workspace-open = Open workspace
+workspace-close = Close workspace
+
+diff-invalid-path = The file name is not valid UTF-8 and cannot be read
+diff-no-text-changes = No text changes
+
+diff-external-failed = Could not open the file. It may no longer exist, or no application can open it.
+
+diff-conflict-label = Conflict
+diff-read-failed = Couldn’t read changes. Retry.

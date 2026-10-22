@@ -47,7 +47,11 @@ impl HomeView {
     pub(super) fn remember_change(&mut self, id: String, title: String) {
         self.remember(Destination::Changes(id), title);
     }
-    pub(super) fn new_workspace_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(in crate::home) fn new_workspace_tab(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(view) = self
             .shown_key
             .as_ref()
@@ -149,6 +153,17 @@ impl HomeView {
                         })),
                 ),
             );
+        let tools = tools.child(
+            div().flex_1().min_w(rems(TOOL_MIN_REM)).child(
+                Button::new("launcher-worktree")
+                    .accessibility_label(t(cx, "diff-worktree"))
+                    .h_10()
+                    .px_3()
+                    .w_full()
+                    .child(tool(IconName::FileDiff, t(cx, "diff-worktree")))
+                    .on_click(cx.listener(|home, _, window, cx| home.open_git_changes(window, cx))),
+            ),
+        );
         let mut page = v_flex()
             .w_full()
             .max_w(rems(LAUNCHER_MAX_REM))

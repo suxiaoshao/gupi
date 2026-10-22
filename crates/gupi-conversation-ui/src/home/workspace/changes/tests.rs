@@ -322,3 +322,40 @@ fn temporary_list_scope_loss_never_focuses_hidden_body(cx: &mut TestAppContext) 
         assert!(!tab.main_focus.contains_focused(window, cx));
     });
 }
+
+#[gpui_kit::test]
+fn limited_pi_body_disables_fold_instead_of_advertising_hidden_content(cx: &mut TestAppContext) {
+    let (home, visual, _fixture) = mount(cx, 1);
+    visual.update(|window, cx| {
+        window.draw(cx).clear(cx);
+        assert_ne!(window.find("diff-toggle-file").disabled(), Some(true));
+        window.click("diff-toggle-file", cx);
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        window.draw(cx).clear(cx);
+        assert_eq!(
+            window.find("diff-toggle-file").label(),
+            Some(t(cx, "diff-expand-file").as_str())
+        );
+        home.update(cx, |home, cx| {
+            let tab = &mut home.views.get_mut("fixture").unwrap().workspace.changes[0];
+            let state = tab.states.get_mut("a.rs").unwrap();
+            state.limited = true;
+            state.combined = None;
+            state.operations.clear();
+            assert!(!home.reader_command_available(super::super::reader::Command::ToggleFile, cx));
+            home.reader_command(super::super::reader::Command::ToggleFile, window, cx);
+            assert!(home.active_changes().unwrap().collapsed.contains("a.rs"));
+            cx.notify();
+        });
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        window.draw(cx).clear(cx);
+        let fold = window.find("diff-toggle-file");
+        assert_eq!(fold.disabled(), Some(true));
+        assert_eq!(fold.label(), Some(t(cx, "diff-collapse-file").as_str()));
+        assert_eq!(fold.expanded(), None);
+    });
+}

@@ -883,3 +883,128 @@ fn non_unicode_rows_keep_byte_identity_show_localized_state_and_disable_copy(
         );
     });
 }
+
+#[test]
+fn header_totals_follow_zed_nonzero_known_text_rule() {
+    assert_eq!(total_stats([None, None]), None);
+    assert_eq!(
+        total_stats([Some((3, 2)), None, Some((1, 0))]),
+        Some((4, 2))
+    );
+    assert_eq!(total_stats([Some((0, 0)), Some((0, 0))]), None);
+}
+
+#[gpui_kit::test]
+fn non_diff_bodies_disable_fold_even_with_retained_collapse_intent(cx: &mut TestAppContext) {
+    let (home, visual, _fixture) = mount(cx);
+    for state in [
+        ContentState::Binary,
+        ContentState::Text,
+        ContentState::NoTextChanges,
+        ContentState::Conflict,
+        ContentState::Special,
+        ContentState::TooLarge,
+        ContentState::InvalidPath,
+    ] {
+        visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                ready(home, window, cx);
+                let tab = home.git_mut().unwrap();
+                let id = tab.selected.clone().unwrap();
+                let entry = tab.selected_entry().unwrap().clone();
+                tab.cache.insert(
+                    id.clone(),
+                    Loaded::new(entry, ChangeContent::unavailable_for_test(state), None, cx),
+                );
+                tab.collapsed.insert(id.clone());
+                assert!(!home.reader_command_available(reader::Command::ToggleFile, cx));
+                home.reader_command(reader::Command::ToggleFile, window, cx);
+                assert!(home.active_git().unwrap().collapsed.contains(&id));
+                cx.notify();
+            })
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            window.draw(cx).clear(cx);
+            let fold = window.find("diff-toggle-file");
+            assert_eq!(fold.disabled(), Some(true));
+            assert_eq!(fold.label(), Some(t(cx, "diff-collapse-file").as_str()));
+            assert_eq!(fold.expanded(), None);
+        });
+    }
+}
+
+#[gpui_kit::test]
+fn fold_tracks_displayed_snapshot_during_updates_and_errors(cx: &mut TestAppContext) {
+    let (home, visual, _fixture) = mount(cx);
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            ready(home, window, cx);
+            let tab = home.git_mut().unwrap();
+            let id = tab.selected.clone().unwrap();
+            tab.apply_files(
+                vec![(
+                    ChangeSource::Staged,
+                    Ok(vec![Change::for_test("a.rs".into(), ChangeKind::Special)]),
+                )],
+                window,
+                cx,
+            );
+            assert_ne!(Some(&tab.cache[&id].entry), tab.selected_entry());
+            assert!(home.reader_command_available(reader::Command::ToggleFile, cx));
+            cx.notify();
+        })
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        window.draw(cx).clear(cx);
+        assert_ne!(window.find("diff-toggle-file").disabled(), Some(true));
+        home.update(cx, |home, cx| {
+            home.git_mut().unwrap().body_error = Some("replacement failed".into());
+            assert!(home.reader_command_available(reader::Command::ToggleFile, cx));
+            cx.notify();
+        });
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        window.draw(cx).clear(cx);
+        assert_ne!(window.find("diff-toggle-file").disabled(), Some(true));
+        window.click("diff-toggle-file", cx);
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        window.draw(cx).clear(cx);
+        assert_eq!(
+            window.find("diff-toggle-file").label(),
+            Some(t(cx, "diff-expand-file").as_str())
+        );
+        home.update(cx, |home, cx| {
+            let tab = home.active_git().unwrap();
+            let id = tab.selected.as_ref().unwrap();
+            assert!(tab.collapsed.contains(id));
+            assert!(
+                tab.cache[id]
+                    .block
+                    .as_ref()
+                    .unwrap()
+                    .state()
+                    .unwrap()
+                    .read(cx)
+                    .is_file_collapsed("a.rs")
+            );
+            let tab = home.git_mut().unwrap();
+            tab.cache.clear();
+            assert!(!home.reader_command_available(reader::Command::ToggleFile, cx));
+            cx.notify();
+        });
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        window.draw(cx).clear(cx);
+        assert_eq!(window.find("diff-toggle-file").disabled(), Some(true));
+        assert_eq!(
+            window.find("diff-toggle-file").label(),
+            Some(t(cx, "diff-collapse-file").as_str())
+        );
+    });
+}

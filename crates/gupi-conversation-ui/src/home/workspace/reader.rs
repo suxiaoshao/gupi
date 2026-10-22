@@ -255,7 +255,8 @@ impl HomeView {
             })
     }
     pub(super) fn reader_fold_button(&self, cx: &mut Context<Self>) -> Button {
-        let collapsed = self.reader_collapsed();
+        let enabled = self.reader_can_fold();
+        let collapsed = enabled && self.reader_collapsed();
         let label = t(
             cx,
             if collapsed {
@@ -272,12 +273,16 @@ impl HomeView {
             } else {
                 IconName::ChevronDown
             })
-            .disabled(self.reader_selected().is_none())
+            .disabled(!enabled)
             .tooltip(label.clone())
             .accessibility_label(label)
             .on_click(cx.listener(|home, _, window, cx| {
                 home.reader_command(Command::ToggleFile, window, cx)
             }))
+    }
+    fn reader_can_fold(&self) -> bool {
+        self.active_git().is_some_and(|tab| tab.can_fold())
+            || self.active_changes().is_some_and(|tab| tab.can_fold())
     }
     fn reader_selected(&self) -> Option<&String> {
         self.active_git()
@@ -390,6 +395,7 @@ impl HomeView {
     }
     pub(super) fn reader_command_available(&self, command: Command, cx: &App) -> bool {
         match command {
+            Command::ToggleFile => self.reader_can_fold(),
             Command::Split => !Options::narrow(
                 self.workspace_layout.main_width,
                 f32::from(cx.theme().font_size),

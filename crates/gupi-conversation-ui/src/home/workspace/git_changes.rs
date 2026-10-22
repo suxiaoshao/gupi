@@ -401,6 +401,16 @@ impl GitTab {
             })
             .flatten()
     }
+    pub(super) fn can_fold(&self) -> bool {
+        // The retained snapshot, not the incoming entry, owns the displayed body.
+        !self.loading
+            && !self.not_repository
+            && self
+                .selected
+                .as_ref()
+                .and_then(|id| self.cache.get(id))
+                .is_some_and(|loaded| loaded.block.is_some())
+    }
     pub(super) fn selected_entry(&self) -> Option<&Change> {
         self.all
             .iter()
@@ -872,11 +882,7 @@ impl HomeView {
             })
     }
     pub(super) fn render_git_list(&self, tab: &GitTab, cx: &mut Context<Self>) -> AnyElement {
-        let stats = tab
-            .all
-            .iter()
-            .filter_map(|e| e.file.stats())
-            .fold((0, 0), |(a, r), (x, y)| (a + x, r + y));
+        let stats = total_stats(tab.all.iter().map(|e| e.file.stats()));
         v_flex()
             .size_full()
             .min_h_0()
@@ -889,7 +895,9 @@ impl HomeView {
                     .border_b_1()
                     .border_color(cx.theme().border)
                     .child(div().text_sm().child(t(cx, "diff-files")))
-                    .child(reader::line_stats(stats.0, stats.1, cx))
+                    .when_some(stats, |row, (added, removed)| {
+                        row.child(reader::line_stats(added, removed, cx))
+                    })
                     .child(div().flex_1())
                     .child(self.git_view_button(cx))
                     .child(self.git_refresh_button(tab, cx)),
@@ -1109,6 +1117,14 @@ impl HomeView {
             .child(content)
             .into_any_element()
     }
+}
+// Like Zed, show only nonzero known-text totals; unknown entries contribute nothing.
+fn total_stats(stats: impl IntoIterator<Item = Option<(usize, usize)>>) -> Option<(usize, usize)> {
+    let total = stats
+        .into_iter()
+        .flatten()
+        .fold((0, 0), |(a, r), (x, y)| (a + x, r + y));
+    (total != (0, 0)).then_some(total)
 }
 fn source_order(source: ChangeSource) -> usize {
     match source {

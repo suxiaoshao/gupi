@@ -159,6 +159,17 @@ impl ChangesTab {
             cx.notify();
         });
     }
+    pub(super) fn can_fold(&self) -> bool {
+        self.in_scope
+            && self
+                .files
+                .iter()
+                .find(|file| Some(file.path()) == self.selected.as_deref())
+                .and_then(|file| self.states.get(file.path()))
+                .is_some_and(|state| {
+                    !state.limited && (state.combined.is_some() || !state.operations.is_empty())
+                })
+    }
     pub(super) fn combined_block(&self) -> Option<&DiffBlock> {
         self.selected
             .as_ref()

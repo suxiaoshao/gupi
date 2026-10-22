@@ -5,7 +5,7 @@ mod projection;
 use changes::navigator::Row;
 use gpui_kit::component::{input::Input, menu::DropdownMenu};
 use gupi_resources::git::{
-    Change, ChangeContent, ChangeKind, ChangeSource, ContentState, Repository,
+    Change, ChangeContent, ChangeKind, ChangeList, ChangeSource, ContentState, Repository,
 };
 use gupi_settings::layout::GitView;
 use messages::diff::DiffBlock;
@@ -17,11 +17,6 @@ use std::time::Duration;
 pub(super) const GIT_TAB: &str = "workspace:git";
 const CACHE_FILES: usize = 8;
 const HEADER_REM: f32 = 2.5;
-const SOURCES: [ChangeSource; 3] = [
-    ChangeSource::Staged,
-    ChangeSource::Unstaged,
-    ChangeSource::Untracked,
-];
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Entry {
     source: ChangeSource,
@@ -261,24 +256,21 @@ impl GitTab {
     }
     fn apply_files(
         &mut self,
-        results: Vec<(ChangeSource, Result<Vec<Change>, Failure>)>,
+        results: Vec<(ChangeSource, Vec<Change>, Option<Failure>)>,
         window: &mut Window,
         cx: &mut App,
     ) -> bool {
         let mut next = self.all.clone();
         let mut errors = self.group_errors.clone();
         let known_before = self.known_sources.clone();
-        for (source, result) in results {
-            match result {
-                Ok(files) => {
-                    self.known_sources.insert(source);
-                    next.retain(|e| e.source != source);
-                    next.extend(files.into_iter().map(|file| Entry { source, file }));
-                    errors.remove(&source);
-                }
-                Err(error) => {
-                    errors.insert(source, error);
-                }
+        for (source, files, error) in results {
+            self.known_sources.insert(source);
+            next.retain(|entry| entry.source != source);
+            next.extend(files.into_iter().map(|file| Entry { source, file }));
+            if let Some(error) = error {
+                errors.insert(source, error);
+            } else {
+                errors.remove(&source);
             }
         }
         next.sort_by(|a, b| {
@@ -322,6 +314,53 @@ impl GitTab {
             self.invalidate_body();
         }
         true
+    }
+    fn apply_refresh(
+        &mut self,
+        result: Result<Option<(Repository, [ChangeList; 3])>, gupi_resources::git::Error>,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.list_task = None;
+        self.refreshing = false;
+        self.loading = false;
+        match result {
+            Ok(Some((repo, results))) => {
+                if self.repository.as_ref().is_some_and(|old| *old != repo) {
+                    self.all.clear();
+                    self.directories_closed.clear();
+                    self.groups_closed.clear();
+                    self.cache.clear();
+                    self.invalidate_body();
+                }
+                self.repository = Some(repo);
+                self.error = None;
+                self.not_repository = false;
+                self.apply_files(
+                    results
+                        .into_iter()
+                        .map(|list| {
+                            let (source, files, error) = list.into_parts();
+                            (source, files, error.map(Failure::from))
+                        })
+                        .collect(),
+                    window,
+                    cx,
+                );
+            }
+            Ok(None) => {
+                self.directories_closed.clear();
+                self.groups_closed.clear();
+                self.not_repository = true;
+                self.repository = None;
+                self.all.clear();
+                self.cache.clear();
+                self.group_errors.clear();
+                self.invalidate_body();
+                self.sync_rows(window, cx);
+            }
+            Err(error) => self.error = Some(error.into()),
+        }
     }
     pub(super) fn neighbors(&self) -> (Option<String>, Option<String>) {
         let Some(ix) = self
@@ -572,16 +611,7 @@ impl HomeView {
                     let Some(repo) = gupi_resources::git::discover(&cwd).await? else {
                         return Ok(None);
                     };
-                    let mut results = Vec::new();
-                    for source in SOURCES {
-                        results.push((
-                            source,
-                            repo.changes(source)
-                                .await
-                                .map(|list| list.files().to_vec())
-                                .map_err(Failure::from),
-                        ));
-                    }
+                    let results = repo.changes().await?;
                     Ok::<_, gupi_resources::git::Error>(Some((repo, results)))
                 })
                 .await;
@@ -592,36 +622,7 @@ impl HomeView {
                 let Some(tab) = home.git_mut().filter(|t| t.generation == generation) else {
                     return;
                 };
-                tab.list_task = None;
-                tab.refreshing = false;
-                tab.loading = false;
-                match result {
-                    Ok(Some((repo, results))) => {
-                        if tab.repository.as_ref().is_some_and(|old| *old != repo) {
-                            tab.all.clear();
-                            tab.directories_closed.clear();
-                            tab.groups_closed.clear();
-                            tab.cache.clear();
-                            tab.invalidate_body();
-                        }
-                        tab.repository = Some(repo);
-                        tab.error = None;
-                        tab.not_repository = false;
-                        tab.apply_files(results, window, cx);
-                    }
-                    Ok(None) => {
-                        tab.directories_closed.clear();
-                        tab.groups_closed.clear();
-                        tab.not_repository = true;
-                        tab.repository = None;
-                        tab.all.clear();
-                        tab.cache.clear();
-                        tab.group_errors.clear();
-                        tab.invalidate_body();
-                        tab.sync_rows(window, cx);
-                    }
-                    Err(error) => tab.error = Some(error.into()),
-                }
+                tab.apply_refresh(result, window, cx);
                 home.load_git_file(window, cx);
                 cx.notify();
             });

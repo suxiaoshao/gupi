@@ -62,12 +62,16 @@ impl Change {
         self.stats
     }
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct ChangeList {
     source: ChangeSource,
     files: Vec<Change>,
+    stats_error: Option<Error>,
 }
 impl ChangeList {
+    pub fn into_parts(self) -> (ChangeSource, Vec<Change>, Option<Error>) {
+        (self.source, self.files, self.stats_error)
+    }
     pub fn source(&self) -> ChangeSource {
         self.source
     }
@@ -135,8 +139,14 @@ impl ChangeContent {
     }
 }
 impl Repository {
-    pub async fn changes(&self, source: ChangeSource) -> Result<ChangeList, Error> {
-        let out = checked(
+    /// All source memberships come from one status output. Statistics are best-effort
+    /// independent reads; their failure must never remove entries from the snapshot.
+    /// Returns staged, unstaged and untracked lists, in that order.
+    pub async fn changes(&self) -> Result<[ChangeList; 3], Error> {
+        self.changes_from_status(&self.status().await?).await
+    }
+    async fn status(&self) -> Result<Vec<u8>, Error> {
+        Ok(checked(
             self.root(),
             &[
                 "status",
@@ -147,34 +157,26 @@ impl Repository {
                 "--ignore-submodules=none",
             ],
         )
-        .await?;
-        let mut files = parse_status(&out.stdout, source)?;
+        .await?
+        .stdout)
+    }
+    async fn changes_from_status(&self, bytes: &[u8]) -> Result<[ChangeList; 3], Error> {
+        let mut lists = [
+            self.status_list(bytes, ChangeSource::Staged)?,
+            self.status_list(bytes, ChangeSource::Unstaged)?,
+            self.status_list(bytes, ChangeSource::Untracked)?,
+        ];
+        for list in &mut lists {
+            list.stats_error = self.add_stats(list).await.err();
+        }
+        Ok(lists)
+    }
+    fn status_list(&self, bytes: &[u8], source: ChangeSource) -> Result<ChangeList, Error> {
+        let mut files = parse_status(bytes, source)?;
         if files.len() > MAX_FILES {
             return Err(Error::TooLarge);
         }
-        let stats = if source != ChangeSource::Untracked {
-            let mut args = vec![
-                "diff",
-                "--no-ext-diff",
-                "--no-textconv",
-                "--no-color",
-                "--numstat",
-                "-z",
-                "--no-renames",
-            ];
-            if source == ChangeSource::Staged {
-                args.push("--cached");
-            }
-            numstats(&checked(self.root(), &args).await?.stdout)?
-        } else {
-            HashMap::new()
-        };
         for file in &mut files {
-            file.stats = if matches!(file.kind, ChangeKind::Conflict | ChangeKind::Special) {
-                None
-            } else {
-                stats.get(&file.path).copied().flatten()
-            };
             if file.path.to_str().is_none() {
                 continue;
             }
@@ -187,13 +189,40 @@ impl Repository {
                     .is_some_and(|m| !m.is_file() && !m.file_type().is_symlink())
             {
                 file.kind = ChangeKind::Special;
-                file.stats = None;
             }
             if source != ChangeSource::Staged {
                 file.stamp = stamp(&self.root.join(&file.path))?;
             }
         }
-        Ok(ChangeList { source, files })
+        Ok(ChangeList {
+            source,
+            files,
+            stats_error: None,
+        })
+    }
+    async fn add_stats(&self, list: &mut ChangeList) -> Result<(), Error> {
+        if list.source == ChangeSource::Untracked {
+            return Ok(());
+        }
+        let mut args = vec![
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--numstat",
+            "-z",
+            "--no-renames",
+        ];
+        if list.source == ChangeSource::Staged {
+            args.push("--cached");
+        }
+        let stats = numstats(&checked(self.root(), &args).await?.stdout)?;
+        for file in &mut list.files {
+            if !matches!(file.kind, ChangeKind::Conflict | ChangeKind::Special) {
+                file.stats = stats.get(&file.path).copied().flatten();
+            }
+        }
+        Ok(())
     }
     /// Metadata is checked before and after reading. Never mix a changed worktree
     /// body with a previously selected index/HEAD identity or count snapshot.
@@ -312,13 +341,9 @@ impl Repository {
         Ok(content)
     }
     async fn validate(&self, source: ChangeSource, file: &Change) -> Result<(), Error> {
-        if self
-            .changes(source)
-            .await?
-            .files
-            .iter()
-            .any(|current| current == file)
-        {
+        let mut current = self.status_list(&self.status().await?, source)?;
+        self.add_stats(&mut current).await?;
+        if current.files.iter().any(|entry| entry == file) {
             Ok(())
         } else {
             Err(Error::Changed)
@@ -555,6 +580,17 @@ mod tests {
             String::from_utf8_lossy(&output.stderr)
         );
     }
+    async fn read_changes(repo: &Repository, source: ChangeSource) -> ChangeList {
+        let list = repo
+            .changes()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|list| list.source() == source)
+            .unwrap();
+        assert!(list.stats_error.is_none());
+        list
+    }
     #[test]
     fn text_policy_bounds_bytes_lines_and_long_lines() {
         assert!(text_within_limits("let value = 1;\n"));
@@ -575,7 +611,7 @@ mod tests {
             git(root, &["add", "."]);
             let repo = discover(root).await.unwrap().unwrap();
             // An unborn HEAD has an empty staged baseline.
-            let staged = repo.changes(ChangeSource::Staged).await.unwrap();
+            let staged = read_changes(&repo, ChangeSource::Staged).await;
             let added = staged
                 .files()
                 .iter()
@@ -595,9 +631,7 @@ mod tests {
             std::fs::write(root.join("ignored"), "secret").unwrap();
             std::fs::write(root.join("new file.txt"), "new\n").unwrap();
             let index_before = std::fs::read(repo.git_dir().join("index")).unwrap();
-            let staged = repo.changes(ChangeSource::Staged).await.unwrap();
-            let unstaged = repo.changes(ChangeSource::Unstaged).await.unwrap();
-            let new = repo.changes(ChangeSource::Untracked).await.unwrap();
+            let [staged, unstaged, new] = repo.changes().await.unwrap();
             assert_eq!(new.files().len(), 1);
             let old = repo
                 .change_content(ChangeSource::Staged, &staged.files()[0])
@@ -658,7 +692,7 @@ mod tests {
             std::fs::write(root.join(".gitattributes"), "*.txt diff=fixture\n").unwrap();
             std::fs::write(root.join("huge"), vec![b'x'; MAX_TEXT + 1]).unwrap();
             let repo = discover(root).await.unwrap().unwrap();
-            let staged = repo.changes(ChangeSource::Staged).await.unwrap();
+            let staged = read_changes(&repo, ChangeSource::Staged).await;
             assert_eq!(staged.files().len(), 2);
             for (path, kind, old, new) in [
                 ("old.txt", ChangeKind::Deleted, "base\n", ""),
@@ -679,7 +713,7 @@ mod tests {
                 assert!(!patch.contains("rename from"));
                 assert!(!patch.contains("similarity index"));
             }
-            let list = repo.changes(ChangeSource::Unstaged).await.unwrap();
+            let list = read_changes(&repo, ChangeSource::Unstaged).await;
             for file in list.files() {
                 let body = repo
                     .change_content(ChangeSource::Unstaged, file)
@@ -694,7 +728,7 @@ mod tests {
                     assert!(body.disk_path().is_none());
                 }
             }
-            let list = repo.changes(ChangeSource::Untracked).await.unwrap();
+            let list = read_changes(&repo, ChangeSource::Untracked).await;
             let huge = list
                 .files()
                 .iter()
@@ -725,7 +759,7 @@ mod tests {
             std::os::unix::fs::symlink("/gupi-nonexistent-outside-target", root.join("link"))
                 .unwrap();
             let repo = discover(root).await.unwrap().unwrap();
-            let list = repo.changes(ChangeSource::Untracked).await.unwrap();
+            let list = read_changes(&repo, ChangeSource::Untracked).await;
             let file = list
                 .files()
                 .iter()
@@ -766,7 +800,7 @@ mod tests {
             // Even an explicit user rename setting cannot override the reader's policy.
             git(root, &["config", "diff.renames", "copies"]);
             let repo = discover(root).await.unwrap().unwrap();
-            let list = repo.changes(ChangeSource::Unstaged).await.unwrap();
+            let list = read_changes(&repo, ChangeSource::Unstaged).await;
             assert_eq!(list.files().len(), 2);
             for (path, kind, old, new) in [
                 ("old.txt", ChangeKind::Deleted, "same\n", ""),
@@ -810,7 +844,7 @@ mod tests {
             std::fs::create_dir(root.join("replaced")).unwrap();
             std::fs::write(root.join("replaced/child.txt"), "child\n").unwrap();
             let repo = discover(root).await.unwrap().unwrap();
-            let list = repo.changes(ChangeSource::Unstaged).await.unwrap();
+            let list = read_changes(&repo, ChangeSource::Unstaged).await;
             let file = list
                 .files()
                 .iter()
@@ -828,7 +862,7 @@ mod tests {
             );
             assert!(content.patch().unwrap().contains("-deleted text"));
             assert!(content.disk_path().is_none() && !file.can_open_worktree());
-            let untracked = repo.changes(ChangeSource::Untracked).await.unwrap();
+            let untracked = read_changes(&repo, ChangeSource::Untracked).await;
             assert_eq!(untracked.files().len(), 1);
             assert_eq!(untracked.files()[0].path(), Path::new("replaced/child.txt"));
         });
@@ -855,7 +889,7 @@ mod tests {
             }
             symlink("plain.txt", root.join("link")).unwrap();
             let repo = discover(root).await.unwrap().unwrap();
-            let list = repo.changes(ChangeSource::Untracked).await.unwrap();
+            let list = read_changes(&repo, ChangeSource::Untracked).await;
             for (path, mode) in [
                 ("plain.txt", "100644"),
                 ("other-exec.txt", "100644"),
@@ -924,7 +958,7 @@ mod tests {
                 if source == ChangeSource::Staged {
                     git(root, &["add", "mode.sh"]);
                 }
-                let list = repo.changes(source).await.unwrap();
+                let list = read_changes(&repo, source).await;
                 assert_eq!(list.files()[0].kind(), ChangeKind::Modified);
                 let content = repo.change_content(source, &list.files()[0]).await.unwrap();
                 assert_eq!(content.state(), ContentState::NoTextChanges);
@@ -989,7 +1023,7 @@ mod tests {
             let name = "line-\u{1}-é\n.txt";
             std::fs::write(source.path().join(name), "contents\n").unwrap();
             let repo = discover(source.path()).await.unwrap().unwrap();
-            let list = repo.changes(ChangeSource::Untracked).await.unwrap();
+            let list = read_changes(&repo, ChangeSource::Untracked).await;
             let content = repo
                 .change_content(ChangeSource::Untracked, &list.files()[0])
                 .await
@@ -1030,7 +1064,7 @@ mod tests {
                 if source == ChangeSource::Staged {
                     git(root, &["add", "."]);
                 }
-                let list = repo.changes(source).await.unwrap();
+                let list = read_changes(&repo, source).await;
                 let file = list.files().iter().find(|f| f.path() == path).unwrap();
                 let content = repo.change_content(source, file).await.unwrap();
                 assert_eq!(content.state(), ContentState::InvalidPath);
@@ -1058,7 +1092,7 @@ mod tests {
             std::fs::set_permissions(root.join("mode.sh"), std::fs::Permissions::from_mode(0o755))
                 .unwrap();
             let repo = discover(root).await.unwrap().unwrap();
-            let files = repo.changes(ChangeSource::Unstaged).await.unwrap();
+            let files = read_changes(&repo, ChangeSource::Unstaged).await;
             let content = repo
                 .change_content(ChangeSource::Unstaged, &files.files()[0])
                 .await
@@ -1101,7 +1135,7 @@ mod tests {
             );
             let repo = discover(root).await.unwrap().unwrap();
             for source in [ChangeSource::Staged, ChangeSource::Unstaged] {
-                let list = repo.changes(source).await.unwrap();
+                let list = read_changes(&repo, source).await;
                 let file = list
                     .files()
                     .iter()
@@ -1113,6 +1147,64 @@ mod tests {
                     ContentState::InvalidPath
                 );
             }
+        });
+    }
+    #[test]
+    fn staging_after_status_capture_cannot_drop_file_between_sources() {
+        smol::block_on(async {
+            let fixture = tempfile::tempdir().unwrap();
+            let root = fixture.path();
+            git(root, &["init", "--quiet"]);
+            std::fs::write(root.join("file.txt"), "base\n").unwrap();
+            git(root, &["add", "."]);
+            git(root, &["commit", "--quiet", "-m", "base"]);
+            std::fs::write(root.join("file.txt"), "changed\n").unwrap();
+            let repo = discover(root).await.unwrap().unwrap();
+            let status = repo.status().await.unwrap();
+            // A real index change between the shared status read and the later
+            // numstat queries must not decide whether the file exists in the list.
+            git(root, &["add", "."]);
+            let [staged, unstaged, untracked] = repo.changes_from_status(&status).await.unwrap();
+            assert!(staged.files().is_empty());
+            assert_eq!(unstaged.files().len(), 1);
+            assert_eq!(unstaged.files()[0].path(), Path::new("file.txt"));
+            assert!(untracked.files().is_empty());
+            let [staged, unstaged, _] = repo.changes().await.unwrap();
+            assert_eq!(staged.files().len(), 1);
+            assert!(unstaged.files().is_empty());
+        });
+    }
+    #[test]
+    fn statistics_failure_keeps_all_memberships_from_the_shared_status() {
+        smol::block_on(async {
+            let fixture = tempfile::tempdir().unwrap();
+            let root = fixture.path();
+            git(root, &["init", "--quiet"]);
+            std::fs::write(root.join("file.txt"), "base\n").unwrap();
+            git(root, &["add", "."]);
+            git(root, &["commit", "--quiet", "-m", "base"]);
+            std::fs::write(root.join("file.txt"), "index\n").unwrap();
+            git(root, &["add", "."]);
+            std::fs::write(root.join("file.txt"), "worktree\n").unwrap();
+            std::fs::write(root.join("new.txt"), "new\n").unwrap();
+            let repo = discover(root).await.unwrap().unwrap();
+            let status = repo.status().await.unwrap();
+            // Losing the repository after the one successful status read makes
+            // both real numstat commands fail, without invalidating its entries.
+            std::fs::rename(root.join(".git"), root.join("saved-git")).unwrap();
+            let [staged, unstaged, untracked] = repo.changes_from_status(&status).await.unwrap();
+            for list in [&staged, &unstaged] {
+                assert_eq!(list.files().len(), 1);
+                assert_eq!(list.files()[0].path(), Path::new("file.txt"));
+                assert!(list.files()[0].stats().is_none());
+                assert!(list.stats_error.is_some());
+            }
+            assert_eq!(staged.files()[0].index, unstaged.files()[0].index);
+            assert_eq!(untracked.files().len(), 1);
+            assert_eq!(untracked.files()[0].path(), Path::new("new.txt"));
+            assert!(untracked.stats_error.is_none());
+            // Failure of the status command itself is instead a whole-snapshot error.
+            assert!(repo.changes().await.is_err());
         });
     }
 }

@@ -1,4 +1,9 @@
 use super::*;
+const SOURCES: [ChangeSource; 3] = [
+    ChangeSource::Staged,
+    ChangeSource::Unstaged,
+    ChangeSource::Untracked,
+];
 use core::prelude::v1::test;
 use gpui_kit::component::{
     Root,
@@ -63,18 +68,21 @@ fn ready(home: &mut HomeView, window: &mut Window, cx: &mut Context<HomeView>) {
         vec![
             (
                 ChangeSource::Staged,
-                Ok(vec![Change::for_test("a.rs".into(), ChangeKind::Modified)]),
+                vec![Change::for_test("a.rs".into(), ChangeKind::Modified)],
+                None,
             ),
             (
                 ChangeSource::Unstaged,
-                Ok(["a.rs", "b.rs", "dir/c.rs"]
+                ["a.rs", "b.rs", "dir/c.rs"]
                     .into_iter()
                     .map(|p| Change::for_test(p.into(), ChangeKind::Modified))
-                    .collect()),
+                    .collect(),
+                None,
             ),
             (
                 ChangeSource::Untracked,
-                Ok(vec![Change::for_test("new.txt".into(), ChangeKind::Added)]),
+                vec![Change::for_test("new.txt".into(), ChangeKind::Added)],
+                None,
             ),
         ],
         window,
@@ -233,7 +241,7 @@ fn static_refresh_keeps_geometry_scroll_selection_and_pending_body(cx: &mut Test
             let extra = (0..100)
                 .map(|i| Change::for_test(format!("file-{i:03}.rs").into(), ChangeKind::Modified))
                 .collect();
-            tab.apply_files(vec![(ChangeSource::Untracked, Ok(extra))], window, cx);
+            tab.apply_files(vec![(ChangeSource::Untracked, extra, None)], window, cx);
             let id = tab.selected.clone().unwrap();
             let mut patch = String::from("--- a/a.rs\n+++ b/a.rs\n@@ -1,300 +1,300 @@\n");
             for i in 0..300 {
@@ -318,12 +326,12 @@ fn static_refresh_keeps_geometry_scroll_selection_and_pending_body(cx: &mut Test
                     .map(|s| {
                         (
                             s,
-                            Ok(tab
-                                .all
+                            tab.all
                                 .iter()
                                 .filter(|e| e.source == s)
                                 .map(|e| e.file.clone())
-                                .collect()),
+                                .collect(),
+                            None,
                         )
                     })
                     .collect();
@@ -390,11 +398,13 @@ fn changed_and_failed_snapshots_retain_current_body_until_ready(cx: &mut TestApp
                 vec![
                     (
                         ChangeSource::Staged,
-                        Ok(vec![Change::for_test("a.rs".into(), ChangeKind::Added)]),
+                        vec![Change::for_test("a.rs".into(), ChangeKind::Added)],
+                        Some(Failure::Query("numstat failed".into())),
                     ),
                     (
                         ChangeSource::Untracked,
-                        Err(Failure::Query("offline".into())),
+                        vec![Change::for_test("new.txt".into(), ChangeKind::Added)],
+                        None,
                     ),
                 ],
                 window,
@@ -412,7 +422,7 @@ fn changed_and_failed_snapshots_retain_current_body_until_ready(cx: &mut TestApp
             );
             assert_ne!(Some(&tab.cache[&id].entry), tab.selected_entry());
             assert!(tab.all.iter().any(|e| e.source == ChangeSource::Untracked));
-            assert!(tab.group_errors.contains_key(&ChangeSource::Untracked));
+            assert!(tab.group_errors.contains_key(&ChangeSource::Staged));
         })
     });
 }
@@ -461,7 +471,8 @@ fn redesign_copy_uses_displayed_snapshot_while_deletion_updates(cx: &mut TestApp
             tab.apply_files(
                 vec![(
                     ChangeSource::Staged,
-                    Ok(vec![Change::for_test("a.rs".into(), ChangeKind::Deleted)]),
+                    vec![Change::for_test("a.rs".into(), ChangeKind::Deleted)],
+                    None,
                 )],
                 window,
                 cx,
@@ -764,12 +775,12 @@ fn tree_unchanged_refresh_preserves_projection_scroll_and_prunes_removed_directo
                 .map(|source| {
                     (
                         source,
-                        Ok(tab
-                            .all
+                        tab.all
                             .iter()
                             .filter(|entry| entry.source == source)
                             .map(|entry| entry.file.clone())
-                            .collect()),
+                            .collect(),
+                        None,
                     )
                 })
                 .collect();
@@ -782,7 +793,7 @@ fn tree_unchanged_refresh_preserves_projection_scroll_and_prunes_removed_directo
                 tab.list.read(cx).scroll_handle().base_handle().offset(),
                 offset
             );
-            tab.apply_files(vec![(ChangeSource::Unstaged, Ok(vec![]))], window, cx);
+            tab.apply_files(vec![(ChangeSource::Unstaged, vec![], None)], window, cx);
             assert!(!tab.directories_closed.contains(&directory));
         })
     });
@@ -799,7 +810,7 @@ fn mode_only_body_has_localized_state_and_copies_original_metadata_patch(cx: &mu
                 let tab = home.git_mut().unwrap();
                 tab.loading = false;
                 tab.all.clear();
-                tab.apply_files(vec![(source, Ok(vec![file.clone()]))], window, cx);
+                tab.apply_files(vec![(source, vec![file.clone()], None)], window, cx);
                 let id = identity(source, file.path());
                 tab.selected = Some(id.clone());
                 let body = ChangeContent::for_test("same\n".into(), "same\n".into(), patch.into());
@@ -847,10 +858,8 @@ fn non_unicode_rows_keep_byte_identity_show_localized_state_and_disable_copy(
             tab.apply_files(
                 vec![(
                     ChangeSource::Untracked,
-                    Ok(vec![
-                        file.clone(),
-                        Change::for_test(displayed, ChangeKind::Added),
-                    ]),
+                    vec![file.clone(), Change::for_test(displayed, ChangeKind::Added)],
+                    None,
                 )],
                 window,
                 cx,
@@ -945,7 +954,8 @@ fn fold_tracks_displayed_snapshot_during_updates_and_errors(cx: &mut TestAppCont
             tab.apply_files(
                 vec![(
                     ChangeSource::Staged,
-                    Ok(vec![Change::for_test("a.rs".into(), ChangeKind::Special)]),
+                    vec![Change::for_test("a.rs".into(), ChangeKind::Special)],
+                    None,
                 )],
                 window,
                 cx,
@@ -1006,5 +1016,78 @@ fn fold_tracks_displayed_snapshot_during_updates_and_errors(cx: &mut TestAppCont
             window.find("diff-toggle-file").label(),
             Some(t(cx, "diff-collapse-file").as_str())
         );
+    });
+}
+
+#[gpui_kit::test]
+fn status_failure_preserves_complete_list_selection_and_body(cx: &mut TestAppContext) {
+    let (home, visual, _fixture) = mount(cx);
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            ready(home, window, cx);
+            let tab = home.git_mut().unwrap();
+            let all = tab.all.clone();
+            let selected = tab.selected.clone();
+            let rows = tab.rows.clone();
+            let body = tab.cache[selected.as_ref().unwrap()]
+                .block
+                .as_ref()
+                .unwrap()
+                .state()
+                .unwrap()
+                .entity_id();
+            let generation = tab.body_generation;
+            tab.refreshing = true;
+            tab.apply_refresh(Err(gupi_resources::git::Error::Timeout), window, cx);
+            assert_eq!(tab.all, all);
+            assert_eq!(tab.selected, selected);
+            assert!(Rc::ptr_eq(&tab.rows, &rows));
+            assert_eq!(tab.body_generation, generation);
+            assert_eq!(
+                tab.cache[selected.as_ref().unwrap()]
+                    .block
+                    .as_ref()
+                    .unwrap()
+                    .state()
+                    .unwrap()
+                    .entity_id(),
+                body
+            );
+            assert!(tab.error.is_some());
+            assert!(!tab.refreshing);
+        })
+    });
+}
+
+#[gpui_kit::test]
+fn statistics_failure_marks_group_without_retaining_obsolete_membership(cx: &mut TestAppContext) {
+    let (home, visual, _fixture) = mount(cx);
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            ready(home, window, cx);
+            let tab = home.git_mut().unwrap();
+            tab.apply_files(
+                vec![
+                    (
+                        ChangeSource::Staged,
+                        vec![Change::for_test("moved.rs".into(), ChangeKind::Added)],
+                        Some(Failure::Query("numstat failed".into())),
+                    ),
+                    (
+                        ChangeSource::Unstaged,
+                        vec![],
+                        Some(Failure::Query("numstat failed".into())),
+                    ),
+                    (ChangeSource::Untracked, vec![], None),
+                ],
+                window,
+                cx,
+            );
+            assert_eq!(tab.all.len(), 1);
+            assert_eq!(tab.all[0].source, ChangeSource::Staged);
+            assert_eq!(tab.all[0].file.path(), std::path::Path::new("moved.rs"));
+            assert_eq!(tab.group_errors.len(), 2);
+            assert!(tab.known_sources.contains(&ChangeSource::Unstaged));
+        })
     });
 }

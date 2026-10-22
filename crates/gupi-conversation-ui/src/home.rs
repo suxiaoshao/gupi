@@ -464,7 +464,6 @@ impl HomeView {
                             && changes.bodies.contains(&key)
                         {
                             this.sync_messages(&key, false, window, cx);
-                            this.check_run_file(window, cx);
                         }
                         for key in changes.sessions.keys() {
                             if !this.state.read(cx).sessions().contains_key(key) {
@@ -904,7 +903,6 @@ impl HomeView {
             )
         });
         self.sync_messages(&key, changed || force, window, cx);
-        self.check_run_file(window, cx);
         let view = self.views.get_mut(&key).unwrap();
         let Some(session) = self.state.read(cx).sessions().get(&key) else {
             return;

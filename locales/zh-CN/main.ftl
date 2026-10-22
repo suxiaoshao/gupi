@@ -1349,3 +1349,5 @@ workspace-close = 关闭工作区
 
 diff-invalid-path = 文件名不是有效 UTF-8，无法读取
 diff-no-text-changes = 没有文本改动
+
+diff-external-failed = 无法打开文件。文件可能已不存在，或没有可用的应用。

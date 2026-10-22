@@ -24,9 +24,6 @@ pub(in crate::home) struct ChangesTab {
     pub(super) states: HashMap<String, FileDiff>,
     pub(super) options: super::reader::Options,
     pub(super) collapsed: HashSet<String>,
-    pub(super) external: Option<PathBuf>,
-    external_task: Option<Task<()>>,
-    external_checked: Option<PathBuf>,
     filter: Entity<InputState>,
     filter_text: String,
     _filter_subscription: Subscription,
@@ -103,9 +100,6 @@ impl ChangesTab {
             states: HashMap::new(),
             options: Default::default(),
             collapsed: HashSet::new(),
-            external: None,
-            external_task: None,
-            external_checked: None,
             filter,
             filter_text: String::new(),
             _filter_subscription: subscription,
@@ -207,7 +201,6 @@ impl ChangesTab {
         let was_in_scope = self.in_scope;
         self.in_scope = owner.is_some();
         let Some(run) = owner else {
-            self.invalidate_external();
             self.sync_list(window, cx);
             self.restore_focus |= was_in_scope && self.contains_focus(window, cx);
             return;
@@ -238,7 +231,6 @@ impl ChangesTab {
         );
         self.files = Rc::new(files.to_vec());
         if selection_gone {
-            self.invalidate_external();
             let visible = self.visible_files();
             self.selected = visible
                 .get(position.min(visible.len().saturating_sub(1)))
@@ -250,11 +242,7 @@ impl ChangesTab {
         self.sync_list(window, cx);
         self.restore_focus |= (selection_gone || mode_changed) && focused;
     }
-    fn invalidate_external(&mut self) {
-        self.external = None;
-        self.external_task = None;
-        self.external_checked = None;
-    }
+
     fn prepare(&mut self, cx: &mut App) {
         if self.states.len() >= 16
             && let Some(path) = self
@@ -391,7 +379,6 @@ impl HomeView {
                 view.workspace.changes.len() - 1
             };
         let tab = &mut view.workspace.changes[index];
-        tab.invalidate_external();
         tab.selected = Some(path.to_owned());
         tab.prepare(cx);
         tab.sync_list(window, cx);
@@ -409,7 +396,6 @@ impl HomeView {
             self.fit_layout(window, cx);
             self.sync(false, window, cx);
         }
-        self.check_run_file(window, cx);
         if let Some(tab) = self.active_changes() {
             tab.focus_main(window, cx);
         }
@@ -440,13 +426,11 @@ impl HomeView {
                 .iter_mut()
                 .find(|tab| Some(&tab.id) == view.workspace.active.as_ref())
         {
-            tab.invalidate_external();
             tab.selected = Some(path);
             tab.prepare(cx);
             tab.sync_list(window, cx);
             tab.focus_main(window, cx);
         }
-        self.check_run_file(window, cx);
         self.apply_reader_options(cx);
         cx.notify();
     }
@@ -745,68 +729,13 @@ impl HomeView {
                 .iter()
                 .any(|f| Some(f.path()) == tab.selected.as_deref())
             {
-                tab.invalidate_external();
                 tab.selected = tab.visible_files().first().map(|f| f.path().to_owned());
             }
             tab.prepare(cx);
             tab.sync_list(window, cx);
         }
-        self.check_run_file(window, cx);
         self.apply_reader_options(cx);
         cx.notify();
-    }
-}
-
-impl HomeView {
-    pub(in crate::home) fn check_run_file(&mut self, window: &Window, cx: &mut Context<Self>) {
-        let Some(key) = self.shown_key.clone() else {
-            return;
-        };
-        let Some(cwd) = self.state.read(cx).current().map(|s| s.info().cwd.clone()) else {
-            return;
-        };
-        let Some(tab) = self.views.get_mut(&key).and_then(|v| {
-            v.workspace
-                .changes
-                .iter_mut()
-                .find(|t| Some(&t.id) == v.workspace.active.as_ref())
-        }) else {
-            return;
-        };
-        let candidate = tab
-            .in_scope
-            .then(|| tab.selected.as_ref().map(|p| cwd.join(p)))
-            .flatten();
-        if tab.external_checked == candidate {
-            return;
-        }
-        tab.invalidate_external();
-        let Some(path) = candidate else {
-            return;
-        };
-        tab.external_checked = Some(path.clone());
-        let selected = tab.selected.clone().unwrap();
-        let id = tab.id.clone();
-        let checked = path.clone();
-        tab.external_task = Some(cx.spawn_in(window, async move |home, cx| {
-            let available = cx
-                .background_spawn(async move { path.is_file().then_some(path) })
-                .await;
-            let _ = home.update(cx, |home, cx| {
-                if let Some(view) = home.views.get_mut(&key)
-                    && let Some(tab) = view.workspace.changes.iter_mut().find(|t| {
-                        t.id == id
-                            && t.in_scope
-                            && t.selected.as_ref() == Some(&selected)
-                            && t.external_checked.as_ref() == Some(&checked)
-                    })
-                {
-                    tab.external = available;
-                    tab.external_task = None;
-                    cx.notify();
-                }
-            });
-        }));
     }
 }
 

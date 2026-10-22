@@ -1,3 +1,4 @@
+mod external;
 pub(crate) mod instance;
 mod logging;
 pub(crate) mod menus;
@@ -49,6 +50,7 @@ pub(crate) fn init_capability_hosts(cx: &mut App) {
         shortcuts::cancel_preparation,
     ));
     cx.set_global(gupi_conversation_ui::host::Host::new(
+        external::open_file,
         temporary::paste_answer,
         temporary::hide,
         notifications::present,

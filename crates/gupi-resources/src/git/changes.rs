@@ -33,7 +33,6 @@ pub struct Change {
     index: String,
     mode: String,
     stamp: Option<(u64, Option<SystemTime>)>,
-    disk: bool,
 }
 impl Change {
     pub fn path(&self) -> &Path {
@@ -42,8 +41,10 @@ impl Change {
     pub fn kind(&self) -> ChangeKind {
         self.kind
     }
+    /// Path semantics only; disk availability is resolved by the actual open action.
     pub fn can_open_worktree(&self) -> bool {
-        self.disk && self.path.to_str().is_some()
+        self.path.to_str().is_some()
+            && !matches!(self.kind, ChangeKind::Deleted | ChangeKind::Special)
     }
     #[cfg(feature = "test-support")]
     pub fn for_test(path: PathBuf, kind: ChangeKind) -> Self {
@@ -55,7 +56,6 @@ impl Change {
             index: String::new(),
             mode: String::new(),
             stamp: None,
-            disk: false,
         }
     }
     pub fn stats(&self) -> Option<(usize, usize)> {
@@ -95,7 +95,6 @@ pub struct ChangeContent {
     patch: Option<String>,
     original: Option<String>,
     modified: Option<String>,
-    disk: Option<PathBuf>,
 }
 impl ChangeContent {
     #[cfg(feature = "test-support")]
@@ -109,7 +108,6 @@ impl ChangeContent {
             original: Some(original),
             modified: Some(modified),
             patch: Some(patch),
-            disk: None,
         }
     }
     #[cfg(feature = "test-support")]
@@ -119,7 +117,6 @@ impl ChangeContent {
             patch: None,
             original: None,
             modified: None,
-            disk: None,
         }
     }
     pub fn state(&self) -> ContentState {
@@ -133,9 +130,6 @@ impl ChangeContent {
     }
     pub fn modified(&self) -> Option<&str> {
         self.modified.as_deref()
-    }
-    pub fn disk_path(&self) -> Option<&Path> {
-        self.disk.as_deref()
     }
 }
 impl Repository {
@@ -181,7 +175,6 @@ impl Repository {
                 continue;
             }
             let metadata = std::fs::symlink_metadata(self.root.join(&file.path)).ok();
-            file.disk = metadata.as_ref().is_some_and(|m| m.is_file());
             if source != ChangeSource::Staged
                 && file.kind != ChangeKind::Deleted
                 && metadata
@@ -237,21 +230,15 @@ impl Repository {
                 patch: None,
                 original: None,
                 modified: None,
-                disk: None,
             });
         };
         self.validate(source, file).await?;
         let full = self.root.join(&file.path);
-        let disk = std::fs::symlink_metadata(&full)
-            .ok()
-            .filter(|m| m.is_file())
-            .map(|_| full.clone());
         let mut content = ChangeContent {
             state: ContentState::Text,
             patch: None,
             original: None,
             modified: None,
-            disk,
         };
         if file.kind == ChangeKind::Conflict {
             content.state = ContentState::Conflict;
@@ -494,7 +481,6 @@ fn parse_status(bytes: &[u8], source: ChangeSource) -> Result<Vec<Change>, Error
                         index: String::new(),
                         mode: String::new(),
                         stamp: None,
-                        disk: false,
                     });
                 }
                 continue;
@@ -511,7 +497,6 @@ fn parse_status(bytes: &[u8], source: ChangeSource) -> Result<Vec<Change>, Error
                         index: String::new(),
                         mode: String::new(),
                         stamp: None,
-                        disk: false,
                     });
                 }
                 continue;
@@ -543,7 +528,6 @@ fn parse_status(bytes: &[u8], source: ChangeSource) -> Result<Vec<Change>, Error
             index: value(parts[7])?,
             mode: value(parts[5])?,
             stamp: None,
-            disk: false,
         });
         if files.len() > MAX_FILES {
             return Err(Error::TooLarge);
@@ -762,7 +746,6 @@ mod tests {
                 }
                 if file.path() == Path::new("delete.txt") {
                     assert_eq!(body.original(), Some("base\n"));
-                    assert!(body.disk_path().is_none());
                 }
             }
             let list = read_changes(&repo, ChangeSource::Untracked).await;
@@ -819,7 +802,6 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(body.modified(), Some("/gupi-nonexistent-outside-target"));
-            assert!(body.disk_path().is_none());
         });
     }
 
@@ -898,7 +880,7 @@ mod tests {
                 (Some("deleted text\n"), Some(""))
             );
             assert!(content.patch().unwrap().contains("-deleted text"));
-            assert!(content.disk_path().is_none() && !file.can_open_worktree());
+            assert!(!file.can_open_worktree());
             let untracked = read_changes(&repo, ChangeSource::Untracked).await;
             assert_eq!(untracked.files().len(), 1);
             assert_eq!(untracked.files()[0].path(), Path::new("replaced/child.txt"));
@@ -1049,9 +1031,8 @@ mod tests {
                     b"1 M. N... 100644 100644 100644 1111 1111 bad-\xff.txt\0".as_slice(),
                 ),
             ] {
-                let mut files = parse_status(bytes, source).unwrap();
+                let files = parse_status(bytes, source).unwrap();
                 assert_eq!(files.len(), 1);
-                files[0].disk = true;
                 assert_eq!(files[0].path().as_os_str().as_bytes(), b"bad-\xff.txt");
                 assert!(!files[0].can_open_worktree());
                 let content = repo.change_content(source, &files[0]).await.unwrap();
@@ -1060,7 +1041,6 @@ mod tests {
                     content.patch().is_none()
                         && content.original().is_none()
                         && content.modified().is_none()
-                        && content.disk_path().is_none()
                 );
             }
         });

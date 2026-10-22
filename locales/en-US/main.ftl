@@ -1368,3 +1368,5 @@ workspace-close = Close workspace
 
 diff-invalid-path = The file name is not valid UTF-8 and cannot be read
 diff-no-text-changes = No text changes
+
+diff-external-failed = Could not open the file. It may no longer exist, or no application can open it.

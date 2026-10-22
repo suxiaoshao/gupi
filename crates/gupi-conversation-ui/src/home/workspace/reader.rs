@@ -1,6 +1,6 @@
 //! Shared reading policy for recorded and worktree changes; source data stays in adapters.
 use super::*;
-use gpui_kit::component::menu::DropdownMenu;
+use gpui_kit::component::{menu::DropdownMenu, notification::Notification};
 use messages::diff::DiffBlock;
 
 const SPLIT_MIN_REM: f32 = 48.;
@@ -363,20 +363,16 @@ impl HomeView {
 }
 
 impl HomeView {
-    fn reader_copy(&self, command: Command, cx: &App) -> Option<String> {
+    fn reader_copy(&self, command: Command) -> Option<String> {
         if let Some(tab) = self.active_git() {
             let entry = tab.selected_entry()?;
             if matches!(command, Command::CopyPath) {
                 return entry.path().to_str().map(str::to_owned);
             }
-            if matches!(command, Command::External) {
-                return tab.external_path().map(|p| p.display().to_string());
-            }
             let loaded = tab.selected.as_ref().and_then(|p| tab.cache.get(p))?;
             match command {
                 Command::CopyPatch => loaded.content.patch().map(str::to_owned),
                 Command::CopyContent => loaded.copy_content().map(str::to_owned),
-                Command::External => tab.external_path().map(|p| p.display().to_string()),
                 _ => None,
             }
         } else {
@@ -385,13 +381,24 @@ impl HomeView {
                 Command::CopyPath => tab.selected.clone(),
                 Command::CopyPatch => tab.combined_block()?.copy_patch(),
                 Command::CopyContent => tab.combined_block()?.copy_content(),
-                Command::External => tab.external.as_ref().map(|p| p.display().to_string()),
-                _ => {
-                    let _ = cx;
-                    None
-                }
+                _ => None,
             }
         }
+    }
+    fn reader_external_path(&self, cx: &App) -> Option<PathBuf> {
+        if let Some(tab) = self.active_git() {
+            return tab.external_path();
+        }
+        let tab = self.active_changes()?;
+        if !tab.in_scope {
+            return None;
+        }
+        let path = tab.selected.as_ref()?;
+        if path.contains('\0') {
+            return None;
+        }
+        let session = self.state.read(cx).current()?;
+        Some(session.info().cwd.join(path))
     }
     pub(super) fn reader_command_available(&self, command: Command, cx: &App) -> bool {
         match command {
@@ -400,8 +407,9 @@ impl HomeView {
                 self.workspace_layout.main_width,
                 f32::from(cx.theme().font_size),
             ),
-            Command::CopyPath | Command::CopyPatch | Command::CopyContent | Command::External => {
-                self.reader_copy(command, cx).is_some()
+            Command::External => self.reader_external_path(cx).is_some(),
+            Command::CopyPath | Command::CopyPatch | Command::CopyContent => {
+                self.reader_copy(command).is_some()
             }
             Command::Context => {
                 self.active_git().is_some_and(|t| {
@@ -432,12 +440,22 @@ impl HomeView {
             Command::CopyPath | Command::CopyPatch | Command::CopyContent | Command::External
         ) {
             if matches!(command, Command::External) {
-                if let Some(path) = self.active_git().and_then(|t| t.external_path()) {
-                    cx.open_with_system(&path);
-                } else if let Some(path) = self.active_changes().and_then(|t| t.external.as_ref()) {
-                    cx.open_with_system(path);
+                if let Some(path) = self.reader_external_path(cx) {
+                    let task = crate::host::open_file(path, cx);
+                    cx.spawn_in(window, async move |_, cx| {
+                        if let Err(error) = task.await {
+                            tracing::warn!(%error, "external file open failed");
+                            let _ = cx.update(|window, cx| {
+                                window.push_notification(
+                                    Notification::error(t(cx, "diff-external-failed")),
+                                    cx,
+                                );
+                            });
+                        }
+                    })
+                    .detach();
                 }
-            } else if let Some(text) = self.reader_copy(command, cx) {
+            } else if let Some(text) = self.reader_copy(command) {
                 cx.write_to_clipboard(ClipboardItem::new_string(text));
             }
             return;

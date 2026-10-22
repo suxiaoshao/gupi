@@ -1367,3 +1367,5 @@ workspace-close = Fechar espaço de trabalho
 
 diff-invalid-path = O nome do arquivo não é UTF-8 válido e não pode ser lido
 diff-no-text-changes = Nenhuma alteração de texto
+
+diff-external-failed = Não foi possível abrir o arquivo. Ele pode não existir mais ou não haver um aplicativo disponível.

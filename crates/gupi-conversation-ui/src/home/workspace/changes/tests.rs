@@ -88,92 +88,26 @@ fn mount(
 }
 
 #[gpui_kit::test]
-fn implicit_run_selection_never_keeps_another_files_external_path(cx: &mut TestAppContext) {
+fn external_open_uses_recorded_path_without_disk_cache_and_reports_failure(
+    cx: &mut TestAppContext,
+) {
     let (home, visual, fixture) = mount(cx, 1);
+    std::fs::remove_file(fixture.path().join("a.rs")).unwrap();
     visual.update(|window, cx| {
         home.update(cx, |home, cx| {
-            let tab = home
-                .views
-                .get_mut("fixture")
-                .unwrap()
-                .workspace
-                .changes
-                .first_mut()
-                .unwrap();
-            tab.external = Some(fixture.path().join("a.rs"));
-            tab.filter
-                .update(cx, |input, cx| input.set_value("b.rs", window, cx));
-            home.filter_reader(window, cx);
-            assert_eq!(
-                home.active_changes().unwrap().selected.as_deref(),
-                Some("b.rs")
-            );
-            assert!(home.active_changes().unwrap().external.is_none());
-        })
+            let command = super::super::reader::Command::External;
+            assert!(home.reader_command_available(command, cx));
+            // The headless native host rejects opening without launching an application.
+            home.reader_command(command, window, cx);
+        });
     });
     visual.run_until_parked();
     visual.update(|window, cx| {
+        assert_eq!(window.notifications(cx).len(), 1);
         home.update(cx, |home, cx| {
-            assert_eq!(
-                home.active_changes().unwrap().external.as_deref(),
-                Some(fixture.path().join("b.rs").as_path())
-            );
-            let tab = home
-                .views
-                .get_mut("fixture")
-                .unwrap()
-                .workspace
-                .changes
-                .first_mut()
-                .unwrap();
-            tab.filter
-                .update(cx, |input, cx| input.set_value("missing", window, cx));
             home.filter_reader(window, cx);
-            assert!(home.active_changes().unwrap().selected.is_none());
-            assert!(home.active_changes().unwrap().external.is_none());
-            assert!(!home.reader_command_available(super::super::reader::Command::External, cx));
-            let tab = home
-                .views
-                .get_mut("fixture")
-                .unwrap()
-                .workspace
-                .changes
-                .first_mut()
-                .unwrap();
-            tab.filter
-                .update(cx, |input, cx| input.set_value("", window, cx));
-            home.filter_reader(window, cx);
-            home.select_change_file("a.rs".into(), window, cx);
-        })
-    });
-    visual.run_until_parked();
-    visual.update(|window, cx| {
-        home.update(cx, |home, cx| {
-            assert_eq!(
-                home.active_changes().unwrap().external.as_deref(),
-                Some(fixture.path().join("a.rs").as_path())
-            );
-            home.state.update(cx, |state, _| {
-                state
-                    .sessions_for_test()
-                    .get_mut("fixture")
-                    .unwrap()
-                    .replace_entries_for_test(records(&["b.rs"], 1))
-            });
-            home.sync(true, window, cx);
-            assert_eq!(
-                home.active_changes().unwrap().selected.as_deref(),
-                Some("b.rs")
-            );
-            assert!(home.active_changes().unwrap().external.is_none());
-        })
-    });
-    visual.run_until_parked();
-    visual.update(|_, cx| {
-        assert_eq!(
-            home.read(cx).active_changes().unwrap().external.as_deref(),
-            Some(fixture.path().join("b.rs").as_path())
-        )
+            assert!(home.reader_command_available(super::super::reader::Command::External, cx));
+        });
     });
 }
 

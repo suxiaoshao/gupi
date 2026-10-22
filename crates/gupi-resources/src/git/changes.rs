@@ -1298,7 +1298,7 @@ mod tests {
                 "text.raw",
                 "text.cv",
                 "plain.txt",
-                "nul.dat",
+                "contains-nul.dat",
                 "invalid.dat",
                 "large.dat",
             ] {
@@ -1314,7 +1314,13 @@ mod tests {
             for name in ["text.dat", "text.raw", "text.cv", "plain.txt"] {
                 std::fs::write(root.join(name), "new\n").unwrap();
             }
-            std::fs::write(root.join("nul.dat"), b"new\0\n").unwrap();
+            // NUL (even with an extension) is a Windows device name, so use an
+            // ordinary filename and verify the actual binary fixture reached disk.
+            std::fs::write(root.join("contains-nul.dat"), b"new\0\n").unwrap();
+            assert_eq!(
+                std::fs::read(root.join("contains-nul.dat")).unwrap(),
+                b"new\0\n"
+            );
             std::fs::write(root.join("invalid.dat"), b"new\xff\n").unwrap();
             std::fs::write(root.join("large.dat"), vec![b'x'; MAX_TEXT + 1]).unwrap();
             let repo = discover(root).await.unwrap().unwrap();
@@ -1328,7 +1334,13 @@ mod tests {
                         .files()
                         .iter()
                         .find(|file| file.path() == Path::new(name))
-                        .unwrap();
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "missing {name:?} in {:?} list: {:?}",
+                                list.source(),
+                                list.files()
+                            )
+                        });
                     assert_eq!(
                         file.stats(),
                         if name == "plain.txt" {
@@ -1348,7 +1360,7 @@ mod tests {
                     );
                 }
                 for (name, state) in [
-                    ("nul.dat", ContentState::Binary),
+                    ("contains-nul.dat", ContentState::Binary),
                     ("invalid.dat", ContentState::Binary),
                     ("large.dat", ContentState::TooLarge),
                 ] {
@@ -1356,7 +1368,13 @@ mod tests {
                         .files()
                         .iter()
                         .find(|file| file.path() == Path::new(name))
-                        .unwrap();
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "missing {name:?} in {:?} list: {:?}",
+                                list.source(),
+                                list.files()
+                            )
+                        });
                     let body = repo.change_content(source, file).await.unwrap();
                     assert_eq!(body.state(), state);
                     assert!(body.patch().is_none());
@@ -1369,7 +1387,13 @@ mod tests {
                 .files()
                 .iter()
                 .find(|file| file.path() == Path::new("new.dat"))
-                .unwrap();
+                .unwrap_or_else(|| {
+                    panic!(
+                        "missing new.dat in {:?} list: {:?}",
+                        list.source(),
+                        list.files()
+                    )
+                });
             let body = repo
                 .change_content(ChangeSource::Untracked, file)
                 .await

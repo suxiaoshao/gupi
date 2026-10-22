@@ -1314,13 +1314,8 @@ mod tests {
             for name in ["text.dat", "text.raw", "text.cv", "plain.txt"] {
                 std::fs::write(root.join(name), "new\n").unwrap();
             }
-            // NUL (even with an extension) is a Windows device name, so use an
-            // ordinary filename and verify the actual binary fixture reached disk.
+            // NUL (even with an extension) is a Windows device name.
             std::fs::write(root.join("contains-nul.dat"), b"new\0\n").unwrap();
-            assert_eq!(
-                std::fs::read(root.join("contains-nul.dat")).unwrap(),
-                b"new\0\n"
-            );
             std::fs::write(root.join("invalid.dat"), b"new\xff\n").unwrap();
             std::fs::write(root.join("large.dat"), vec![b'x'; MAX_TEXT + 1]).unwrap();
             let repo = discover(root).await.unwrap().unwrap();

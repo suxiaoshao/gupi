@@ -169,6 +169,8 @@ impl HomeView {
                 if !self.show_sidebar {
                     self.focus_composer(window, cx);
                 }
+                self.fit_layout(window, cx);
+                self.sync_worktree(window, cx);
             }
             Kind::History => self.toggle_history(window, cx),
             Kind::ProjectFiles => {

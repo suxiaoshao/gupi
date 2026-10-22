@@ -375,6 +375,7 @@ impl HomeView {
         self.pane_layout.allocate();
         self.fit_workspace_layout(window, cx);
         self.focus_composer(window, cx);
+        self.sync_worktree(window, cx);
         cx.notify();
     }
     pub(super) fn ensure_panel(
@@ -796,6 +797,7 @@ impl HomeView {
         if focused {
             self.focus_panel(Panel::Workspace, window, cx);
         }
+        self.sync_worktree(window, cx);
         cx.notify();
     }
     pub(super) fn render_file_workspace(

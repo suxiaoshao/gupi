@@ -556,35 +556,18 @@ impl HomeView {
         if cx.is_test() || !visible {
             return;
         }
-        let Some(key) = self.shown_key.clone() else {
-            return;
-        };
         let Some(tab) = self.git_mut() else {
             return;
         };
         if tab.poll.is_some() {
             return;
         }
+        // sync_worktree alone owns eligibility and cancels the task when it changes.
         tab.poll = Some(cx.spawn_in(window, async move |home, cx| {
             loop {
-                if !home
-                    .update_in(cx, |home, window, cx| {
-                        if home.shown_key.as_ref() != Some(&key)
-                            || home.active_git().is_none()
-                            || !home.notification_visible
-                            || !window.is_visible()
-                            || !window.is_window_active()
-                            || !home.pane_layout.visible(Panel::Workspace)
-                        {
-                            return false;
-                        }
-                        home.refresh_worktree(window, cx);
-                        true
-                    })
-                    .unwrap_or(false)
-                {
-                    break;
-                }
+                let _ = home.update_in(cx, |home, window, cx| {
+                    home.refresh_worktree(window, cx);
+                });
                 cx.background_executor().timer(Duration::from_secs(5)).await;
             }
         }));

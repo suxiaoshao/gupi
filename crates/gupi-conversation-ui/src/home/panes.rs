@@ -242,6 +242,7 @@ impl HomeView {
         }
     }
     fn drag_pane_to(&mut self, side: Side, x: f32, window: &mut Window, cx: &mut Context<Self>) {
+        let visible = self.pane_layout.visible(Panel::Workspace);
         if side == Side::Right {
             let requested = f32::from(window.viewport_size().width) - x;
             self.workspace_layout = workspace::layout::Layout::new(
@@ -254,6 +255,9 @@ impl HomeView {
         } else {
             self.pane_layout.drag_to(side, x);
             self.fit_workspace_layout(window, cx);
+        }
+        if visible != self.pane_layout.visible(Panel::Workspace) {
+            self.sync_worktree(window, cx);
         }
     }
     pub(super) fn resizing_sidebar(&self) -> bool {
@@ -332,6 +336,7 @@ impl HomeView {
             self.pane_layout
                 .restore_preferences(cx.global::<layout::LayoutState>());
             self.fit_workspace_layout(window, cx);
+            self.sync_worktree(window, cx);
             cx.stop_active_drag(window);
             cx.notify();
             return;
@@ -353,6 +358,7 @@ impl HomeView {
         self.pane_layout
             .restore_preferences(cx.global::<layout::LayoutState>());
         self.fit_workspace_layout(window, cx);
+        self.sync_worktree(window, cx);
         cx.stop_active_drag(window);
         cx.notify();
     }

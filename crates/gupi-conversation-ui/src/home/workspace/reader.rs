@@ -212,13 +212,15 @@ impl HomeView {
                         &entity,
                         cx,
                     ))
-                    .item(home.reader_menu_item(
-                        Command::CopyPatch,
-                        "diff-copy-patch",
-                        false,
-                        &entity,
-                        cx,
-                    ))
+                    .when(home.active_git().is_none(), |menu| {
+                        menu.item(home.reader_menu_item(
+                            Command::CopyPatch,
+                            "diff-copy-patch",
+                            false,
+                            &entity,
+                            cx,
+                        ))
+                    })
                     .item(home.reader_menu_item(
                         Command::CopyContent,
                         "diff-copy-content",
@@ -338,13 +340,12 @@ impl HomeView {
             f32::from(cx.theme().font_size),
         );
         if let Some(view) = self.shown_key.as_ref().and_then(|k| self.views.get_mut(k)) {
-            if let Some(tab) = &view.workspace.git {
-                for (path, body) in &tab.cache {
-                    if let Some(block) = &body.block {
-                        tab.options
-                            .apply(block, narrow, tab.collapsed.contains(path), cx);
-                    }
-                }
+            if let Some(tab) = &view.workspace.git
+                && let Some((path, body)) = &tab.body
+                && let Some(block) = &body.block
+            {
+                tab.options
+                    .apply(block, narrow, tab.collapsed.contains(path), cx);
             }
             for tab in &view.workspace.changes {
                 for (path, body) in &tab.states {
@@ -369,9 +370,9 @@ impl HomeView {
             if matches!(command, Command::CopyPath) {
                 return entry.path().to_str().map(str::to_owned);
             }
-            let loaded = tab.selected.as_ref().and_then(|p| tab.cache.get(p))?;
+            let loaded = tab.current_body()?;
             match command {
-                Command::CopyPatch => loaded.content.patch().map(str::to_owned),
+                Command::CopyPatch => None,
                 Command::CopyContent => loaded.copy_content().map(str::to_owned),
                 _ => None,
             }
@@ -413,9 +414,7 @@ impl HomeView {
             }
             Command::Context => {
                 self.active_git().is_some_and(|t| {
-                    t.selected
-                        .as_ref()
-                        .and_then(|p| t.cache.get(p))
+                    t.current_body()
                         .is_some_and(|b| b.content.original().is_some())
                 }) || self
                     .active_changes()

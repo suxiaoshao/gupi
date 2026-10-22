@@ -88,21 +88,27 @@ fn ready(home: &mut HomeView, window: &mut Window, cx: &mut Context<HomeView>) {
         window,
         cx,
     );
-    for entry in &tab.all {
-        let path = entry.file.path().to_str().unwrap();
-        let patch = format!("--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n-old\n+new\n");
-        tab.cache.insert(
-            entry.id(),
-            Loaded {
-                entry: entry.file.clone(),
-                content: ChangeContent::for_test("old\n".into(), "new\n".into(), patch.clone()),
-                block: Some(DiffBlock::patch(&patch, cx)),
-            },
-        );
-    }
+    display(
+        tab,
+        ChangeContent::for_test("old\n".into(), "new\n".into()),
+        cx,
+    );
     home.apply_reader_options(cx);
     cx.notify();
 }
+fn display(tab: &mut GitTab, content: ChangeContent, cx: &mut App) {
+    let id = tab.selected.clone().unwrap();
+    let entry = tab.selected_entry().unwrap().clone();
+    let comparison = tab.current_body().map(|body| body.normalized.clone());
+    let prepared = Prepared::new(entry.path(), content, comparison.as_ref()).unwrap();
+    let previous = tab
+        .body
+        .take()
+        .filter(|(old, _)| *old == id)
+        .map(|(_, loaded)| loaded);
+    tab.body = Some((id, Loaded::new(entry, prepared, previous, cx)));
+}
+
 #[gpui_kit::test]
 fn grouped_git_search_navigation_and_empty_sections(cx: &mut TestAppContext) {
     let (home, visual, _fixture) = mount(cx);
@@ -159,7 +165,9 @@ fn reader_preferences_preserve_selection_and_collapse_only_current_file(cx: &mut
             ready(home, window, cx);
             let tab = home.active_git().unwrap();
             let id = tab.selected.clone().unwrap();
-            let state = tab.cache[&id]
+            let state = tab
+                .current_body()
+                .unwrap()
                 .block
                 .as_ref()
                 .unwrap()
@@ -168,7 +176,7 @@ fn reader_preferences_preserve_selection_and_collapse_only_current_file(cx: &mut
                 .clone();
             state.update(cx, |s, cx| {
                 s.set_selected_lines(
-                    Some(DiffLineRange::new("a.rs", DiffSide::Modified, 1, 1)),
+                    Some(DiffLineRange::new("file", DiffSide::Modified, 1, 1)),
                     cx,
                 )
             });
@@ -187,25 +195,27 @@ fn reader_preferences_preserve_selection_and_collapse_only_current_file(cx: &mut
             home.reader_command(reader::Command::Word, window, cx);
             assert_eq!(state.read(cx).selected_lines(), selected);
             home.reader_command(reader::Command::ToggleFile, window, cx);
-            assert!(state.read(cx).is_file_collapsed("a.rs"));
+            assert!(state.read(cx).is_file_collapsed("file"));
             home.select_git_file(
                 identity(ChangeSource::Unstaged, std::path::Path::new("b.rs")),
                 window,
                 cx,
             );
-            let tab = home.active_git().unwrap();
-            let block = tab.cache[tab.selected.as_ref().unwrap()]
-                .block
-                .as_ref()
-                .unwrap();
-            assert!(!block.state().unwrap().read(cx).is_file_collapsed("b.rs"));
+            let tab = home.git_mut().unwrap();
+            display(
+                tab,
+                ChangeContent::for_test("old\n".into(), "new\n".into()),
+                cx,
+            );
+            let block = tab.current_body().unwrap().block.as_ref().unwrap();
+            assert!(!block.state().unwrap().read(cx).is_file_collapsed("file"));
             home.select_git_file(id.clone(), window, cx);
             assert!(home.active_git().unwrap().collapsed.contains(&id));
         })
     });
 }
 #[gpui_kit::test]
-fn filter_replaces_failed_body_with_cached_selection(cx: &mut TestAppContext) {
+fn filter_discards_failed_body_on_selection_change(cx: &mut TestAppContext) {
     let (home, visual, _fixture) = mount(cx);
     visual.update(|window, cx| {
         home.update(cx, |home, cx| {
@@ -242,18 +252,18 @@ fn static_refresh_keeps_geometry_scroll_selection_and_pending_body(cx: &mut Test
                 .map(|i| Change::for_test(format!("file-{i:03}.rs").into(), ChangeKind::Modified))
                 .collect();
             tab.apply_files(vec![(ChangeSource::Untracked, extra, None)], window, cx);
-            let id = tab.selected.clone().unwrap();
-            let mut patch = String::from("--- a/a.rs\n+++ b/a.rs\n@@ -1,300 +1,300 @@\n");
-            for i in 0..300 {
-                patch.push_str(&format!("-old row {i}\n+new row {i}\n"));
-            }
-            let loaded = tab.cache.get_mut(&id).unwrap();
-            loaded.content = ChangeContent::for_test("old".into(), "new".into(), patch.clone());
-            loaded.block = Some(DiffBlock::patch(&patch, cx));
+            let old = (0..300)
+                .map(|i| format!("old row {i}\n"))
+                .collect::<String>();
+            let new = (0..300)
+                .map(|i| format!("new row {i}\n"))
+                .collect::<String>();
+            display(tab, ChangeContent::for_test(old, new), cx);
+            let loaded = tab.current_body().unwrap();
             let state = loaded.block.as_ref().unwrap().state().unwrap().clone();
             state.update(cx, |s, cx| {
                 s.set_selected_lines(
-                    Some(DiffLineRange::new("a.rs", DiffSide::Modified, 1, 1)),
+                    Some(DiffLineRange::new("file", DiffSide::Modified, 1, 1)),
                     cx,
                 )
             });
@@ -336,12 +346,28 @@ fn static_refresh_keeps_geometry_scroll_selection_and_pending_body(cx: &mut Test
                     })
                     .collect();
                 tab.body_task = Some(Task::ready(()));
-                tab.body_target = Some((
-                    tab.selected.clone().unwrap(),
-                    tab.selected_entry().unwrap().clone(),
-                ));
                 assert!(!tab.apply_files(results, window, cx));
                 assert!(tab.body_task.is_some());
+                let same = tab.current_body().unwrap().content.clone();
+                let crlf = ChangeContent::for_test(
+                    same.original()
+                        .unwrap()
+                        .replace("\r\n", "\n")
+                        .replace('\n', "\r\n"),
+                    same.modified()
+                        .unwrap()
+                        .replace("\r\n", "\n")
+                        .replace('\n', "\r\n"),
+                );
+                display(tab, crlf, cx);
+                assert!(
+                    tab.current_body()
+                        .unwrap()
+                        .content
+                        .modified()
+                        .unwrap()
+                        .contains("\r\n")
+                );
                 tab.refreshing = false;
                 cx.notify();
             })
@@ -353,7 +379,8 @@ fn static_refresh_keeps_geometry_scroll_selection_and_pending_body(cx: &mut Test
             assert!(Rc::ptr_eq(&rows, &tab.rows));
             assert_eq!(tab.body_generation, generation);
             assert_eq!(
-                tab.cache[tab.selected.as_ref().unwrap()]
+                tab.current_body()
+                    .unwrap()
                     .block
                     .as_ref()
                     .unwrap()
@@ -386,8 +413,9 @@ fn changed_and_failed_snapshots_retain_current_body_until_ready(cx: &mut TestApp
         home.update(cx, |home, cx| {
             ready(home, window, cx);
             let tab = home.git_mut().unwrap();
-            let id = tab.selected.clone().unwrap();
-            let state = tab.cache[&id]
+            let state = tab
+                .current_body()
+                .unwrap()
                 .block
                 .as_ref()
                 .unwrap()
@@ -411,7 +439,8 @@ fn changed_and_failed_snapshots_retain_current_body_until_ready(cx: &mut TestApp
                 cx,
             );
             assert_eq!(
-                tab.cache[&id]
+                tab.current_body()
+                    .unwrap()
                     .block
                     .as_ref()
                     .unwrap()
@@ -420,7 +449,10 @@ fn changed_and_failed_snapshots_retain_current_body_until_ready(cx: &mut TestApp
                     .entity_id(),
                 state
             );
-            assert_ne!(Some(&tab.cache[&id].entry), tab.selected_entry());
+            assert_ne!(
+                Some(&tab.current_body().unwrap().entry),
+                tab.selected_entry()
+            );
             assert!(tab.all.iter().any(|e| e.source == ChangeSource::Untracked));
             assert!(tab.group_errors.contains_key(&ChangeSource::Staged));
         })
@@ -439,19 +471,14 @@ fn redesign_collapsing_filtered_group_preserves_body_request(cx: &mut TestAppCon
             home.filter_git(window, cx);
             let tab = home.git_mut().unwrap();
             let id = tab.selected.clone().unwrap();
-            let entry = tab.selected_entry().unwrap().clone();
-            let other = identity(ChangeSource::Unstaged, std::path::Path::new("a.rs"));
-            tab.cache.remove(&other);
             tab.body_task = Some(Task::ready(()));
-            tab.body_target = Some((id.clone(), entry));
             let generation = tab.body_generation;
             home.toggle_git_group(Group::Staged, window, cx);
             let tab = home.active_git().unwrap();
             assert_eq!(tab.selected.as_ref(), Some(&id));
             assert!(tab.body_task.is_some());
-            assert_eq!(tab.body_target.as_ref().map(|(id, _)| id), Some(&id));
             assert_eq!(tab.body_generation, generation);
-            assert!(!tab.cache.contains_key(&other));
+            assert_eq!(tab.body.as_ref().map(|(id, _)| id), Some(&id));
         })
     });
 }
@@ -462,12 +489,8 @@ fn redesign_copy_uses_displayed_snapshot_while_deletion_updates(cx: &mut TestApp
         home.update(cx, |home, cx| {
             ready(home, window, cx);
             let tab = home.git_mut().unwrap();
-            let id = tab.selected.clone().unwrap();
-            tab.cache.get_mut(&id).unwrap().content = ChangeContent::for_test(
-                "old original\n".into(),
-                "displayed modified\n".into(),
-                "fixture patch".into(),
-            );
+            tab.body.as_mut().unwrap().1.content =
+                ChangeContent::for_test("old original\n".into(), "displayed modified\n".into());
             tab.apply_files(
                 vec![(
                     ChangeSource::Staged,
@@ -575,9 +598,14 @@ fn file_header_separates_reading_options_and_actions(cx: &mut TestAppContext) {
     visual.run_until_parked();
     visual.update(|window, cx| {
         window.draw(cx).clear(cx);
-        for key in ["diff-copy-path", "diff-copy-patch", "diff-copy-content"] {
+        for key in ["diff-copy-path", "diff-copy-content"] {
             assert!(window.try_find_by_label(&t(cx, key)).is_some());
         }
+        assert!(
+            window
+                .try_find_by_label(&t(cx, "diff-copy-patch"))
+                .is_none()
+        );
         assert_eq!(window.find_all_by_label(&t(cx, "diff-external")).len(), 2);
         home.update(cx, |view, cx| {
             assert!(matches!(
@@ -618,8 +646,16 @@ fn tree_first_projection_keyboard_search_and_hidden_file_neighbors(cx: &mut Test
                     .any(|i| matches!(i, Item::Directory(..)))
             );
             home.select_git_file(file.clone(), window, cx);
+            display(
+                home.git_mut().unwrap(),
+                ChangeContent::for_test("old\n".into(), "new\n".into()),
+                cx,
+            );
             home.active_git().unwrap().focus_list(window, cx);
-            home.active_git().unwrap().cache[&file]
+            home.active_git()
+                .unwrap()
+                .current_body()
+                .unwrap()
                 .block
                 .as_ref()
                 .unwrap()
@@ -663,7 +699,13 @@ fn tree_first_projection_keyboard_search_and_hidden_file_neighbors(cx: &mut Test
             let tab = home.active_git().unwrap();
             assert_eq!(tab.selected.as_ref(), Some(&file));
             assert_eq!(
-                tab.cache[&file].block.as_ref().unwrap().state().unwrap(),
+                tab.current_body()
+                    .unwrap()
+                    .block
+                    .as_ref()
+                    .unwrap()
+                    .state()
+                    .unwrap(),
                 &body
             );
             assert!(!tab.rows.iter().any(|row| row.path == file));
@@ -712,7 +754,10 @@ fn tree_first_projection_keyboard_search_and_hidden_file_neighbors(cx: &mut Test
             );
             home.set_git_view(GitView::List, window, cx);
             assert_eq!(
-                home.active_git().unwrap().cache[&file]
+                home.active_git()
+                    .unwrap()
+                    .current_body()
+                    .unwrap()
                     .block
                     .as_ref()
                     .unwrap()
@@ -800,9 +845,8 @@ fn tree_unchanged_refresh_preserves_projection_scroll_and_prunes_removed_directo
 }
 
 #[gpui_kit::test]
-fn mode_only_body_has_localized_state_and_copies_original_metadata_patch(cx: &mut TestAppContext) {
+fn equal_text_body_has_localized_state_without_git_patch_action(cx: &mut TestAppContext) {
     let (home, visual, _fixture) = mount(cx);
-    let patch = "diff --git a/mode.sh b/mode.sh\nold mode 100644\nnew mode 100755\n";
     for source in [ChangeSource::Unstaged, ChangeSource::Staged] {
         visual.update(|window, cx| {
             home.update(cx, |home, cx| {
@@ -813,15 +857,12 @@ fn mode_only_body_has_localized_state_and_copies_original_metadata_patch(cx: &mu
                 tab.apply_files(vec![(source, vec![file.clone()], None)], window, cx);
                 let id = identity(source, file.path());
                 tab.selected = Some(id.clone());
-                let body = ChangeContent::for_test("same\n".into(), "same\n".into(), patch.into());
-                let loaded = Loaded::new(file, body, None, cx);
+                let body = ChangeContent::for_test("same\n".into(), "same\n".into());
+                let prepared = Prepared::new(file.path(), body, None).unwrap();
+                let loaded = Loaded::new(file, prepared, None, cx);
                 assert!(loaded.block.is_none());
-                tab.cache.insert(id, loaded);
-                home.reader_command(reader::Command::CopyPatch, window, cx);
-                assert_eq!(
-                    cx.read_from_clipboard().unwrap().text().as_deref(),
-                    Some(patch)
-                );
+                tab.body = Some((id, loaded));
+                assert!(!home.reader_command_available(reader::Command::CopyPatch, cx));
                 assert!(home.reader_command_available(reader::Command::CopyContent, cx));
                 cx.notify();
             })
@@ -869,9 +910,10 @@ fn non_unicode_rows_keep_byte_identity_show_localized_state_and_disable_copy(
             tab.selected = Some(id.clone());
             tab.sync_rows(window, cx);
             let body = ChangeContent::unavailable_for_test(ContentState::InvalidPath);
-            let loaded = Loaded::new(file, body, None, cx);
+            let prepared = Prepared::new(file.path(), body, None).unwrap();
+            let loaded = Loaded::new(file, prepared, None, cx);
             assert!(loaded.block.is_none());
-            tab.cache.insert(id, loaded);
+            tab.body = Some((id, loaded));
             for command in [
                 reader::Command::CopyPath,
                 reader::Command::CopyPatch,
@@ -920,11 +962,7 @@ fn non_diff_bodies_disable_fold_even_with_retained_collapse_intent(cx: &mut Test
                 ready(home, window, cx);
                 let tab = home.git_mut().unwrap();
                 let id = tab.selected.clone().unwrap();
-                let entry = tab.selected_entry().unwrap().clone();
-                tab.cache.insert(
-                    id.clone(),
-                    Loaded::new(entry, ChangeContent::unavailable_for_test(state), None, cx),
-                );
+                display(tab, ChangeContent::unavailable_for_test(state), cx);
                 tab.collapsed.insert(id.clone());
                 assert!(!home.reader_command_available(reader::Command::ToggleFile, cx));
                 home.reader_command(reader::Command::ToggleFile, window, cx);
@@ -950,7 +988,6 @@ fn fold_tracks_displayed_snapshot_during_updates_and_errors(cx: &mut TestAppCont
         home.update(cx, |home, cx| {
             ready(home, window, cx);
             let tab = home.git_mut().unwrap();
-            let id = tab.selected.clone().unwrap();
             tab.apply_files(
                 vec![(
                     ChangeSource::Staged,
@@ -960,7 +997,10 @@ fn fold_tracks_displayed_snapshot_during_updates_and_errors(cx: &mut TestAppCont
                 window,
                 cx,
             );
-            assert_ne!(Some(&tab.cache[&id].entry), tab.selected_entry());
+            assert_ne!(
+                Some(&tab.current_body().unwrap().entry),
+                tab.selected_entry()
+            );
             assert!(home.reader_command_available(reader::Command::ToggleFile, cx));
             cx.notify();
         })
@@ -993,17 +1033,18 @@ fn fold_tracks_displayed_snapshot_during_updates_and_errors(cx: &mut TestAppCont
             let id = tab.selected.as_ref().unwrap();
             assert!(tab.collapsed.contains(id));
             assert!(
-                tab.cache[id]
+                tab.current_body()
+                    .unwrap()
                     .block
                     .as_ref()
                     .unwrap()
                     .state()
                     .unwrap()
                     .read(cx)
-                    .is_file_collapsed("a.rs")
+                    .is_file_collapsed("file")
             );
             let tab = home.git_mut().unwrap();
-            tab.cache.clear();
+            tab.body = None;
             assert!(!home.reader_command_available(reader::Command::ToggleFile, cx));
             cx.notify();
         });
@@ -1059,7 +1100,7 @@ fn uncached_read_error_shows_localized_failure_and_retry(cx: &mut TestAppContext
         home.update(cx, |home, cx| {
             ready(home, window, cx);
             let tab = home.git_mut().unwrap();
-            tab.cache.clear();
+            tab.body = None;
             tab.body_error = Some("Git query timed out".into());
             cx.notify();
         });
@@ -1085,7 +1126,9 @@ fn status_failure_preserves_complete_list_selection_and_body(cx: &mut TestAppCon
             let all = tab.all.clone();
             let selected = tab.selected.clone();
             let rows = tab.rows.clone();
-            let body = tab.cache[selected.as_ref().unwrap()]
+            let body = tab
+                .current_body()
+                .unwrap()
                 .block
                 .as_ref()
                 .unwrap()
@@ -1100,7 +1143,8 @@ fn status_failure_preserves_complete_list_selection_and_body(cx: &mut TestAppCon
             assert!(Rc::ptr_eq(&tab.rows, &rows));
             assert_eq!(tab.body_generation, generation);
             assert_eq!(
-                tab.cache[selected.as_ref().unwrap()]
+                tab.current_body()
+                    .unwrap()
                     .block
                     .as_ref()
                     .unwrap()
@@ -1114,7 +1158,7 @@ fn status_failure_preserves_complete_list_selection_and_body(cx: &mut TestAppCon
             tab.apply_refresh(Ok(None), window, cx);
             assert!(tab.error.is_none());
             assert!(tab.not_repository);
-            assert!(tab.all.is_empty() && tab.cache.is_empty());
+            assert!(tab.all.is_empty() && tab.body.is_none());
         })
     });
 }

@@ -1316,7 +1316,6 @@ diff-conflict = 충돌 · 읽기 전용
 diff-special = 특수 파일 · 읽기 전용
 diff-binary = 바이너리 파일
 diff-too-large = 텍스트 읽기 제한을 초과한 파일
-diff-empty-file = 빈 파일
 diff-unavailable-file = 현재 파일을 사용할 수 없어 외부에서 열 수 없습니다.
 diff-git-unavailable = Git을 사용할 수 없습니다. Git을 설치한 후 새로 고치세요.
 diff-files = 파일

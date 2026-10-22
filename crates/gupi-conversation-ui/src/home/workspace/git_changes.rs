@@ -2,6 +2,7 @@
 use super::*;
 mod navigator;
 mod projection;
+mod text;
 use changes::navigator::Row;
 use gpui_kit::component::{input::Input, menu::DropdownMenu};
 use gupi_resources::git::{
@@ -13,9 +14,9 @@ use navigator::{Delegate, Item};
 use projection::Directory;
 use reader::Options;
 use std::time::Duration;
+use text::Prepared;
 
 pub(super) const GIT_TAB: &str = "workspace:git";
-const CACHE_FILES: usize = 8;
 const HEADER_REM: f32 = 2.5;
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Entry {
@@ -56,28 +57,19 @@ pub(super) struct Loaded {
     entry: Change,
     pub content: ChangeContent,
     pub block: Option<DiffBlock>,
+    normalized: (String, String),
 }
 impl Loaded {
-    fn new(entry: Change, content: ChangeContent, previous: Option<Self>, cx: &mut App) -> Self {
-        let block =
-            if content.state() == ContentState::Text && content.original() != content.modified() {
-                if previous
-                    .as_ref()
-                    .is_some_and(|old| old.content.patch() == content.patch())
-                {
-                    previous.and_then(|old| old.block)
-                } else {
-                    content
-                        .patch()
-                        .filter(|patch| !patch.is_empty())
-                        .map(|patch| DiffBlock::patch(patch, cx))
-                }
-            } else {
-                None
-            };
+    fn new(entry: Change, prepared: Prepared, previous: Option<Self>, cx: &mut App) -> Self {
+        let block = match prepared.files {
+            None => previous.and_then(|old| old.block),
+            Some(files) if files.is_empty() => None,
+            Some(files) => Some(DiffBlock::comparison(files, cx)),
+        };
         Self {
             entry,
-            content,
+            content: prepared.content,
+            normalized: prepared.normalized,
             block,
         }
     }
@@ -125,7 +117,7 @@ pub(super) struct GitTab {
     filter: Entity<InputState>,
     _filter_subscription: Subscription,
     generation: u64,
-    pub cache: HashMap<String, Loaded>,
+    pub body: Option<(String, Loaded)>,
     loading: bool,
     refreshing: bool,
     error: Option<Failure>,
@@ -134,7 +126,6 @@ pub(super) struct GitTab {
     list_task: Option<Task<()>>,
     body_task: Option<Task<()>>,
     body_generation: u64,
-    body_target: Option<(String, Change)>,
     poll: Option<Task<()>>,
 }
 fn identity(source: ChangeSource, path: &std::path::Path) -> String {
@@ -198,7 +189,7 @@ impl GitTab {
             filter,
             _filter_subscription: subscription,
             generation: 0,
-            cache: HashMap::new(),
+            body: None,
             loading: true,
             refreshing: false,
             error: None,
@@ -207,7 +198,6 @@ impl GitTab {
             list_task: None,
             body_task: None,
             body_generation: 0,
-            body_target: None,
             poll: None,
         }
     }
@@ -292,8 +282,6 @@ impl GitTab {
         self.directories_closed
             .retain(|key| directories.contains(key));
         self.group_errors = errors;
-        self.cache
-            .retain(|id, _| self.all.iter().any(|e| e.id() == *id));
         self.collapsed
             .retain(|id| self.all.iter().any(|e| e.id() == *id));
         self.sync_rows(window, cx);
@@ -307,10 +295,8 @@ impl GitTab {
                 .map(|r| r.path.clone());
             self.sync_rows(window, cx);
         }
-        let target_valid = self.body_target.as_ref().is_none_or(|(id, file)| {
-            self.selected.as_ref() == Some(id) && self.selected_entry() == Some(file)
-        });
-        if !target_valid || previous != self.selected {
+        if previous != self.selected {
+            self.body = None;
             self.invalidate_body();
         }
         true
@@ -333,7 +319,7 @@ impl GitTab {
                     self.all.clear();
                     self.directories_closed.clear();
                     self.groups_closed.clear();
-                    self.cache.clear();
+                    self.body = None;
                     self.invalidate_body();
                 }
                 self.repository = Some(repo);
@@ -356,7 +342,7 @@ impl GitTab {
                 self.not_repository = true;
                 self.repository = None;
                 self.all.clear();
-                self.cache.clear();
+                self.body = None;
                 self.group_errors.clear();
                 self.invalidate_body();
                 self.sync_rows(window, cx);
@@ -407,9 +393,14 @@ impl GitTab {
     }
     fn invalidate_body(&mut self) {
         self.body_task = None;
-        self.body_target = None;
         self.body_generation += 1;
         self.body_error = None;
+    }
+    pub(super) fn current_body(&self) -> Option<&Loaded> {
+        self.body
+            .as_ref()
+            .filter(|(id, _)| Some(id) == self.selected.as_ref())
+            .map(|(_, loaded)| loaded)
     }
     fn selected_source(&self) -> Option<ChangeSource> {
         self.all
@@ -418,9 +409,7 @@ impl GitTab {
             .map(|e| e.source)
     }
     pub fn focus_main(&self, window: &mut Window, cx: &mut App) {
-        self.selected
-            .as_ref()
-            .and_then(|p| self.cache.get(p))
+        self.current_body()
             .and_then(|l| l.block.as_ref())
             .and_then(|b| b.focus_handle(cx))
             .unwrap_or_else(|| self.main_focus.clone())
@@ -447,9 +436,7 @@ impl GitTab {
         !self.loading
             && !self.not_repository
             && self
-                .selected
-                .as_ref()
-                .and_then(|id| self.cache.get(id))
+                .current_body()
                 .is_some_and(|loaded| loaded.block.is_some())
     }
     pub(super) fn selected_entry(&self) -> Option<&Change> {
@@ -515,7 +502,6 @@ impl HomeView {
             tab.body_generation += 1;
             tab.list_task = None;
             tab.body_task = None;
-            tab.body_target = None;
             tab.poll = None;
             tab.repository = None;
             tab.all.clear();
@@ -526,7 +512,7 @@ impl HomeView {
             tab.known_sources.clear();
             tab.rows = Rc::new(Vec::new());
             tab.selected = None;
-            tab.cache.clear();
+            tab.body = None;
             tab.loading = true;
             tab.error = None;
             tab.body_error = None;
@@ -551,7 +537,6 @@ impl HomeView {
                 tab.poll = None;
                 tab.list_task = None;
                 tab.body_task = None;
-                tab.body_target = None;
                 tab.refreshing = false;
             }
         }
@@ -607,8 +592,11 @@ impl HomeView {
                 let Some(tab) = home.git_mut().filter(|t| t.generation == generation) else {
                     return;
                 };
+                let success = result.is_ok();
                 tab.apply_refresh(result, window, cx);
-                home.load_git_file(window, cx);
+                if success {
+                    home.load_git_file(window, cx);
+                }
                 cx.notify();
             });
         }));
@@ -627,12 +615,7 @@ impl HomeView {
         let Some(path) = tab.selected.clone() else {
             return;
         };
-        if tab
-            .cache
-            .get(&path)
-            .is_some_and(|loaded| Some(&loaded.entry) == tab.selected_entry())
-            || tab.body_task.is_some()
-        {
+        if tab.body_task.is_some() {
             return;
         }
         let Some(repo) = tab.repository.clone() else {
@@ -642,15 +625,21 @@ impl HomeView {
             return;
         };
         let generation = tab.generation;
+        let previous = tab.current_body().map(|body| body.normalized.clone());
         let source = tab.selected_source().unwrap();
-        tab.body_target = Some((path.clone(), entry.clone()));
         tab.body_error = None;
         tab.body_generation += 1;
         let body_generation = tab.body_generation;
         tab.body_task = Some(cx.spawn_in(window, async move |home, cx| {
             let expected = entry.clone();
             let result = cx
-                .background_spawn(async move { repo.change_content(source, &entry).await })
+                .background_spawn(async move {
+                    let content = repo
+                        .change_content(source, &entry)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    Prepared::new(entry.path(), content, previous.as_ref())
+                })
                 .await;
             let _ = home.update_in(cx, |home, window, cx| {
                 if home.shown_key.as_ref() != Some(&key) {
@@ -660,22 +649,18 @@ impl HomeView {
                     t.generation == generation
                         && t.body_generation == body_generation
                         && t.selected.as_ref() == Some(&path)
-                        && t.selected_entry() == Some(&expected)
                 }) else {
                     return;
                 };
                 tab.body_task = None;
-                tab.body_target = None;
                 match result {
                     Ok(content) => {
-                        let old = tab.cache.remove(&path);
-                        if tab.cache.len() >= CACHE_FILES
-                            && let Some(old) = tab.cache.keys().find(|k| **k != path).cloned()
-                        {
-                            tab.cache.remove(&old);
-                        }
-                        tab.cache
-                            .insert(path, Loaded::new(expected, content, old, cx));
+                        let previous = tab
+                            .body
+                            .take()
+                            .filter(|(id, _)| *id == path)
+                            .map(|(_, body)| body);
+                        tab.body = Some((path, Loaded::new(expected, content, previous, cx)));
                     }
                     Err(error) => {
                         tracing::warn!(%error, "Git change read failed");
@@ -703,6 +688,7 @@ impl HomeView {
         {
             if tab.selected.as_ref() != Some(&path) {
                 tab.invalidate_body();
+                tab.body = None;
                 tab.selected = Some(path);
                 tab.sync_rows(window, cx);
             }
@@ -717,6 +703,7 @@ impl HomeView {
             let previous = tab.selected.clone();
             tab.sync_rows(window, cx);
             if previous != tab.selected {
+                tab.body = None;
                 tab.invalidate_body();
             }
         }
@@ -963,9 +950,7 @@ impl HomeView {
                 }
             });
         let updating = tab
-            .selected
-            .as_ref()
-            .and_then(|p| tab.cache.get(p))
+            .current_body()
             .is_some_and(|loaded| Some(&loaded.entry) != entry);
         let path_tooltip = [path.as_str(), source.as_str(), direction.as_str()]
             .into_iter()
@@ -1038,12 +1023,7 @@ impl HomeView {
         } else {
             None
         };
-        if tab.body_error.is_some()
-            && !tab
-                .selected
-                .as_ref()
-                .is_some_and(|id| tab.cache.contains_key(id))
-        {
+        if tab.body_error.is_some() && tab.current_body().is_none() {
             content = content.child(
                 div()
                     .id("git-read-error")
@@ -1067,12 +1047,7 @@ impl HomeView {
                     ),
             );
         }
-        if tab.body_error.is_some()
-            && !tab
-                .selected
-                .as_ref()
-                .is_some_and(|id| tab.cache.contains_key(id))
-        {
+        if tab.body_error.is_some() && tab.current_body().is_none() {
             // The error body above owns this slot until retry; no loading row.
         } else if let Some(message) = message {
             if !tab.loading
@@ -1083,7 +1058,7 @@ impl HomeView {
             } else {
                 content = content.child(div().p_3().text_sm().child(t(cx, message)));
             }
-        } else if let Some(loaded) = tab.selected.as_ref().and_then(|p| tab.cache.get(p)) {
+        } else if let Some(loaded) = tab.current_body() {
             if let Some(block) = &loaded.block {
                 content = content.child(block.render_reader(tab.options.wrap));
             } else {
@@ -1094,7 +1069,7 @@ impl HomeView {
                     ContentState::Special => "diff-special",
                     ContentState::InvalidPath => "diff-invalid-path",
                     ContentState::NoTextChanges => "diff-no-text-changes",
-                    ContentState::Text => "diff-empty-file",
+                    ContentState::Text => "diff-no-text-changes",
                 };
                 content = content.child(
                     div()

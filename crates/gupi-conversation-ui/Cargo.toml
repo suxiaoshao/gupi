@@ -10,6 +10,7 @@ performance = []
 
 [dependencies]
 regex = "1.13.1"
+similar = "2.7.0"
 # UI and workspace services.
 app-theme = { workspace = true, features = ["system-accent"] }
 gpui-kit = { workspace = true, features = ["syntect"] }

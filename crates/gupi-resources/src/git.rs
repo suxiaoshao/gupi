@@ -65,8 +65,6 @@ pub enum Error {
     Unavailable,
     #[error("Git output exceeds the reader limit")]
     TooLarge,
-    #[error("The file changed during the read; refresh and try again")]
-    Changed,
     #[error("Git: {0}")]
     Failed(String),
 }

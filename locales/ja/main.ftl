@@ -1316,7 +1316,6 @@ diff-conflict = 競合 · 読み取り専用
 diff-special = 特殊ファイル · 読み取り専用
 diff-binary = バイナリファイル
 diff-too-large = テキスト表示の制限を超えています
-diff-empty-file = 空のファイル
 diff-unavailable-file = 現在のファイルを利用できないため、外部で開けません。
 diff-git-unavailable = Git を利用できません。Git をインストールして更新してください。
 diff-files = ファイル

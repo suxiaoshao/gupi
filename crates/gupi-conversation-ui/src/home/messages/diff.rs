@@ -24,6 +24,7 @@ pub(in crate::home) struct DiffBlock {
 enum Source {
     Operation { body: Rc<ChangeBody>, path: String },
     Patch(String),
+    Comparison,
 }
 impl DiffBlock {
     #[cfg(test)]
@@ -123,6 +124,9 @@ impl DiffBlock {
                 .filter(|files| !files.is_empty()),
             cx,
         )
+    }
+    pub(in crate::home) fn comparison(files: Vec<DiffFile>, cx: &mut App) -> Self {
+        Self::prepare(Source::Comparison, "", Some(files), cx)
     }
     fn prepare(identity: Source, source: &str, files: Option<Vec<DiffFile>>, cx: &mut App) -> Self {
         let state =
@@ -284,6 +288,7 @@ impl DiffBlock {
     pub(in crate::home) fn copy_patch(&self) -> Option<String> {
         match &self.source {
             Source::Patch(patch) => Some(patch.clone()),
+            Source::Comparison => None,
             Source::Operation { body, .. } => match body.as_ref() {
                 ChangeBody::Patch { source, .. } => Some(source.clone()),
                 _ => None,

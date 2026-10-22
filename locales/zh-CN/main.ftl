@@ -1323,7 +1323,6 @@ diff-conflict = 冲突 · 只读
 diff-special = 特殊文件 · 只读
 diff-binary = 二进制文件
 diff-too-large = 此文件超出文本阅读限制
-diff-empty-file = 空文件
 diff-unavailable-file = 当前文件不存在或不可用，无法在外部打开。
 diff-git-unavailable = Git 不可用，请安装 Git 后刷新。
 diff-files = 文件

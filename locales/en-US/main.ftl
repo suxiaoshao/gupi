@@ -1342,7 +1342,6 @@ diff-conflict = Conflict · read-only
 diff-special = Special file · read-only
 diff-binary = Binary file
 diff-too-large = This file exceeds the text reader limits
-diff-empty-file = Empty file
 diff-unavailable-file = The current file is unavailable; external open is disabled.
 diff-git-unavailable = Git is unavailable. Install Git and refresh.
 diff-files = Files

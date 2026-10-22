@@ -283,11 +283,16 @@ impl Repository {
                             content.state = ContentState::TooLarge;
                         } else {
                             let patch = if source == ChangeSource::Untracked {
-                                Some(added_patch(path, &new, worktree_mode(&full)?))
+                                Some(added_patch(
+                                    path,
+                                    &new,
+                                    worktree_mode(self.root(), &full).await?,
+                                ))
                             } else {
                                 let mut args = vec![
                                     "--literal-pathspecs",
                                     "diff",
+                                    "--text",
                                     "--no-ext-diff",
                                     "--no-textconv",
                                     "--no-color",
@@ -308,15 +313,22 @@ impl Repository {
                                     Err(e) => return Err(e),
                                 }
                             };
+                            // --text must not produce binary-only patch metadata. Treat a
+                            // contradictory response as a query failure, not a content verdict.
+                            if patch.as_ref().is_some_and(|patch| {
+                                patch.lines().any(|line| {
+                                    line.starts_with("Binary files ") || line == "GIT binary patch"
+                                })
+                            }) {
+                                return Err(Error::Failed(
+                                    "Git returned binary metadata despite --text".into(),
+                                ));
+                            }
                             content.state = if patch.is_none() {
                                 ContentState::TooLarge
                             } else if file.kind == ChangeKind::Modified
                                 && patch.as_ref().is_some_and(|patch| {
-                                    !patch.lines().any(|line| {
-                                        line.starts_with("@@ ")
-                                            || line.starts_with("Binary files ")
-                                            || line == "GIT binary patch"
-                                    })
+                                    !patch.lines().any(|line| line.starts_with("@@ "))
                                 })
                             {
                                 ContentState::NoTextChanges
@@ -395,15 +407,40 @@ pub fn text_within_limits(text: &str) -> bool {
         && text.lines().take(MAX_LINES + 1).count() <= MAX_LINES
         && text.lines().all(|l| l.len() <= MAX_LINE)
 }
-fn worktree_mode(path: &Path) -> Result<&'static str, Error> {
+async fn worktree_mode(root: &Path, path: &Path) -> Result<&'static str, Error> {
     let metadata = std::fs::symlink_metadata(path)?;
     if metadata.file_type().is_symlink() {
         return Ok("120000");
     }
+    // Let Git parse its effective Boolean configuration, including inherited values.
+    // Git defaults to true when unset. Fail closed on invalid/unreadable config:
+    // guessing a mode could export a patch that changes executable semantics.
+    let configured = checked(
+        root,
+        &[
+            "config",
+            "--type=bool",
+            "--default=true",
+            "--get",
+            "core.fileMode",
+        ],
+    )
+    .await?;
+    let file_mode = match value(&configured.stdout)?.as_str() {
+        "true" => true,
+        "false" => false,
+        _ => {
+            return Err(Error::Failed(
+                "Invalid core.fileMode response from Git".into(),
+            ));
+        }
+    };
+    #[cfg(not(unix))]
+    let _ = file_mode;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if metadata.permissions().mode() & 0o100 != 0 {
+        if file_mode && metadata.permissions().mode() & 0o100 != 0 {
             return Ok("100755");
         }
     }
@@ -873,65 +910,81 @@ mod tests {
     fn untracked_modes_preserve_regular_executable_and_symlink_patches() {
         use std::os::unix::fs::{PermissionsExt, symlink};
         smol::block_on(async {
-            let fixture = tempfile::tempdir().unwrap();
-            let root = fixture.path();
-            git(root, &["init", "--quiet"]);
-            git(root, &["config", "core.fileMode", "true"]);
-            for (name, mode) in [
-                ("plain.txt", 0o644),
-                ("other-exec.txt", 0o645),
-                ("group-exec.txt", 0o654),
-                ("executable.sh", 0o744),
-            ] {
-                std::fs::write(root.join(name), "text\n").unwrap();
-                std::fs::set_permissions(root.join(name), std::fs::Permissions::from_mode(mode))
-                    .unwrap();
-            }
-            symlink("plain.txt", root.join("link")).unwrap();
-            let repo = discover(root).await.unwrap().unwrap();
-            let list = read_changes(&repo, ChangeSource::Untracked).await;
-            for (path, mode) in [
-                ("plain.txt", "100644"),
-                ("other-exec.txt", "100644"),
-                ("group-exec.txt", "100644"),
-                ("executable.sh", "100755"),
-                ("link", "120000"),
-            ] {
-                let file = list
-                    .files()
-                    .iter()
-                    .find(|f| f.path() == Path::new(path))
-                    .unwrap();
-                let content = repo
-                    .change_content(ChangeSource::Untracked, file)
-                    .await
-                    .unwrap();
-                let patch = content.patch().unwrap();
-                git(root, &["add", "--", path]);
-                let indexed = std::process::Command::new("git")
-                    .current_dir(root)
-                    .args(["ls-files", "--stage", "--", path])
-                    .output()
-                    .unwrap();
-                assert!(indexed.status.success());
-                let indexed = String::from_utf8(indexed.stdout).unwrap();
-                let indexed_mode = indexed.split_whitespace().next().unwrap();
-                assert_eq!(indexed_mode, mode);
-                assert!(patch.contains(&format!("new file mode {indexed_mode}\n")));
-                let target = tempfile::tempdir().unwrap();
-                git(target.path(), &["init", "--quiet"]);
-                let input = target.path().join("fixture.patch");
-                std::fs::write(&input, patch).unwrap();
-                git(target.path(), &["apply", "fixture.patch"]);
-                let metadata = std::fs::symlink_metadata(target.path().join(path)).unwrap();
-                if mode == "120000" {
-                    assert!(metadata.file_type().is_symlink());
-                    assert_eq!(
-                        std::fs::read_link(target.path().join(path)).unwrap(),
-                        Path::new("plain.txt")
-                    );
+            for setting in [Some("true"), Some("false"), None] {
+                let fixture = tempfile::tempdir().unwrap();
+                let root = fixture.path();
+                git(root, &["init", "--quiet"]);
+                if let Some(setting) = setting {
+                    git(root, &["config", "core.fileMode", setting]);
                 } else {
-                    assert_eq!(metadata.permissions().mode() & 0o100 != 0, mode == "100755");
+                    git(root, &["config", "--unset", "core.fileMode"]);
+                }
+                for (name, mode) in [
+                    ("plain.txt", 0o644),
+                    ("other-exec.txt", 0o645),
+                    ("group-exec.txt", 0o654),
+                    ("executable.sh", 0o744),
+                ] {
+                    std::fs::write(root.join(name), "text\n").unwrap();
+                    std::fs::set_permissions(
+                        root.join(name),
+                        std::fs::Permissions::from_mode(mode),
+                    )
+                    .unwrap();
+                }
+                symlink("plain.txt", root.join("link")).unwrap();
+                let repo = discover(root).await.unwrap().unwrap();
+                let list = read_changes(&repo, ChangeSource::Untracked).await;
+                for (path, mode) in [
+                    ("plain.txt", "100644"),
+                    ("other-exec.txt", "100644"),
+                    ("group-exec.txt", "100644"),
+                    (
+                        "executable.sh",
+                        if setting == Some("false") {
+                            "100644"
+                        } else {
+                            "100755"
+                        },
+                    ),
+                    ("link", "120000"),
+                ] {
+                    let file = list
+                        .files()
+                        .iter()
+                        .find(|f| f.path() == Path::new(path))
+                        .unwrap();
+                    let content = repo
+                        .change_content(ChangeSource::Untracked, file)
+                        .await
+                        .unwrap();
+                    let patch = content.patch().unwrap();
+                    git(root, &["add", "--", path]);
+                    let indexed = std::process::Command::new("git")
+                        .current_dir(root)
+                        .args(["ls-files", "--stage", "--", path])
+                        .output()
+                        .unwrap();
+                    assert!(indexed.status.success());
+                    let indexed = String::from_utf8(indexed.stdout).unwrap();
+                    let indexed_mode = indexed.split_whitespace().next().unwrap();
+                    assert_eq!(indexed_mode, mode);
+                    assert!(patch.contains(&format!("new file mode {indexed_mode}\n")));
+                    let target = tempfile::tempdir().unwrap();
+                    git(target.path(), &["init", "--quiet"]);
+                    let input = target.path().join("fixture.patch");
+                    std::fs::write(&input, patch).unwrap();
+                    git(target.path(), &["apply", "fixture.patch"]);
+                    let metadata = std::fs::symlink_metadata(target.path().join(path)).unwrap();
+                    if mode == "120000" {
+                        assert!(metadata.file_type().is_symlink());
+                        assert_eq!(
+                            std::fs::read_link(target.path().join(path)).unwrap(),
+                            Path::new("plain.txt")
+                        );
+                    } else {
+                        assert_eq!(metadata.permissions().mode() & 0o100 != 0, mode == "100755");
+                    }
                 }
             }
         });
@@ -1205,6 +1258,125 @@ mod tests {
             assert!(untracked.stats_error.is_none());
             // Failure of the status command itself is instead a whole-snapshot error.
             assert!(repo.changes().await.is_err());
+        });
+    }
+    #[cfg(unix)]
+    #[test]
+    fn untracked_mode_uses_git_boolean_parser_and_rejects_config_errors() {
+        use std::os::unix::fs::PermissionsExt;
+        smol::block_on(async {
+            let fixture = tempfile::tempdir().unwrap();
+            let root = fixture.path();
+            git(root, &["init", "--quiet"]);
+            let file = root.join("executable.sh");
+            std::fs::write(&file, "echo test\n").unwrap();
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o744)).unwrap();
+            for (value, expected) in [("yes", "100755"), ("0", "100644")] {
+                git(root, &["config", "core.fileMode", value]);
+                assert_eq!(worktree_mode(root, &file).await.unwrap(), expected);
+            }
+            git(root, &["config", "core.fileMode", "not-a-boolean"]);
+            assert!(worktree_mode(root, &file).await.is_err());
+            std::fs::write(root.join(".git/config"), "[broken config\n").unwrap();
+            assert!(worktree_mode(root, &file).await.is_err());
+        });
+    }
+
+    #[test]
+    fn text_attributes_keep_unknown_stats_but_text_bodies_without_running_drivers() {
+        smol::block_on(async {
+            let fixture = tempfile::tempdir().unwrap();
+            let root = fixture.path();
+            git(root, &["init", "--quiet"]);
+            std::fs::write(
+                root.join(".gitattributes"),
+                "*.dat binary\n*.raw -diff\n*.cv diff=probe\n",
+            )
+            .unwrap();
+            for name in [
+                "text.dat",
+                "text.raw",
+                "text.cv",
+                "plain.txt",
+                "nul.dat",
+                "invalid.dat",
+                "large.dat",
+            ] {
+                std::fs::write(root.join(name), "old\n").unwrap();
+            }
+            git(root, &["add", "."]);
+            git(root, &["commit", "--quiet", "-m", "base"]);
+            // Any accidental invocation fails the real query; no external programs run.
+            for key in ["diff.external", "diff.probe.command", "diff.probe.textconv"] {
+                git(root, &["config", key, "gupi-driver-must-not-run"]);
+            }
+            git(root, &["config", "diff.probe.binary", "true"]);
+            for name in ["text.dat", "text.raw", "text.cv", "plain.txt"] {
+                std::fs::write(root.join(name), "new\n").unwrap();
+            }
+            std::fs::write(root.join("nul.dat"), b"new\0\n").unwrap();
+            std::fs::write(root.join("invalid.dat"), b"new\xff\n").unwrap();
+            std::fs::write(root.join("large.dat"), vec![b'x'; MAX_TEXT + 1]).unwrap();
+            let repo = discover(root).await.unwrap().unwrap();
+            for source in [ChangeSource::Unstaged, ChangeSource::Staged] {
+                if source == ChangeSource::Staged {
+                    git(root, &["add", "."]);
+                }
+                let list = read_changes(&repo, source).await;
+                for name in ["text.dat", "text.raw", "text.cv", "plain.txt"] {
+                    let file = list
+                        .files()
+                        .iter()
+                        .find(|file| file.path() == Path::new(name))
+                        .unwrap();
+                    assert_eq!(
+                        file.stats(),
+                        if name == "plain.txt" {
+                            Some((1, 1))
+                        } else {
+                            None
+                        }
+                    );
+                    let body = repo.change_content(source, file).await.unwrap();
+                    assert_eq!(body.state(), ContentState::Text);
+                    assert_eq!(body.original(), Some("old\n"));
+                    assert_eq!(body.modified(), Some("new\n"));
+                    let patch = body.patch().unwrap();
+                    assert!(patch.contains("@@ ") && patch.contains("-old\n+new\n"));
+                    assert!(
+                        !patch.contains("Binary files ") && !patch.contains("GIT binary patch")
+                    );
+                }
+                for (name, state) in [
+                    ("nul.dat", ContentState::Binary),
+                    ("invalid.dat", ContentState::Binary),
+                    ("large.dat", ContentState::TooLarge),
+                ] {
+                    let file = list
+                        .files()
+                        .iter()
+                        .find(|file| file.path() == Path::new(name))
+                        .unwrap();
+                    let body = repo.change_content(source, file).await.unwrap();
+                    assert_eq!(body.state(), state);
+                    assert!(body.patch().is_none());
+                    assert!(body.original().is_none() && body.modified().is_none());
+                }
+            }
+            std::fs::write(root.join("new.dat"), "untracked text\n").unwrap();
+            let list = read_changes(&repo, ChangeSource::Untracked).await;
+            let file = list
+                .files()
+                .iter()
+                .find(|file| file.path() == Path::new("new.dat"))
+                .unwrap();
+            let body = repo
+                .change_content(ChangeSource::Untracked, file)
+                .await
+                .unwrap();
+            assert!(file.stats().is_none());
+            assert_eq!(body.state(), ContentState::Text);
+            assert!(body.patch().unwrap().contains("+untracked text"));
         });
     }
 }

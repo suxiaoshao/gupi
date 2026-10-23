@@ -14,6 +14,7 @@ fn run() -> std::io::Result<()> {
     use std::io::BufRead;
     use std::io::Write;
     use std::os::windows::ffi::OsStrExt;
+    use std::os::windows::process::CommandExt;
     use std::process::Command;
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
@@ -67,16 +68,19 @@ fn run() -> std::io::Result<()> {
                 .join("msiexec.exe");
         // MSI owns elevation and rollback. The helper stays unelevated and relaunches
         // the installed app itself, including the old version after cancellation.
-        let mut destination = std::ffi::OsString::from("INSTALLDIR=");
+        // MSI parses properties itself: quote the value, not the whole assignment.
+        // raw_arg preserves these quotes instead of applying Rust's CRT escaping.
+        let mut destination = std::ffi::OsString::from("INSTALLDIR=\"");
         destination.push(
             plan.executable
                 .parent()
                 .ok_or_else(|| std::io::Error::other("missing install directory"))?,
         );
+        destination.push("\"");
         Command::new(installer)
             .arg("/i")
             .arg(&plan.installer)
-            .arg(destination)
+            .raw_arg(destination)
             .args(["/passive", "/norestart", "/L*v"])
             .arg(&plan.log)
             .status()

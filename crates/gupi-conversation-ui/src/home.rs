@@ -67,6 +67,8 @@ struct SessionView {
     input: Entity<TextareaState>,
     // Last persisted/external snapshot, excluding the editor's uncommitted IME text.
     input_draft: gpui_kit::component::input::InputContent,
+    quote_cards: Entity<quote::cards::Cards>,
+    attachment_scroll: ScrollHandle,
     _input_subscriptions: Vec<Subscription>,
     history_canvas: Entity<history::canvas::HistoryCanvas>,
     history_projection: Option<(u64, HistoryDetail)>,
@@ -100,6 +102,7 @@ pub struct HomeView {
     shown_key: Option<String>,
     git: git::CurrentRepository,
     message_frame: Rc<std::cell::Cell<u64>>,
+    quote_tools: quote::toolbar::State,
     notification_visible: bool,
     shown_request: Option<(String, String)>,
     views: BTreeMap<String, SessionView>,
@@ -421,9 +424,13 @@ impl HomeView {
         cx: &mut Context<Self>,
     ) -> Self {
         actions::init(cx);
+        quote::cards::init(cx);
         messages::navigator::init(cx);
         files::init(cx);
-        for context in ["GupiComposer > Input", "GupiPalette > Input"] {
+        for context in [
+            "GupiComposer > Input && !GupiQuoteComment",
+            "GupiPalette > Input",
+        ] {
             cx.bind_keys([
                 KeyBinding::new(
                     "alt-enter",
@@ -468,6 +475,9 @@ impl HomeView {
             cx.observe_window_activation(window, |this, window, cx| {
                 crate::host::present(&this.state, window, this.notification_visible, cx);
                 if !window.is_window_active() {
+                    if this.quote_tools.dismiss() {
+                        cx.notify();
+                    }
                     this.end_workspace_tab_drag(window, cx);
                     for view in this.views.values() {
                         view.navigator
@@ -570,6 +580,7 @@ impl HomeView {
             shown_key: None,
             git: Default::default(),
             message_frame: Rc::default(),
+            quote_tools: quote::toolbar::State::new(cx),
             notification_visible: true,
             shown_request: None,
             views: BTreeMap::new(),
@@ -688,6 +699,7 @@ impl HomeView {
         let key = self.state.read(cx).selected().clone();
         let changed = self.shown_key != key;
         if changed {
+            self.quote_tools.dismiss();
             self.stop_shown_git_tasks();
             if let Some(view) = self.shown_key.as_ref().and_then(|key| self.views.get(key)) {
                 view.navigator
@@ -889,6 +901,11 @@ impl HomeView {
                     }
                 },
             );
+            let quote_cards = cx.new(|cx| {
+                quote::cards::Cards::new(self.state.clone(), key.clone(), input.clone(), cx)
+            });
+            self._subscriptions
+                .push(cx.observe(&quote_cards, |_, _, cx| cx.notify()));
             self.views.insert(
                 key.clone(),
                 SessionView {
@@ -897,6 +914,8 @@ impl HomeView {
                     source: None,
                     source_subscription: None,
                     workspace: workspace::Tabs::new(cx),
+                    quote_cards,
+                    attachment_scroll: ScrollHandle::new(),
                     input,
                     input_draft: draft,
                     _input_subscriptions: input_subscriptions,
@@ -1351,6 +1370,7 @@ impl Render for HomeView {
             self.fit_layout(window, cx);
         }
         self.sync_message_navigation(window, cx);
+        let quote_tools = self.render_quote_tools(window, cx);
         if temporary {
             let empty =
                 self.state.read(cx).current().is_some_and(|s| {
@@ -1377,9 +1397,12 @@ impl Render for HomeView {
                     .child(self.render_composer(px(820.), window, cx))
             };
             let content = v_flex()
+                .relative()
                 .size_full()
                 .when(empty, |view| view.children(self.find.clone()))
                 .child(content)
+                .child(quote::toolbar::events(cx.weak_entity()))
+                .child(quote_tools)
                 .child(self.image_preview.clone())
                 .key_context("Gupi")
                 .on_action(cx.listener(Self::quote))
@@ -1465,6 +1488,8 @@ impl Render for HomeView {
             .children(window_titlebar)
             .child(titlebar)
             .child(shell)
+            .child(quote::toolbar::events(cx.weak_entity()))
+            .child(quote_tools)
             .children(self.render_session_search(window, cx))
             .child(self.image_preview.clone())
             .into_any_element();

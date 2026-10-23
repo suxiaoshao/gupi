@@ -223,6 +223,8 @@ pub struct Session {
     draft: InputContent,
     preparing: bool,
     attachments: Vec<crate::attachments::Attachment>,
+    quotes: Vec<Arc<crate::quotes::QuoteAttachment>>,
+    attachment_order: Vec<String>,
     attachments_read: Option<Task<()>>,
     pending_template: Option<gupi_resources::composer_resources::PendingTemplate>,
     instance: Option<InstanceId>,
@@ -279,6 +281,12 @@ impl Session {
     }
     pub fn draft(&self) -> &InputContent {
         &self.draft
+    }
+    pub fn quotes(&self) -> &[Arc<crate::quotes::QuoteAttachment>] {
+        &self.quotes
+    }
+    pub fn attachment_order(&self) -> &[String] {
+        &self.attachment_order
     }
     pub fn attachments(&self) -> &Vec<crate::attachments::Attachment> {
         &self.attachments
@@ -426,6 +434,8 @@ impl Session {
             draft: draft.into(),
             preparing: false,
             attachments: Vec::new(),
+            quotes: Vec::new(),
+            attachment_order: Vec::new(),
             attachments_read: None,
             pending_template: None,
             instance: None,
@@ -545,6 +555,7 @@ impl Session {
     }
     pub fn composer_empty(&self) -> bool {
         self.draft.text().trim().is_empty()
+            && self.quotes.is_empty()
             && self.attachments.is_empty()
             && self.attachments_read.is_none()
     }
@@ -643,6 +654,8 @@ struct DraftFile {
     cwd: PathBuf,
     path: PathBuf,
     draft: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    quotes: Vec<crate::quotes::QuoteAttachment>,
 }
 struct Snapshot {
     state: protocol::SessionState,
@@ -841,6 +854,12 @@ impl ConversationState {
         };
         session.state = Some(prepared.snapshot);
         session.preparing = false;
+        session.attachment_order = prepared
+            .attachments
+            .iter()
+            .map(|a| a.id.clone())
+            .chain(session.quotes.iter().map(|q| q.id.clone()))
+            .collect();
         session.attachments = prepared.attachments;
         session.pending_template = Some(prepared.template);
         session.info.name = Some(prepared.name);
@@ -910,7 +929,12 @@ impl ConversationState {
                 };
                 session.attachments_read = None;
                 match result {
-                    Ok(items) => session.attachments.extend(items),
+                    Ok(items) => {
+                        session
+                            .attachment_order
+                            .extend(items.iter().map(|a| a.id.clone()));
+                        session.attachments.extend(items);
+                    }
                     Err(error) => session.error = Some(SessionError::Runtime(error)),
                 }
                 notify_session(&target, cx);
@@ -929,6 +953,7 @@ impl ConversationState {
     pub fn remove_attachment(&mut self, key: &str, id: &str, cx: &mut Context<Self>) {
         if let Some(session) = self.sessions.get_mut(key).filter(|s| s.can_edit_draft()) {
             session.attachments.retain(|a| a.id != id);
+            session.attachment_order.retain(|item| item != id);
             notify_session(key, cx);
         }
     }
@@ -1031,10 +1056,10 @@ impl ConversationState {
         for draft in saved
             .drafts
             .into_iter()
-            .filter(|draft| !draft.draft.is_empty())
+            .filter(|draft| !draft.draft.is_empty() || !draft.quotes.is_empty())
         {
             self.sessions.entry(draft.key.clone()).or_insert_with(|| {
-                Session::new(
+                let mut session = Session::new(
                     SessionInfo {
                         path: draft.path,
                         id: draft.session_id.unwrap_or(draft.key),
@@ -1045,7 +1070,10 @@ impl ConversationState {
                         parent_session: None,
                     },
                     draft.draft,
-                )
+                );
+                session.attachment_order = draft.quotes.iter().map(|q| q.id.clone()).collect();
+                session.quotes = draft.quotes.into_iter().map(Arc::new).collect();
+                session
             });
         }
     }
@@ -1839,7 +1867,9 @@ impl ConversationState {
         {
             s.content_revision += 1;
         }
-        if !s.draft.text().is_empty() && old_identity != (s.info.id.clone(), s.info.path.clone()) {
+        if (!s.draft.text().is_empty() || !s.quotes.is_empty())
+            && old_identity != (s.info.id.clone(), s.info.path.clone())
+        {
             self.save_changes(cx);
         }
         if scope == ReadScope::Full {
@@ -1856,6 +1886,63 @@ impl ConversationState {
     }
     pub fn set_draft(&mut self, key: &str, text: String, cx: &mut Context<Self>) {
         self.set_draft_content(key, text.into(), cx);
+    }
+    pub fn add_quote(
+        &mut self,
+        key: &str,
+        quote: crate::quotes::QuoteAttachment,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(session) = self
+            .sessions
+            .get_mut(key)
+            .filter(|s| s.can_edit_draft() && s.pending_ui.is_empty())
+        else {
+            return false;
+        };
+        session.attachment_order.push(quote.id.clone());
+        session.quotes.push(Arc::new(quote));
+        session.draft_revision += 1;
+        self.save_changes(cx);
+        notify_controls(key, cx);
+        true
+    }
+    pub fn edit_quote(&mut self, key: &str, id: &str, comment: String, cx: &mut Context<Self>) {
+        let Some(session) = self
+            .sessions
+            .get_mut(key)
+            .filter(|s| s.can_edit_draft() && s.pending_ui.is_empty())
+        else {
+            return;
+        };
+        let Some(quote) = session.quotes.iter_mut().find(|q| q.id == id) else {
+            return;
+        };
+        if quote.comment == comment {
+            return;
+        }
+        Arc::make_mut(quote).comment = comment;
+        session.draft_revision += 1;
+        self.save_changes(cx);
+        notify_controls(key, cx);
+    }
+    pub fn remove_quote(&mut self, key: &str, id: &str, cx: &mut Context<Self>) {
+        let Some(session) = self
+            .sessions
+            .get_mut(key)
+            .filter(|s| s.can_edit_draft() && s.pending_ui.is_empty())
+        else {
+            return;
+        };
+        let old = session.quotes.len();
+        session.quotes.retain(|q| q.id != id);
+        session.attachment_order.retain(|item| item != id);
+        if old == session.quotes.len() {
+            return;
+        }
+        session.draft_revision += 1;
+        self.save_changes(cx);
+        notify_controls(key, cx);
     }
     pub fn set_draft_content(&mut self, key: &str, text: InputContent, cx: &mut Context<Self>) {
         if let Some(s) = self.sessions.get_mut(key)
@@ -1930,7 +2017,14 @@ impl ConversationState {
         } else {
             Vec::new()
         };
-        if (text.trim().is_empty() && attachments.is_empty()) || !self.can_submit(key, cx) {
+        let quotes = if revision.is_some() {
+            self.sessions.get(key)?.quotes.clone()
+        } else {
+            Vec::new()
+        };
+        if (text.trim().is_empty() && attachments.is_empty() && quotes.is_empty())
+            || !self.can_submit(key, cx)
+        {
             return None;
         }
         let client = self.client(key, cx)?;
@@ -1975,6 +2069,23 @@ impl ConversationState {
                 &prompt.message,
             );
         }
+        // Pi owns command dispatch and template/skill expansion. Quoted text
+        // must never become command arguments or turn a command into prose.
+        let requires_dispatch = if used_template {
+            prompt.message.starts_with('/')
+        } else {
+            command.is_some()
+                || prompt.message.starts_with("/skill:")
+                || (prompt.message.starts_with('/') && s.commands.data().is_none())
+        };
+        if !quotes.is_empty() && requires_dispatch {
+            cx.emit(ConversationEvent::Notify {
+                message: crate::feedback::Feedback::QuotedCommandUnsupported,
+                error: true,
+            });
+            return None;
+        }
+        prompt.message = crate::quotes::compose(&quotes, &prompt.message);
         notify_session(&key, cx);
         let attachment_ids: Vec<_> = attachments.iter().map(|a| a.id.clone()).collect();
         prompt.streaming_behavior = Some(mode);
@@ -2059,9 +2170,17 @@ impl ConversationState {
                             s.pending_template = None;
                         }
                         s.attachments.retain(|a| !attachment_ids.contains(&a.id));
+                        let before = s.quotes.len();
+                        s.quotes
+                            .retain(|q| !quotes.iter().any(|sent| sent.id == q.id));
+                        draft_changed |= before != s.quotes.len();
+                        s.attachment_order.retain(|id| {
+                            s.quotes.iter().any(|q| &q.id == id)
+                                || s.attachments.iter().any(|a| &a.id == id)
+                        });
                         // Extension editor updates belong to the next submission.
                         if revision == Some(s.draft_revision) {
-                            draft_changed = !s.draft.text().is_empty();
+                            draft_changed |= !s.draft.text().is_empty();
                             s.draft = "".into();
                             s.draft_revision += 1;
                         }
@@ -2719,13 +2838,14 @@ impl ConversationState {
             drafts: self
                 .sessions
                 .iter()
-                .filter(|(_, s)| !s.draft.text().is_empty())
+                .filter(|(_, s)| !s.draft.text().is_empty() || !s.quotes.is_empty())
                 .map(|(key, s)| DraftFile {
                     key: key.clone(),
                     session_id: Some(s.info.id.clone()),
                     cwd: s.info.cwd.clone(),
                     path: s.info.path.clone(),
                     draft: s.draft.text().to_string(),
+                    quotes: s.quotes.iter().map(|q| q.as_ref().clone()).collect(),
                 })
                 .collect(),
         }
@@ -3070,6 +3190,52 @@ mod tests {
             session.last_assistant_text().as_deref(),
             Some("current answer")
         );
+    }
+
+    #[gpui::test]
+    fn quote_only_drafts_restore_snapshots_comments_and_deletion(cx: &mut TestAppContext) {
+        use crate::quotes::{Origin, QuoteAttachment, Selection};
+        cx.update(gupi_pi_runtime::init);
+        cx.update(crate::host::install_headless);
+        let state = cx.new(|cx| ConversationState::new("unused-pi".into(), cx));
+        let quote = QuoteAttachment::new(
+            Selection {
+                origin: Origin::Message {
+                    role: "assistant".into(),
+                },
+                text: "captured answer".into(),
+            },
+            "Assistant — Content at selection:".into(),
+            "Assistant reply".into(),
+            "Comment: ".into(),
+        );
+        let id = quote.id.clone();
+        state.update(cx, |state, cx| {
+            state.insert_draft(None);
+            let key = state.selected.clone().unwrap();
+            let ready = serde_json::from_value(serde_json::json!({"sessionId":"quote", "isStreaming":false, "isCompacting":false})).unwrap();
+            state.sessions.get_mut(&key).unwrap().state = Some(ready);
+            assert!(state.add_quote(&key, quote.clone(), cx));
+            state.edit_quote(&key, &id, "why?".into(), cx);
+            assert!(!state.sessions[&key].composer_empty());
+            let saved = toml::to_string(&state.file()).unwrap();
+            state.sessions.clear();
+            state.restore_drafts(toml::from_str(&saved).unwrap());
+            let restored = &state.sessions[&key].quotes[0];
+            assert_eq!(restored.id, id);
+            assert_eq!(restored.selection, quote.selection);
+            assert_eq!(restored.comment, "why?");
+            assert_eq!(
+                crate::quotes::compose(&state.sessions[&key].quotes, "question"),
+                "Assistant — Content at selection:\n> captured answer\n\nComment: why?\n\nquestion"
+            );
+            state.sessions.get_mut(&key).unwrap().state = Some(serde_json::from_value(serde_json::json!({"sessionId":"quote", "isStreaming":false, "isCompacting":false})).unwrap());
+            state.remove_quote(&key, &id, cx);
+            assert!(state.file().drafts.is_empty());
+            assert!(state.add_quote(&key, quote, cx));
+            state.temporary = true;
+            assert!(state.file().drafts.is_empty());
+        });
     }
 
     #[gpui::test]

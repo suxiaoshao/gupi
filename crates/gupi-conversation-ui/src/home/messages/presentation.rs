@@ -436,17 +436,7 @@ fn group_summary(tools: &[&Tool], cx: &App) -> String {
     // Independent category labels, not fragments of a translated sentence.
     parts.join(" · ")
 }
-pub(in crate::home) fn code_fence(text: &str) -> String {
-    // Tool output may contain Markdown fences itself.
-    "`".repeat(
-        text.split(|c| c != '`')
-            .map(str::len)
-            .max()
-            .unwrap_or(0)
-            .max(2)
-            + 1,
-    )
-}
+pub(in crate::home) use gupi_conversation::quotes::code_fence;
 
 #[cfg(test)]
 mod tests {

@@ -97,9 +97,9 @@ impl HomeView {
             false
         }
     }
-    pub(super) fn render_attachments(&self, cx: &Context<Self>) -> Option<AnyElement> {
+    pub(super) fn render_attachments(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let session = self.state.read(cx).current()?;
-        if session.attachments().is_empty() {
+        if session.attachments().is_empty() && session.quotes().is_empty() {
             return None;
         }
         let key = self.shown_key.clone().unwrap_or_default();
@@ -109,80 +109,115 @@ impl HomeView {
                 .get(&key)
                 .and_then(|view| view.preview.as_deref())
                 .is_none_or(|id| session.history().on_current_path(id));
+        let attachments = session.attachments().clone();
+        let quotes = session.quotes().to_vec();
+        let quote_ids: Vec<_> = quotes.iter().map(|q| q.id.clone()).collect();
+        let order = session.attachment_order().to_vec();
+        if let Some(view) = self.views.get(&key) {
+            view.quote_cards
+                .update(cx, |cards, cx| cards.set_enabled(editable, cx));
+        }
+        let mut cards: HashMap<String, AnyElement> = attachments
+            .iter()
+            .map(|attachment| {
+                let target = key.clone();
+                let id = attachment.id.clone();
+                let content = attachment.content.clone();
+                let name = attachment.name.clone();
+                let media = match &content {
+                    Content::File { .. } => {
+                        AttachmentMedia::new().child(Icon::new(IconName::FileText))
+                    }
+                    Content::Image { image } => AttachmentMedia::new().src(image.path()),
+                };
+                let format = attachment
+                    .format_name()
+                    .unwrap_or_else(|| t(cx, "attachment-file"));
+                let description = format!("{format} · {}", format_file_size(attachment.byte_len()));
+                let host = self.image_preview.clone();
+                let button_host = host.clone();
+                let button_content = content.clone();
+                let button_name = name.clone();
+                let card = AttachmentView::new()
+                    .id(SharedString::from(format!("attachment-{id}")))
+                    .small()
+                    .media(media)
+                    .content(
+                        AttachmentContent::new()
+                            .child(
+                                // The card's pointer preview has a keyboard-accessible
+                                // counterpart; Attachment's whole-card layer is pointer-only.
+                                Button::new(SharedString::from(format!("preview-{id}")))
+                                    .ghost()
+                                    .xsmall()
+                                    .self_start()
+                                    .px_0()
+                                    .min_w_0()
+                                    .max_w_full()
+                                    .accessibility_label(name.clone())
+                                    .tooltip(name.clone())
+                                    .child(AttachmentTitle::new(name.clone()))
+                                    .on_click(move |_, window, cx| {
+                                        show_preview(
+                                            &button_host,
+                                            &button_content,
+                                            &button_name,
+                                            window,
+                                            cx,
+                                        )
+                                    }),
+                            )
+                            .description(AttachmentDescription::new(description)),
+                    )
+                    .on_click(move |_, window, cx| {
+                        cx.stop_propagation();
+                        show_preview(&host, &content, &name, window, cx);
+                    });
+                let card = card.actions(
+                    AttachmentActions::new().child(
+                        Button::new(SharedString::from(format!("remove-{id}")))
+                            .ghost()
+                            .xsmall()
+                            .icon(IconName::X)
+                            .disabled(!editable)
+                            .tooltip(t(cx, "attachment-remove"))
+                            .accessibility_label(t(cx, "attachment-remove"))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.state.update(cx, |state, cx| {
+                                    state.remove_attachment(&target, &id, cx);
+                                });
+                            })),
+                    ),
+                );
+                (attachment.id.clone(), card.into_any_element())
+            })
+            .collect();
+        if let Some(view) = self.views.get(&key) {
+            for quote in quotes {
+                let id = quote.id.clone();
+                cards.insert(
+                    id,
+                    view.quote_cards
+                        .update(cx, |cards, cx| cards.render_card(quote, cx)),
+                );
+            }
+        }
+        let mut children = Vec::new();
+        for id in order
+            .iter()
+            .chain(attachments.iter().map(|a| &a.id))
+            .chain(quote_ids.iter())
+        {
+            if let Some(card) = cards.remove(id) {
+                children.push(card);
+            }
+        }
+        let view = self.views.get(&key)?;
+        let handle = view.attachment_scroll.clone();
         Some(
             AttachmentGroup::new(SharedString::from(format!("composer-attachments-{key}")))
-                .children(session.attachments().iter().map(|attachment| {
-                    let target = key.clone();
-                    let id = attachment.id.clone();
-                    let content = attachment.content.clone();
-                    let name = attachment.name.clone();
-                    let media = match &content {
-                        Content::File { .. } => {
-                            AttachmentMedia::new().child(Icon::new(IconName::FileText))
-                        }
-                        Content::Image { image } => AttachmentMedia::new().src(image.path()),
-                    };
-                    let format = attachment
-                        .format_name()
-                        .unwrap_or_else(|| t(cx, "attachment-file"));
-                    let description =
-                        format!("{format} · {}", format_file_size(attachment.byte_len()));
-                    let host = self.image_preview.clone();
-                    let button_host = host.clone();
-                    let button_content = content.clone();
-                    let button_name = name.clone();
-                    let card = AttachmentView::new()
-                        .id(SharedString::from(format!("attachment-{id}")))
-                        .small()
-                        .media(media)
-                        .content(
-                            AttachmentContent::new()
-                                .child(
-                                    // The card's pointer preview has a keyboard-accessible
-                                    // counterpart; Attachment's whole-card layer is pointer-only.
-                                    Button::new(SharedString::from(format!("preview-{id}")))
-                                        .ghost()
-                                        .xsmall()
-                                        .self_start()
-                                        .px_0()
-                                        .min_w_0()
-                                        .max_w_full()
-                                        .accessibility_label(name.clone())
-                                        .tooltip(name.clone())
-                                        .child(AttachmentTitle::new(name.clone()))
-                                        .on_click(move |_, window, cx| {
-                                            show_preview(
-                                                &button_host,
-                                                &button_content,
-                                                &button_name,
-                                                window,
-                                                cx,
-                                            )
-                                        }),
-                                )
-                                .description(AttachmentDescription::new(description)),
-                        )
-                        .on_click(move |_, window, cx| {
-                            cx.stop_propagation();
-                            show_preview(&host, &content, &name, window, cx);
-                        });
-                    card.actions(
-                        AttachmentActions::new().child(
-                            Button::new(SharedString::from(format!("remove-{id}")))
-                                .ghost()
-                                .xsmall()
-                                .icon(IconName::X)
-                                .disabled(!editable)
-                                .tooltip(t(cx, "attachment-remove"))
-                                .accessibility_label(t(cx, "attachment-remove"))
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.state.update(cx, |state, cx| {
-                                        state.remove_attachment(&target, &id, cx);
-                                    });
-                                })),
-                        ),
-                    )
-                }))
+                .track_scroll(&handle)
+                .children(children)
                 .into_any_element(),
         )
     }

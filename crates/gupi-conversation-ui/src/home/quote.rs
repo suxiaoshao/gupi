@@ -1,37 +1,14 @@
-//! One-shot displayed selections; the normal composer owns edits and undo.
+//! One-shot displayed selections become session-owned draft attachments.
 use super::*;
+pub(super) mod cards;
+pub(super) mod toolbar;
 use fluent_bundle::FluentArgs;
 use gpui_kit::component::diff::{DiffSide, DiffState};
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
 use gupi_settings::i18n::t_with_args;
 
-#[derive(Clone, PartialEq)]
-pub(crate) enum Origin {
-    Message {
-        role: String,
-    },
-    File {
-        path: PathBuf,
-        start: usize,
-        end: usize,
-        language: String,
-        kind: FileKind,
-        original: bool,
-    },
-}
-#[derive(Clone, Copy, PartialEq)]
-pub(crate) enum FileKind {
-    Source,
-    Turn,
-    Staged,
-    Unstaged,
-    Untracked,
-}
-#[derive(Clone, PartialEq)]
-pub(crate) struct Selection {
-    pub origin: Origin,
-    pub text: String,
-}
+use gupi_conversation::quotes::QuoteAttachment;
+pub(crate) use gupi_conversation::quotes::{FileKind, Origin, Selection};
 #[derive(Clone, PartialEq)]
 pub(crate) struct Snapshot {
     key: String,
@@ -70,74 +47,96 @@ impl Unavailable {
 }
 pub(crate) type Capture = Result<Snapshot, Unavailable>;
 
-impl Selection {
-    fn format(&self, cwd: &std::path::Path, cx: &App) -> String {
-        let mut args = FluentArgs::new();
-        let title = match &self.origin {
-            Origin::Message { role } => {
-                args.set("role", role.as_str());
-                t_with_args(cx, "quote-message-title", &args)
+fn display_path(path: &str) -> String {
+    path.chars()
+        .flat_map(|c| {
+            if c.is_control() {
+                c.escape_default().collect::<Vec<_>>()
+            } else {
+                vec![c]
             }
-            Origin::File {
-                path,
-                start,
-                end,
-                kind,
-                original,
-                ..
-            } => {
-                let path = path.strip_prefix(cwd).unwrap_or(path).to_string_lossy();
-                let path: String = path
-                    .chars()
-                    .flat_map(|c| {
-                        if c.is_control() {
-                            c.escape_default().collect::<Vec<_>>()
-                        } else {
-                            vec![c]
-                        }
-                    })
-                    .collect();
-                args.set("path", path);
-                args.set("start", *start as i64);
-                args.set("end", *end as i64);
-                args.set("side", if *original { "original" } else { "modified" });
-                t_with_args(
-                    cx,
-                    match kind {
-                        FileKind::Source => "quote-file-title",
-                        FileKind::Turn => "quote-turn-title",
-                        FileKind::Staged => "quote-staged-title",
-                        FileKind::Unstaged => "quote-unstaged-title",
-                        FileKind::Untracked => "quote-untracked-title",
-                    },
-                    &args,
-                )
-            }
-        };
-        match &self.origin {
-            Origin::Message { .. } => format!(
-                "{title}\n{}\n\n",
-                self.text
-                    .split('\n')
-                    .map(|line| format!("> {line}"))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            ),
-            Origin::File { language, .. } => {
-                let fence = messages::code_fence(&self.text);
-                let language = if matches!(language.as_str(), "text" | "plaintext") {
-                    ""
-                } else {
-                    language
-                };
-                format!(
-                    "{title}\n{fence}{language}\n{}{separator}{fence}\n\n",
-                    self.text,
-                    separator = if self.text.ends_with('\n') { "" } else { "\n" }
-                )
-            }
+        })
+        .collect()
+}
+
+fn attachment(selection: &Selection, cwd: &std::path::Path, cx: &App) -> QuoteAttachment {
+    let mut args = FluentArgs::new();
+    let title = match &selection.origin {
+        Origin::Message { role } => {
+            args.set("role", role.as_str());
+            t_with_args(cx, "quote-message-title", &args)
         }
-    }
+        Origin::File {
+            path,
+            start,
+            end,
+            kind,
+            original,
+            ..
+        } => {
+            let path = path.strip_prefix(cwd).unwrap_or(path).to_string_lossy();
+            let path = display_path(&path);
+            args.set("path", path);
+            args.set("start", *start as i64);
+            args.set("end", *end as i64);
+            args.set("side", if *original { "original" } else { "modified" });
+            t_with_args(
+                cx,
+                match kind {
+                    FileKind::Source => "quote-file-title",
+                    FileKind::Turn => "quote-turn-title",
+                    FileKind::Staged => "quote-staged-title",
+                    FileKind::Unstaged => "quote-unstaged-title",
+                    FileKind::Untracked => "quote-untracked-title",
+                },
+                &args,
+            )
+        }
+    };
+    let short_title = match &selection.origin {
+        Origin::Message { role } => {
+            let mut args = FluentArgs::new();
+            args.set("role", role.as_str());
+            t_with_args(cx, "quote-message-short", &args)
+        }
+        Origin::File {
+            path,
+            start,
+            end,
+            kind,
+            original,
+            ..
+        } => {
+            let mut args = FluentArgs::new();
+            args.set(
+                "name",
+                display_path(
+                    &path
+                        .file_name()
+                        .unwrap_or(path.as_os_str())
+                        .to_string_lossy(),
+                ),
+            );
+            args.set("start", *start as i64);
+            args.set("end", *end as i64);
+            args.set("side", if *original { "original" } else { "modified" });
+            t_with_args(
+                cx,
+                if *kind == FileKind::Source {
+                    "quote-file-short"
+                } else {
+                    "quote-diff-short"
+                },
+                &args,
+            )
+        }
+    };
+    QuoteAttachment::new(
+        selection.clone(),
+        title,
+        short_title,
+        t(cx, "quote-comment-prefix"),
+    )
 }
 impl HomeView {
     pub(crate) fn quote_allowed(&self, cx: &App) -> bool {
@@ -200,46 +199,50 @@ impl HomeView {
         self.bind_quote(selection, cx)
     }
     pub(crate) fn quote(&mut self, action: &Quote, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(snapshot) = &action.0 else {
-            return;
-        };
-        if !self.quote_allowed(cx) {
-            return;
+        if let Some(snapshot) = &action.0 {
+            self.add_quote_snapshot(snapshot, window, cx);
         }
-        let state = self.state.read(cx);
-        if state.selected().as_ref() != Some(&snapshot.key)
-            || state
+    }
+    fn quote_snapshot_current(&self, snapshot: &Snapshot, cx: &App) -> bool {
+        self.quote_allowed(cx)
+            && self.state.read(cx).selected().as_ref() == Some(&snapshot.key)
+            && self
+                .state
+                .read(cx)
                 .sessions()
                 .get(&snapshot.key)
-                .is_none_or(|s| s.binding() != snapshot.binding)
-        {
-            return;
+                .is_some_and(|s| s.binding() == snapshot.binding)
+    }
+    fn add_quote_snapshot(
+        &mut self,
+        snapshot: &Snapshot,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<String> {
+        if !self.quote_snapshot_current(snapshot, cx) {
+            return None;
         }
-        let text = snapshot
-            .selection
-            .format(&state.sessions()[&snapshot.key].info().cwd, cx);
-        let inserted = self.input.update(cx, |input, cx| {
-            if input.marked_text_range(window, cx).is_some() {
-                return false;
-            }
-            let value = input.value();
-            let separator = if value.is_empty() || value.ends_with("\n\n") {
-                ""
-            } else if value.ends_with('\n') {
-                "\n"
-            } else {
-                "\n\n"
-            };
-            let appended = format!("{separator}{text}");
-            let end = value.len();
-            input.set_selected_range(end..end, cx);
-            input.insert(appended, window, cx);
-            true
-        });
-        if inserted {
-            self.show_conversation(window, cx);
-            self.focus_composer(window, cx);
+        let quote = attachment(
+            &snapshot.selection,
+            &self.state.read(cx).sessions()[&snapshot.key].info().cwd,
+            cx,
+        );
+        let id = quote.id.clone();
+        let added = self
+            .state
+            .update(cx, |state, cx| state.add_quote(&snapshot.key, quote, cx));
+        if !added {
+            return None;
         }
+        self.show_conversation(window, cx);
+        if let Some(view) = self.views.get(&snapshot.key) {
+            let count = self.state.read(cx).sessions()[&snapshot.key]
+                .attachment_order()
+                .len();
+            view.attachment_scroll
+                .scroll_to_item(count.saturating_sub(1));
+        }
+        Some(id)
     }
 }
 
@@ -329,13 +332,24 @@ pub(crate) fn diff_body(
     let Some(state) = state.cloned() else {
         return body;
     };
+    let events = toolbar::region(
+        toolbar::Target::Diff {
+            state: state.downgrade(),
+            path: path.clone(),
+            kind,
+        },
+        owner.clone(),
+        key.clone(),
+    );
     div()
+        .relative()
         .id(format!("quote-diff-{}", state.entity_id().as_u64()))
         .w_full()
         .when(fill, |body| body.size_full())
         .min_h_0()
         .min_w_0()
         .child(body)
+        .child(events)
         .context_menu(move |menu, window, cx| {
             let text = state.read(cx).selected_text(cx);
             self::menu(

@@ -1369,23 +1369,23 @@ quote-select-diff-lines = 차이의 한쪽 행 번호에서 선택하세요.
 quote-composer-unavailable = 현재 일반 메시지 초안을 편집할 수 없습니다.
 quote-message-title =
     { $role ->
-        [user] 사용자:
-       *[assistant] 어시스턴트:
+        [user] 사용자 — 선택 당시 내용:
+       *[assistant] 어시스턴트 — 선택 당시 내용:
     }
-quote-file-title = 파일: { $path }, { $start }–{ $end }행
-quote-turn-title = 이번 변경: { $path }, { $side ->
+quote-file-title = 파일 — 선택 당시 내용: { $path }, { $start }–{ $end }행
+quote-turn-title = 이번 변경 — 선택 당시 내용: { $path }, { $side ->
         [original] 이전 쪽
        *[modified] 수정된 쪽
     }, { $start }–{ $end }행
-quote-staged-title = Git · 스테이징됨: { $path }, { $side ->
+quote-staged-title = Git · 스테이징됨 — 선택 당시 내용: { $path }, { $side ->
         [original] 이전 쪽
        *[modified] 수정된 쪽
     }, { $start }–{ $end }행
-quote-unstaged-title = Git · 스테이징 안 됨: { $path }, { $side ->
+quote-unstaged-title = Git · 스테이징 안 됨 — 선택 당시 내용: { $path }, { $side ->
         [original] 이전 쪽
        *[modified] 수정된 쪽
     }, { $start }–{ $end }행
-quote-untracked-title = Git · 추적 안 됨: { $path }, { $side ->
+quote-untracked-title = Git · 추적 안 됨 — 선택 당시 내용: { $path }, { $side ->
         [original] 이전 쪽
        *[modified] 수정된 쪽
     }, { $start }–{ $end }행
@@ -1395,3 +1395,26 @@ quote-disabled-menu =
         [diff] 입력창에 인용 — 한쪽 행 번호를 선택하세요
        *[composer] 입력창에 인용 — 메시지 초안을 편집할 수 없습니다
     }
+
+quote-comment-action = 댓글…
+quote-comment-placeholder = 댓글 추가 (선택 사항)…
+quote-delete = 인용 삭제
+quote-save = 저장
+quote-comment-prefix = { "댓글: " }
+quote-message-short =
+    { $role ->
+        [user] 내 메시지
+       *[assistant] 어시스턴트 답변
+    }
+quote-file-short = { $name } · { $start }–{ $end } 행
+quote-diff-short = { $name } · { $side ->
+        [original] 원본 쪽
+       *[modified] 수정 쪽
+    } · { $start }–{ $end } 행
+quote-card-label = 인용: { $source }{ $comment ->
+        [yes] , 댓글 있음
+       *[no] { "" }
+    }
+quote-delete-label = 인용 삭제: { $source }
+
+quote-command-unavailable = 이 명령은 아직 인용을 지원하지 않습니다. 일반 메시지로 다시 작성하거나 인용을 제거한 뒤 보내세요.

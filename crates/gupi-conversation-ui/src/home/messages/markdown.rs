@@ -253,11 +253,21 @@ impl RenderOnce for Markdown {
         #[cfg(feature = "performance")]
         let content = crate::performance::measure("markdown", false, content);
         if let Some((owner, key, role)) = self.quote {
+            let events = quote::toolbar::region(
+                quote::toolbar::Target::Text {
+                    state: view.downgrade(),
+                    role: role.clone(),
+                },
+                owner.clone(),
+                key.clone(),
+            );
             gpui_kit::div()
+                .relative()
                 .id(format!("quote-message-{}", self.id))
                 .w_full()
                 .min_w_0()
                 .child(content)
+                .child(events)
                 .context_menu(move |menu, window, cx| {
                     let text = view.read(cx).selected_text();
                     let selection = quote::Selection {

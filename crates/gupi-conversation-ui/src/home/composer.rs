@@ -81,6 +81,7 @@ impl HomeView {
     ) -> AnyElement {
         #[cfg(feature = "performance")]
         let _span = tracing::debug_span!(target: "gupi::performance", "composer.render").entered();
+        let attachments = self.render_attachments(cx);
         let Some(session) = self.state.read(cx).current() else {
             return div().into_any_element();
         };
@@ -628,7 +629,7 @@ impl HomeView {
             let mut composer =
                 Composer::new("conversation-composer", input, view.model_picker.clone())
                     .actions(actions);
-            if let Some(attachments) = self.render_attachments(cx) {
+            if let Some(attachments) = attachments {
                 composer = composer.attachments(attachments);
             }
             if session.stats().data().is_some() {

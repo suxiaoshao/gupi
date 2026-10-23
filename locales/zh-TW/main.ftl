@@ -1376,23 +1376,23 @@ quote-select-diff-lines = 請從行號選取同一側的內容。
 quote-composer-unavailable = 目前無法編輯一般訊息草稿。
 quote-message-title =
     { $role ->
-        [user] 使用者：
-       *[assistant] 助理：
+        [user] 使用者 — 選取時的內容：
+       *[assistant] 助理 — 選取時的內容：
     }
-quote-file-title = 檔案：{ $path }，{ $start }–{ $end } 行
-quote-turn-title = 本輪變更：{ $path }、{ $side ->
+quote-file-title = 檔案 — 選取時的內容：{ $path }，{ $start }–{ $end } 行
+quote-turn-title = 本輪變更 — 選取時的內容：{ $path }、{ $side ->
         [original] 舊側
        *[modified] 新側
     }、{ $start }–{ $end } 行
-quote-staged-title = Git · 已暫存：{ $path }、{ $side ->
+quote-staged-title = Git · 已暫存 — 選取時的內容：{ $path }、{ $side ->
         [original] 舊側
        *[modified] 新側
     }、{ $start }–{ $end } 行
-quote-unstaged-title = Git · 未暫存：{ $path }、{ $side ->
+quote-unstaged-title = Git · 未暫存 — 選取時的內容：{ $path }、{ $side ->
         [original] 舊側
        *[modified] 新側
     }、{ $start }–{ $end } 行
-quote-untracked-title = Git · 未追蹤：{ $path }、{ $side ->
+quote-untracked-title = Git · 未追蹤 — 選取時的內容：{ $path }、{ $side ->
         [original] 舊側
        *[modified] 新側
     }、{ $start }–{ $end } 行
@@ -1402,3 +1402,26 @@ quote-disabled-menu =
         [diff] 引用到輸入框 — 請從行號選取同一側
        *[composer] 引用到輸入框 — 訊息草稿目前無法編輯
     }
+
+quote-comment-action = 評論…
+quote-comment-placeholder = 新增評論（選填）…
+quote-delete = 刪除引用
+quote-save = 儲存
+quote-comment-prefix = { "評論：" }
+quote-message-short =
+    { $role ->
+        [user] 你的訊息
+       *[assistant] 助理回覆
+    }
+quote-file-short = { $name } · { $start }–{ $end } 行
+quote-diff-short = { $name } · { $side ->
+        [original] 舊側
+       *[modified] 新側
+    } · { $start }–{ $end } 行
+quote-card-label = 引用：{ $source }{ $comment ->
+        [yes] , 含評論
+       *[no] { "" }
+    }
+quote-delete-label = 刪除引用：{ $source }
+
+quote-command-unavailable = 此命令暫不支援附帶引用。請改寫為一般訊息，或移除引用後傳送。

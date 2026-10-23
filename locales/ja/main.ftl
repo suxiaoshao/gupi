@@ -1369,23 +1369,23 @@ quote-select-diff-lines = 差分の片側の行番号から選択してくださ
 quote-composer-unavailable = 現在、通常のメッセージ下書きは編集できません。
 quote-message-title =
     { $role ->
-        [user] ユーザー：
-       *[assistant] アシスタント：
+        [user] ユーザー — 選択時の内容：
+       *[assistant] アシスタント — 選択時の内容：
     }
-quote-file-title = ファイル：{ $path }、{ $start }–{ $end } 行
-quote-turn-title = 今回の変更：{ $path }、{ $side ->
+quote-file-title = ファイル — 選択時の内容：{ $path }、{ $start }–{ $end } 行
+quote-turn-title = 今回の変更 — 選択時の内容：{ $path }、{ $side ->
         [original] 変更前
        *[modified] 変更後
     }、{ $start }–{ $end } 行
-quote-staged-title = Git · ステージ済み：{ $path }、{ $side ->
+quote-staged-title = Git · ステージ済み — 選択時の内容：{ $path }、{ $side ->
         [original] 変更前
        *[modified] 変更後
     }、{ $start }–{ $end } 行
-quote-unstaged-title = Git · 未ステージ：{ $path }、{ $side ->
+quote-unstaged-title = Git · 未ステージ — 選択時の内容：{ $path }、{ $side ->
         [original] 変更前
        *[modified] 変更後
     }、{ $start }–{ $end } 行
-quote-untracked-title = Git · 未追跡：{ $path }、{ $side ->
+quote-untracked-title = Git · 未追跡 — 選択時の内容：{ $path }、{ $side ->
         [original] 変更前
        *[modified] 変更後
     }、{ $start }–{ $end } 行
@@ -1395,3 +1395,26 @@ quote-disabled-menu =
         [diff] 入力欄に引用 — 片側の行番号を選択してください
        *[composer] 入力欄に引用 — 下書きを編集できません
     }
+
+quote-comment-action = コメント…
+quote-comment-placeholder = コメントを追加（任意）…
+quote-delete = 引用を削除
+quote-save = 保存
+quote-comment-prefix = { "コメント：" }
+quote-message-short =
+    { $role ->
+        [user] あなたのメッセージ
+       *[assistant] アシスタントの回答
+    }
+quote-file-short = { $name } · { $start }–{ $end } 行
+quote-diff-short = { $name } · { $side ->
+        [original] 変更前
+       *[modified] 変更後
+    } · { $start }–{ $end } 行
+quote-card-label = 引用：{ $source }{ $comment ->
+        [yes] , コメントあり
+       *[no] { "" }
+    }
+quote-delete-label = 引用を削除：{ $source }
+
+quote-command-unavailable = このコマンドにはまだ引用を添付できません。通常のメッセージに書き直すか、引用を削除してから送信してください。

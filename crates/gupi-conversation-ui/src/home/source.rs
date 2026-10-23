@@ -170,6 +170,15 @@ impl Preview {
             self.focus.focus(window, cx);
         }
     }
+    pub(super) fn quote_range(&self, cx: &App) -> Option<std::ops::Range<usize>> {
+        self.loaded.then(|| self.editor.read(cx).selected_range())
+    }
+    pub(super) fn clear_quote_selection(&self, cx: &mut Context<Self>) {
+        self.editor.update(cx, |editor, cx| {
+            let end = editor.selected_range().end;
+            editor.set_selected_range(end..end, cx);
+        });
+    }
     pub(super) fn contains_focus(&self, window: &Window, cx: &App) -> bool {
         self.focus.contains_focused(window, cx)
     }
@@ -179,6 +188,9 @@ impl Render for Preview {
         let path = self.path.to_string_lossy().into_owned();
         let preview = cx.weak_entity();
         let quote_owner = self.quote_owner.clone();
+        let quote_events = self.quote_owner.clone().map(|(owner, key)| {
+            quote::toolbar::region(quote::toolbar::Target::Source(preview.clone()), owner, key)
+        });
         v_flex()
             .id("source-pane")
             .relative()
@@ -362,41 +374,49 @@ impl Render for Preview {
             })
             .when(self.loaded, |view| {
                 view.child(
-                    div().flex_1().min_h_0().child(
-                        Editor::new(&self.editor)
-                            .context_menu(move |menu, _, cx| {
-                                let selected = preview
-                                    .read_with(cx, |source, cx| source.quote_selection(cx))
-                                    .unwrap_or(Err(quote::Unavailable::Selection));
-                                let empty = selected.as_ref().map_or(true, |s| s.text.is_empty());
-                                let capture = quote_owner
-                                    .as_ref()
-                                    .map(|(owner, key)| quote::capture(owner, key, selected, cx))
-                                    .unwrap_or(Err(quote::Unavailable::Composer));
-                                let reason = capture.as_ref().err().copied();
-                                menu.menu_with_disabled(
-                                    t(cx, "menu-copy"),
-                                    empty,
-                                    Box::new(gpui_kit::component::input::Copy),
-                                )
-                                .menu_with_disabled(
-                                    reason
-                                        .map(|reason| reason.menu_label(cx))
-                                        .unwrap_or_else(|| t(cx, "quote-in-composer")),
-                                    reason.is_some(),
-                                    Box::new(quote::Quote(capture.ok())),
-                                )
-                                .separator()
-                                .menu(
-                                    t(cx, "menu-select-all"),
-                                    Box::new(gpui_kit::component::input::SelectAll),
-                                )
-                            })
-                            .readonly(true)
-                            .bordered(false)
-                            .aria_label(t(cx, "files-preview"))
-                            .h_full(),
-                    ),
+                    div()
+                        .relative()
+                        .flex_1()
+                        .min_h_0()
+                        .children(quote_events)
+                        .child(
+                            Editor::new(&self.editor)
+                                .context_menu(move |menu, _, cx| {
+                                    let selected = preview
+                                        .read_with(cx, |source, cx| source.quote_selection(cx))
+                                        .unwrap_or(Err(quote::Unavailable::Selection));
+                                    let empty =
+                                        selected.as_ref().map_or(true, |s| s.text.is_empty());
+                                    let capture = quote_owner
+                                        .as_ref()
+                                        .map(|(owner, key)| {
+                                            quote::capture(owner, key, selected, cx)
+                                        })
+                                        .unwrap_or(Err(quote::Unavailable::Composer));
+                                    let reason = capture.as_ref().err().copied();
+                                    menu.menu_with_disabled(
+                                        t(cx, "menu-copy"),
+                                        empty,
+                                        Box::new(gpui_kit::component::input::Copy),
+                                    )
+                                    .menu_with_disabled(
+                                        reason
+                                            .map(|reason| reason.menu_label(cx))
+                                            .unwrap_or_else(|| t(cx, "quote-in-composer")),
+                                        reason.is_some(),
+                                        Box::new(quote::Quote(capture.ok())),
+                                    )
+                                    .separator()
+                                    .menu(
+                                        t(cx, "menu-select-all"),
+                                        Box::new(gpui_kit::component::input::SelectAll),
+                                    )
+                                })
+                                .readonly(true)
+                                .bordered(false)
+                                .aria_label(t(cx, "files-preview"))
+                                .h_full(),
+                        ),
                 )
             })
             .when(self.focus.is_focused(window), |view| {

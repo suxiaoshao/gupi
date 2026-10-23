@@ -1395,23 +1395,23 @@ quote-select-diff-lines = Wähle Zeilennummern auf einer Seite des Diffs aus.
 quote-composer-unavailable = Der normale Nachrichtenentwurf kann gerade nicht bearbeitet werden.
 quote-message-title =
     { $role ->
-        [user] Benutzer:
-       *[assistant] Assistent:
+        [user] Benutzer — Inhalt bei Auswahl:
+       *[assistant] Assistent — Inhalt bei Auswahl:
     }
-quote-file-title = Datei: { $path }, Zeilen { $start }–{ $end }
-quote-turn-title = Änderungen dieses Durchlaufs: { $path }, { $side ->
+quote-file-title = Datei — Inhalt bei Auswahl: { $path }, Zeilen { $start }–{ $end }
+quote-turn-title = Änderungen dieses Durchlaufs — Inhalt bei Auswahl: { $path }, { $side ->
         [original] Originalseite
        *[modified] geänderte Seite
     }, Zeilen { $start }–{ $end }
-quote-staged-title = Git · Vorgemerkt: { $path }, { $side ->
+quote-staged-title = Git · Vorgemerkt — Inhalt bei Auswahl: { $path }, { $side ->
         [original] Originalseite
        *[modified] geänderte Seite
     }, Zeilen { $start }–{ $end }
-quote-unstaged-title = Git · Nicht vorgemerkt: { $path }, { $side ->
+quote-unstaged-title = Git · Nicht vorgemerkt — Inhalt bei Auswahl: { $path }, { $side ->
         [original] Originalseite
        *[modified] geänderte Seite
     }, Zeilen { $start }–{ $end }
-quote-untracked-title = Git · Unverfolgt: { $path }, { $side ->
+quote-untracked-title = Git · Unverfolgt — Inhalt bei Auswahl: { $path }, { $side ->
         [original] Originalseite
        *[modified] geänderte Seite
     }, Zeilen { $start }–{ $end }
@@ -1421,3 +1421,26 @@ quote-disabled-menu =
         [diff] Im Eingabefeld zitieren — Zeilennummern einer Seite auswählen
        *[composer] Im Eingabefeld zitieren — Nachrichtenentwurf nicht bearbeitbar
     }
+
+quote-comment-action = Kommentieren…
+quote-comment-placeholder = Kommentar hinzufügen (optional)…
+quote-delete = Zitat löschen
+quote-save = Speichern
+quote-comment-prefix = { "Kommentar: " }
+quote-message-short =
+    { $role ->
+        [user] Deine Nachricht
+       *[assistant] Assistentenantwort
+    }
+quote-file-short = { $name } · Zeilen { $start }–{ $end }
+quote-diff-short = { $name } · { $side ->
+        [original] ursprüngliche Seite
+       *[modified] geänderte Seite
+    } · { $start }–{ $end } Zeilen
+quote-card-label = Zitat: { $source }{ $comment ->
+        [yes] , mit Kommentar
+       *[no] { "" }
+    }
+quote-delete-label = Zitat löschen: { $source }
+
+quote-command-unavailable = Dieser Befehl unterstützt noch keine Zitate. Formuliere ihn als normale Nachricht oder entferne die Zitate vor dem Senden.

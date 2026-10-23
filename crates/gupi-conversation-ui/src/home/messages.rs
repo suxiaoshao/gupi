@@ -42,7 +42,6 @@ use activity::RunContent;
 use activity::RunSection;
 use activity::ToolStatus;
 use presentation::Disclosure;
-pub(super) use presentation::code_fence;
 
 // The list and reading-anchor geometry share the same viewport inset.
 const MESSAGE_INSET_REM: f32 = 0.5;

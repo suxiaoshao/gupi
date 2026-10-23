@@ -1395,23 +1395,23 @@ quote-select-diff-lines = Sélectionnez les numéros de ligne sur un seul côté
 quote-composer-unavailable = Le brouillon du message normal ne peut pas être modifié actuellement.
 quote-message-title =
     { $role ->
-        [user] Utilisateur :
-       *[assistant] Assistant :
+        [user] Utilisateur  — Contenu lors de la sélection:
+       *[assistant] Assistant  — Contenu lors de la sélection:
     }
-quote-file-title = Fichier : { $path }, lignes { $start }–{ $end }
-quote-turn-title = Modifications de ce tour: { $path }, { $side ->
+quote-file-title = Fichier  — Contenu lors de la sélection: { $path }, lignes { $start }–{ $end }
+quote-turn-title = Modifications de ce tour — Contenu lors de la sélection: { $path }, { $side ->
         [original] côté original
        *[modified] côté modifié
     }, lignes { $start }–{ $end }
-quote-staged-title = Git · Indexé: { $path }, { $side ->
+quote-staged-title = Git · Indexé — Contenu lors de la sélection: { $path }, { $side ->
         [original] côté original
        *[modified] côté modifié
     }, lignes { $start }–{ $end }
-quote-unstaged-title = Git · Non indexé: { $path }, { $side ->
+quote-unstaged-title = Git · Non indexé — Contenu lors de la sélection: { $path }, { $side ->
         [original] côté original
        *[modified] côté modifié
     }, lignes { $start }–{ $end }
-quote-untracked-title = Git · Non suivi: { $path }, { $side ->
+quote-untracked-title = Git · Non suivi — Contenu lors de la sélection: { $path }, { $side ->
         [original] côté original
        *[modified] côté modifié
     }, lignes { $start }–{ $end }
@@ -1421,3 +1421,26 @@ quote-disabled-menu =
         [diff] Citer dans le champ de message — sélectionnez les lignes d’un côté
        *[composer] Citer dans le champ de message — brouillon non modifiable
     }
+
+quote-comment-action = Commenter…
+quote-comment-placeholder = Ajouter un commentaire (facultatif)…
+quote-delete = Supprimer la citation
+quote-save = Enregistrer
+quote-comment-prefix = { "Commentaire : " }
+quote-message-short =
+    { $role ->
+        [user] Votre message
+       *[assistant] Réponse de l’assistant
+    }
+quote-file-short = { $name } · lignes { $start }–{ $end }
+quote-diff-short = { $name } · { $side ->
+        [original] côté original
+       *[modified] côté modifié
+    } · { $start }–{ $end } lignes
+quote-card-label = Citation : { $source }{ $comment ->
+        [yes] , avec commentaire
+       *[no] { "" }
+    }
+quote-delete-label = Supprimer la citation : { $source }
+
+quote-command-unavailable = Cette commande ne prend pas encore en charge les citations. Reformulez-la en message normal ou retirez les citations avant l’envoi.

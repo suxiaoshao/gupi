@@ -1394,23 +1394,23 @@ quote-select-diff-lines = Selecione números de linha de um só lado da compara�
 quote-composer-unavailable = O rascunho da mensagem normal não pode ser editado agora.
 quote-message-title =
     { $role ->
-        [user] Usuário:
-       *[assistant] Assistente:
+        [user] Usuário — Conteúdo no momento da seleção:
+       *[assistant] Assistente — Conteúdo no momento da seleção:
     }
-quote-file-title = Arquivo: { $path }, linhas { $start }–{ $end }
-quote-turn-title = Alterações desta rodada: { $path }, { $side ->
+quote-file-title = Arquivo — Conteúdo no momento da seleção: { $path }, linhas { $start }–{ $end }
+quote-turn-title = Alterações desta rodada — Conteúdo no momento da seleção: { $path }, { $side ->
         [original] lado original
        *[modified] lado modificado
     }, linhas { $start }–{ $end }
-quote-staged-title = Git · Preparado: { $path }, { $side ->
+quote-staged-title = Git · Preparado — Conteúdo no momento da seleção: { $path }, { $side ->
         [original] lado original
        *[modified] lado modificado
     }, linhas { $start }–{ $end }
-quote-unstaged-title = Git · Não preparado: { $path }, { $side ->
+quote-unstaged-title = Git · Não preparado — Conteúdo no momento da seleção: { $path }, { $side ->
         [original] lado original
        *[modified] lado modificado
     }, linhas { $start }–{ $end }
-quote-untracked-title = Git · Não rastreado: { $path }, { $side ->
+quote-untracked-title = Git · Não rastreado — Conteúdo no momento da seleção: { $path }, { $side ->
         [original] lado original
        *[modified] lado modificado
     }, linhas { $start }–{ $end }
@@ -1420,3 +1420,26 @@ quote-disabled-menu =
         [diff] Citar no campo de mensagem — selecione linhas de um lado
        *[composer] Citar no campo de mensagem — rascunho indisponível
     }
+
+quote-comment-action = Comentar…
+quote-comment-placeholder = Adicionar comentário (opcional)…
+quote-delete = Excluir citação
+quote-save = Salvar
+quote-comment-prefix = { "Comentário: " }
+quote-message-short =
+    { $role ->
+        [user] Sua mensagem
+       *[assistant] Resposta do assistente
+    }
+quote-file-short = { $name } · linhas { $start }–{ $end }
+quote-diff-short = { $name } · { $side ->
+        [original] lado original
+       *[modified] lado modificado
+    } · { $start }–{ $end } linhas
+quote-card-label = Citação: { $source }{ $comment ->
+        [yes] , com comentário
+       *[no] { "" }
+    }
+quote-delete-label = Excluir citação: { $source }
+
+quote-command-unavailable = Este comando ainda não aceita citações. Reescreva-o como uma mensagem normal ou remova as citações antes de enviar.

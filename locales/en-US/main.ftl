@@ -1395,23 +1395,23 @@ quote-select-diff-lines = Select line numbers on one side of the diff.
 quote-composer-unavailable = The normal message draft cannot be edited right now.
 quote-message-title =
     { $role ->
-        [user] User:
-       *[assistant] Assistant:
+        [user] User — Content at selection:
+       *[assistant] Assistant — Content at selection:
     }
-quote-file-title = File: { $path }, lines { $start }–{ $end }
-quote-turn-title = Turn changes: { $path }, { $side ->
+quote-file-title = File — Content at selection: { $path }, lines { $start }–{ $end }
+quote-turn-title = Turn changes — Content at selection: { $path }, { $side ->
         [original] original side
        *[modified] modified side
     }, lines { $start }–{ $end }
-quote-staged-title = Git · Staged: { $path }, { $side ->
+quote-staged-title = Git · Staged — Content at selection: { $path }, { $side ->
         [original] original side
        *[modified] modified side
     }, lines { $start }–{ $end }
-quote-unstaged-title = Git · Unstaged: { $path }, { $side ->
+quote-unstaged-title = Git · Unstaged — Content at selection: { $path }, { $side ->
         [original] original side
        *[modified] modified side
     }, lines { $start }–{ $end }
-quote-untracked-title = Git · Untracked: { $path }, { $side ->
+quote-untracked-title = Git · Untracked — Content at selection: { $path }, { $side ->
         [original] original side
        *[modified] modified side
     }, lines { $start }–{ $end }
@@ -1421,3 +1421,26 @@ quote-disabled-menu =
         [diff] Quote in composer — select line numbers on one side
        *[composer] Quote in composer — message draft unavailable
     }
+
+quote-comment-action = Comment…
+quote-comment-placeholder = Add a comment (optional)…
+quote-delete = Delete quote
+quote-save = Save
+quote-comment-prefix = { "Comment: " }
+quote-message-short =
+    { $role ->
+        [user] Your message
+       *[assistant] Assistant reply
+    }
+quote-file-short = { $name } · lines { $start }–{ $end }
+quote-diff-short = { $name } · { $side ->
+        [original] original side
+       *[modified] modified side
+    } · { $start }–{ $end } lines
+quote-card-label = Quote: { $source }{ $comment ->
+        [yes] , with comment
+       *[no] { "" }
+    }
+quote-delete-label = Delete quote: { $source }
+
+quote-command-unavailable = This command does not support quotes yet. Rewrite it as a normal message, or remove the quotes before sending.

@@ -530,10 +530,10 @@ mod tests {
         (home, visual)
     }
 
-    // A quote is one append-only edit; opening a palette must not lose the
-    // source selection or let a later connection receive its captured text.
+    // Opening the palette captures the source before focus changes; adding a
+    // session attachment must leave the existing editor content untouched.
     #[gpui_kit::test]
-    fn quote_palette_keeps_tokens_attachments_and_one_step_undo(cx: &mut TestAppContext) {
+    fn quote_palette_adds_attachment_without_editing_existing_draft(cx: &mut TestAppContext) {
         use gpui_kit::base::input::InlineToken;
         use gupi_conversation::history::DisplayMessage;
         let (home, visual) = setup_initialized(
@@ -576,7 +576,7 @@ mod tests {
         );
         visual.run_until_parked();
         visual.update(|window, cx| window.render_frame(cx));
-        let (original, captured) = visual.update(|window, cx| {
+        let (original, original_selection, captured) = visual.update(|window, cx| {
             home.update(cx, |home, cx| {
                 let view = &home.views[home.shown_key.as_ref().unwrap()];
                 let markdown = view.markdown.get(
@@ -592,8 +592,9 @@ mod tests {
                 });
                 let captured = home.capture_quote(window, cx).unwrap();
                 let original = home.input.read(cx).content().clone();
+                let original_selection = home.input.read(cx).selected_range();
                 home.open_commands(false, window, cx);
-                (original, captured)
+                (original, original_selection, captured)
             })
         });
         visual.run_until_parked();
@@ -604,16 +605,11 @@ mod tests {
         visual.run_until_parked();
         visual.update(|_, cx| {
             home.update(cx, |home, cx| {
-                assert_eq!(
-                    home.input
-                        .read(cx)
-                        .value()
-                        .replace(['\u{2068}', '\u{2069}'], ""),
-                    format!(
-                        "{}\n\nAssistant:\n> Selected answer.\n> \n\n",
-                        original.text()
-                    )
-                );
+                assert_eq!(home.input.read(cx).content(), original);
+                assert_eq!(home.input.read(cx).selected_range(), original_selection);
+                let session = home.state.read(cx).current().unwrap();
+                assert_eq!(session.quotes().len(), 1);
+                assert_eq!(session.quotes()[0].selection.text, "Selected answer.\n");
                 assert_eq!(home.input.read(cx).content().tokens(), original.tokens());
                 assert_eq!(
                     home.state.read(cx).current().unwrap().attachments().len(),
@@ -621,7 +617,6 @@ mod tests {
                 );
             })
         });
-        visual.update(|window, cx| window.press("secondary-z", cx));
         visual.update(|window, cx| {
             home.update(cx, |home, cx| {
                 assert_eq!(home.input.read(cx).content(), original);
@@ -634,7 +629,142 @@ mod tests {
                 });
                 home.quote(&quote::Quote(Some(captured)), window, cx);
                 assert_eq!(home.input.read(cx).content(), original);
+                assert_eq!(home.state.read(cx).current().unwrap().quotes().len(), 1);
             })
+        });
+        let id = visual.update(|_, cx| {
+            home.read(cx).state.read(cx).current().unwrap().quotes()[0]
+                .id
+                .clone()
+        });
+        visual.update(|window, cx| {
+            window.click(format!("quote-open-{id}"), cx);
+            window.input("Why this order?", cx);
+            window.press("secondary-enter", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|_, cx| {
+            assert_eq!(
+                home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
+                "Why this order?"
+            );
+        });
+        visual.update(|window, cx| {
+            window.press("enter", cx);
+            window.press("secondary-a", cx);
+            window.input("discard this edit", cx);
+            window.press("escape", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert_eq!(
+                home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
+                "Why this order?"
+            );
+            window.click(format!("quote-remove-{id}"), cx);
+        });
+        visual.run_until_parked();
+        visual.update(|_, cx| {
+            assert!(
+                home.read(cx)
+                    .state
+                    .read(cx)
+                    .current()
+                    .unwrap()
+                    .quotes()
+                    .is_empty()
+            );
+            assert_eq!(home.read(cx).input.read(cx).content(), original);
+        });
+    }
+
+    #[gpui_kit::test]
+    fn quote_toolbar_adds_pointer_selection_and_hides_on_scroll(cx: &mut TestAppContext) {
+        use gupi_conversation::history::DisplayMessage;
+        let text = "Select this displayed answer to discuss its ordering.";
+        let (home, visual) = setup_initialized(
+            cx,
+            layout::LayoutState::default(),
+            false,
+            |home, window, cx| {
+                home.update(cx, |home, cx| {
+                home.state.update(cx, |state, cx| {
+                    let session = state.sessions_for_test().get_mut("empty").unwrap();
+                    *session.state_for_test() = Some(serde_json::from_value(serde_json::json!({"sessionId":"tools", "isStreaming":false, "isCompacting":false})).unwrap());
+                    session.mark_transcript_message_for_test();
+                    session.live_for_test().push(DisplayMessage::new("quote-tools".into(), serde_json::json!({"role":"assistant", "stopReason":"stop", "content":[{"type":"text", "text":text}]})));
+                    *session.content_revision_for_test() += 1;
+                    gupi_conversation::conversation::test_support::notify_session("empty", cx);
+                });
+                home.sync(false, window, cx);
+            });
+            },
+        );
+        visual.run_until_parked();
+        let view = visual.update(|window, cx| {
+            window.activate_window();
+            home.update(cx, |home, cx| {
+                let view = &home.views["empty"];
+                view.markdown
+                    .get(
+                        "empty-text-quote-tools",
+                        text.into(),
+                        view.scroller.downgrade(),
+                        cx,
+                    )
+                    .read(cx)
+                    .view
+                    .clone()
+            })
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            window.render_frame(cx);
+            let bounds = view.read(cx).bounds();
+            window.drag(
+                point(bounds.left() + px(2.), bounds.center().y),
+                point(bounds.left() + px(160.), bounds.center().y),
+                cx,
+            );
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert_ne!(window.find("quote-selection-add").disabled(), Some(true));
+            window.click("quote-selection-add", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert_eq!(
+                home.read(cx)
+                    .state
+                    .read(cx)
+                    .current()
+                    .unwrap()
+                    .quotes()
+                    .len(),
+                1
+            );
+            assert!(home.read(cx).input.read(cx).value().is_empty());
+            assert!(view.read(cx).selected_text().is_empty());
+            let bounds = view.read(cx).bounds();
+            window.drag(
+                point(bounds.left() + px(2.), bounds.center().y),
+                point(bounds.left() + px(160.), bounds.center().y),
+                cx,
+            );
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert_ne!(
+                window.find("quote-selection-comment").disabled(),
+                Some(true)
+            );
+            window.scroll(
+                "quote-selection-add",
+                ScrollDelta::Pixels(point(px(0.), px(-20.))),
+                cx,
+            );
+            assert!(window.try_find("quote-selection-add").is_none());
         });
     }
 
@@ -674,15 +804,10 @@ mod tests {
                         .unwrap();
                 let capture = home.bind_quote(Ok(selection), cx).unwrap();
                 home.quote(&quote::Quote(Some(capture)), window, cx);
-                let text = home.input.read(cx).value();
-                assert!(
-                    text.replace(['\u{2068}', '\u{2069}'], "").starts_with(
-                        "Git · Staged: src/real.rs, modified side, lines 1–2\n```rust\n"
-                    ),
-                    "{text}"
-                );
-                assert!(text.ends_with("new\ncontext\n```\n\n"), "{text}");
-                let original = text.to_string();
+                let quotes = home.state.read(cx).current().unwrap().quotes();
+                let text = quotes[0].formatted().replace(['\u{2068}', '\u{2069}'], "");
+                assert!(text.starts_with("Git · Staged — Content at selection: src/real.rs, modified side, lines 1–2\n```rust\n"), "{text}");
+                assert!(text.ends_with("new\ncontext\n```"), "{text}");
                 diff.update(cx, |state, cx| {
                     state.set_selected_lines(
                         Some(
@@ -696,7 +821,8 @@ mod tests {
                     quote::diff_selection(diff, "src/real.rs".into(), quote::FileKind::Staged, cx),
                     Err(quote::Unavailable::DiffLines)
                 ));
-                assert_eq!(home.input.read(cx).value().as_str(), original);
+                assert!(home.input.read(cx).value().is_empty());
+                assert_eq!(home.state.read(cx).current().unwrap().quotes().len(), 1);
             })
         });
     }

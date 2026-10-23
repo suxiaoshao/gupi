@@ -219,7 +219,8 @@ fn tool_summary(call: &Value) -> String {
     )
 }
 
-fn plain_summary(source: &str) -> String {
+/// Readable bounded text shared by history labels and navigation previews.
+pub fn plain_summary(source: &str) -> String {
     fn text(node: &Node, output: &mut String) {
         if output.chars().count() >= 160 {
             return;

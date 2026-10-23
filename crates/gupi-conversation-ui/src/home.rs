@@ -77,6 +77,7 @@ struct SessionView {
     queue_open: bool,
     notices_open: bool,
     scroller: Entity<MessageScrollerState>,
+    navigator: Entity<messages::navigator::Navigator>,
     rows: Rc<Vec<Rc<messages::ChatRow>>>,
     message_rows: HashMap<String, usize>,
     row_positions: Rc<std::cell::RefCell<HashMap<String, usize>>>,
@@ -159,6 +160,37 @@ impl HomeView {
         gupi_settings::commands::conversation_commands(commands, window, cx);
     }
 
+    fn sync_message_navigation(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let temporary = self.state.read(cx).is_temporary();
+        let navigator_enabled = self.notification_visible
+            && (temporary || self.pane_layout.conversation > 0.)
+            && !self.pane_layout.history_overlay
+            && !window.has_active_dialog(cx)
+            && !self.has_image_preview(cx);
+        for (key, view) in &self.views {
+            let ready = self
+                .state
+                .read(cx)
+                .sessions()
+                .get(key)
+                .is_some_and(|session| {
+                    matches!(
+                        session.body_state(),
+                        gupi_conversation::conversation::BodyState::Ready
+                            | gupi_conversation::conversation::BodyState::Refreshing(_)
+                            | gupi_conversation::conversation::BodyState::RefreshFailed(_)
+                    )
+                });
+            view.navigator.update(cx, |navigator, cx| {
+                navigator.set_enabled(
+                    navigator_enabled && ready && self.shown_key.as_ref() == Some(key),
+                    window,
+                    cx,
+                )
+            });
+        }
+    }
+
     fn sync_messages(
         &mut self,
         key: &str,
@@ -219,6 +251,9 @@ impl HomeView {
                     let _span = tracing::debug_span!(target: "gupi::performance", "messages.diff_rows", changed_rows = 1).entered();
                     state.remeasure_items(index..index + 1, cx);
                 });
+                view.navigator.update(cx, |navigator, cx| {
+                    navigator.update_row(view.rows.clone(), index, cx)
+                });
                 Self::sync_edited_files(view, tool_snapshot.as_ref(), tool_revision, window, cx);
                 if let Some(find) = &self.find {
                     let sources = view
@@ -246,6 +281,9 @@ impl HomeView {
                 .map(|(i, row)| (row.id.clone(), i))
                 .collect();
             view.content_revision = session.content_revision();
+            view.navigator.update(cx, |navigator, cx| {
+                navigator.sync(new.clone(), view.preview.clone(), cx)
+            });
             if !view.scroller.read(cx).is_following_tail() {
                 view.changes.capture_anchors();
             }
@@ -382,6 +420,7 @@ impl HomeView {
         cx: &mut Context<Self>,
     ) -> Self {
         actions::init(cx);
+        messages::navigator::init(cx);
         files::init(cx);
         for context in ["GupiComposer > Input", "GupiPalette > Input"] {
             cx.bind_keys([
@@ -429,6 +468,10 @@ impl HomeView {
                 crate::host::present(&this.state, window, this.notification_visible, cx);
                 if !window.is_window_active() {
                     this.end_workspace_tab_drag(window, cx);
+                    for view in this.views.values() {
+                        view.navigator
+                            .update(cx, |navigator, cx| navigator.dismiss(cx));
+                    }
                 }
                 this.sync_git(window, cx);
                 this.sync_worktree(window, cx);
@@ -570,6 +613,7 @@ impl HomeView {
             window,
             |this, _, window, cx| {
                 this.sync_commands(window, cx);
+                this.sync_message_navigation(window, cx);
             },
         ));
         view._subscriptions.push(
@@ -617,6 +661,7 @@ impl HomeView {
                 this._subscriptions
                     .push(cx.observe_in(&root, window, |this, _, window, cx| {
                         this.sync_commands(window, cx);
+                        this.sync_message_navigation(window, cx);
                     }));
             }
             this.sync_commands(window, cx);
@@ -643,6 +688,10 @@ impl HomeView {
         let changed = self.shown_key != key;
         if changed {
             self.stop_shown_git_tasks();
+            if let Some(view) = self.shown_key.as_ref().and_then(|key| self.views.get(key)) {
+                view.navigator
+                    .update(cx, |navigator, cx| navigator.set_enabled(false, window, cx));
+            }
             self.end_workspace_tab_drag(window, cx);
             self.close_find(false, window, cx);
             self.slash = Default::default();
@@ -707,6 +756,16 @@ impl HomeView {
             let scroller = cx.new(|cx| MessageScrollerState::new(0, cx));
             self._subscriptions
                 .push(cx.observe(&scroller, |_, _, cx| cx.notify()));
+            let navigator_owner = cx.weak_entity();
+            let navigator = cx.new(|nav_cx| {
+                messages::navigator::Navigator::new(
+                    navigator_owner,
+                    key.clone(),
+                    scroller.clone(),
+                    window,
+                    nav_cx,
+                )
+            });
             let picker_state = self.state.clone();
             let source_key = key.clone();
             let model_picker = cx.new(|cx| {
@@ -850,6 +909,7 @@ impl HomeView {
                     queue_open: false,
                     notices_open: false,
                     scroller,
+                    navigator,
                     rows: Rc::new(vec![]),
                     message_rows: HashMap::new(),
                     row_positions: Rc::default(),
@@ -1284,7 +1344,13 @@ impl Render for HomeView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         #[cfg(feature = "performance")]
         let _span = tracing::debug_span!(target: "gupi::performance", "home.render", view = ?cx.entity_id()).entered();
-        if self.state.read(cx).is_temporary() {
+        let temporary = self.state.read(cx).is_temporary();
+        if !temporary {
+            self.validate_workspace_tab_drag(window, cx);
+            self.fit_layout(window, cx);
+        }
+        self.sync_message_navigation(window, cx);
+        if temporary {
             let empty =
                 self.state.read(cx).current().is_some_and(|s| {
                     s.empty_conversation() && !s.busy() && s.pending_ui().is_empty()
@@ -1321,8 +1387,6 @@ impl Render for HomeView {
             let content = crate::performance::measure("home", false, content);
             return content;
         }
-        self.validate_workspace_tab_drag(window, cx);
-        self.fit_layout(window, cx);
         let titlebar = self.render_titlebar(window, cx);
         let window_titlebar = crate::chrome::window_title_bar(window, cx);
         let center = self.render_workspace(window, cx);

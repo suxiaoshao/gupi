@@ -1372,3 +1372,8 @@ diff-external-failed = Die Datei konnte nicht geöffnet werden. Sie existiert m�
 
 diff-conflict-label = Konflikt
 diff-read-failed = Änderungen konnten nicht gelesen werden. Bitte erneut versuchen.
+
+# Conversation navigation
+conversation-navigation-jump = Zur Nutzernachricht { $number } springen: { $question }
+conversation-navigation-current = Aktueller Abschnitt. Zur Nutzernachricht { $number } springen: { $question }
+conversation-navigation-no-text = Kein Textinhalt

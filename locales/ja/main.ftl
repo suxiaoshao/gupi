@@ -1346,3 +1346,8 @@ diff-external-failed = ファイルを開けませんでした。ファイルが
 
 diff-conflict-label = 競合
 diff-read-failed = 変更を読み込めませんでした。再試行してください。
+
+# Conversation navigation
+conversation-navigation-jump = ユーザーメッセージ { $number } に移動：{ $question }
+conversation-navigation-current = 現在の区間。ユーザーメッセージ { $number } に移動：{ $question }
+conversation-navigation-no-text = テキストなし

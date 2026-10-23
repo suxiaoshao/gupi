@@ -26,6 +26,7 @@ pub(super) mod edited_files;
 mod images;
 pub(super) mod markdown;
 pub(super) mod metadata;
+pub(super) mod navigator;
 mod plugin;
 mod presentation;
 mod resources;
@@ -403,6 +404,18 @@ impl HomeView {
         )
         .row(row.to_owned(), self.views[key].row_positions.clone())
     }
+    fn step_user_message(&mut self, next: bool, window: &mut Window, cx: &mut Context<Self>) {
+        // Only the reading region / rail binds these actions, never the composer or source.
+        if window.has_active_dialog(cx) || self.has_image_preview(cx) {
+            return;
+        }
+        if let Some(view) = self.shown_key.as_ref().and_then(|key| self.views.get(key)) {
+            let navigator = view.navigator.clone();
+            window.defer(cx, move |window, cx| {
+                navigator.update(cx, |navigator, cx| navigator.step(next, window, cx))
+            });
+        }
+    }
     pub(super) fn render_messages(
         &self,
         max_width: Pixels,
@@ -461,6 +474,14 @@ impl HomeView {
             .debug_selector(|| "conversation-messages".into())
             .key_context("GupiMessages")
             .track_focus(&self.messages_focus)
+            .on_action(
+                cx.listener(|this, _: &navigator::PreviousUser, window, cx| {
+                    this.step_user_message(false, window, cx)
+                }),
+            )
+            .on_action(cx.listener(|this, _: &navigator::NextUser, window, cx| {
+                this.step_user_message(true, window, cx)
+            }))
             .focus_visible(move |style| {
                 style.shadow(vec![BoxShadow {
                     color: ring,
@@ -526,15 +547,26 @@ impl HomeView {
         } else {
             let viewport = view.changes.viewport.clone();
             let frame = self.message_frame.clone();
+            let measurement = view.navigator.read(cx).frame.clone();
+            let begin_measurement = measurement.clone();
+            let row_measurement = measurement.clone();
+            let navigator = view.navigator.clone();
+            let revision = navigator.read(cx).revision();
+            let scroller = view.scroller.clone();
+            let temporary = self.state.read(cx).is_temporary();
             body = body.child(
                 div()
                     .flex_1()
                     .min_h_0()
                     .min_w_0()
+                    .relative()
                     .child(
                         canvas(
                             move |_, _, _| {
                                 frame.set(frame.get().saturating_add(1));
+                                let mut frame = begin_measurement.borrow_mut();
+                                frame.rows.clear();
+                                frame.serial += 1;
                             },
                             |_, _, _, _| {},
                         )
@@ -557,6 +589,7 @@ impl HomeView {
                                             false,
                                             content,
                                         );
+                                        let measured = row_measurement.clone();
                                         div()
                                             .w_full()
                                             .flex()
@@ -568,6 +601,14 @@ impl HomeView {
                                                     .map(Rc::as_ref),
                                             ))
                                             .child(div().w_full().max_w(max_width).child(content))
+                                            .on_children_prepainted(move |bounds, _, _| {
+                                                if let Some(bounds) = bounds.first() {
+                                                    measured
+                                                        .borrow_mut()
+                                                        .rows
+                                                        .push((index, *bounds));
+                                                }
+                                            })
                                             .into_any_element()
                                     })
                                     .unwrap_or_else(|_| div().into_any_element())
@@ -580,13 +621,45 @@ impl HomeView {
                         .with_jump_button_label(t(cx, "conversation-bottom"))
                         .size_full(),
                     )
-                    .on_children_prepainted(move |bounds, window, _| {
-                        if let Some(bounds) = bounds.last() {
+                    .when(temporary, |body| body.child(navigator.clone()))
+                    .on_children_prepainted(move |bounds, window, cx| {
+                        if let Some(bounds) = bounds.get(1) {
                             let inset = window.rem_size() * MESSAGE_INSET_REM;
                             viewport.set(Some(Bounds::from_corners(
                                 point(bounds.left(), bounds.top() + inset),
                                 point(bounds.right(), bounds.bottom() - inset),
                             )));
+                            let rows = measurement.borrow().rows.clone();
+                            let host = if temporary {
+                                *bounds
+                            } else {
+                                measurement.borrow().host.unwrap_or(*bounds)
+                            };
+                            let serial = measurement.borrow().serial;
+                            let guard = measurement.clone();
+                            let column = rows.first().map_or(bounds.left(), |(_, row)| row.left());
+                            let bounds = *bounds;
+                            let navigator = navigator.clone();
+                            let top = scroller.read(cx).logical_scroll_top();
+                            window.defer(cx, move |window, cx| {
+                                if guard.borrow().serial != serial {
+                                    return;
+                                }
+                                navigator.update(cx, |navigator, cx| {
+                                    navigator.measure(
+                                        navigator::ViewportFrame {
+                                            revision,
+                                            viewport: bounds,
+                                            host,
+                                            painted: rows,
+                                            column,
+                                            top,
+                                        },
+                                        window,
+                                        cx,
+                                    )
+                                })
+                            });
                         }
                     }),
             );

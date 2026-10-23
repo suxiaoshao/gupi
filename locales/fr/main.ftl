@@ -1372,3 +1372,8 @@ diff-external-failed = Impossible d’ouvrir le fichier. Il n’existe peut-êtr
 
 diff-conflict-label = Conflit
 diff-read-failed = Impossible de lire les modifications. Réessayez.
+
+# Conversation navigation
+conversation-navigation-jump = Aller au message utilisateur { $number } : { $question }
+conversation-navigation-current = Section actuelle. Aller au message utilisateur { $number } : { $question }
+conversation-navigation-no-text = Aucun contenu textuel

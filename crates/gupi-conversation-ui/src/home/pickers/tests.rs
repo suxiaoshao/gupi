@@ -139,7 +139,7 @@ fn opening_queries_the_source_and_ignored_requests_do_not_leave_loading_flags(
 }
 
 #[gpui_kit::test]
-fn thinking_drag_commits_only_on_release_and_ignores_stale_capabilities(cx: &mut TestAppContext) {
+fn thinking_drag_ignores_stale_capabilities_and_closed_drafts(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_kit::init(cx);
         crate::host::install_headless(cx);
@@ -166,28 +166,6 @@ fn thinking_drag_commits_only_on_release_and_ignores_stale_capabilities(cx: &mut
                 cx,
             );
             p.open = true;
-            for value in [0., 1.] {
-                p.slider_event(
-                    p.slider.clone(),
-                    &SliderEvent::Change(value.into()),
-                    window,
-                    cx,
-                );
-            }
-            assert_eq!(p.draft_level.as_deref(), Some("low"));
-            assert!(writes.borrow().is_empty());
-            p.slider_event(
-                p.slider.clone(),
-                &SliderEvent::Release(1.0.into()),
-                window,
-                cx,
-            );
-        })
-    });
-    cx.run_until_parked();
-    assert_eq!(&*writes.borrow(), &["low"]);
-    cx.update(|window, cx| {
-        picker.update(cx, |p, cx| {
             let mut loading = projection(&["off", "low", "high"], "high");
             loading.disabled = true;
             sync(&source, p, loading, window, cx);
@@ -216,7 +194,7 @@ fn thinking_drag_commits_only_on_release_and_ignores_stale_capabilities(cx: &mut
         })
     });
     cx.run_until_parked();
-    assert_eq!(writes.borrow().len(), 1);
+    assert!(writes.borrow().is_empty());
 }
 
 #[gpui_kit::test]

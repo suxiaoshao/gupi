@@ -602,82 +602,24 @@ mod tests {
     use super::anchored_scroll_offset;
     use super::fit_zoom_percent;
     use super::next_zoom_step;
-    use super::zoom_ramp;
 
     #[test]
-    fn fit_zoom_caps_at_full_size_for_small_images() {
-        assert_eq!(
-            fit_zoom_percent(
-                PreviewSize {
-                    width: 400.,
-                    height: 300.
-                },
-                PreviewSize {
-                    width: 1000.,
-                    height: 800.
-                },
-            ),
-            100.
-        );
-    }
-
-    #[test]
-    fn fit_zoom_handles_wide_tall_and_large_images() {
-        assert_eq!(
-            fit_zoom_percent(
-                PreviewSize {
-                    width: 2000.,
-                    height: 500.
-                },
-                PreviewSize {
-                    width: 1000.,
-                    height: 800.
-                },
-            ),
-            50.
-        );
-        assert_eq!(
-            fit_zoom_percent(
-                PreviewSize {
-                    width: 500.,
-                    height: 2000.
-                },
-                PreviewSize {
-                    width: 1000.,
-                    height: 800.
-                },
-            ),
-            40.
-        );
-        assert_eq!(
-            fit_zoom_percent(
-                PreviewSize {
-                    width: 4000.,
-                    height: 4000.
-                },
-                PreviewSize {
-                    width: 1000.,
-                    height: 800.
-                },
-            ),
-            20.
-        );
-    }
-
-    #[test]
-    fn zoom_ramp_dedups_fit_and_clamps_to_fit_minimum() {
-        assert_eq!(
-            zoom_ramp(50.),
-            vec![50., 75., 100., 125., 150., 200., 300., 400., 800.]
-        );
-        assert_eq!(
-            zoom_ramp(62.),
-            vec![62., 75., 100., 125., 150., 200., 300., 400., 800.]
-        );
-        assert_eq!(
-            zoom_ramp(100.),
-            vec![100., 125., 150., 200., 300., 400., 800.]
-        );
+    fn fit_zoom_caps_at_full_size_and_handles_image_aspect_ratios() {
+        let viewport = PreviewSize {
+            width: 1000.,
+            height: 800.,
+        };
+        for (width, height, expected) in [
+            (400., 300., 100.),
+            (2000., 500., 50.),
+            (500., 2000., 40.),
+            (4000., 4000., 20.),
+        ] {
+            assert_eq!(
+                fit_zoom_percent(PreviewSize { width, height }, viewport),
+                expected
+            );
+        }
     }
 
     #[test]
@@ -687,6 +629,11 @@ mod tests {
         assert_eq!(next_zoom_step(400., 50., ZoomStep::In), 800.);
         assert_eq!(next_zoom_step(800., 50., ZoomStep::In), 800.);
         assert_eq!(next_zoom_step(125., 50., ZoomStep::Out), 100.);
+        // An irregular fit joins the ramp, with no duplicate full-size step.
+        assert_eq!(next_zoom_step(62., 62., ZoomStep::In), 75.);
+        assert_eq!(next_zoom_step(75., 62., ZoomStep::Out), 62.);
+        assert_eq!(next_zoom_step(100., 100., ZoomStep::In), 125.);
+        assert_eq!(next_zoom_step(100., 100., ZoomStep::Out), 100.);
     }
 
     #[test]
@@ -706,25 +653,7 @@ mod tests {
             anchored_scroll_offset(old_offset, viewport_size, natural_size, 50., 100., anchor);
 
         assert_eq!(next, PreviewPoint { x: -700., y: -500. });
-    }
-
-    #[test]
-    fn anchored_scroll_offset_clamps_when_zooming_back_to_fit() {
-        let next = anchored_scroll_offset(
-            PreviewPoint { x: -700., y: -500. },
-            PreviewSize {
-                width: 1000.,
-                height: 800.,
-            },
-            PreviewSize {
-                width: 2000.,
-                height: 1600.,
-            },
-            100.,
-            50.,
-            PreviewPoint { x: 500., y: 400. },
-        );
-
-        assert_eq!(next, PreviewPoint { x: 0., y: 0. });
+        let restored = anchored_scroll_offset(next, viewport_size, natural_size, 100., 50., anchor);
+        assert_eq!(restored, PreviewPoint { x: 0., y: 0. });
     }
 }

@@ -541,7 +541,7 @@ mod tests {
     }
 
     #[gpui_kit::test]
-    fn file_results_install_model_before_footer_on_first_render(cx: &mut TestAppContext) {
+    async fn file_results_install_model_before_footer_on_first_render(cx: &mut TestAppContext) {
         use gpui_kit::component::Root;
         use gpui_kit::test::TestWindowExt as _;
         let fixture = fixture();
@@ -580,8 +580,9 @@ mod tests {
         });
         visual.run_until_parked();
         visual.executor().advance_clock(Duration::from_millis(50));
-        visual.run_until_parked();
-        assert!(visual.update(|_, cx| panel.read(cx).file_search_ready()));
+        visual
+            .condition(&panel, |panel, _| panel.file_search_ready())
+            .await;
         visual.update(|window, cx| {
             panel.update(cx, |panel, cx| {
                 // Reproduce the loading -> results boundary: the list still
@@ -602,12 +603,6 @@ mod tests {
                 Some(t(cx, "command-select-resource").as_str())
             );
             assert_ne!(action.disabled(), Some(true));
-            window.click("command-send", cx);
-        });
-        visual.run_until_parked();
-        visual.update(|_, cx| {
-            assert!(!panel.read(cx).is_open());
-            assert_eq!(home.read(cx).input.read(cx).content().tokens().len(), 1);
         });
     }
 

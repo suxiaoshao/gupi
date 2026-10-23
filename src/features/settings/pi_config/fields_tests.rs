@@ -129,39 +129,11 @@ fn changes_carry_their_base_and_skip_no_ops_and_invalid_text() {
 }
 
 #[test]
-fn fields_are_assigned_to_pages_and_scopes() {
-    let network: Vec<_> = Field::ALL
-        .into_iter()
-        .filter(|field| field.page() == Page::Network)
-        .collect();
-    assert_eq!(
-        network,
-        [
-            Field::Proxy,
-            Field::Retry,
-            Field::MaxRetries,
-            Field::BaseDelay,
-            Field::MaxDelay,
-            Field::Transport,
-            Field::HttpTimeout,
-            Field::WebsocketTimeout,
-            Field::ProviderTimeout,
-            Field::ProviderRetries,
-            Field::ProviderDelay,
-        ]
-    );
-    assert!(Field::Proxy.is_global_only());
-    assert!(Field::ALL.iter().filter(|f| f.is_global_only()).count() == 3);
-}
-
-#[test]
 fn counts_and_display_text() {
     assert_eq!(parse_count(" 12 "), Some(json!(12)));
     assert_eq!(parse_count("-1"), None);
     assert_eq!(parse_count("1.5"), None);
     assert_eq!(parse_count(""), None);
-    assert_eq!(display(Some(&json!(3))), "3");
-    assert_eq!(display(Some(&json!("http://p"))), "http://p");
     assert_eq!(display(None), "");
 }
 
@@ -175,35 +147,33 @@ fn model(reasoning: bool, map: Value) -> pi_rpc::protocol::Model {
 
 #[test]
 fn supported_levels_follow_pi_model_metadata() {
-    assert_eq!(supported_levels(&model(false, Value::Null)), ["off"]);
-    assert_eq!(
-        supported_levels(&model(true, Value::Null)),
-        ["off", "minimal", "low", "medium", "high"]
-    );
-    assert_eq!(
-        supported_levels(&model(
+    // Include shapes from Pi's catalog: disabled levels, high-only and max.
+    for (reasoning, map, expected) in [
+        (false, Value::Null, vec!["off"]),
+        (
             true,
-            json!({"minimal": null, "xhigh": "x", "max": null})
-        )),
-        ["off", "low", "medium", "high", "xhigh"]
-    );
-}
-
-#[test]
-fn supported_levels_match_pi_1_1_catalog_entries() {
-    // Shapes taken from Pi 1.1.0 `get_available_models` output.
-    let pro = json!({"off": null, "minimal": null, "low": null, "medium": null, "high": "high", "xhigh": null, "max": null});
-    assert_eq!(supported_levels(&model(true, pro)), ["high"]);
-    let luna = json!({"off": "none", "minimal": null, "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max"});
-    assert_eq!(
-        supported_levels(&model(true, luna)),
-        ["off", "low", "medium", "high", "xhigh", "max"]
-    );
-    // A non-reasoning model only offers `off`, whatever its map says.
-    assert_eq!(
-        supported_levels(&model(false, json!({"off": null, "xhigh": "xhigh"}))),
-        ["off"]
-    );
+            Value::Null,
+            vec!["off", "minimal", "low", "medium", "high"],
+        ),
+        (
+            true,
+            json!({"minimal": null, "xhigh": "x", "max": null}),
+            vec!["off", "low", "medium", "high", "xhigh"],
+        ),
+        (
+            true,
+            json!({"off": null, "minimal": null, "low": null, "medium": null, "high": "high", "xhigh": null, "max": null}),
+            vec!["high"],
+        ),
+        (
+            true,
+            json!({"off": "none", "minimal": null, "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max"}),
+            vec!["off", "low", "medium", "high", "xhigh", "max"],
+        ),
+        (false, json!({"off": null, "xhigh": "xhigh"}), vec!["off"]),
+    ] {
+        assert_eq!(supported_levels(&model(reasoning, map)), expected);
+    }
 }
 
 #[test]

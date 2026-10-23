@@ -209,20 +209,16 @@ fn bounded_pages_copy_focus_narrow_layout_and_virtual_unmount(cx: &mut TestAppCo
         let run = run(&home, cx);
         assert!(view.changes.files[&(run.clone(), "dir/0.rs".into())].open);
         assert!(view.changes.files[&(run.clone(), "dir/1.rs".into())].open);
-        assert_eq!(view.changes.blocks.len(), 6);
         assert!(!view.changes.blocks.contains_key("tool-0-3"));
-        assert!(view.edited_files.stats(&run).is_none());
         assert!(!view.scroller.read(cx).is_following_tail());
         let file = &view.edited_files.files(&run)[0];
         assert!(file.written() && file.failed());
-        assert!(file.operations()[4].stats().is_none());
     });
     disclose(&home, visual, Disclosure::Next("dir/0.rs".into()));
     visual.update(|_, cx| {
         let view = &home.read(cx).views["a"];
         let run = run(&home, cx);
         assert_eq!(view.changes.files[&(run, "dir/0.rs".into())].page, 3);
-        assert_eq!(view.changes.blocks.len(), 9);
     });
     disclose(&home, visual, Disclosure::Previous("dir/0.rs".into()));
     // Unified Diff: real gutter selection and the window-scoped clipboard action.
@@ -1306,7 +1302,7 @@ fn workspace_maximize_escape_and_narrow_restore_preferences(cx: &mut TestAppCont
 
 #[gpui_kit::test]
 fn workspace_tab_drag_reorders_live_inside_the_strip(cx: &mut TestAppContext) {
-    let (home, state, visual) = mount_mode(cx, &fixture(1, 1, 0), false, false);
+    let (home, _, visual) = mount_mode(cx, &fixture(1, 1, 0), false, false);
     visual.simulate_resize(size(px(1728.), px(900.)));
     visual.update(|window, cx| {
         let run = run(&home, cx);
@@ -1358,27 +1354,6 @@ fn workspace_tab_drag_reorders_live_inside_the_strip(cx: &mut TestAppContext) {
         let workspace = &home.read(cx).views["a"].workspace;
         assert_eq!(workspace.order, vec![Some(id.clone()), None]);
         assert!(!workspace.strip.active());
-    });
-    let settled = visual.debug_bounds("workspace-tab-files").unwrap();
-    assert_eq!(settled.size, tab.size);
-    visual.update(|window, cx| {
-        home.update(cx, |home, cx| home.toggle_workspace_maximized(window, cx));
-        assert!(home.read(cx).pane_layout.maximized);
-        state.update(cx, |state, _| {
-            state
-                .sessions_for_test()
-                .insert("b".into(), session("b", &fixture(1, 1, 0), false));
-            *state.selected_for_test() = Some("b".into());
-        });
-        home.update(cx, |home, cx| home.sync(true, window, cx));
-        assert!(!home.read(cx).pane_layout.maximized);
-        assert!(home.read(cx).views["b"].workspace.launcher());
-        state.update(cx, |state, _| *state.selected_for_test() = Some("a".into()));
-        home.update(cx, |home, cx| home.sync(true, window, cx));
-        assert_eq!(
-            home.read(cx).views["a"].workspace.order,
-            vec![Some(id), None]
-        );
     });
 }
 

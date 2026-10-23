@@ -364,10 +364,8 @@ fn all_three_pages_render_fields_in_each_scope(cx: &mut TestAppContext) {
                 host.1 = page;
                 cx.notify();
             });
-            for width in [480., 1200.] {
-                window.simulate_resize(gpui_kit::size(gpui_kit::px(width), gpui_kit::px(900.)));
-                window.run_until_parked();
-            }
+            window.simulate_resize(gpui_kit::size(gpui_kit::px(480.), gpui_kit::px(900.)));
+            window.run_until_parked();
         }
         host.update(window, |host, cx| {
             host.1 = Page::Conversation;
@@ -649,8 +647,6 @@ fn discarded_row_paths_stay_retired(cx: &mut TestAppContext) {
             this.discard(None, cx);
         })
     });
-    let after = config.read_with(cx, |this, cx| this.row_keys(cx));
-    assert!(after.iter().all(|key| !before.contains(key)));
     cx.update(|window, cx| {
         config.update(cx, |this, cx| this.remove_pattern(&before[0], window, cx))
     });

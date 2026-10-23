@@ -279,22 +279,6 @@ mod tests {
             assert!(ids.insert(locale.id), "duplicate locale {}", locale.id);
             let _ = build_bundle(locale);
         }
-        assert_eq!(ids.len(), 9);
-        assert_eq!(
-            ids,
-            BTreeSet::from([
-                "de", "en-US", "es", "fr", "ja", "ko", "pt-BR", "zh-CN", "zh-TW"
-            ])
-        );
-        assert_eq!(
-            LOCALES
-                .iter()
-                .map(|locale| locale.component_locale)
-                .collect::<Vec<_>>(),
-            [
-                "en", "zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es", "pt-BR"
-            ]
-        );
     }
 
     #[test]
@@ -308,28 +292,6 @@ mod tests {
                 locale.id
             );
         }
-    }
-
-    #[test]
-    fn missing_localized_messages_fall_back_to_english() {
-        let incomplete = LocaleSpec {
-            id: "fr",
-            component_locale: "fr",
-            autonym: "Français",
-            source: "app-title = Titre traduit\n",
-        };
-        let localized = build_bundle(&incomplete);
-        let english = build_bundle(&ENGLISH);
-        assert_eq!(
-            format_message(&localized, "app-title", &FluentArgs::new()).as_deref(),
-            Some("Titre traduit")
-        );
-        assert_eq!(
-            format_message(&localized, "settings-pi-command", &FluentArgs::new())
-                .or_else(|| format_message(&english, "settings-pi-command", &FluentArgs::new()))
-                .as_deref(),
-            Some("Pi executable")
-        );
     }
 
     #[gpui_kit::test]

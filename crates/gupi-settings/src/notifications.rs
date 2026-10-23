@@ -61,7 +61,8 @@ mod tests {
     use super::*;
     #[test]
     fn defaults_route_by_app_and_source_visibility() {
-        let p = Preferences::default();
+        let p: Preferences = serde_json::from_str("{}").unwrap();
+        assert_eq!(p, Preferences::default());
         for kind in [
             DeliveryKind::Waiting,
             DeliveryKind::Failed,
@@ -80,10 +81,5 @@ mod tests {
         assert!(p.system(&DeliveryKind::Completed, true, false));
         assert!(!p.system(&DeliveryKind::Completed, true, true));
         assert!(p.system(&DeliveryKind::Plugin, false, false));
-    }
-    #[test]
-    fn old_config_gets_defaults() {
-        let p: Preferences = serde_json::from_str("{}").unwrap();
-        assert_eq!(p, Preferences::default());
     }
 }

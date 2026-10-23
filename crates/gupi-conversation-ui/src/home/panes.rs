@@ -600,47 +600,6 @@ mod tests {
     }
 
     #[gpui_kit::test]
-    fn content_changes_keep_outer_split_and_compact_list_returns_to_body(cx: &mut TestAppContext) {
-        let (home, visual) = setup(cx);
-        visual.update(|window, cx| {
-            home.update(cx, |home, cx| {
-                home.select_workspace_tab(None, window, cx);
-                home.ensure_panel(Panel::Workspace, window, cx);
-                let before = (
-                    home.pane_layout.conversation,
-                    home.pane_layout.workspace_width,
-                );
-                home.open_source("/missing-layout-fixture.rs".into(), false, window, cx);
-                assert_eq!(
-                    before,
-                    (
-                        home.pane_layout.conversation,
-                        home.pane_layout.workspace_width
-                    )
-                );
-                home.toggle_workspace_navigator(window, cx);
-                assert_eq!(
-                    before,
-                    (
-                        home.pane_layout.conversation,
-                        home.pane_layout.workspace_width
-                    )
-                );
-                if home.temporary_list() {
-                    home.set_temporary_list(false);
-                }
-                home.select_workspace_tab(Some("workspace:new-test".into()), window, cx);
-                assert_eq!(
-                    before,
-                    (
-                        home.pane_layout.conversation,
-                        home.pane_layout.workspace_width
-                    )
-                );
-            })
-        });
-    }
-    #[gpui_kit::test]
     fn compact_list_preserves_manual_intent_and_selection_returns_to_main(cx: &mut TestAppContext) {
         let (home, visual) = setup(cx);
         visual.simulate_resize(size(px(1000.), px(800.)));
@@ -753,6 +712,15 @@ mod tests {
                         home.pane_layout.conversation,
                         home.pane_layout.workspace_width,
                         home.pane_layout.history_docked
+                    )
+                );
+                home.toggle_workspace_navigator(window, cx);
+                assert_eq!(
+                    before,
+                    (
+                        home.pane_layout.conversation,
+                        home.pane_layout.workspace_width,
+                        home.pane_layout.history_docked,
                     )
                 );
                 home.open_git_changes(window, cx);

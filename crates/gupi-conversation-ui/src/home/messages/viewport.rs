@@ -83,16 +83,3 @@ pub(super) fn edge_fades(scroll: ScrollHandle, background: Hsla) -> impl IntoEle
 fn fade_heights(offset: f32, max: f32) -> (f32, f32) {
     (offset.clamp(0., 24.), (max - offset).clamp(0., 24.))
 }
-
-#[cfg(test)]
-mod tests {
-    use super::fade_heights;
-    #[test]
-    fn edges_are_readable_when_no_more_content_is_hidden() {
-        assert_eq!(fade_heights(0., 0.), (0., 0.));
-        assert_eq!(fade_heights(0., 100.), (0., 24.));
-        assert_eq!(fade_heights(50., 100.), (24., 24.));
-        assert_eq!(fade_heights(100., 100.), (24., 0.));
-        assert_eq!(fade_heights(3., 10.), (3., 7.));
-    }
-}

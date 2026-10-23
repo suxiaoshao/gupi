@@ -249,7 +249,7 @@ pub fn save(path: &Path, value: &LayoutState) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{LayoutState, load, read, save};
+    use super::{GitView, LayoutState, load, read, save};
     use std::fs;
 
     #[test]
@@ -265,12 +265,17 @@ mod tests {
         assert!(!value.workspace_pinned);
         assert!(value.history_pinned);
         assert_eq!(value.history_width_rem, 20.);
+        assert_eq!(value.git_view, GitView::List);
+        value.git_view = GitView::Tree;
+        value.source_split_ratio = 0.55;
         value.workspace_pinned = true;
         value.history_width_rem = 25.;
         save(&path, &value).unwrap();
         let restored = read(&path).unwrap();
         assert!(restored.workspace_pinned && restored.history_pinned);
         assert_eq!(restored.history_width_rem, 25.);
+        assert_eq!(restored.git_view, GitView::Tree);
+        assert_eq!(restored.source_split_ratio, 0.55);
     }
 
     #[test]
@@ -330,24 +335,5 @@ mod tests {
         assert_eq!(loaded.sidebar_width_rem, 14.);
         assert_eq!(loaded.navigator_width_rem, 20.);
         assert!(!path.exists());
-    }
-}
-
-#[cfg(test)]
-mod git_view_tests {
-    use super::*;
-    use core::prelude::v1::test;
-    #[test]
-    fn git_view_defaults_and_round_trips_with_other_layout_preferences() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("state.toml");
-        fs::write(&path, "source_split_ratio = 0.55\n").unwrap();
-        let mut state = read(&path).unwrap();
-        assert_eq!(state.git_view, GitView::List);
-        state.git_view = GitView::Tree;
-        save(&path, &state).unwrap();
-        let restored = read(&path).unwrap();
-        assert_eq!(restored.git_view, GitView::Tree);
-        assert_eq!(restored.source_split_ratio, 0.55);
     }
 }

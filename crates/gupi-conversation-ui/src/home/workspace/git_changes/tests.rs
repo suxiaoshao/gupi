@@ -948,37 +948,40 @@ fn header_totals_follow_zed_nonzero_known_text_rule() {
 #[gpui_kit::test]
 fn non_diff_bodies_disable_fold_even_with_retained_collapse_intent(cx: &mut TestAppContext) {
     let (home, visual, _fixture) = mount(cx);
-    for state in [
-        ContentState::Binary,
-        ContentState::Text,
-        ContentState::NoTextChanges,
-        ContentState::Conflict,
-        ContentState::Special,
-        ContentState::TooLarge,
-        ContentState::InvalidPath,
-    ] {
-        visual.update(|window, cx| {
-            home.update(cx, |home, cx| {
-                ready(home, window, cx);
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            ready(home, window, cx);
+            for state in [
+                ContentState::Binary,
+                ContentState::Text,
+                ContentState::NoTextChanges,
+                ContentState::Conflict,
+                ContentState::Special,
+                ContentState::TooLarge,
+                ContentState::InvalidPath,
+            ] {
                 let tab = home.git_mut().unwrap();
-                let id = tab.selected.clone().unwrap();
                 display(tab, ChangeContent::unavailable_for_test(state), cx);
-                tab.collapsed.insert(id.clone());
-                assert!(!home.reader_command_available(reader::Command::ToggleFile, cx));
-                home.reader_command(reader::Command::ToggleFile, window, cx);
-                assert!(home.active_git().unwrap().collapsed.contains(&id));
-                cx.notify();
-            })
-        });
-        visual.run_until_parked();
-        visual.update(|window, cx| {
-            window.draw(cx).clear(cx);
-            let fold = window.find("diff-toggle-file");
-            assert_eq!(fold.disabled(), Some(true));
-            assert_eq!(fold.label(), Some(t(cx, "diff-collapse-file").as_str()));
-            assert_eq!(fold.expanded(), None);
-        });
-    }
+                assert!(!tab.can_fold(), "{state:?}");
+            }
+            // Render a representative unavailable body, including retained intent.
+            let tab = home.git_mut().unwrap();
+            let id = tab.selected.clone().unwrap();
+            tab.collapsed.insert(id.clone());
+            assert!(!home.reader_command_available(reader::Command::ToggleFile, cx));
+            home.reader_command(reader::Command::ToggleFile, window, cx);
+            assert!(home.active_git().unwrap().collapsed.contains(&id));
+            cx.notify();
+        })
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        window.draw(cx).clear(cx);
+        let fold = window.find("diff-toggle-file");
+        assert_eq!(fold.disabled(), Some(true));
+        assert_eq!(fold.label(), Some(t(cx, "diff-collapse-file").as_str()));
+        assert_eq!(fold.expanded(), None);
+    });
 }
 
 #[gpui_kit::test]

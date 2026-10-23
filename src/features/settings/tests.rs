@@ -9,64 +9,6 @@ use gpui_kit::TestAppContext;
 use gpui_kit::component::Root;
 
 #[gpui_kit::test]
-fn shared_settings_layout_renders_without_reentrant_entity_access(cx: &mut TestAppContext) {
-    cx.update(|cx| {
-        gpui_kit::init(cx);
-        crate::app::init_capability_hosts(cx);
-        app_theme::init(cx);
-        gupi_settings::theme::init(cx);
-        gupi_settings::i18n::apply(AppLanguage::Chinese, cx);
-    });
-    let (_, cx) = cx.add_window_view(|window, cx| {
-        let form = cx.new(|_| {
-            Form::new({
-                let mut record = AppConfig::default();
-                record.pi_command = Some("/custom/onboarding-pi".into());
-                record
-            })
-        });
-        let controller = cx.new(|cx| ConfigController::new(&form, cx));
-        controller
-            .read(cx)
-            .pi_form()
-            .clone()
-            .update(cx, |form, cx| {
-                form.rebase(
-                    {
-                        let mut record = super::PiSettings::default();
-                        record.command = Some("/custom/settings-pi".into());
-                        record
-                    },
-                    cx,
-                )
-            });
-        let draft = cx.new(|_| PiProbeController::new());
-        let applied = cx.new(|_| PiProbeController::new());
-        let view = cx.new(|cx| {
-            SettingsView::new(
-                form,
-                controller,
-                draft,
-                applied,
-                cx.focus_handle(),
-                window,
-                cx,
-            )
-        });
-        assert_eq!(
-            view.read(cx).input.read(cx).value().as_ref(),
-            "/custom/onboarding-pi"
-        );
-        assert_eq!(
-            view.read(cx).pi_input.read(cx).value().as_ref(),
-            "/custom/settings-pi"
-        );
-        Root::new(view, window, cx)
-    });
-    cx.update(|window, cx| window.draw(cx).clear(cx));
-}
-
-#[gpui_kit::test]
 fn theme_grid_contributes_height_and_wraps_in_settings(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_kit::init(cx);
@@ -175,8 +117,21 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
         .flat_map(|(domain, count)| (0..count).map(move |page| (domain, page)));
     for (domain, page) in pages {
         let (_, window_cx) = cx.add_window_view(|window, cx| {
-            let form = cx.new(|_| Form::new(AppConfig::default()));
+            let form = cx.new(|_| {
+                let mut record = AppConfig::default();
+                record.pi_command = Some("/custom/onboarding-pi".into());
+                Form::new(record)
+            });
             let controller = cx.new(|cx| ConfigController::new(&form, cx));
+            controller
+                .read(cx)
+                .pi_form()
+                .clone()
+                .update(cx, |form, cx| {
+                    let mut record = super::PiSettings::default();
+                    record.command = Some("/custom/settings-pi".into());
+                    form.rebase(record, cx);
+                });
             let draft = cx.new(|_| PiProbeController::new());
             let applied = cx.new(|_| {
                 let mut probe = PiProbeController::new();
@@ -194,6 +149,14 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
                     cx,
                 )
             });
+            assert_eq!(
+                settings.read(cx).input.read(cx).value().as_ref(),
+                "/custom/onboarding-pi"
+            );
+            assert_eq!(
+                settings.read(cx).pi_input.read(cx).value().as_ref(),
+                "/custom/settings-pi"
+            );
             settings.read(cx).auth.clone().update(cx, |auth, _| {
                 auth.set_agent_for_test(agent.path().to_owned());
             });

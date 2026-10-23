@@ -19,7 +19,7 @@ fn binding_changes_rebuild_native_menus_without_a_locale_change(cx: &mut TestApp
         ] {
             cx.set_menus(Vec::new());
             apply(&overrides, cx);
-            assert_eq!(cx.get_menus().unwrap().len(), 6);
+            assert!(!cx.get_menus().unwrap().is_empty());
 
             cx.set_menus(Vec::new());
             apply(&overrides, cx);

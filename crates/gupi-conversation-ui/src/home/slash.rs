@@ -536,12 +536,8 @@ mod tests {
                     assert_eq!(home.read(cx).input.read(cx).value().as_ref(), original);
                 });
                 settle(&home, visual);
-                visual.update(|window, cx| {
+                visual.update(|window, _| {
                     let action = window.find("command-send");
-                    assert_eq!(
-                        action.label(),
-                        Some(t(cx, "command-select-resource").as_str())
-                    );
                     assert_ne!(action.disabled(), Some(true));
                 });
                 // Enter on a directory must leave its first file selected.

@@ -153,46 +153,61 @@ impl HomeView {
             | BodyState::Refreshing(_)
             | BodyState::RefreshFailed(_) => match &session.error() {
                 Some(gupi_conversation::conversation::SessionError::ReconnectUnconfirmed) => {
-                    Some(t(cx, "conversation-reconnect-unconfirmed"))
+                    Some((t(cx, "conversation-reconnect-unconfirmed"), None))
                 }
-                _ => session.runtime_error().map(str::to_owned),
+                _ => session
+                    .runtime_error()
+                    .map(|error| (t(cx, "conversation-runtime-failed"), Some(error))),
             },
             BodyState::Loading(_) | BodyState::Failed(_) => None,
         };
-        if let Some(error) = runtime_error {
+        if let Some((summary, details)) = runtime_error {
             shell = shell.child(
-                h_flex()
-                    .gap_2()
+                v_flex()
+                    .w_full()
+                    .min_w_0()
+                    .gap_1()
                     .child(
-                        div()
-                            .flex_1()
-                            .text_sm()
-                            .text_color(cx.theme().danger)
-                            .child(error.to_owned()),
+                        h_flex()
+                            .w_full()
+                            .min_w_0()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .whitespace_normal()
+                                    .text_sm()
+                                    .text_color(cx.theme().danger)
+                                    .child(summary),
+                            )
+                            .child(
+                                Button::new("retry-session")
+                                    .disabled(self.state.read(cx).is_temporary())
+                                    .small()
+                                    .label(t(cx, "conversation-reconnect"))
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        if let Some(key) = this.shown_key.clone() {
+                                            this.state.update(cx, |s, cx| {
+                                                s.connect(&key, cx);
+                                                s.refresh(&key, cx);
+                                            });
+                                        }
+                                    })),
+                            ),
                     )
-                    .child(
-                        Button::new("retry-session")
-                            .disabled(self.state.read(cx).is_temporary())
-                            .small()
-                            .label(t(cx, "conversation-reconnect"))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                if let Some(key) = this.shown_key.clone() {
-                                    this.state.update(cx, |s, cx| {
-                                        s.connect(&key, cx);
-                                        s.refresh(&key, cx);
-                                    });
-                                }
-                            })),
-                    ),
+                    .when_some(details, |shell, error| {
+                        shell.child(crate::diagnostic::details("runtime-details", error))
+                    }),
             );
         }
         if let Some(error) = &self.state.read(cx).storage_error() {
-            shell = shell.child(
-                div()
-                    .text_sm()
-                    .text_color(cx.theme().danger)
-                    .child(format!("{}: {error}", t(cx, "conversation-save-error"))),
-            );
+            shell = shell.child(crate::diagnostic::message(
+                "storage-details",
+                "conversation-storage-failed",
+                error,
+                cx,
+            ));
         }
         if session.retry().is_some() || session.summary_retry().is_some() {
             shell = shell.child(self.progress.clone());

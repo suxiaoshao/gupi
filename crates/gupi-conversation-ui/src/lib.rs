@@ -2,6 +2,7 @@
 pub mod chrome;
 pub mod command_palette;
 pub mod composer;
+pub mod diagnostic;
 pub mod home;
 pub mod host;
 #[cfg(feature = "performance")]

@@ -442,12 +442,12 @@ impl Render for Palette {
         }
         if let Some(error) = self.state.read(cx).catalog().error() {
             content = content
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().danger)
-                        .child(error.to_owned()),
-                )
+                .child(crate::diagnostic::message(
+                    "catalog-details",
+                    "conversation-scan-failed",
+                    error,
+                    cx,
+                ))
                 .child(
                     Button::new("retry-catalog")
                         .small()

@@ -6,6 +6,7 @@ use gpui_kit::Context;
 use gpui_kit::Entity;
 use gpui_kit::EntityId;
 use gpui_kit::Global;
+use gpui_kit::IntoElement;
 use gpui_kit::SharedString;
 use gpui_kit::Subscription;
 use gpui_kit::SystemNotification;
@@ -181,6 +182,12 @@ pub fn attach(owner: &Entity<ConversationState>, cx: &mut App) {
                             .is_some_and(|p| p.state.entity_id() == owner.entity_id())
                     })
                 });
+                let details = if let gupi_conversation::feedback::Feedback::DeleteFailed(error) = message {
+                    if window.is_none() {
+                        tracing::warn!(%error, "conversation deletion failed without a notification window");
+                    }
+                    Some(error.clone())
+                } else { None };
                 this.toast(
                     feedback_text(message, cx),
                     if *error {
@@ -188,6 +195,7 @@ pub fn attach(owner: &Entity<ConversationState>, cx: &mut App) {
                     } else {
                         Severity::Info
                     },
+                    details,
                     None,
                     window,
                     cx,
@@ -242,6 +250,7 @@ impl Delivery {
         &self,
         text: String,
         severity: Severity,
+        details: Option<String>,
         target: Option<(SharedString, Target)>,
         window: Option<AnyWindowHandle>,
         cx: &mut App,
@@ -255,6 +264,18 @@ impl Delivery {
                     Severity::Info => Notification::info(text),
                     Severity::Warning => Notification::warning(text),
                     Severity::Error => Notification::error(text),
+                };
+                let notice = if let Some(details) = &details {
+                    let details = details.clone();
+                    notice.autohide(false).content(move |_, _, _| {
+                        gupi_conversation_ui::diagnostic::details(
+                            "delete-failure-details",
+                            &details,
+                        )
+                        .into_any_element()
+                    })
+                } else {
+                    notice
                 };
                 window.push_notification(
                     if let Some((tag, target)) = target {
@@ -366,6 +387,7 @@ impl Delivery {
             self.toast(
                 format!("{title}\n{text}"),
                 severity,
+                None,
                 Some((tag, target)),
                 active,
                 cx,
@@ -521,10 +543,7 @@ fn feedback_text(message: &gupi_conversation::feedback::Feedback, cx: &App) -> S
     let mut args = FluentArgs::new();
     let key = match message {
         Feedback::Message(message) => return message.clone(),
-        Feedback::DeleteFailed(error) => {
-            args.set("error", error.as_str());
-            "conversation-delete-failed"
-        }
+        Feedback::DeleteFailed(_) => "conversation-delete-failed",
         Feedback::Exported(path) => {
             args.set("path", path.as_str());
             "conversation-exported"
@@ -691,6 +710,56 @@ mod tests {
         fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
             div()
         }
+    }
+    #[gpui_kit::test]
+    fn deletion_failure_retains_diagnostics_until_closed(cx: &mut TestAppContext) {
+        use gpui_kit::test::TestWindowExt as _;
+        let state = setup(cx);
+        cx.update(|cx| cx.set_reduce_motion(true));
+        let (_, visual) = cx.add_window_view(|window, cx| {
+            present(&state, window, true, cx);
+            window.activate_window();
+            let page = cx.new(|_| Page);
+            gpui_kit::component::Root::new(page, window, cx)
+        });
+        visual.run_until_parked();
+        state.update(visual, |_, cx| {
+            cx.emit(ConversationEvent::Notify {
+                message: gupi_conversation::feedback::Feedback::DeleteFailed(format!(
+                    "cannot confirm Pi exit for /{}session.jsonl",
+                    "long-directory/".repeat(40)
+                )),
+                error: true,
+            })
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| window.render_frame(cx));
+        visual
+            .background_executor
+            .advance_clock(std::time::Duration::from_secs(30));
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            window.render_frame(cx);
+            assert_eq!(window.notifications(cx).len(), 1);
+            assert_eq!(
+                window.find("delete-failure-details").expanded(),
+                Some(false)
+            );
+            window.click("delete-failure-details", cx);
+            assert_eq!(window.find("delete-failure-details").expanded(), Some(true));
+            assert_eq!(
+                window.notifications(cx).len(),
+                1,
+                "opening diagnostics must not dismiss the failure"
+            );
+            window.hover("delete-failure-details", cx);
+            window.click("close", cx);
+        });
+        visual
+            .background_executor
+            .advance_clock(std::time::Duration::from_secs(1));
+        visual.run_until_parked();
+        assert!(visual.update(|window, cx| window.notifications(cx).is_empty()));
     }
     #[gpui_kit::test]
     fn notifications_foreground_source_is_read_but_settings_is_not(cx: &mut TestAppContext) {

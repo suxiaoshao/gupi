@@ -168,7 +168,7 @@ Local macOS packages default to development ad-hoc signing and are not notarized
 
 The sidebar groups conversations by project. Open a session to resume it, or press **Cmd/Ctrl+P** to search. Each session keeps its own draft. Use **Refresh sessions** to discover sessions created or changed in terminal Pi.
 
-The folder selected when creating a session becomes Pi's working directory and cannot be changed later. Session menus provide rename, reveal paths, stop generation, end the running connection, and move to Trash.
+The folder selected when creating a session becomes Pi's working directory and cannot be changed later. The titlebar shows its Git branch, or a short commit ID for detached HEAD. Session menus provide rename, reveal paths, stop generation, end the running connection, and move to Trash.
 
 ### Project files and source
 
@@ -178,9 +178,13 @@ Open the right-hand workspace and choose **Files** from its New Tab page to brow
 
 The preview supports syntax highlighting, line numbers, selection, copying, search and line wrapping. It shows a snapshot: use **Reload** to read changes from disk. Opening the same file again preserves its reading position and search state. Previewing does not edit or save the file, or send its content to the model; use `@` in the composer to reference it in a message.
 
-The workspace keeps Files and each reply's Changes in separate tabs. Drag tabs to reorder them, use the tab menu to close groups, or maximize the workspace. Pin it beside the conversation when space permits; narrow windows open it as an overlay. File previews keep the file tree available. Conversation history has its own panel beside the conversation.
+The workspace keeps Files, Git workspace changes and each reply's Changes in separate tabs. Drag tabs to reorder them, use the tab menu to close groups, or maximize the workspace. File previews keep the file tree available. Conversation history has its own panel beside the conversation.
 
 After an agent reply, choose **View changes** on its file-change card to open that reply's Changes tab. Keep several replies' tabs open to compare recorded edits. Repeated edits to the same file are composed where possible; unsupported chains fall back to individual operations. These cards describe recorded `edit`/`write` tool calls, not a Git diff or changes made through shell commands, and provide no rollback action. Temporary conversations retain inline diffs.
+
+Choose **Changes** from the workspace launcher to read the repository's actual **Unstaged**, **Staged** or **Untracked** changes. The read-only reader keeps these sources separate from Pi's recorded edits. Filter paths, step between files, choose unified or split view, expand context, wrap lines and copy patches or available file versions. Narrow diff areas use unified view. Binary files, conflicts and oversized or unavailable content show explicit states; this view does not stage, discard or commit changes.
+
+`@` completion follows Pi's path matching and ranking, including hidden files, ignore rules, quoted paths with spaces, and relative/home/absolute directories. Choosing a directory continues browsing; choosing a file inserts its reference without sending a message.
 
 Use arrow keys to navigate the file tree and **Enter** to open a file. **Cmd/Ctrl+F** searches the focused source editor, composer or message area. Text previews are limited to 1 MiB and 20,000 lines; unsupported encodings, binary files and oversized files show an explanation.
 
@@ -210,6 +214,8 @@ Responses render as Markdown with code blocks, lists, and tables. Expand a proce
 With Pi 1.3.0, recorded direct Shell commands appear as separate rows with output, exit status and a marker when excluded from model context. Active commands can show live output and a Stop action; long output supports expansion, copying, search and opening Pi's full-output file when available. The dedicated Shell input is not available yet: typing `!` or `!!` in the composer still sends a normal message.
 
 With focus in conversation messages, **Cmd/Ctrl+F** searches that conversation. In the composer or source editor, it searches that control’s own text. Token totals and the context indicator below the composer open usage details. The model control also lets you change the thinking level when the selected model supports it.
+
+From four user messages onward, a navigator appears in the reading area's left margin when space permits. Hover or focus a tick to preview the question and an excerpt of its answer; click or drag across ticks to jump. **Alt+Up / Alt+Down** moves between user messages within the reading area. Previews use existing conversation text and do not request model summaries.
 
 Extensions can ask you to select an option, confirm an action, enter a line of text, or edit longer text. Answer in the conversation's input area. Gupi also displays extension notifications, status text, and text widgets; custom terminal interfaces are not supported.
 

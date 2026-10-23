@@ -640,7 +640,7 @@ mod tests {
         visual.update(|window, cx| {
             window.click(format!("quote-open-{id}"), cx);
             window.input("Why this order?", cx);
-            window.press("secondary-enter", cx);
+            window.press("enter", cx);
         });
         visual.run_until_parked();
         visual.update(|_, cx| {
@@ -650,19 +650,36 @@ mod tests {
             );
         });
         visual.update(|window, cx| {
-            window.press("enter", cx);
+            window.click(format!("quote-open-{id}"), cx);
             window.press("secondary-a", cx);
-            window.input("discard this edit", cx);
+            window.input("Save on Escape", cx);
             window.press("escape", cx);
         });
         visual.run_until_parked();
         visual.update(|window, cx| {
             assert_eq!(
                 home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
-                "Why this order?"
+                "Save on Escape"
             );
-            window.click(format!("quote-remove-{id}"), cx);
+            window.click(format!("quote-open-{id}"), cx);
+            window.press("secondary-a", cx);
+            window.input("Keep this when preparation takes over", cx);
+            let state = home.read(cx).state.clone();
+            state.update(cx, |state, cx| {
+                assert!(state.begin_preparation("empty", cx));
+            });
         });
+        visual.run_until_parked();
+        visual.update(|_, cx| {
+            let state = home.read(cx).state.clone();
+            assert_eq!(
+                state.read(cx).current().unwrap().quotes()[0].comment,
+                "Keep this when preparation takes over"
+            );
+            state.update(cx, |state, cx| state.finish_preparation("empty", None, cx));
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| window.click(format!("quote-remove-{id}"), cx));
         visual.run_until_parked();
         visual.update(|_, cx| {
             assert!(
@@ -721,9 +738,43 @@ mod tests {
         visual.update(|window, cx| {
             window.render_frame(cx);
             let bounds = view.read(cx).bounds();
-            window.drag(
-                point(bounds.left() + px(2.), bounds.center().y),
-                point(bounds.left() + px(160.), bounds.center().y),
+            // Native events can all arrive before TextView paints its public
+            // selected text. Do not let the helper draw between pointer events.
+            let start = point(bounds.left() + px(2.), bounds.center().y);
+            let end = point(bounds.left() + px(160.), bounds.center().y);
+            window.dispatch_event(
+                PlatformInput::MouseMove(MouseMoveEvent {
+                    position: start,
+                    pressed_button: None,
+                    modifiers: Modifiers::default(),
+                }),
+                cx,
+            );
+            window.render_frame(cx);
+            window.dispatch_event(
+                PlatformInput::MouseDown(MouseDownEvent {
+                    position: start,
+                    button: MouseButton::Left,
+                    click_count: 1,
+                    ..Default::default()
+                }),
+                cx,
+            );
+            window.dispatch_event(
+                PlatformInput::MouseMove(MouseMoveEvent {
+                    position: end,
+                    pressed_button: Some(MouseButton::Left),
+                    modifiers: Modifiers::default(),
+                }),
+                cx,
+            );
+            window.dispatch_event(
+                PlatformInput::MouseUp(MouseUpEvent {
+                    position: end,
+                    button: MouseButton::Left,
+                    click_count: 1,
+                    ..Default::default()
+                }),
                 cx,
             );
         });
@@ -746,6 +797,9 @@ mod tests {
             );
             assert!(home.read(cx).input.read(cx).value().is_empty());
             assert!(view.read(cx).selected_text().is_empty());
+            assert!(home.read(cx).views["empty"].quote_cards.read(cx).floating());
+            window.input("Pointer comment", cx);
+            window.press("enter", cx);
             let bounds = view.read(cx).bounds();
             window.drag(
                 point(bounds.left() + px(2.), bounds.center().y),
@@ -755,10 +809,11 @@ mod tests {
         });
         visual.run_until_parked();
         visual.update(|window, cx| {
-            assert_ne!(
-                window.find("quote-selection-comment").disabled(),
-                Some(true)
+            assert_eq!(
+                home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
+                "Pointer comment"
             );
+            assert_ne!(window.find("quote-selection-add").disabled(), Some(true));
             window.scroll(
                 "quote-selection-add",
                 ScrollDelta::Pixels(point(px(0.), px(-20.))),

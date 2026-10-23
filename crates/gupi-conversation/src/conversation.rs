@@ -1907,24 +1907,29 @@ impl ConversationState {
         notify_controls(key, cx);
         true
     }
-    pub fn edit_quote(&mut self, key: &str, id: &str, comment: String, cx: &mut Context<Self>) {
-        let Some(session) = self
-            .sessions
-            .get_mut(key)
-            .filter(|s| s.can_edit_draft() && s.pending_ui.is_empty())
-        else {
-            return;
+    /// Finish an already-open comment editor. Extension/preparation gates only
+    /// prevent starting edits; they must not discard a comment already typed.
+    /// A submission owns its captured attachments and cannot be overwritten.
+    pub fn edit_quote(
+        &mut self,
+        key: &str,
+        id: &str,
+        comment: String,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(session) = self.sessions.get_mut(key).filter(|s| !s.submitting()) else {
+            return false;
         };
         let Some(quote) = session.quotes.iter_mut().find(|q| q.id == id) else {
-            return;
+            return false;
         };
-        if quote.comment == comment {
-            return;
+        if quote.comment != comment {
+            Arc::make_mut(quote).comment = comment;
+            session.draft_revision += 1;
+            self.save_changes(cx);
+            notify_controls(key, cx);
         }
-        Arc::make_mut(quote).comment = comment;
-        session.draft_revision += 1;
-        self.save_changes(cx);
-        notify_controls(key, cx);
+        true
     }
     pub fn remove_quote(&mut self, key: &str, id: &str, cx: &mut Context<Self>) {
         let Some(session) = self

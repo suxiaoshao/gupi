@@ -1422,10 +1422,10 @@ quote-disabled-menu =
        *[composer] Citer dans le champ de message — brouillon non modifiable
     }
 
-quote-comment-action = Commenter…
+quote-action = Citer
+quote-preview-title = { $source } · Contenu lors de la sélection
 quote-comment-placeholder = Ajouter un commentaire (facultatif)…
 quote-delete = Supprimer la citation
-quote-save = Enregistrer
 quote-comment-prefix = { "Commentaire : " }
 quote-message-short =
     { $role ->

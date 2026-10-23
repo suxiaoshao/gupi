@@ -1403,10 +1403,10 @@ quote-disabled-menu =
        *[composer] 引用到输入框 — 消息草稿当前不可编辑
     }
 
-quote-comment-action = 评论…
+quote-action = 引用
+quote-preview-title = { $source } · 选中时的内容
 quote-comment-placeholder = 添加评论（可选）…
 quote-delete = 删除引用
-quote-save = 保存
 quote-comment-prefix = { "评论：" }
 quote-message-short =
     { $role ->

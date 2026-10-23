@@ -146,6 +146,7 @@ struct Press {
     region: WeakEntity<Lease>,
     point: Point<Pixels>,
     moved: bool,
+    released: Option<Point<Pixels>>,
 }
 struct Active {
     region: WeakEntity<Lease>,
@@ -250,6 +251,33 @@ impl RenderOnce for Region {
             },
             move |_, lease, window, cx| {
                 let owner = lease.read(cx).owner.clone();
+                let released = owner
+                    .read_with(cx, |home, _| {
+                        home.quote_tools
+                            .press
+                            .as_ref()
+                            .filter(|press| press.region.entity_id() == lease.entity_id())
+                            .and_then(|press| press.released)
+                    })
+                    .ok()
+                    .flatten();
+                if let Some(point) = released {
+                    // TextView materializes its public selection during paint.
+                    // This region is painted after its source, so sample only
+                    // after this frame rather than in the MouseUp transaction.
+                    let owner = owner.clone();
+                    let id = lease.entity_id();
+                    window.defer(cx, move |window, cx| {
+                        let _ = owner.update(cx, |home, cx| {
+                            if home.quote_tools.press.as_ref().is_some_and(|press| {
+                                press.region.entity_id() == id && press.released == Some(point)
+                            }) {
+                                home.finish_quote_selection(point, window, cx);
+                                home.check_quote_tools(window, cx);
+                            }
+                        });
+                    });
+                }
                 window.on_mouse_event(move |event: &MouseDownEvent, phase, _, cx| {
                     if !phase.capture()
                         || event.button != MouseButton::Left
@@ -271,6 +299,7 @@ impl RenderOnce for Region {
                             region: lease.downgrade(),
                             point: event.position,
                             moved: false,
+                            released: None,
                         });
                     });
                 });
@@ -345,11 +374,11 @@ impl HomeView {
         });
         cx.notify();
     }
-    fn use_quote_tools(&mut self, comment: bool, window: &mut Window, cx: &mut Context<Self>) {
+    fn use_quote_tools(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(active) = self.quote_tools.active.take() else {
             return;
         };
-        self.quote_tools.bounds.set(None);
+        let anchor = self.quote_tools.bounds.replace(None);
         let Ok(snapshot) = active.capture else {
             return;
         };
@@ -360,11 +389,11 @@ impl HomeView {
             region.read(cx).target.clone().clear(cx);
         }
         if let Some(id) = self.add_quote_snapshot(&snapshot, window, cx)
-            && comment
+            && let Some(anchor) = anchor
             && let Some(view) = self.views.get(&snapshot.key)
         {
             view.quote_cards
-                .update(cx, |cards, cx| cards.open(&id, window, cx));
+                .update(cx, |cards, cx| cards.open_floating(&id, anchor, window, cx));
         }
         cx.notify();
     }
@@ -373,6 +402,15 @@ impl HomeView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        if let Some(cards) = self
+            .shown_key
+            .as_ref()
+            .and_then(|key| self.views.get(key))
+            .map(|view| view.quote_cards.clone())
+            && cards.read(cx).floating()
+        {
+            return cards.update(cx, |cards, cx| cards.render_floating(cx));
+        }
         self.check_quote_tools(window, cx);
         if window.has_active_dialog(cx) {
             self.quote_tools.dismiss();
@@ -404,25 +442,11 @@ impl HomeView {
                     .ghost()
                     .xsmall()
                     .text_sm()
-                    .label(t(cx, "quote-in-composer"))
+                    .icon(IconName::Quote)
+                    .label(t(cx, "quote-action"))
                     .disabled(reason.is_some())
                     .when_some(reason, |button, reason| button.tooltip(t(cx, reason.key())))
-                    .on_click(
-                        cx.listener(|home, _, window, cx| home.use_quote_tools(false, window, cx)),
-                    ),
-            )
-            .child(div().border_l_1().h_4().border_color(cx.theme().border))
-            .child(
-                Button::new("quote-selection-comment")
-                    .ghost()
-                    .xsmall()
-                    .text_sm()
-                    .label(t(cx, "quote-comment-action"))
-                    .disabled(reason.is_some())
-                    .when_some(reason, |button, reason| button.tooltip(t(cx, reason.key())))
-                    .on_click(
-                        cx.listener(|home, _, window, cx| home.use_quote_tools(true, window, cx)),
-                    ),
+                    .on_click(cx.listener(|home, _, window, cx| home.use_quote_tools(window, cx))),
             );
         let bounds = self.quote_tools.bounds.clone();
         let owner = cx.weak_entity();
@@ -549,12 +573,16 @@ pub(in crate::home) fn events(owner: WeakEntity<HomeView>) -> impl IntoElement {
             let up = owner.clone();
             window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
                 if phase.capture() && event.button == MouseButton::Left {
+                    let _ = up.update(cx, |home, cx| {
+                        if let Some(press) = &mut home.quote_tools.press {
+                            press.released = Some(event.position);
+                            cx.notify();
+                        }
+                    });
                     let owner = up.clone();
-                    let point = event.position;
                     window.defer(cx, move |window, cx| {
                         let _ = owner.update(cx, |home, cx| {
                             home.quote_tools.pointer_held = false;
-                            home.finish_quote_selection(point, window, cx);
                             home.check_quote_tools(window, cx);
                         });
                     });

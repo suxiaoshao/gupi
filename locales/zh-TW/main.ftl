@@ -1403,10 +1403,10 @@ quote-disabled-menu =
        *[composer] 引用到輸入框 — 訊息草稿目前無法編輯
     }
 
-quote-comment-action = 評論…
+quote-action = 引用
+quote-preview-title = { $source } · 選取時的內容
 quote-comment-placeholder = 新增評論（選填）…
 quote-delete = 刪除引用
-quote-save = 儲存
 quote-comment-prefix = { "評論：" }
 quote-message-short =
     { $role ->

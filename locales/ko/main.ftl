@@ -1396,10 +1396,10 @@ quote-disabled-menu =
        *[composer] 입력창에 인용 — 메시지 초안을 편집할 수 없습니다
     }
 
-quote-comment-action = 댓글…
+quote-action = 인용
+quote-preview-title = { $source } · 선택 당시 내용
 quote-comment-placeholder = 댓글 추가 (선택 사항)…
 quote-delete = 인용 삭제
-quote-save = 저장
 quote-comment-prefix = { "댓글: " }
 quote-message-short =
     { $role ->

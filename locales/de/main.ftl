@@ -1422,10 +1422,10 @@ quote-disabled-menu =
        *[composer] Im Eingabefeld zitieren — Nachrichtenentwurf nicht bearbeitbar
     }
 
-quote-comment-action = Kommentieren…
+quote-action = Zitieren
+quote-preview-title = { $source } · Inhalt bei Auswahl
 quote-comment-placeholder = Kommentar hinzufügen (optional)…
 quote-delete = Zitat löschen
-quote-save = Speichern
 quote-comment-prefix = { "Kommentar: " }
 quote-message-short =
     { $role ->

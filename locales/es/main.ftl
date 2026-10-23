@@ -1421,10 +1421,10 @@ quote-disabled-menu =
        *[composer] Citar en el cuadro de mensaje — borrador no editable
     }
 
-quote-comment-action = Comentar…
+quote-action = Citar
+quote-preview-title = { $source } · Contenido al seleccionar
 quote-comment-placeholder = Añadir comentario (opcional)…
 quote-delete = Eliminar cita
-quote-save = Guardar
 quote-comment-prefix = { "Comentario: " }
 quote-message-short =
     { $role ->

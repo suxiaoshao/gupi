@@ -1396,10 +1396,10 @@ quote-disabled-menu =
        *[composer] 入力欄に引用 — 下書きを編集できません
     }
 
-quote-comment-action = コメント…
+quote-action = 引用
+quote-preview-title = { $source } · 選択時の内容
 quote-comment-placeholder = コメントを追加（任意）…
 quote-delete = 引用を削除
-quote-save = 保存
 quote-comment-prefix = { "コメント：" }
 quote-message-short =
     { $role ->

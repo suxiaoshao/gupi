@@ -1422,10 +1422,10 @@ quote-disabled-menu =
        *[composer] Quote in composer — message draft unavailable
     }
 
-quote-comment-action = Comment…
+quote-action = Quote
+quote-preview-title = { $source } · Content at selection
 quote-comment-placeholder = Add a comment (optional)…
 quote-delete = Delete quote
-quote-save = Save
 quote-comment-prefix = { "Comment: " }
 quote-message-short =
     { $role ->

@@ -544,12 +544,15 @@ impl HomeView {
             if state.limited {
                 body = body.child(div().p_3().text_sm().child(t(cx, "diff-too-large")));
             } else if let Some(block) = &state.combined {
-                body = body.child(
-                    div()
-                        .flex_1()
-                        .min_h_0()
-                        .child(block.render_reader(tab.options.wrap)),
-                );
+                body = body.child(div().flex_1().min_h_0().child(quote::diff_body(
+                    block.render_reader(tab.options.wrap),
+                    block.state(),
+                    PathBuf::from(file.path()),
+                    quote::FileKind::Turn,
+                    cx.weak_entity(),
+                    self.shown_key.clone().unwrap_or_default(),
+                    true,
+                )));
             } else {
                 let mut operations = v_flex()
                     .id(format!("workspace-operations-{}", tab.id))
@@ -593,12 +596,17 @@ impl HomeView {
                             .when_some(operation.stats(), |row, stats| {
                                 row.child(reader::line_stats(stats.added(), stats.removed(), cx))
                             });
-                        operations = operations.child(
-                            v_flex()
-                                .min_w_0()
-                                .child(header)
-                                .child(block.render_reader_bounded(tab.options.wrap)),
-                        );
+                        operations = operations.child(v_flex().min_w_0().child(header).child(
+                            quote::diff_body(
+                                block.render_reader_bounded(tab.options.wrap),
+                                block.state(),
+                                PathBuf::from(file.path()),
+                                quote::FileKind::Turn,
+                                cx.weak_entity(),
+                                self.shown_key.clone().unwrap_or_default(),
+                                false,
+                            ),
+                        ));
                     }
                 }
                 let mut controls = h_flex().gap_2().px_3();
@@ -741,3 +749,37 @@ impl HomeView {
 
 #[cfg(test)]
 mod tests;
+
+impl HomeView {
+    pub(in crate::home) fn changes_quote(
+        &self,
+        window: &Window,
+        cx: &App,
+    ) -> Option<Result<quote::Selection, quote::Unavailable>> {
+        let tab = self.active_changes()?;
+        if !tab.in_scope {
+            return None;
+        }
+        let path = tab.selected.as_ref()?;
+        let file = tab.files.iter().find(|f| f.path() == path)?;
+        let state = tab.states.get(path)?;
+        if state.limited {
+            return None;
+        }
+        let blocks: Vec<_> = if let Some(block) = state.combined.as_ref() {
+            vec![block]
+        } else {
+            file.operations()
+                .iter()
+                .skip(state.page)
+                .take(3)
+                .filter_map(|op| state.operations.get(op.id()))
+                .collect()
+        };
+        blocks
+            .into_iter()
+            .filter_map(|b| b.state())
+            .find(|s| s.read(cx).focus_handle(cx).contains_focused(window, cx))
+            .map(|s| quote::diff_selection(s, PathBuf::from(path), quote::FileKind::Turn, cx))
+    }
+}

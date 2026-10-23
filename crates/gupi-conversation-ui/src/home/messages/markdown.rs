@@ -1,15 +1,19 @@
 //! Adapt Pi text snapshots to the component's incremental Markdown parser.
+use crate::home::{HomeView, quote};
 use gpui_kit::App;
 use gpui_kit::AppContext;
 use gpui_kit::Context;
 use gpui_kit::Entity;
 use gpui_kit::EventEmitter;
+use gpui_kit::InteractiveElement as _;
 use gpui_kit::IntoElement;
+use gpui_kit::ParentElement as _;
 use gpui_kit::RenderOnce;
 use gpui_kit::Styled;
 use gpui_kit::Subscription;
 use gpui_kit::WeakEntity;
 use gpui_kit::Window;
+use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::component::message_scroller::MessageScrollerState;
 use gpui_kit::component::text::RenderedText;
 use gpui_kit::component::text::TextView;
@@ -29,6 +33,30 @@ type RowTarget = Option<(String, RowPositions)>;
 #[derive(Clone, Default)]
 pub(in crate::home) struct Registry(Rc<RefCell<HashMap<String, WeakEntity<MarkdownState>>>>);
 impl Registry {
+    pub(in crate::home) fn quote_selection(
+        &self,
+        window: &Window,
+        cx: &App,
+    ) -> Option<quote::Selection> {
+        self.0
+            .borrow()
+            .values()
+            .filter_map(WeakEntity::upgrade)
+            .find_map(|state| {
+                let state = state.read(cx);
+                let role = state.quote_role.as_ref()?;
+                let view = state.view.read(cx);
+                if !view.focus_handle().contains_focused(window, cx) {
+                    return None;
+                }
+                let text = view.selected_text();
+                (!text.is_empty()).then(|| quote::Selection {
+                    text,
+                    origin: quote::Origin::Message { role: role.clone() },
+                })
+            })
+    }
+
     pub fn get(
         &self,
         id: &str,
@@ -65,6 +93,7 @@ pub(super) struct Markdown {
     row: RowTarget,
     stream_fade: bool,
     registry: Registry,
+    quote: Option<(WeakEntity<HomeView>, String, String)>,
 }
 
 impl Markdown {
@@ -81,9 +110,19 @@ impl Markdown {
             row: None,
             stream_fade: false,
             registry,
+            quote: None,
         }
     }
 
+    pub(in crate::home) fn quote(
+        mut self,
+        owner: WeakEntity<HomeView>,
+        key: &str,
+        role: &str,
+    ) -> Self {
+        self.quote = Some((owner, key.to_owned(), role.to_owned()));
+        self
+    }
     pub fn row(mut self, id: String, positions: RowPositions) -> Self {
         self.row = Some((id, positions));
         self
@@ -97,6 +136,7 @@ impl Markdown {
 pub(in crate::home) struct MarkdownState {
     /// Last submitted snapshot, which may be ahead of the asynchronous parser.
     text: String,
+    quote_role: Option<String>,
     pub view: Entity<TextViewState>,
     _subscription: Subscription,
     row: Rc<RefCell<RowTarget>>,
@@ -137,6 +177,7 @@ impl MarkdownState {
         });
         Self {
             text,
+            quote_role: None,
             view,
             _subscription: subscription,
             row,
@@ -197,6 +238,7 @@ impl RenderOnce for Markdown {
         });
         let state = retained.read(cx).clone();
         let view = state.update(cx, |state, cx| {
+            state.quote_role = self.quote.as_ref().map(|(_, _, role)| role.clone());
             state.sync(self.text, cx);
             state.render_view(self.row, cx)
         });
@@ -210,7 +252,31 @@ impl RenderOnce for Markdown {
             .stream_fade(self.stream_fade);
         #[cfg(feature = "performance")]
         let content = crate::performance::measure("markdown", false, content);
-        content
+        if let Some((owner, key, role)) = self.quote {
+            gpui_kit::div()
+                .id(format!("quote-message-{}", self.id))
+                .w_full()
+                .min_w_0()
+                .child(content)
+                .context_menu(move |menu, window, cx| {
+                    let text = view.read(cx).selected_text();
+                    let selection = quote::Selection {
+                        text: text.clone(),
+                        origin: quote::Origin::Message { role: role.clone() },
+                    };
+                    quote::menu(
+                        menu,
+                        owner.clone(),
+                        quote::capture(&owner, &key, Ok(selection), cx),
+                        text,
+                        window,
+                        cx,
+                    )
+                })
+                .into_any_element()
+        } else {
+            content.into_any_element()
+        }
     }
 }
 

@@ -1388,3 +1388,36 @@ composer-thinking-load-failed = Denkstufen konnten nicht geladen werden.
 composer-model-change-failed = Die Änderung des Modells oder der Denkstufe konnte nicht bestätigt werden.
 command-load-failed = Befehle konnten nicht geladen werden.
 resource-files-failed = Dateien konnten nicht gesucht werden. Prüfen Sie den Pfad und suchen Sie erneut.
+
+quote-in-composer = Im Eingabefeld zitieren
+quote-select-text = Wähle den zu zitierenden Text aus.
+quote-select-diff-lines = Wähle Zeilennummern auf einer Seite des Diffs aus.
+quote-composer-unavailable = Der normale Nachrichtenentwurf kann gerade nicht bearbeitet werden.
+quote-message-title =
+    { $role ->
+        [user] Benutzer:
+       *[assistant] Assistent:
+    }
+quote-file-title = Datei: { $path }, Zeilen { $start }–{ $end }
+quote-turn-title = Änderungen dieses Durchlaufs: { $path }, { $side ->
+        [original] Originalseite
+       *[modified] geänderte Seite
+    }, Zeilen { $start }–{ $end }
+quote-staged-title = Git · Vorgemerkt: { $path }, { $side ->
+        [original] Originalseite
+       *[modified] geänderte Seite
+    }, Zeilen { $start }–{ $end }
+quote-unstaged-title = Git · Nicht vorgemerkt: { $path }, { $side ->
+        [original] Originalseite
+       *[modified] geänderte Seite
+    }, Zeilen { $start }–{ $end }
+quote-untracked-title = Git · Unverfolgt: { $path }, { $side ->
+        [original] Originalseite
+       *[modified] geänderte Seite
+    }, Zeilen { $start }–{ $end }
+quote-disabled-menu =
+    { $reason ->
+        [selection] Im Eingabefeld zitieren — Text auswählen
+        [diff] Im Eingabefeld zitieren — Zeilennummern einer Seite auswählen
+       *[composer] Im Eingabefeld zitieren — Nachrichtenentwurf nicht bearbeitbar
+    }

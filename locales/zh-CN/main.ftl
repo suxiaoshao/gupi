@@ -1369,3 +1369,36 @@ composer-thinking-load-failed = 无法加载思考强度选项。
 composer-model-change-failed = 无法确认模型或思考强度的切换结果。
 command-load-failed = 无法加载命令列表。
 resource-files-failed = 无法查找文件。请检查路径后重新搜索。
+
+quote-in-composer = 引用到输入框
+quote-select-text = 请选择要引用的文本。
+quote-select-diff-lines = 请从行号选择同一侧的内容。
+quote-composer-unavailable = 当前无法编辑普通消息草稿。
+quote-message-title =
+    { $role ->
+        [user] 用户：
+       *[assistant] 助手：
+    }
+quote-file-title = 文件：{ $path }，{ $start }–{ $end } 行
+quote-turn-title = 本轮改动：{ $path }、{ $side ->
+        [original] 旧侧
+       *[modified] 新侧
+    }、{ $start }–{ $end } 行
+quote-staged-title = Git · 已暂存：{ $path }、{ $side ->
+        [original] 旧侧
+       *[modified] 新侧
+    }、{ $start }–{ $end } 行
+quote-unstaged-title = Git · 未暂存：{ $path }、{ $side ->
+        [original] 旧侧
+       *[modified] 新侧
+    }、{ $start }–{ $end } 行
+quote-untracked-title = Git · 未跟踪：{ $path }、{ $side ->
+        [original] 旧侧
+       *[modified] 新侧
+    }、{ $start }–{ $end } 行
+quote-disabled-menu =
+    { $reason ->
+        [selection] 引用到输入框 — 请先选择文本
+        [diff] 引用到输入框 — 请从行号选择同一侧
+       *[composer] 引用到输入框 — 消息草稿当前不可编辑
+    }

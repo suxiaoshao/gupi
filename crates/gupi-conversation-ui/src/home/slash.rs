@@ -174,7 +174,8 @@ impl HomeView {
             return;
         }
         let insertion = self.capture_file_insertion(None, cx);
-        self.command_panel = Some(CommandPalette::open_with_file_insertion(
+        let quote = self.capture_quote(window, cx);
+        self.command_panel = Some(CommandPalette::open_with_context(
             Some((cx.weak_entity(), self.state.clone())),
             from_composer,
             if from_composer {
@@ -183,6 +184,7 @@ impl HomeView {
                 String::new()
             },
             insertion,
+            Some(quote),
             window,
             cx,
         ));
@@ -211,11 +213,13 @@ impl HomeView {
             .unwrap_or("@")
             .to_owned();
         self.slash.file_dismissed = true;
-        self.command_panel = Some(CommandPalette::open_with_file_insertion(
+        let quote = self.capture_quote(window, cx);
+        self.command_panel = Some(CommandPalette::open_with_context(
             Some((cx.weak_entity(), self.state.clone())),
             false,
             query,
             insertion,
+            Some(quote),
             window,
             cx,
         ));

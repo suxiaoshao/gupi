@@ -1362,3 +1362,36 @@ composer-thinking-load-failed = 사고 수준 옵션을 불러오지 못했습�
 composer-model-change-failed = 모델 또는 사고 수준의 변경 결과를 확인하지 못했습니다.
 command-load-failed = 명령 목록을 불러오지 못했습니다.
 resource-files-failed = 파일을 검색하지 못했습니다. 경로를 확인하고 다시 검색하세요.
+
+quote-in-composer = 입력창에 인용
+quote-select-text = 인용할 텍스트를 선택하세요.
+quote-select-diff-lines = 차이의 한쪽 행 번호에서 선택하세요.
+quote-composer-unavailable = 현재 일반 메시지 초안을 편집할 수 없습니다.
+quote-message-title =
+    { $role ->
+        [user] 사용자:
+       *[assistant] 어시스턴트:
+    }
+quote-file-title = 파일: { $path }, { $start }–{ $end }행
+quote-turn-title = 이번 변경: { $path }, { $side ->
+        [original] 이전 쪽
+       *[modified] 수정된 쪽
+    }, { $start }–{ $end }행
+quote-staged-title = Git · 스테이징됨: { $path }, { $side ->
+        [original] 이전 쪽
+       *[modified] 수정된 쪽
+    }, { $start }–{ $end }행
+quote-unstaged-title = Git · 스테이징 안 됨: { $path }, { $side ->
+        [original] 이전 쪽
+       *[modified] 수정된 쪽
+    }, { $start }–{ $end }행
+quote-untracked-title = Git · 추적 안 됨: { $path }, { $side ->
+        [original] 이전 쪽
+       *[modified] 수정된 쪽
+    }, { $start }–{ $end }행
+quote-disabled-menu =
+    { $reason ->
+        [selection] 입력창에 인용 — 텍스트를 선택하세요
+        [diff] 입력창에 인용 — 한쪽 행 번호를 선택하세요
+       *[composer] 입력창에 인용 — 메시지 초안을 편집할 수 없습니다
+    }

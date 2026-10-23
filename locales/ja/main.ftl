@@ -1362,3 +1362,36 @@ composer-thinking-load-failed = 思考レベルの選択肢を読み込めませ
 composer-model-change-failed = モデルまたは思考レベルの変更結果を確認できませんでした。
 command-load-failed = コマンド一覧を読み込めませんでした。
 resource-files-failed = ファイルを検索できませんでした。パスを確認して再度検索してください。
+
+quote-in-composer = 入力欄に引用
+quote-select-text = 引用するテキストを選択してください。
+quote-select-diff-lines = 差分の片側の行番号から選択してください。
+quote-composer-unavailable = 現在、通常のメッセージ下書きは編集できません。
+quote-message-title =
+    { $role ->
+        [user] ユーザー：
+       *[assistant] アシスタント：
+    }
+quote-file-title = ファイル：{ $path }、{ $start }–{ $end } 行
+quote-turn-title = 今回の変更：{ $path }、{ $side ->
+        [original] 変更前
+       *[modified] 変更後
+    }、{ $start }–{ $end } 行
+quote-staged-title = Git · ステージ済み：{ $path }、{ $side ->
+        [original] 変更前
+       *[modified] 変更後
+    }、{ $start }–{ $end } 行
+quote-unstaged-title = Git · 未ステージ：{ $path }、{ $side ->
+        [original] 変更前
+       *[modified] 変更後
+    }、{ $start }–{ $end } 行
+quote-untracked-title = Git · 未追跡：{ $path }、{ $side ->
+        [original] 変更前
+       *[modified] 変更後
+    }、{ $start }–{ $end } 行
+quote-disabled-menu =
+    { $reason ->
+        [selection] 入力欄に引用 — テキストを選択してください
+        [diff] 入力欄に引用 — 片側の行番号を選択してください
+       *[composer] 入力欄に引用 — 下書きを編集できません
+    }

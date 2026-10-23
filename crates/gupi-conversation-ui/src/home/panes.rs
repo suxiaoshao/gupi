@@ -530,6 +530,177 @@ mod tests {
         (home, visual)
     }
 
+    // A quote is one append-only edit; opening a palette must not lose the
+    // source selection or let a later connection receive its captured text.
+    #[gpui_kit::test]
+    fn quote_palette_keeps_tokens_attachments_and_one_step_undo(cx: &mut TestAppContext) {
+        use gpui_kit::base::input::InlineToken;
+        use gupi_conversation::history::DisplayMessage;
+        let (home, visual) = setup_initialized(
+            cx,
+            layout::LayoutState::default(),
+            false,
+            |home, window, cx| {
+                gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::English, cx);
+                home.update(cx, |home, cx| {
+                    home.state.update(cx, |state, cx| {
+                        let session = state.sessions_for_test().get_mut("empty").unwrap();
+                        *session.binding_for_test() = 1;
+                        *session.state_for_test() = Some(serde_json::from_value(serde_json::json!({
+                            "sessionId":"quote-fixture","isStreaming":false,"isCompacting":false
+                        })).unwrap());
+                        session.mark_transcript_message_for_test();
+                        session.live_for_test().push(DisplayMessage::new(
+                            "quote-answer".into(),
+                            serde_json::json!({"role":"assistant","stopReason":"stop","content":[{"type":"text","text":"Selected **answer**."}]}),
+                        ));
+                        *session.content_revision_for_test() += 1;
+                        session.attachments_for_test().push(
+                            gupi_conversation::attachments::Attachment::file("note.txt".into(), 0),
+                        );
+                        gupi_conversation::conversation::test_support::notify_session("empty", cx);
+                    });
+                    home.sync(false, window, cx);
+                    home.input.update(cx, |input, cx| {
+                        input.set_value("draft ", window, cx);
+                        input.replace_range_with_token(
+                            6..6,
+                            InlineToken::new("file-fixture", "@note.txt"),
+                            window,
+                            cx,
+                        ).unwrap();
+                        input.set_selected_range(0..5, cx);
+                    });
+                });
+            },
+        );
+        visual.run_until_parked();
+        visual.update(|window, cx| window.render_frame(cx));
+        let (original, captured) = visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                let view = &home.views[home.shown_key.as_ref().unwrap()];
+                let markdown = view.markdown.get(
+                    "empty-text-quote-answer",
+                    "Selected **answer**.".into(),
+                    view.scroller.downgrade(),
+                    cx,
+                );
+                let text_view = markdown.read(cx).view.clone();
+                text_view.update(cx, |text, cx| {
+                    text.select_all(cx);
+                    text.focus_handle().focus(window, cx);
+                });
+                let captured = home.capture_quote(window, cx).unwrap();
+                let original = home.input.read(cx).content().clone();
+                home.open_commands(false, window, cx);
+                (original, captured)
+            })
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            window.input("Quote in composer", cx);
+            window.press("enter", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|_, cx| {
+            home.update(cx, |home, cx| {
+                assert_eq!(
+                    home.input
+                        .read(cx)
+                        .value()
+                        .replace(['\u{2068}', '\u{2069}'], ""),
+                    format!(
+                        "{}\n\nAssistant:\n> Selected answer.\n> \n\n",
+                        original.text()
+                    )
+                );
+                assert_eq!(home.input.read(cx).content().tokens(), original.tokens());
+                assert_eq!(
+                    home.state.read(cx).current().unwrap().attachments().len(),
+                    1
+                );
+            })
+        });
+        visual.update(|window, cx| window.press("secondary-z", cx));
+        visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                assert_eq!(home.input.read(cx).content(), original);
+                home.state.update(cx, |state, _| {
+                    *state
+                        .sessions_for_test()
+                        .get_mut("empty")
+                        .unwrap()
+                        .binding_for_test() += 1;
+                });
+                home.quote(&quote::Quote(Some(captured)), window, cx);
+                assert_eq!(home.input.read(cx).content(), original);
+            })
+        });
+    }
+
+    #[gpui_kit::test]
+    fn quote_diff_uses_real_path_and_single_side_lines(cx: &mut TestAppContext) {
+        use super::super::messages::diff::DiffBlock;
+        use gpui_kit::component::diff::{DiffLineRange, DiffSide};
+        let (home, visual) = setup(cx);
+        visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                home.state.update(cx, |state, _| {
+                    *state
+                        .sessions_for_test()
+                        .get_mut("empty")
+                        .unwrap()
+                        .state_for_test() = Some(
+                        serde_json::from_value(serde_json::json!({
+                            "sessionId":"diff-fixture","isStreaming":false,"isCompacting":false
+                        }))
+                        .unwrap(),
+                    );
+                });
+                gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::English, cx);
+                let block = DiffBlock::patch(
+                    "--- a/file\n+++ b/file\n@@ -1,2 +1,2 @@\n-old\n+new\n context\n",
+                    cx,
+                );
+                let diff = block.state().unwrap();
+                diff.update(cx, |state, cx| {
+                    state.set_selected_lines(
+                        Some(DiffLineRange::new("file", DiffSide::Modified, 1, 2)),
+                        cx,
+                    )
+                });
+                let selection =
+                    quote::diff_selection(diff, "src/real.rs".into(), quote::FileKind::Staged, cx)
+                        .unwrap();
+                let capture = home.bind_quote(Ok(selection), cx).unwrap();
+                home.quote(&quote::Quote(Some(capture)), window, cx);
+                let text = home.input.read(cx).value();
+                assert!(
+                    text.replace(['\u{2068}', '\u{2069}'], "").starts_with(
+                        "Git · Staged: src/real.rs, modified side, lines 1–2\n```rust\n"
+                    ),
+                    "{text}"
+                );
+                assert!(text.ends_with("new\ncontext\n```\n\n"), "{text}");
+                let original = text.to_string();
+                diff.update(cx, |state, cx| {
+                    state.set_selected_lines(
+                        Some(
+                            DiffLineRange::new("file", DiffSide::Original, 1, 1)
+                                .with_end_side(DiffSide::Modified),
+                        ),
+                        cx,
+                    )
+                });
+                assert!(matches!(
+                    quote::diff_selection(diff, "src/real.rs".into(), quote::FileKind::Staged, cx),
+                    Err(quote::Unavailable::DiffLines)
+                ));
+                assert_eq!(home.input.read(cx).value().as_str(), original);
+            })
+        });
+    }
+
     #[gpui_kit::test]
     fn saved_source_ratio_is_applied_before_first_frame(cx: &mut TestAppContext) {
         let fixture = tempfile::tempdir().unwrap();

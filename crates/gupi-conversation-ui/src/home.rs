@@ -13,6 +13,7 @@ pub mod palette;
 mod panes;
 pub mod pickers;
 mod progress;
+pub(crate) mod quote;
 mod session_info;
 mod slash;
 pub(crate) use slash::FileInsertion;
@@ -1381,6 +1382,7 @@ impl Render for HomeView {
                 .child(content)
                 .child(self.image_preview.clone())
                 .key_context("Gupi")
+                .on_action(cx.listener(Self::quote))
                 .track_focus(&self.focus_handle)
                 .into_any_element();
             #[cfg(feature = "performance")]
@@ -1452,6 +1454,7 @@ impl Render for HomeView {
             .key_context("Gupi")
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::run_action))
+            .on_action(cx.listener(Self::quote))
             .on_action(cx.listener(
                 |this, _: &gupi_settings::commands::ShowCommandPalette, window, cx| {
                     this.run_action(&actions::Run::new(actions::Kind::Palette), window, cx)

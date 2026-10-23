@@ -1387,3 +1387,36 @@ composer-thinking-load-failed = No se pudieron cargar las opciones de razonamien
 composer-model-change-failed = No se pudo confirmar el cambio de modelo o nivel de razonamiento.
 command-load-failed = No se pudieron cargar los comandos.
 resource-files-failed = No se pudieron buscar archivos. Compruebe la ruta y vuelva a buscar.
+
+quote-in-composer = Citar en el cuadro de mensaje
+quote-select-text = Selecciona el texto que quieras citar.
+quote-select-diff-lines = Selecciona números de línea de un solo lado de la diferencia.
+quote-composer-unavailable = El borrador del mensaje normal no se puede editar ahora.
+quote-message-title =
+    { $role ->
+        [user] Usuario:
+       *[assistant] Asistente:
+    }
+quote-file-title = Archivo: { $path }, líneas { $start }–{ $end }
+quote-turn-title = Cambios del turno: { $path }, { $side ->
+        [original] lado original
+       *[modified] lado modificado
+    }, líneas { $start }–{ $end }
+quote-staged-title = Git · Preparado: { $path }, { $side ->
+        [original] lado original
+       *[modified] lado modificado
+    }, líneas { $start }–{ $end }
+quote-unstaged-title = Git · Sin preparar: { $path }, { $side ->
+        [original] lado original
+       *[modified] lado modificado
+    }, líneas { $start }–{ $end }
+quote-untracked-title = Git · Sin seguimiento: { $path }, { $side ->
+        [original] lado original
+       *[modified] lado modificado
+    }, líneas { $start }–{ $end }
+quote-disabled-menu =
+    { $reason ->
+        [selection] Citar en el cuadro de mensaje — selecciona texto
+        [diff] Citar en el cuadro de mensaje — selecciona líneas de un lado
+       *[composer] Citar en el cuadro de mensaje — borrador no editable
+    }

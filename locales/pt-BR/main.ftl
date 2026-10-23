@@ -1387,3 +1387,36 @@ composer-thinking-load-failed = Não foi possível carregar as opções de racio
 composer-model-change-failed = Não foi possível confirmar a alteração do modelo ou do nível de raciocínio.
 command-load-failed = Não foi possível carregar os comandos.
 resource-files-failed = Não foi possível pesquisar arquivos. Verifique o caminho e pesquise novamente.
+
+quote-in-composer = Citar no campo de mensagem
+quote-select-text = Selecione o texto que deseja citar.
+quote-select-diff-lines = Selecione números de linha de um só lado da comparação.
+quote-composer-unavailable = O rascunho da mensagem normal não pode ser editado agora.
+quote-message-title =
+    { $role ->
+        [user] Usuário:
+       *[assistant] Assistente:
+    }
+quote-file-title = Arquivo: { $path }, linhas { $start }–{ $end }
+quote-turn-title = Alterações desta rodada: { $path }, { $side ->
+        [original] lado original
+       *[modified] lado modificado
+    }, linhas { $start }–{ $end }
+quote-staged-title = Git · Preparado: { $path }, { $side ->
+        [original] lado original
+       *[modified] lado modificado
+    }, linhas { $start }–{ $end }
+quote-unstaged-title = Git · Não preparado: { $path }, { $side ->
+        [original] lado original
+       *[modified] lado modificado
+    }, linhas { $start }–{ $end }
+quote-untracked-title = Git · Não rastreado: { $path }, { $side ->
+        [original] lado original
+       *[modified] lado modificado
+    }, linhas { $start }–{ $end }
+quote-disabled-menu =
+    { $reason ->
+        [selection] Citar no campo de mensagem — selecione texto
+        [diff] Citar no campo de mensagem — selecione linhas de um lado
+       *[composer] Citar no campo de mensagem — rascunho indisponível
+    }

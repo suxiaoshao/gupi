@@ -1388,3 +1388,36 @@ composer-thinking-load-failed = Could not load thinking options.
 composer-model-change-failed = Could not confirm the model or thinking-level change.
 command-load-failed = Could not load commands.
 resource-files-failed = Could not search for files. Check the path and search again.
+
+quote-in-composer = Quote in composer
+quote-select-text = Select text to quote.
+quote-select-diff-lines = Select line numbers on one side of the diff.
+quote-composer-unavailable = The normal message draft cannot be edited right now.
+quote-message-title =
+    { $role ->
+        [user] User:
+       *[assistant] Assistant:
+    }
+quote-file-title = File: { $path }, lines { $start }–{ $end }
+quote-turn-title = Turn changes: { $path }, { $side ->
+        [original] original side
+       *[modified] modified side
+    }, lines { $start }–{ $end }
+quote-staged-title = Git · Staged: { $path }, { $side ->
+        [original] original side
+       *[modified] modified side
+    }, lines { $start }–{ $end }
+quote-unstaged-title = Git · Unstaged: { $path }, { $side ->
+        [original] original side
+       *[modified] modified side
+    }, lines { $start }–{ $end }
+quote-untracked-title = Git · Untracked: { $path }, { $side ->
+        [original] original side
+       *[modified] modified side
+    }, lines { $start }–{ $end }
+quote-disabled-menu =
+    { $reason ->
+        [selection] Quote in composer — select text
+        [diff] Quote in composer — select line numbers on one side
+       *[composer] Quote in composer — message draft unavailable
+    }

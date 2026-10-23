@@ -42,6 +42,7 @@ use activity::RunContent;
 use activity::RunSection;
 use activity::ToolStatus;
 use presentation::Disclosure;
+pub(super) use presentation::code_fence;
 
 // The list and reading-anchor geometry share the same viewport inset.
 const MESSAGE_INSET_REM: f32 = 0.5;
@@ -738,73 +739,79 @@ impl HomeView {
                         .as_ref()
                         .map_or(text.as_str(), |skill| skill.arguments),
                 );
-                let content = MessageContent::new()
-                    .when(!images.is_empty(), |content| {
-                        content.child(
-                            h_flex()
-                                .id(format!("user-images-{key}-{}", m.id))
-                                .test_support()
-                                .max_w_full()
-                                .flex_wrap()
-                                .justify_end()
-                                .gap_2()
-                                .children(images),
-                        )
-                    })
-                    .when_some(skill, |content, skill| {
-                        let path = PathBuf::from(skill.path);
-                        content.child(
-                            v_flex()
-                                .max_w_full()
-                                .min_w_0()
-                                .items_end()
-                                .gap_1()
-                                .child(
-                                    h_flex().gap_1().child(
-                                        Button::new(format!("skill-open-{}", m.id))
-                                            .ghost()
-                                            .small()
-                                            .icon(IconName::BookOpen)
-                                            .label(skill.name.to_owned())
-                                            .tooltip(skill.path.to_owned())
-                                            .on_click(move |_, _, cx| cx.open_with_system(&path)),
+                let content =
+                    MessageContent::new()
+                        .when(!images.is_empty(), |content| {
+                            content.child(
+                                h_flex()
+                                    .id(format!("user-images-{key}-{}", m.id))
+                                    .test_support()
+                                    .max_w_full()
+                                    .flex_wrap()
+                                    .justify_end()
+                                    .gap_2()
+                                    .children(images),
+                            )
+                        })
+                        .when_some(skill, |content, skill| {
+                            let path = PathBuf::from(skill.path);
+                            content.child(
+                                v_flex()
+                                    .max_w_full()
+                                    .min_w_0()
+                                    .items_end()
+                                    .gap_1()
+                                    .child(
+                                        h_flex().gap_1().child(
+                                            Button::new(format!("skill-open-{}", m.id))
+                                                .ghost()
+                                                .small()
+                                                .icon(IconName::BookOpen)
+                                                .label(skill.name.to_owned())
+                                                .tooltip(skill.path.to_owned())
+                                                .on_click(move |_, _, cx| {
+                                                    cx.open_with_system(&path)
+                                                }),
+                                        ),
+                                    )
+                                    .child(
+                                        self.fold(
+                                            (key, &row.id),
+                                            &format!("skill-{}", m.id),
+                                            Disclosure::resource(t(cx, "resource-skill-content")),
+                                            false,
+                                            self.text_view(
+                                                key,
+                                                &row.id,
+                                                format!("skill-text-{}", m.id),
+                                                skill.body.to_owned(),
+                                            )
+                                            .into_any_element(),
+                                            cx,
+                                        ),
                                     ),
-                                )
-                                .child(
-                                    self.fold(
-                                        (key, &row.id),
-                                        &format!("skill-{}", m.id),
-                                        Disclosure::resource(t(cx, "resource-skill-content")),
-                                        false,
-                                        self.text_view(
-                                            key,
-                                            &row.id,
-                                            format!("skill-text-{}", m.id),
-                                            skill.body.to_owned(),
-                                        )
-                                        .into_any_element(),
-                                        cx,
+                            )
+                        })
+                        .when(!body.trim().is_empty(), |content| {
+                            content.bubble(
+                                Bubble::new().with_variant(BubbleVariant::Muted).content(
+                                    BubbleContent::new().child(
+                                        div()
+                                            .id(format!("user-text-{key}-{}", m.id))
+                                            .test_support()
+                                            .child(
+                                                self.text_view(
+                                                    key,
+                                                    &row.id,
+                                                    format!("text-{}", m.id),
+                                                    body,
+                                                )
+                                                .quote(owner.clone(), key, "user"),
+                                            ),
                                     ),
                                 ),
-                        )
-                    })
-                    .when(!body.trim().is_empty(), |content| {
-                        content.bubble(
-                            Bubble::new().with_variant(BubbleVariant::Muted).content(
-                                BubbleContent::new().child(
-                                    div()
-                                        .id(format!("user-text-{key}-{}", m.id))
-                                        .test_support()
-                                        .child(self.text_view(
-                                            key,
-                                            &row.id,
-                                            format!("text-{}", m.id),
-                                            body,
-                                        )),
-                                ),
-                            ),
-                        )
-                    });
+                            )
+                        });
                 let label = t(cx, "conversation-fork");
                 div()
                     .id(row.id.clone())
@@ -963,6 +970,7 @@ impl HomeView {
                                                 format!("text-{}", m.id),
                                                 content.answer_text.clone(),
                                             )
+                                            .quote(owner.clone(), key, "assistant")
                                             .stream_fade(),
                                         ),
                                     )

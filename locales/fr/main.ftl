@@ -1388,3 +1388,36 @@ composer-thinking-load-failed = Impossible de charger les options de réflexion.
 composer-model-change-failed = Impossible de confirmer le changement de modèle ou de niveau de réflexion.
 command-load-failed = Impossible de charger les commandes.
 resource-files-failed = Impossible de rechercher les fichiers. Vérifiez le chemin et relancez la recherche.
+
+quote-in-composer = Citer dans le champ de message
+quote-select-text = Sélectionnez le texte à citer.
+quote-select-diff-lines = Sélectionnez les numéros de ligne sur un seul côté de la comparaison.
+quote-composer-unavailable = Le brouillon du message normal ne peut pas être modifié actuellement.
+quote-message-title =
+    { $role ->
+        [user] Utilisateur :
+       *[assistant] Assistant :
+    }
+quote-file-title = Fichier : { $path }, lignes { $start }–{ $end }
+quote-turn-title = Modifications de ce tour: { $path }, { $side ->
+        [original] côté original
+       *[modified] côté modifié
+    }, lignes { $start }–{ $end }
+quote-staged-title = Git · Indexé: { $path }, { $side ->
+        [original] côté original
+       *[modified] côté modifié
+    }, lignes { $start }–{ $end }
+quote-unstaged-title = Git · Non indexé: { $path }, { $side ->
+        [original] côté original
+       *[modified] côté modifié
+    }, lignes { $start }–{ $end }
+quote-untracked-title = Git · Non suivi: { $path }, { $side ->
+        [original] côté original
+       *[modified] côté modifié
+    }, lignes { $start }–{ $end }
+quote-disabled-menu =
+    { $reason ->
+        [selection] Citer dans le champ de message — sélectionnez du texte
+        [diff] Citer dans le champ de message — sélectionnez les lignes d’un côté
+       *[composer] Citer dans le champ de message — brouillon non modifiable
+    }

@@ -6,6 +6,7 @@ use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{Icon, Selectable};
 
 pub(super) struct Preview {
+    quote_owner: Option<(WeakEntity<HomeView>, String)>,
     focus: FocusHandle,
     keyboard_open: bool,
     pub(super) path: PathBuf,
@@ -39,6 +40,7 @@ impl Preview {
             state
         });
         let mut this = Self {
+            quote_owner: None,
             focus: cx.focus_handle(),
             keyboard_open,
             path,
@@ -59,6 +61,44 @@ impl Preview {
         this
     }
 
+    pub(super) fn with_quote_owner(mut self, owner: WeakEntity<HomeView>, key: String) -> Self {
+        self.quote_owner = Some((owner, key));
+        self
+    }
+    pub(super) fn quote_selection(&self, cx: &App) -> Result<quote::Selection, quote::Unavailable> {
+        if !self.loaded {
+            return Err(quote::Unavailable::Selection);
+        }
+        let editor = self.editor.read(cx);
+        let range = editor.selected_range();
+        if range.is_empty() {
+            return Err(quote::Unavailable::Selection);
+        }
+        let text = editor.text().to_string();
+        let selected = text
+            .get(range.clone())
+            .ok_or(quote::Unavailable::Selection)?
+            .to_owned();
+        let start = text[..range.start].bytes().filter(|b| *b == b'\n').count() + 1;
+        let end = text[..range.end]
+            .strip_suffix('\n')
+            .unwrap_or(&text[..range.end])
+            .bytes()
+            .filter(|b| *b == b'\n')
+            .count()
+            + 1;
+        Ok(quote::Selection {
+            text: selected,
+            origin: quote::Origin::File {
+                path: self.path.clone(),
+                start,
+                end,
+                language: editor.language_name().to_string(),
+                kind: quote::FileKind::Source,
+                original: false,
+            },
+        })
+    }
     fn read(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.loading {
             return;
@@ -137,6 +177,8 @@ impl Preview {
 impl Render for Preview {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let path = self.path.to_string_lossy().into_owned();
+        let preview = cx.weak_entity();
+        let quote_owner = self.quote_owner.clone();
         v_flex()
             .id("source-pane")
             .relative()
@@ -322,6 +364,34 @@ impl Render for Preview {
                 view.child(
                     div().flex_1().min_h_0().child(
                         Editor::new(&self.editor)
+                            .context_menu(move |menu, _, cx| {
+                                let selected = preview
+                                    .read_with(cx, |source, cx| source.quote_selection(cx))
+                                    .unwrap_or(Err(quote::Unavailable::Selection));
+                                let empty = selected.as_ref().map_or(true, |s| s.text.is_empty());
+                                let capture = quote_owner
+                                    .as_ref()
+                                    .map(|(owner, key)| quote::capture(owner, key, selected, cx))
+                                    .unwrap_or(Err(quote::Unavailable::Composer));
+                                let reason = capture.as_ref().err().copied();
+                                menu.menu_with_disabled(
+                                    t(cx, "menu-copy"),
+                                    empty,
+                                    Box::new(gpui_kit::component::input::Copy),
+                                )
+                                .menu_with_disabled(
+                                    reason
+                                        .map(|reason| reason.menu_label(cx))
+                                        .unwrap_or_else(|| t(cx, "quote-in-composer")),
+                                    reason.is_some(),
+                                    Box::new(quote::Quote(capture.ok())),
+                                )
+                                .separator()
+                                .menu(
+                                    t(cx, "menu-select-all"),
+                                    Box::new(gpui_kit::component::input::SelectAll),
+                                )
+                            })
                             .readonly(true)
                             .bordered(false)
                             .aria_label(t(cx, "files-preview"))

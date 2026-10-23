@@ -436,7 +436,7 @@ fn group_summary(tools: &[&Tool], cx: &App) -> String {
     // Independent category labels, not fragments of a translated sentence.
     parts.join(" · ")
 }
-pub(super) fn code_fence(text: &str) -> String {
+pub(in crate::home) fn code_fence(text: &str) -> String {
     // Tool output may contain Markdown fences itself.
     "`".repeat(
         text.split(|c| c != '`')

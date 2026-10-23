@@ -178,7 +178,10 @@ fn response_failure_keeps_transcript_without_reconnect_action(cx: &mut TestAppCo
                 .get_mut("failed-response")
                 .unwrap()
                 .error_for_test() = Some(gupi_conversation::conversation::SessionError::Runtime(
-                "Pi connection closed".into(),
+                format!(
+                    "Pi connection closed: /{}session.jsonl",
+                    "long-path-without-spaces/".repeat(80)
+                ),
             ));
             gupi_conversation::conversation::test_support::notify_session("failed-response", cx);
         });
@@ -187,6 +190,49 @@ fn response_failure_keeps_transcript_without_reconnect_action(cx: &mut TestAppCo
     visual.update(|window, cx| {
         window.render_frame(cx);
         assert!(window.try_find("retry-session").is_some());
+        let details = window.find("runtime-details");
+        assert_eq!(details.expanded(), Some(false));
+        window.click("runtime-details", cx);
+        assert_eq!(window.find("runtime-details").expanded(), Some(true));
+        // Long diagnostics scroll independently instead of growing the composer.
+        let raw = window
+            .find((gpui_kit::ElementId::from("runtime-details"), "content"))
+            .bounds();
+        assert!(raw.size.height <= window.rem_size() * 12.);
+        // Focus remains on the disclosure, so keyboard activation can close it.
+        window.press("enter", cx);
+        assert_eq!(window.find("runtime-details").expanded(), Some(false));
+        state.update(cx, |state, cx| {
+            let mut session = fixture_session("failed-load");
+            answer(&mut session, "retained answer");
+            *session.core_read_for_test() =
+                gupi_conversation::conversation::test_support::CoreRead::Failed(format!(
+                    "Permission denied: /{}session.jsonl",
+                    "long-path-without-spaces/".repeat(80)
+                ));
+            state
+                .sessions_for_test()
+                .insert("failed-load".into(), session);
+            *state.selected_for_test() = Some("failed-load".into());
+            gupi_conversation::conversation::test_support::notify_session("failed-load", cx);
+        });
+    });
+    visual.simulate_resize(size(px(480.), px(340.)));
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        window.render_frame(cx);
+        window.click("conversation-load-failed", cx);
+        let raw = window
+            .find((
+                gpui_kit::ElementId::from("conversation-load-failed"),
+                "content",
+            ))
+            .bounds();
+        let reconnect = window.find("retry-messages").bounds();
+        let composer = window.find("conversation-composer").bounds();
+        assert!(raw.size.height <= window.rem_size() * 12.);
+        assert!(raw.bottom() <= reconnect.top());
+        assert!(reconnect.bottom() <= composer.top());
     });
 }
 

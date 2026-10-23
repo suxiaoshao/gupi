@@ -396,13 +396,23 @@ impl HomeView {
                 BodyState::Failed(error) => {
                     return panel
                         .track_focus(&self.history_focus_handle(cx))
-                        .child(self.render_content_error("retry-history-panel", error, cx))
+                        .child(self.render_content_error(
+                            "retry-history-panel",
+                            "history-load-failed",
+                            error,
+                            cx,
+                        ))
                         .into_any_element();
                 }
                 BodyState::Ready => {}
                 BodyState::Refreshing(stage) => panel = panel.child(content::refreshing(stage, cx)),
                 BodyState::RefreshFailed(error) => {
-                    panel = panel.child(self.render_content_error("retry-history-panel", error, cx))
+                    panel = panel.child(self.render_content_error(
+                        "retry-history-panel",
+                        "history-refresh-failed",
+                        error,
+                        cx,
+                    ))
                 }
             }
         }

@@ -269,7 +269,7 @@ impl Command {
                 && Keystroke::parse(text)
                     .is_ok_and(|key| key == Keystroke::parse("enter").unwrap());
             let context = if plain_enter {
-                "GupiTemporary && !Input && !Command && !GupiExtension"
+                "GupiTemporary && !Input && !Command && !GupiExtension && !GupiErrorDetails"
             } else {
                 "GupiTemporary"
             };

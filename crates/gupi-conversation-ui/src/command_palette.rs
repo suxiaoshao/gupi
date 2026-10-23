@@ -774,12 +774,12 @@ impl Render for CommandPalette {
             }
             if let Some(error) = s.commands().error() {
                 has_status = true;
-                status = status.child(
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().danger)
-                        .child(error.to_owned()),
-                );
+                status = status.child(crate::diagnostic::message(
+                    "commands-details",
+                    "command-load-failed",
+                    error,
+                    cx,
+                ));
                 status = status.child(
                     Button::new("retry-commands")
                         .small()
@@ -802,7 +802,12 @@ impl Render for CommandPalette {
                 }
                 Some(Err(error)) => {
                     has_status = true;
-                    status = status.child(error.clone());
+                    status = status.child(crate::diagnostic::message(
+                        "file-query-details",
+                        "resource-files-failed",
+                        error,
+                        cx,
+                    ));
                 }
                 _ => {}
             }

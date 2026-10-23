@@ -61,25 +61,22 @@ impl HomeView {
     pub(super) fn render_content_error(
         &self,
         id: &'static str,
+        summary: &'static str,
         error: &str,
         cx: &Context<Self>,
     ) -> AnyElement {
         v_flex()
             .w_full()
             .min_w_0()
+            .min_h_0()
+            .max_h_full()
             .items_start()
             .p_4()
             .gap_2()
-            .child(
-                div()
-                    .w_full()
-                    .whitespace_normal()
-                    .text_sm()
-                    .text_color(cx.theme().danger)
-                    .child(error.to_owned()),
-            )
+            .child(crate::diagnostic::message(summary, summary, error, cx))
             .child(
                 Button::new(id)
+                    .flex_none()
                     .disabled(self.state.read(cx).is_temporary())
                     .small()
                     .label(t(cx, "conversation-reconnect"))

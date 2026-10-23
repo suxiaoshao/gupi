@@ -353,6 +353,8 @@ impl Picker {
         let mut panel = v_flex()
             .w(px(if self.models_page { 336. } else { 256. })
                 .min(window.viewport_size().width - px(40.)))
+            .min_h_0()
+            .max_h((window.viewport_size().height - px(40.)).max(px(0.)))
             .gap_3();
         if self.models_page {
             panel = panel.child(
@@ -581,7 +583,7 @@ impl Picker {
     }
     fn load_feedback(&self, cx: &App) -> AnyElement {
         let data = self.query(cx);
-        let mut feedback = v_flex().gap_1();
+        let mut feedback = v_flex().min_h_0().max_h_full().gap_1();
         for (loading, key) in [
             (data.models_loading, "composer-model-loading"),
             (data.thinking_loading, "composer-thinking-loading"),
@@ -596,16 +598,26 @@ impl Picker {
                 );
             }
         }
-        for error in [&data.model_error, &data.thinking_error, &data.change_error]
-            .into_iter()
-            .flatten()
-        {
-            feedback = feedback.child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().danger)
-                    .child(error.clone()),
-            );
+        for (id, summary, error) in [
+            (
+                "model-details",
+                "composer-model-load-failed",
+                &data.model_error,
+            ),
+            (
+                "thinking-details",
+                "composer-thinking-load-failed",
+                &data.thinking_error,
+            ),
+            (
+                "model-change-details",
+                "composer-model-change-failed",
+                &data.change_error,
+            ),
+        ] {
+            if let Some(error) = error {
+                feedback = feedback.child(crate::diagnostic::message(id, summary, error, cx));
+            }
         }
         feedback.into_any_element()
     }

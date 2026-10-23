@@ -452,7 +452,12 @@ impl HomeView {
             }
             BodyState::Failed(error) => {
                 return body
-                    .child(self.render_content_error("retry-messages", error, cx))
+                    .child(self.render_content_error(
+                        "retry-messages",
+                        "conversation-load-failed",
+                        error,
+                        cx,
+                    ))
                     .into_any_element();
             }
             BodyState::Ready
@@ -465,7 +470,12 @@ impl HomeView {
             BodyState::Ready => {}
             BodyState::Refreshing(stage) => body = body.child(content::refreshing(stage, cx)),
             BodyState::RefreshFailed(error) => {
-                body = body.child(self.render_content_error("retry-messages", error, cx))
+                body = body.child(self.render_content_error(
+                    "retry-messages",
+                    "conversation-refresh-failed",
+                    error,
+                    cx,
+                ))
             }
         }
         let ring = cx.theme().ring;

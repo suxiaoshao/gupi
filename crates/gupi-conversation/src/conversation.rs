@@ -1350,7 +1350,7 @@ impl ConversationState {
             return;
         }
         if self.temporary {
-            self.new_temporary(None, false, cx).detach();
+            let _ = self.new_temporary(false, cx);
             return;
         }
         self.insert_draft(cwd);
@@ -1493,6 +1493,7 @@ impl ConversationState {
                         this.launch(&key, cx);
                     }
                     notify_session(&key, cx);
+                    this.maintain_prewarm(&key, cx);
                 });
             }));
         } else if !s.info.path.as_os_str().is_empty() {
@@ -1529,15 +1530,7 @@ impl ConversationState {
         let Some(s) = self.sessions.get_mut(key) else {
             return;
         };
-        let command = self
-            .prewarm
-            .slot
-            .as_ref()
-            .filter(|slot| slot.key == key)
-            .and_then(|slot| slot.resources.as_ref())
-            .map(|resources| resources.executable.clone())
-            .unwrap_or_else(|| self.command.clone());
-        let mut options = LaunchOptions::new(command, s.info.cwd.clone());
+        let mut options = LaunchOptions::new(self.command.clone(), s.info.cwd.clone());
         if self.temporary {
             options.args.push("--no-session".into());
         }

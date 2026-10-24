@@ -401,11 +401,7 @@ async fn run(
     let template = definition.template.clone();
     let body =
         smol::unblock(move || std::fs::read_to_string(template).map_err(|e| e.to_string())).await?;
-    let key = state
-        .update(cx, |s, cx| {
-            s.new_temporary(Some(definition.template.clone()), true, cx)
-        })
-        .await?;
+    let key = state.update(cx, |s, cx| s.new_temporary(true, cx))?;
     cx.update(|cx| {
         cx.global_mut::<ShortcutsRuntime>()
             .active

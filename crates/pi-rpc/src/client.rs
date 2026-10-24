@@ -425,7 +425,7 @@ impl Client {
 }
 
 /// Resolve with the same child PATH and working directory used by process launch.
-pub fn resolve_executable(options: &LaunchOptions) -> Result<PathBuf, Error> {
+fn resolve_executable(options: &LaunchOptions) -> Result<PathBuf, Error> {
     let paths = options
         .env
         .iter()

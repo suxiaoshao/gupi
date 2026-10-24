@@ -6,6 +6,5 @@ pub mod probe;
 pub mod protocol;
 pub use client::{
     BashRequest, Client, CloseReport, ConnectionState, EventStream, LaunchOptions, Limits,
-    resolve_executable,
 };
 pub use error::Error;

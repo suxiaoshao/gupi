@@ -63,29 +63,6 @@ fn should_capture() -> bool {
 }
 
 impl Environment {
-    /// Resolve a future launch against the same GUI login-shell PATH as `PiState`.
-    pub fn resolve(
-        &self,
-        mut options: pi_rpc::LaunchOptions,
-        cx: &mut App,
-    ) -> gpui_kit::Task<Result<std::path::PathBuf, pi_rpc::Error>> {
-        let environment = self.clone();
-        let task = Tokio::spawn(cx, async move {
-            let snapshot = environment.load(false).await;
-            if !options.clear_env {
-                let mut variables = snapshot.variables();
-                variables.append(&mut options.env);
-                options.env = variables;
-            }
-            tokio::task::spawn_blocking(move || pi_rpc::resolve_executable(&options))
-                .await
-                .map_err(|error| pi_rpc::Error::Io(error.to_string()))?
-        });
-        cx.spawn(async move |_| {
-            task.await
-                .map_err(|error| pi_rpc::Error::Io(error.to_string()))?
-        })
-    }
     fn new(capture: bool) -> Self {
         Self {
             inherited: std::env::var_os("PATH"),

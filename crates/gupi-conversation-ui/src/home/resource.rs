@@ -549,6 +549,31 @@ mod tests {
                         "both edges of an enlarged image can be reached by panning"
                     );
                 }
+                let position = surface.center();
+                for button in [MouseButton::Left, MouseButton::Middle] {
+                    let prior = window.find("image-preview-bitmap").bounds();
+                    window.dispatch_event(MouseDownEvent {
+                        button, position, click_count: 1, modifiers: Modifiers::default(), first_mouse: false,
+                    }.to_platform_input(), cx);
+                    window.dispatch_event(MouseMoveEvent {
+                        position: position + point(px(35.), px(22.)), pressed_button: Some(button), modifiers: Modifiers::default(),
+                    }.to_platform_input(), cx);
+                    window.dispatch_event(MouseUpEvent {
+                        button, position: position + point(px(55.), px(44.)), click_count: 1, modifiers: Modifiers::default(),
+                    }.to_platform_input(), cx);
+                    window.render_frame(cx);
+                    let after = window.find("image-preview-bitmap").bounds();
+                    assert_eq!(after.size, prior.size);
+                    assert_eq!(after.origin - prior.origin, point(px(55.), px(44.)), "{button:?} drag pans through the final release position");
+                }
+                let prior = window.find("image-preview-bitmap").bounds();
+                window.dispatch_event(ScrollWheelEvent {
+                    position, delta: ScrollDelta::Pixels(point(px(37.), px(0.))), modifiers: Modifiers::default(), touch_phase: TouchPhase::Moved,
+                }.to_platform_input(), cx);
+                window.render_frame(cx);
+                let after = window.find("image-preview-bitmap").bounds();
+                assert_eq!(after.size, prior.size, "ordinary scrolling never zooms");
+                assert_eq!(after.origin - prior.origin, point(px(37.), px(0.)), "horizontal scrolling pans the Files image");
             });
         }
         let broken = root.join("broken.png");

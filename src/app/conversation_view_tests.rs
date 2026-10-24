@@ -631,6 +631,7 @@ fn temporary_panel_switches_stop_hide_and_honors_rebound_shortcuts(cx: &mut Test
 fn user_message_images_are_compact_separate_and_open_preview(cx: &mut TestAppContext) {
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD;
+    use gpui_kit::InputEvent as _;
     use gpui_kit::SharedString;
     use gpui_kit::test::TestWindowExt;
     use gupi_conversation::history::DisplayMessage;
@@ -702,6 +703,53 @@ fn user_message_images_are_compact_separate_and_open_preview(cx: &mut TestAppCon
         assert_eq!(
             after_pan.origin - before_pan.origin,
             gpui_kit::point(px(80.), px(30.))
+        );
+        let position = surface.center();
+        for event in [
+            gpui_kit::MouseDownEvent {
+                button: gpui_kit::MouseButton::Middle,
+                position,
+                ..Default::default()
+            }
+            .to_platform_input(),
+            gpui_kit::MouseMoveEvent {
+                pressed_button: Some(gpui_kit::MouseButton::Middle),
+                position: position + gpui_kit::point(px(-45.), px(35.)),
+                ..Default::default()
+            }
+            .to_platform_input(),
+            gpui_kit::MouseUpEvent {
+                button: gpui_kit::MouseButton::Middle,
+                position: position + gpui_kit::point(px(-65.), px(55.)),
+                ..Default::default()
+            }
+            .to_platform_input(),
+        ] {
+            window.dispatch_event(event, cx);
+        }
+        window.render_frame(cx);
+        let after_middle = window.find("image-preview-bitmap").bounds();
+        assert_eq!(after_middle.size, after_pan.size);
+        assert_eq!(
+            after_middle.origin - after_pan.origin,
+            gpui_kit::point(px(-65.), px(55.))
+        );
+        window.dispatch_event(
+            gpui_kit::ScrollWheelEvent {
+                position,
+                delta: gpui_kit::ScrollDelta::Pixels(gpui_kit::point(px(21.), px(-17.))),
+                modifiers: Default::default(),
+                touch_phase: gpui_kit::TouchPhase::Moved,
+            }
+            .to_platform_input(),
+            cx,
+        );
+        window.render_frame(cx);
+        let after_scroll = window.find("image-preview-bitmap").bounds();
+        assert_eq!(after_scroll.size, after_middle.size);
+        assert_eq!(
+            after_scroll.origin - after_middle.origin,
+            gpui_kit::point(px(21.), px(-17.))
         );
         window.press("escape", cx);
         assert!(!window.try_find("image-preview").is_some());

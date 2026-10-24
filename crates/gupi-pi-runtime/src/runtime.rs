@@ -56,7 +56,14 @@ done
                 })
                 .await;
             }
-            let report = owner.update(cx, |state, cx| state.close(id, cx)).await;
+            let closing = owner.update(cx, |state, cx| state.close(id, cx));
+            let repeated = owner.update(cx, |state, cx| state.close(id, cx));
+            let all = handoff.then(|| owner.update(cx, |state, cx| state.close_all(cx)));
+            assert!(owner.read_with(cx, |state, _| {
+                matches!(state.instances.get(&id), Some(Instance::Closing { .. }))
+                    && matches!(state.client(id), Err(pi_rpc::Error::Closed))
+            }));
+            let report = closing.await;
             assert!(
                 report.as_ref().is_none_or(|report| report.status.is_some()),
                 "cancel must either prevent spawn or confirm process exit: {report:?}"
@@ -73,6 +80,21 @@ done
                     "no exit report is valid only when the child never started"
                 );
             }
+            let repeated = repeated.await;
+            assert_eq!(
+                repeated.as_ref().map(|report| report.status),
+                report.as_ref().map(|report| report.status),
+                "repeated close waits for the same exit result"
+            );
+            if let Some(all) = all {
+                let reports = all.await;
+                assert_eq!(
+                    reports.len(),
+                    1,
+                    "close_all includes the already closing child"
+                );
+                assert!(reports[0].status.is_some());
+            }
             assert!(owner.read_with(cx, |state, _| !state.instances.contains_key(&id)));
         }
     }
@@ -85,6 +107,16 @@ enum Instance {
     },
     Connected(Connection),
     Failed(Error),
+    Closing {
+        _task: Task<()>,
+        result: tokio::sync::watch::Receiver<CloseState>,
+    },
+}
+
+#[derive(Clone)]
+enum CloseState {
+    Pending,
+    Complete(Option<CloseReport>),
 }
 
 /// Emitted without storing a second transcript or an unbounded event history.
@@ -255,29 +287,35 @@ impl PiState {
             Some(Instance::Connected(connection)) => Ok(Some(connection.client.clone())),
             Some(Instance::Launching { .. }) => Ok(None),
             Some(Instance::Failed(error)) => Err(error.clone()),
+            Some(Instance::Closing { .. }) => Err(Error::Closed),
             None => Err(Error::Closed),
         }
     }
     pub fn close(&mut self, id: InstanceId, cx: &mut Context<Self>) -> Task<Option<CloseReport>> {
+        if let Some(Instance::Closing { result, .. }) = self.instances.get(&id) {
+            return Self::wait_for_close(result.clone(), cx);
+        }
         let instance = self.instances.remove(&id);
-        if let Some(Instance::Launching { cancel, .. }) = &instance {
+        let Some(instance) = instance else {
+            return Task::ready(None);
+        };
+        if let Instance::Launching { cancel, .. } = &instance {
             cancel.send_replace(true);
         }
         let closing = match &instance {
-            Some(Instance::Connected(connection)) => Some(connection.client.close()),
+            Instance::Connected(connection) => Some(connection.client.close()),
             _ => None,
         };
-        cx.emit(ConnectionChanged(id));
-        cx.notify();
-        cx.spawn(async move |_, _| {
-            match (instance, closing) {
-                (Some(Instance::Connected(connection)), Some(closing)) => {
+        let (complete, result) = tokio::sync::watch::channel(CloseState::Pending);
+        let task = cx.spawn(async move |owner, cx| {
+            let report = match (instance, closing) {
+                (Instance::Connected(connection), Some(closing)) => {
                     // Keep the event consumer alive until the process owner is done.
                     let report = closing.await;
                     drop(connection);
                     Some(report)
                 }
-                (Some(Instance::Launching { _task, done, .. }), _) => {
+                (Instance::Launching { _task, done, .. }, _) => {
                     let report = done.await.unwrap_or_else(|_| {
                         Some(CloseReport {
                             status: None,
@@ -289,6 +327,40 @@ impl PiState {
                     report
                 }
                 _ => None,
+            };
+            let _ = owner.update(cx, |owner, cx| {
+                owner.instances.remove(&id);
+                cx.notify();
+            });
+            complete.send_replace(CloseState::Complete(report));
+        });
+        self.instances.insert(
+            id,
+            Instance::Closing {
+                _task: task,
+                result: result.clone(),
+            },
+        );
+        cx.emit(ConnectionChanged(id));
+        cx.notify();
+        Self::wait_for_close(result, cx)
+    }
+    fn wait_for_close(
+        mut result: tokio::sync::watch::Receiver<CloseState>,
+        cx: &mut Context<Self>,
+    ) -> Task<Option<CloseReport>> {
+        cx.spawn(async move |_, _| {
+            loop {
+                if let CloseState::Complete(report) = &*result.borrow_and_update() {
+                    return report.clone();
+                }
+                if result.changed().await.is_err() {
+                    return Some(CloseReport {
+                        status: None,
+                        reason: Some(Error::Closed),
+                        stderr: String::new(),
+                    });
+                }
             }
         })
     }

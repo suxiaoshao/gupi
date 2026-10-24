@@ -55,12 +55,12 @@ brew uninstall --cask suxiaoshao/tap/gupi
 
 ### Download Gupi
 
-| Platform | Download v0.1.9 | Installation |
+| Platform | Download v0.1.10 | Installation |
 | --- | --- | --- |
-| macOS · Apple silicon | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.9/Gupi_0.1.9_aarch64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.9/Gupi_0.1.9_aarch64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
-| macOS · Intel | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.9/Gupi_0.1.9_x86_64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.9/Gupi_0.1.9_x86_64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
-| Windows · x64 | [English MSI](https://github.com/suxiaoshao/gupi/releases/download/v0.1.9/Gupi_0.1.9_x64_en-US.msi) · [All installer languages](https://github.com/suxiaoshao/gupi/releases/tag/v0.1.9) | Run the MSI, complete the installation, and open Gupi from the Start menu. |
-| Linux · x64 Debian/Ubuntu | [deb](https://github.com/suxiaoshao/gupi/releases/download/v0.1.9/Gupi_0.1.9_amd64.deb) | Run `sudo apt install ./Gupi_0.1.9_amd64.deb`, then launch Gupi in a graphical desktop session. |
+| macOS · Apple silicon | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.10/Gupi_0.1.10_aarch64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.10/Gupi_0.1.10_aarch64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
+| macOS · Intel | [DMG](https://github.com/suxiaoshao/gupi/releases/download/v0.1.10/Gupi_0.1.10_x86_64_macos.dmg) · [ZIP](https://github.com/suxiaoshao/gupi/releases/download/v0.1.10/Gupi_0.1.10_x86_64_macos.zip) | Open the DMG and drag `Gupi.app` to Applications, or extract the ZIP and move the app there. |
+| Windows · x64 | [English MSI](https://github.com/suxiaoshao/gupi/releases/download/v0.1.10/Gupi_0.1.10_x64_en-US.msi) · [All installer languages](https://github.com/suxiaoshao/gupi/releases/tag/v0.1.10) | Run the MSI, complete the installation, and open Gupi from the Start menu. |
+| Linux · x64 Debian/Ubuntu | [deb](https://github.com/suxiaoshao/gupi/releases/download/v0.1.10/Gupi_0.1.10_amd64.deb) | Run `sudo apt install ./Gupi_0.1.10_amd64.deb`, then launch Gupi in a graphical desktop session. |
 
 macOS packages require macOS 11 or later and are signed with Developer ID and notarized by Apple. Windows installers are not yet Authenticode-signed, so Windows may show an unknown publisher. Linux packages are also unsigned. The release includes `SHA256SUMS` for checking downloaded files.
 

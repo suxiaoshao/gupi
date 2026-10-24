@@ -34,6 +34,7 @@ action-check-pi = 重新檢查 Pi
 action-reset = 備份並重置
 action-confirm = 確認
 action-cancel = 取消
+action-save = 儲存
 home-ready = Pi 已就緒
 home-description = 當前版本提供環境設定與桌面偏好。對話功能將在下一階段接入。
 action-locate = 顯示設定檔案資料夾
@@ -1369,3 +1370,63 @@ composer-thinking-load-failed = 無法載入思考強度選項。
 composer-model-change-failed = 無法確認模型或思考強度的切換結果。
 command-load-failed = 無法載入命令清單。
 resource-files-failed = 無法尋找檔案。請檢查路徑後重新搜尋。
+
+quote-in-composer = 引用到輸入框
+quote-select-text = 請選取要引用的文字。
+quote-select-diff-lines = 請從行號選取同一側的內容。
+quote-composer-unavailable = 目前無法編輯一般訊息草稿。
+quote-message-title =
+    { $role ->
+        [user] 使用者 — 選取時的內容：
+       *[assistant] 助理 — 選取時的內容：
+    }
+quote-file-title = 檔案 — 選取時的內容：{ $path }，{ $start }–{ $end } 行
+quote-turn-title = 本輪變更 — 選取時的內容：{ $path }、{ $side ->
+        [original] 舊側
+       *[modified] 新側
+    }、{ $start }–{ $end } 行
+quote-staged-title = Git · 已暫存 — 選取時的內容：{ $path }、{ $side ->
+        [original] 舊側
+       *[modified] 新側
+    }、{ $start }–{ $end } 行
+quote-unstaged-title = Git · 未暫存 — 選取時的內容：{ $path }、{ $side ->
+        [original] 舊側
+       *[modified] 新側
+    }、{ $start }–{ $end } 行
+quote-untracked-title = Git · 未追蹤 — 選取時的內容：{ $path }、{ $side ->
+        [original] 舊側
+       *[modified] 新側
+    }、{ $start }–{ $end } 行
+quote-disabled-menu =
+    { $reason ->
+        [selection] 引用到輸入框 — 請先選取文字
+        [diff] 引用到輸入框 — 請從行號選取同一側
+       *[composer] 引用到輸入框 — 訊息草稿目前無法編輯
+    }
+
+quote-action = 引用
+quote-comment-placeholder = 新增評論（選填）…
+quote-comment-prefix = { "評論：" }
+quote-message-short =
+    { $role ->
+        [user] 你的訊息
+       *[assistant] 助理回覆
+    }
+quote-file-short = { $name } · { $start }–{ $end } 行
+quote-diff-short = { $name } · { $side ->
+        [original] 舊側
+       *[modified] 新側
+    } · { $start }–{ $end } 行
+quote-command-unavailable = 此命令暫不支援附帶引用。請改寫為一般訊息，或移除引用後傳送。
+
+quote-count =
+    { $count ->
+       *[other] { $count } 則引用
+    }
+quote-selected-text = 所選文字：
+quote-list-source = { $source }：
+quote-user-comment = 使用者評論：
+quote-edit-comment = 編輯評論
+quote-delete-number = 刪除引用 { $number }：{ $source }
+quote-clear = 清空引用
+quote-edit-label = 編輯評論 { $number }：{ $source }

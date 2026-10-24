@@ -7,6 +7,7 @@ pub enum Feedback {
     TemplateUnreadable,
     TemplateUnusedFiles,
     TemplateUnclosedQuote,
+    QuotedCommandUnsupported,
 }
 impl From<String> for Feedback {
     fn from(value: String) -> Self {

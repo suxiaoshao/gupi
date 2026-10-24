@@ -29,7 +29,6 @@ struct Document {
     markdown: Entity<MarkdownState>,
     snapshot: Option<RenderedText>,
     ranges: Vec<Range<usize>>,
-    painted: Option<(Option<Range<usize>>, Hsla, Hsla)>,
     _subscription: Subscription,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -124,7 +123,6 @@ impl FindBar {
                     markdown,
                     snapshot: None,
                     ranges: vec![],
-                    painted: None,
                     _subscription: subscription,
                 }
             })
@@ -132,10 +130,7 @@ impl FindBar {
         for document in previous.into_values() {
             document
                 .markdown
-                .read(cx)
-                .view
-                .clone()
-                .update(cx, |view, cx| view.clear_range_highlights(cx));
+                .update(cx, |state, cx| state.set_find_highlights(None, cx));
         }
         self.refresh(false, cx);
     }
@@ -149,7 +144,6 @@ impl FindBar {
                 document.ranges = matches(self.matcher.as_ref(), snapshot.as_str());
                 document.snapshot = Some(snapshot);
                 // The parser may have remapped or discarded its old highlights.
-                document.painted = None;
             }
         }
         self.hits = self
@@ -189,31 +183,19 @@ impl FindBar {
                 .as_ref()
                 .filter(|hit| hit.id == document.id)
                 .map(|hit| hit.range.clone());
-            let appearance = (current.clone(), normal, active);
-            if document.painted.as_ref() == Some(&appearance) {
-                continue;
+            let rendered = document.markdown.read(cx).view.read(cx).rendered_text();
+            let mut highlights: Vec<_> = document
+                .ranges
+                .iter()
+                .filter(|range| current.as_ref() != Some(*range))
+                .map(|range| RangeHighlight::new(range.clone(), normal))
+                .collect();
+            if let Some(current) = current {
+                highlights.push(RangeHighlight::new(current, active));
             }
-            let view = document.markdown.read(cx).view.clone();
-            view.update(cx, |view, cx| {
-                if document.ranges.is_empty() {
-                    view.clear_range_highlights(cx);
-                } else {
-                    let highlights = document.ranges.iter().map(|range| {
-                        RangeHighlight::new(
-                            range.clone(),
-                            if current.as_ref() == Some(range) {
-                                active
-                            } else {
-                                normal
-                            },
-                        )
-                    });
-                    if let Err(error) = view.set_range_highlights(highlights, cx) {
-                        tracing::warn!(%error, "failed to highlight conversation find matches");
-                    }
-                }
+            document.markdown.update(cx, |state, cx| {
+                state.set_find_highlights(Some((rendered, highlights)), cx);
             });
-            document.painted = Some(appearance);
         }
     }
 
@@ -255,10 +237,7 @@ impl FindBar {
         for document in &self.documents {
             document
                 .markdown
-                .read(cx)
-                .view
-                .clone()
-                .update(cx, |view, cx| view.clear_range_highlights(cx));
+                .update(cx, |state, cx| state.set_find_highlights(None, cx));
         }
         self.documents.clear();
     }
@@ -524,6 +503,23 @@ mod tests {
         find.read_with(cx, |find, _| {
             assert_eq!(find.current, find.hits.first().cloned())
         });
+        let markdown = find.read_with(cx, |find, _| find.documents[0].markdown.clone());
+        let location = markdown.update(cx, |markdown, cx| {
+            markdown.view.update(cx, |view, cx| view.select_all(cx));
+            markdown.quote_source(cx.entity().downgrade(), cx).unwrap()
+        });
+        let mut quote = crate::home::quote::highlight::Active::new(location);
+        cx.update(|_, cx| {
+            quote.paint(true, cx);
+            assert_eq!(markdown.read(cx).highlighted_ranges().len(), 3);
+            quote.clear(cx);
+            assert_eq!(
+                markdown.read(cx).highlighted_ranges().len(),
+                2,
+                "closing comment preserves find"
+            );
+            quote.paint(true, cx);
+        });
         let reveals = Rc::new(Cell::new(0));
         let seen = reveals.clone();
         let _subscription = cx.update(|_, cx| {
@@ -545,6 +541,13 @@ mod tests {
         cx.run_until_parked();
         find.update(cx, |find, cx| {
             assert_eq!(find.hits.len(), 4);
+            quote.paint(true, cx);
+            assert_eq!(
+                markdown.read(cx).highlighted_ranges().len(),
+                3,
+                "new parse invalidates quote without losing find or remapping old selection"
+            );
+            quote.clear(cx);
             assert_eq!(reveals.get(), 0, "streaming updates must not scroll");
             find.sync(vec![source("final", "No match")], cx);
         });

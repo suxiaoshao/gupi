@@ -34,6 +34,7 @@ action-check-pi = Pi erneut prüfen
 action-reset = Sichern und zurücksetzen
 action-confirm = Bestätigen
 action-cancel = Abbrechen
+action-save = Speichern
 home-ready = Pi ist verfügbar
 home-description = Diese Version bietet die Einrichtung der Umgebung und Desktop-Einstellungen. Unterstützung für Gespräche ist für die nächste Ausbaustufe geplant.
 action-locate = Konfigurationsordner anzeigen
@@ -1388,3 +1389,64 @@ composer-thinking-load-failed = Denkstufen konnten nicht geladen werden.
 composer-model-change-failed = Die Änderung des Modells oder der Denkstufe konnte nicht bestätigt werden.
 command-load-failed = Befehle konnten nicht geladen werden.
 resource-files-failed = Dateien konnten nicht gesucht werden. Prüfen Sie den Pfad und suchen Sie erneut.
+
+quote-in-composer = Im Eingabefeld zitieren
+quote-select-text = Wähle den zu zitierenden Text aus.
+quote-select-diff-lines = Wähle Zeilennummern auf einer Seite des Diffs aus.
+quote-composer-unavailable = Der normale Nachrichtenentwurf kann gerade nicht bearbeitet werden.
+quote-message-title =
+    { $role ->
+        [user] Benutzer — Inhalt bei Auswahl:
+       *[assistant] Assistent — Inhalt bei Auswahl:
+    }
+quote-file-title = Datei — Inhalt bei Auswahl: { $path }, Zeilen { $start }–{ $end }
+quote-turn-title = Änderungen dieses Durchlaufs — Inhalt bei Auswahl: { $path }, { $side ->
+        [original] Originalseite
+       *[modified] geänderte Seite
+    }, Zeilen { $start }–{ $end }
+quote-staged-title = Git · Vorgemerkt — Inhalt bei Auswahl: { $path }, { $side ->
+        [original] Originalseite
+       *[modified] geänderte Seite
+    }, Zeilen { $start }–{ $end }
+quote-unstaged-title = Git · Nicht vorgemerkt — Inhalt bei Auswahl: { $path }, { $side ->
+        [original] Originalseite
+       *[modified] geänderte Seite
+    }, Zeilen { $start }–{ $end }
+quote-untracked-title = Git · Unverfolgt — Inhalt bei Auswahl: { $path }, { $side ->
+        [original] Originalseite
+       *[modified] geänderte Seite
+    }, Zeilen { $start }–{ $end }
+quote-disabled-menu =
+    { $reason ->
+        [selection] Im Eingabefeld zitieren — Text auswählen
+        [diff] Im Eingabefeld zitieren — Zeilennummern einer Seite auswählen
+       *[composer] Im Eingabefeld zitieren — Nachrichtenentwurf nicht bearbeitbar
+    }
+
+quote-action = Zitieren
+quote-comment-placeholder = Kommentar hinzufügen (optional)…
+quote-comment-prefix = { "Kommentar: " }
+quote-message-short =
+    { $role ->
+        [user] Deine Nachricht
+       *[assistant] Assistentenantwort
+    }
+quote-file-short = { $name } · Zeilen { $start }–{ $end }
+quote-diff-short = { $name } · { $side ->
+        [original] ursprüngliche Seite
+       *[modified] geänderte Seite
+    } · { $start }–{ $end } Zeilen
+quote-command-unavailable = Dieser Befehl unterstützt noch keine Zitate. Formuliere ihn als normale Nachricht oder entferne die Zitate vor dem Senden.
+
+quote-count =
+    { $count ->
+        [one] { $count } Zitat
+       *[other] { $count } Zitate
+    }
+quote-selected-text = Ausgewählter Text:
+quote-list-source = { $source }:
+quote-user-comment = Benutzerkommentar:
+quote-edit-comment = Kommentar bearbeiten
+quote-delete-number = Zitat { $number } löschen: { $source }
+quote-clear = Zitate leeren
+quote-edit-label = Kommentar { $number } bearbeiten: { $source }

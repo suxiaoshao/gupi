@@ -153,6 +153,17 @@ fn kind_key(kind: ChangeKind) -> &'static str {
     }
 }
 impl GitTab {
+    fn quote_path(&self) -> Option<PathBuf> {
+        let loaded = self.current_body()?;
+        Some(self.repository.as_ref()?.root().join(loaded.entry.path()))
+    }
+    fn quote_kind(&self) -> Option<quote::FileKind> {
+        Some(match self.selected_source()? {
+            ChangeSource::Staged => quote::FileKind::Staged,
+            ChangeSource::Unstaged => quote::FileKind::Unstaged,
+            ChangeSource::Untracked => quote::FileKind::Untracked,
+        })
+    }
     fn new(cwd: PathBuf, window: &mut Window, cx: &mut Context<HomeView>) -> Self {
         let owner = cx.weak_entity();
         let list = cx.new(|cx| ListState::new(Delegate::new(owner), window, cx).searchable(false));
@@ -1075,7 +1086,21 @@ impl HomeView {
             }
         } else if let Some(loaded) = tab.current_body() {
             if let Some(block) = &loaded.block {
-                content = content.child(block.render_reader(tab.options.wrap));
+                let body = block.render_reader(tab.options.wrap);
+                content = content.child(match (tab.quote_path(), tab.quote_kind()) {
+                    (Some(path), Some(kind)) => quote::diff_body(
+                        body,
+                        block.state(),
+                        path,
+                        kind,
+                        cx.weak_entity(),
+                        self.shown_key.clone().unwrap_or_default(),
+                        true,
+                    ),
+                    // A retained body without repository provenance is still
+                    // readable, but must not invent a quote source.
+                    _ => body,
+                });
             } else {
                 let key = match loaded.content.state() {
                     ContentState::Binary => "diff-binary",
@@ -1147,3 +1172,22 @@ fn status_code(entry: &Entry) -> &'static str {
 }
 #[cfg(test)]
 mod tests;
+
+impl HomeView {
+    pub(in crate::home) fn git_quote(
+        &self,
+        window: &Window,
+        cx: &App,
+    ) -> Option<Result<quote::Selection, quote::Unavailable>> {
+        let tab = self.active_git()?;
+        let block = tab.current_body()?.block.as_ref()?;
+        let state = block.state()?;
+        let path = tab.quote_path()?;
+        let kind = tab.quote_kind()?;
+        state
+            .read(cx)
+            .focus_handle(cx)
+            .contains_focused(window, cx)
+            .then(|| quote::diff_selection(state, path, kind, cx))
+    }
+}

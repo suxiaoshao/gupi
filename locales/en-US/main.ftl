@@ -34,6 +34,7 @@ action-check-pi = Check Pi again
 action-reset = Back up and reset
 action-confirm = Confirm
 action-cancel = Cancel
+action-save = Save
 home-ready = Pi is available
 home-description = This version provides environment setup and desktop preferences. Conversation support is planned for the next stage.
 action-locate = Show configuration folder
@@ -1388,3 +1389,64 @@ composer-thinking-load-failed = Could not load thinking options.
 composer-model-change-failed = Could not confirm the model or thinking-level change.
 command-load-failed = Could not load commands.
 resource-files-failed = Could not search for files. Check the path and search again.
+
+quote-in-composer = Quote in composer
+quote-select-text = Select text to quote.
+quote-select-diff-lines = Select line numbers on one side of the diff.
+quote-composer-unavailable = The normal message draft cannot be edited right now.
+quote-message-title =
+    { $role ->
+        [user] User — Content at selection:
+       *[assistant] Assistant — Content at selection:
+    }
+quote-file-title = File — Content at selection: { $path }, lines { $start }–{ $end }
+quote-turn-title = Turn changes — Content at selection: { $path }, { $side ->
+        [original] original side
+       *[modified] modified side
+    }, lines { $start }–{ $end }
+quote-staged-title = Git · Staged — Content at selection: { $path }, { $side ->
+        [original] original side
+       *[modified] modified side
+    }, lines { $start }–{ $end }
+quote-unstaged-title = Git · Unstaged — Content at selection: { $path }, { $side ->
+        [original] original side
+       *[modified] modified side
+    }, lines { $start }–{ $end }
+quote-untracked-title = Git · Untracked — Content at selection: { $path }, { $side ->
+        [original] original side
+       *[modified] modified side
+    }, lines { $start }–{ $end }
+quote-disabled-menu =
+    { $reason ->
+        [selection] Quote in composer — select text
+        [diff] Quote in composer — select line numbers on one side
+       *[composer] Quote in composer — message draft unavailable
+    }
+
+quote-action = Quote
+quote-comment-placeholder = Add a comment (optional)…
+quote-comment-prefix = { "Comment: " }
+quote-message-short =
+    { $role ->
+        [user] Your message
+       *[assistant] Assistant reply
+    }
+quote-file-short = { $name } · lines { $start }–{ $end }
+quote-diff-short = { $name } · { $side ->
+        [original] original side
+       *[modified] modified side
+    } · { $start }–{ $end } lines
+quote-command-unavailable = This command does not support quotes yet. Rewrite it as a normal message, or remove the quotes before sending.
+
+quote-count =
+    { $count ->
+        [one] { $count } quote
+       *[other] { $count } quotes
+    }
+quote-selected-text = Selected text:
+quote-list-source = { $source }:
+quote-user-comment = User comment:
+quote-edit-comment = Edit comment
+quote-delete-number = Delete quote { $number }: { $source }
+quote-clear = Clear quotes
+quote-edit-label = Edit comment { $number }: { $source }

@@ -34,6 +34,7 @@ action-check-pi = Volver a comprobar Pi
 action-reset = Hacer una copia de seguridad y restablecer
 action-confirm = Confirmar
 action-cancel = Cancelar
+action-save = Guardar
 home-ready = Pi está disponible
 home-description = Esta versión ofrece la configuración del entorno y los ajustes de escritorio. La compatibilidad con conversaciones llegará en la siguiente etapa.
 action-locate = Mostrar la carpeta de configuración
@@ -1387,3 +1388,64 @@ composer-thinking-load-failed = No se pudieron cargar las opciones de razonamien
 composer-model-change-failed = No se pudo confirmar el cambio de modelo o nivel de razonamiento.
 command-load-failed = No se pudieron cargar los comandos.
 resource-files-failed = No se pudieron buscar archivos. Compruebe la ruta y vuelva a buscar.
+
+quote-in-composer = Citar en el cuadro de mensaje
+quote-select-text = Selecciona el texto que quieras citar.
+quote-select-diff-lines = Selecciona números de línea de un solo lado de la diferencia.
+quote-composer-unavailable = El borrador del mensaje normal no se puede editar ahora.
+quote-message-title =
+    { $role ->
+        [user] Usuario — Contenido al seleccionar:
+       *[assistant] Asistente — Contenido al seleccionar:
+    }
+quote-file-title = Archivo — Contenido al seleccionar: { $path }, líneas { $start }–{ $end }
+quote-turn-title = Cambios del turno — Contenido al seleccionar: { $path }, { $side ->
+        [original] lado original
+       *[modified] lado modificado
+    }, líneas { $start }–{ $end }
+quote-staged-title = Git · Preparado — Contenido al seleccionar: { $path }, { $side ->
+        [original] lado original
+       *[modified] lado modificado
+    }, líneas { $start }–{ $end }
+quote-unstaged-title = Git · Sin preparar — Contenido al seleccionar: { $path }, { $side ->
+        [original] lado original
+       *[modified] lado modificado
+    }, líneas { $start }–{ $end }
+quote-untracked-title = Git · Sin seguimiento — Contenido al seleccionar: { $path }, { $side ->
+        [original] lado original
+       *[modified] lado modificado
+    }, líneas { $start }–{ $end }
+quote-disabled-menu =
+    { $reason ->
+        [selection] Citar en el cuadro de mensaje — selecciona texto
+        [diff] Citar en el cuadro de mensaje — selecciona líneas de un lado
+       *[composer] Citar en el cuadro de mensaje — borrador no editable
+    }
+
+quote-action = Citar
+quote-comment-placeholder = Añadir comentario (opcional)…
+quote-comment-prefix = { "Comentario: " }
+quote-message-short =
+    { $role ->
+        [user] Tu mensaje
+       *[assistant] Respuesta del asistente
+    }
+quote-file-short = { $name } · líneas { $start }–{ $end }
+quote-diff-short = { $name } · { $side ->
+        [original] lado original
+       *[modified] lado modificado
+    } · { $start }–{ $end } líneas
+quote-command-unavailable = Este comando aún no admite citas. Reescríbelo como un mensaje normal o elimina las citas antes de enviarlo.
+
+quote-count =
+    { $count ->
+        [one] { $count } cita
+       *[other] { $count } citas
+    }
+quote-selected-text = Texto seleccionado:
+quote-list-source = { $source }:
+quote-user-comment = Comentario del usuario:
+quote-edit-comment = Editar comentario
+quote-delete-number = Eliminar cita { $number }: { $source }
+quote-clear = Borrar citas
+quote-edit-label = Editar comentario { $number }: { $source }

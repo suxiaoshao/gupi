@@ -42,7 +42,6 @@ impl DiffBlock {
             .map(|state| state.read(cx).focus_handle(cx))
     }
 
-    #[cfg(test)]
     pub(in crate::home) fn state(&self) -> Option<&Entity<DiffState>> {
         self.state.as_ref()
     }

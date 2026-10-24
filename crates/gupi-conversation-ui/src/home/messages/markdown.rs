@@ -1,19 +1,24 @@
 //! Adapt Pi text snapshots to the component's incremental Markdown parser.
+use crate::home::{HomeView, quote};
 use gpui_kit::App;
 use gpui_kit::AppContext;
 use gpui_kit::Context;
 use gpui_kit::Entity;
 use gpui_kit::EventEmitter;
+use gpui_kit::InteractiveElement as _;
 use gpui_kit::IntoElement;
+use gpui_kit::ParentElement as _;
 use gpui_kit::RenderOnce;
 use gpui_kit::Styled;
 use gpui_kit::Subscription;
 use gpui_kit::WeakEntity;
 use gpui_kit::Window;
+use gpui_kit::component::ActiveTheme as _;
+use gpui_kit::component::menu::ContextMenuExt as _;
 use gpui_kit::component::message_scroller::MessageScrollerState;
-use gpui_kit::component::text::RenderedText;
 use gpui_kit::component::text::TextView;
 use gpui_kit::component::text::TextViewState;
+use gpui_kit::component::text::{RangeHighlight, RenderedText};
 use std::cell::Cell;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -29,6 +34,33 @@ type RowTarget = Option<(String, RowPositions)>;
 #[derive(Clone, Default)]
 pub(in crate::home) struct Registry(Rc<RefCell<HashMap<String, WeakEntity<MarkdownState>>>>);
 impl Registry {
+    pub(in crate::home) fn quote_selection(
+        &self,
+        window: &Window,
+        cx: &App,
+    ) -> Option<(quote::Selection, Option<quote::highlight::Source>)> {
+        self.0
+            .borrow()
+            .values()
+            .filter_map(WeakEntity::upgrade)
+            .find_map(|state| {
+                let entity = state.clone();
+                let state = state.read(cx);
+                let role = state.quote_role.as_ref()?;
+                let view = state.view.read(cx);
+                if !view.focus_handle().contains_focused(window, cx) {
+                    return None;
+                }
+                let text = view.selected_text();
+                (!text.is_empty()).then(|| {
+                    (
+                        quote::Selection::new(quote::Origin::Message { role: role.clone() }, text),
+                        state.quote_source(entity.downgrade(), cx),
+                    )
+                })
+            })
+    }
+
     pub fn get(
         &self,
         id: &str,
@@ -65,6 +97,7 @@ pub(super) struct Markdown {
     row: RowTarget,
     stream_fade: bool,
     registry: Registry,
+    quote: Option<(WeakEntity<HomeView>, String, String)>,
 }
 
 impl Markdown {
@@ -81,9 +114,19 @@ impl Markdown {
             row: None,
             stream_fade: false,
             registry,
+            quote: None,
         }
     }
 
+    pub(in crate::home) fn quote(
+        mut self,
+        owner: WeakEntity<HomeView>,
+        key: &str,
+        role: &str,
+    ) -> Self {
+        self.quote = Some((owner, key.to_owned(), role.to_owned()));
+        self
+    }
     pub fn row(mut self, id: String, positions: RowPositions) -> Self {
         self.row = Some((id, positions));
         self
@@ -97,6 +140,11 @@ impl Markdown {
 pub(in crate::home) struct MarkdownState {
     /// Last submitted snapshot, which may be ahead of the asynchronous parser.
     text: String,
+    quote_role: Option<String>,
+    revision: u64,
+    quote_highlight: Option<(u64, RenderedText, Range<usize>)>,
+    find_highlights: Option<(RenderedText, Vec<RangeHighlight>)>,
+    painted: Option<(RenderedText, Vec<RangeHighlight>)>,
     pub view: Entity<TextViewState>,
     _subscription: Subscription,
     row: Rc<RefCell<RowTarget>>,
@@ -115,7 +163,7 @@ impl MarkdownState {
         let row: Rc<RefCell<RowTarget>> = Rc::default();
         let target = row.clone();
         let mut snapshot = view.read(cx).rendered_text();
-        let subscription = cx.observe(&view, move |_, view, cx| {
+        let subscription = cx.observe(&view, move |this: &mut Self, view, cx| {
             let current = view.read(cx).rendered_text();
             if current == snapshot {
                 return; // Highlight/reveal notifications do not change row geometry.
@@ -123,6 +171,7 @@ impl MarkdownState {
             #[cfg(feature = "performance")]
             tracing::debug!(target: "gupi::performance", cause = "markdown_parsed", "ui.remeasure");
             snapshot = current;
+            this.paint_highlights(cx);
             cx.emit(Parsed);
             // Parsing finishes after the RPC update's initial row measurement.
             let index = target
@@ -137,6 +186,11 @@ impl MarkdownState {
         });
         Self {
             text,
+            quote_role: None,
+            revision: 0,
+            quote_highlight: None,
+            find_highlights: None,
+            painted: None,
             view,
             _subscription: subscription,
             row,
@@ -152,6 +206,9 @@ impl MarkdownState {
         if text == self.text {
             return;
         }
+        self.revision = self.revision.wrapping_add(1);
+        self.quote_highlight = None;
+        self.paint_highlights(cx);
         self.view.update(cx, |state, cx| {
             if let Some(delta) = text.strip_prefix(&self.text) {
                 state.push_str(delta, cx);
@@ -160,6 +217,88 @@ impl MarkdownState {
             }
         });
         self.text = text;
+    }
+    pub(in crate::home) fn quote_source(
+        &self,
+        state: WeakEntity<Self>,
+        cx: &App,
+    ) -> Option<quote::highlight::Source> {
+        let view = self.view.read(cx);
+        let range = view
+            .selected_source_range()
+            .filter(|range| !range.is_empty())?;
+        Some(quote::highlight::Source::Message {
+            state,
+            revision: self.revision,
+            rendered: view.rendered_text(),
+            range,
+        })
+    }
+    pub(in crate::home) fn quote_current(
+        &self,
+        revision: u64,
+        rendered: &RenderedText,
+        cx: &App,
+    ) -> bool {
+        self.revision == revision
+            && &self.view.read(cx).rendered_text() == rendered
+            && self
+                .row
+                .borrow()
+                .as_ref()
+                .is_none_or(|(id, positions)| positions.borrow().contains_key(id))
+    }
+    pub(in crate::home) fn set_quote_highlight(
+        &mut self,
+        quote: Option<(u64, RenderedText, Range<usize>)>,
+        cx: &mut App,
+    ) {
+        self.quote_highlight = quote;
+        self.paint_highlights(cx);
+    }
+    pub(in crate::home) fn set_find_highlights(
+        &mut self,
+        highlights: Option<(RenderedText, Vec<RangeHighlight>)>,
+        cx: &mut App,
+    ) {
+        self.find_highlights = highlights;
+        self.paint_highlights(cx);
+    }
+    fn paint_highlights(&mut self, cx: &mut App) {
+        let rendered = self.view.read(cx).rendered_text();
+        let mut highlights = vec![];
+        if let Some((revision, snapshot, range)) = &self.quote_highlight
+            && self.quote_current(*revision, snapshot, cx)
+            && let Some(range) = rendered.range_for_source(range.clone())
+        {
+            highlights.push(RangeHighlight::new(range, cx.theme().warning.opacity(0.2)));
+        }
+        if let Some((snapshot, find)) = &self.find_highlights
+            && snapshot == &rendered
+        {
+            highlights.extend(find.iter().cloned());
+        }
+        if self.painted.as_ref() == Some(&(rendered.clone(), highlights.clone())) {
+            return;
+        }
+        self.view.update(cx, |view, cx| {
+            if let Err(error) = view.set_range_highlights(highlights.clone(), cx) {
+                tracing::warn!(%error, "failed to compose conversation highlights");
+            }
+        });
+        self.painted = Some((rendered, highlights));
+    }
+    #[cfg(test)]
+    pub(in crate::home) fn highlighted_ranges(&self) -> Vec<Range<usize>> {
+        self.painted
+            .as_ref()
+            .map(|(_, highlights)| {
+                highlights
+                    .iter()
+                    .map(|highlight| highlight.range().clone())
+                    .collect()
+            })
+            .unwrap_or_default()
     }
     pub fn reveal(&mut self, range: Range<usize>, epoch: Rc<Cell<u64>>, cx: &App) {
         self.pending = Some(Reveal {
@@ -181,6 +320,7 @@ impl MarkdownState {
                 let _ = view.reveal_range(reveal.range, cx);
             });
         }
+        self.paint_highlights(cx);
         self.view.clone()
     }
 }
@@ -197,6 +337,7 @@ impl RenderOnce for Markdown {
         });
         let state = retained.read(cx).clone();
         let view = state.update(cx, |state, cx| {
+            state.quote_role = self.quote.as_ref().map(|(_, _, role)| role.clone());
             state.sync(self.text, cx);
             state.render_view(self.row, cx)
         });
@@ -210,7 +351,52 @@ impl RenderOnce for Markdown {
             .stream_fade(self.stream_fade);
         #[cfg(feature = "performance")]
         let content = crate::performance::measure("markdown", false, content);
-        content
+        if let Some((owner, key, role)) = self.quote {
+            let events = quote::toolbar::region(
+                quote::toolbar::Target::Text {
+                    state: view.downgrade(),
+                    markdown: state.downgrade(),
+                    role: role.clone(),
+                },
+                owner.clone(),
+                key.clone(),
+            );
+            let markdown = state.downgrade();
+            gpui_kit::div()
+                .relative()
+                .id(format!("quote-message-{}", self.id))
+                .w_full()
+                .min_w_0()
+                .child(content)
+                .child(events)
+                .context_menu(move |menu, window, cx| {
+                    let text = view.read(cx).selected_text();
+                    let selection = quote::Selection::new(
+                        quote::Origin::Message { role: role.clone() },
+                        text.clone(),
+                    );
+                    quote::menu(
+                        menu,
+                        owner.clone(),
+                        quote::capture(
+                            &owner,
+                            &key,
+                            Ok(selection),
+                            markdown
+                                .read_with(cx, |state, cx| state.quote_source(markdown.clone(), cx))
+                                .ok()
+                                .flatten(),
+                            cx,
+                        ),
+                        text,
+                        window,
+                        cx,
+                    )
+                })
+                .into_any_element()
+        } else {
+            content.into_any_element()
+        }
     }
 }
 

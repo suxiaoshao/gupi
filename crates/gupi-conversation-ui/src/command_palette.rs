@@ -4,6 +4,7 @@ use super::home::actions::Kind;
 use super::home::actions::Run;
 use super::home::palette::APP;
 use super::home::palette::SESSION;
+use super::home::quote;
 use crate::tool_icon::ToolIcon;
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::component::Disableable;
@@ -40,6 +41,7 @@ use files::Files;
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Id {
     Local(Kind),
+    Quote,
     Pi(String),
     Resource(String),
     File(PathBuf),
@@ -66,6 +68,7 @@ impl Row {
     fn matches(&self, query: &str) -> bool {
         let keywords = match self.id {
             Id::Local(kind) => kind.search_terms(),
+            Id::Quote => "quote selection 引用 选中",
             Id::Pi(_) | Id::Resource(_) | Id::File(_) => "",
         };
         let haystack = format!("{} {} {keywords}", self.title, self.description).to_lowercase();
@@ -84,6 +87,7 @@ pub struct CommandPalette {
     files: Option<Files>,
     files_generation: u64,
     file_insertion: Option<FileInsertion>,
+    quote: Option<quote::Capture>,
     submission: Option<Task<()>>,
     original_focus: Option<FocusHandle>,
     pub(crate) is_open: bool,
@@ -182,14 +186,19 @@ impl CommandPalette {
                 .ok()
                 .flatten()
         });
-        Self::open_with_file_insertion(home, from_composer, initial, insertion, window, cx)
+        let quote = home.as_ref().map(|(home, _)| {
+            home.read_with(cx, |home, cx| home.capture_quote(window, cx))
+                .unwrap_or(Err(quote::Unavailable::Composer))
+        });
+        Self::open_with_context(home, from_composer, initial, insertion, quote, window, cx)
     }
 
-    pub(crate) fn open_with_file_insertion(
+    pub(crate) fn open_with_context(
         home: Option<Home>,
         from_composer: bool,
         initial: String,
         file_insertion: Option<FileInsertion>,
+        quote: Option<quote::Capture>,
         window: &mut Window,
         cx: &mut App,
     ) -> Entity<Self> {
@@ -202,6 +211,8 @@ impl CommandPalette {
                     .map(|s| (key.clone(), s.binding()))
             })
         });
+        // Home supplies captures while it owns its update, before the palette
+        // takes focus. Do not re-enter that owner from this constructor.
         let original_focus = window.focused(cx);
         let input = cx.new(|cx| {
             let mut input = TextareaState::new(window, cx)
@@ -255,6 +266,7 @@ impl CommandPalette {
                     files: None,
                     files_generation: 0,
                     file_insertion,
+                    quote,
                     submission: None,
                     original_focus,
                     is_open: true,
@@ -408,6 +420,27 @@ impl CommandPalette {
                 });
             }
         }
+        if let Some(capture) = &self.quote {
+            let editable = self.home.as_ref().is_some_and(|(home, _)| {
+                home.read_with(cx, |home, cx| home.quote_allowed(cx))
+                    .unwrap_or(false)
+            });
+            let reason = if editable {
+                capture.as_ref().err().copied()
+            } else {
+                Some(quote::Unavailable::Composer)
+            };
+            rows.push(Row {
+                id: Id::Quote,
+                group: 1,
+                title: t(cx, "quote-in-composer"),
+                description: reason.map(|reason| t(cx, reason.key())).unwrap_or_default(),
+                detail: String::new(),
+                tooltip: String::new(),
+                icon: IconName::MessageCircle,
+                enabled: reason.is_none() && self.target_valid(cx),
+            });
+        }
         if self.target_valid(cx)
             && let Some((_, state)) = &self.home
             && let Some(s) = state.read(cx).current()
@@ -491,6 +524,20 @@ impl CommandPalette {
                 return;
             };
             match &row.id {
+                Id::Quote => {
+                    if !execute {
+                        return;
+                    }
+                    let action = quote::Quote(self.quote.take().and_then(Result::ok));
+                    let home = self.home.as_ref().map(|(home, _)| home.clone());
+                    self.close(window, cx);
+                    window.defer(cx, move |window, cx| {
+                        if let Some(home) = home {
+                            let _ = home.update(cx, |home, cx| home.quote(&action, window, cx));
+                        }
+                    });
+                    return;
+                }
                 Id::File(path) => {
                     if self.enter_directory(path, window, cx) {
                         return;
@@ -866,7 +913,7 @@ impl Render for CommandPalette {
                                         el = el.child(kbd);
                                     }
                                 }
-                                Id::Pi(_) | Id::Resource(_) | Id::File(_) => {
+                                Id::Quote | Id::Pi(_) | Id::Resource(_) | Id::File(_) => {
                                     el = el.child(
                                         div()
                                             .flex_shrink_0()

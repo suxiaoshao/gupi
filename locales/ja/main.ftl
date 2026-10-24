@@ -34,6 +34,7 @@ action-check-pi = Pi を再確認
 action-reset = バックアップしてリセット
 action-confirm = 確認
 action-cancel = キャンセル
+action-save = 保存
 home-ready = Pi を利用できます
 home-description = このバージョンでは環境設定とデスクトップ設定を利用できます。会話機能は次の段階で提供予定です。
 action-locate = 設定フォルダーを表示
@@ -1362,3 +1363,63 @@ composer-thinking-load-failed = 思考レベルの選択肢を読み込めませ
 composer-model-change-failed = モデルまたは思考レベルの変更結果を確認できませんでした。
 command-load-failed = コマンド一覧を読み込めませんでした。
 resource-files-failed = ファイルを検索できませんでした。パスを確認して再度検索してください。
+
+quote-in-composer = 入力欄に引用
+quote-select-text = 引用するテキストを選択してください。
+quote-select-diff-lines = 差分の片側の行番号から選択してください。
+quote-composer-unavailable = 現在、通常のメッセージ下書きは編集できません。
+quote-message-title =
+    { $role ->
+        [user] ユーザー — 選択時の内容：
+       *[assistant] アシスタント — 選択時の内容：
+    }
+quote-file-title = ファイル — 選択時の内容：{ $path }、{ $start }–{ $end } 行
+quote-turn-title = 今回の変更 — 選択時の内容：{ $path }、{ $side ->
+        [original] 変更前
+       *[modified] 変更後
+    }、{ $start }–{ $end } 行
+quote-staged-title = Git · ステージ済み — 選択時の内容：{ $path }、{ $side ->
+        [original] 変更前
+       *[modified] 変更後
+    }、{ $start }–{ $end } 行
+quote-unstaged-title = Git · 未ステージ — 選択時の内容：{ $path }、{ $side ->
+        [original] 変更前
+       *[modified] 変更後
+    }、{ $start }–{ $end } 行
+quote-untracked-title = Git · 未追跡 — 選択時の内容：{ $path }、{ $side ->
+        [original] 変更前
+       *[modified] 変更後
+    }、{ $start }–{ $end } 行
+quote-disabled-menu =
+    { $reason ->
+        [selection] 入力欄に引用 — テキストを選択してください
+        [diff] 入力欄に引用 — 片側の行番号を選択してください
+       *[composer] 入力欄に引用 — 下書きを編集できません
+    }
+
+quote-action = 引用
+quote-comment-placeholder = コメントを追加（任意）…
+quote-comment-prefix = { "コメント：" }
+quote-message-short =
+    { $role ->
+        [user] あなたのメッセージ
+       *[assistant] アシスタントの回答
+    }
+quote-file-short = { $name } · { $start }–{ $end } 行
+quote-diff-short = { $name } · { $side ->
+        [original] 変更前
+       *[modified] 変更後
+    } · { $start }–{ $end } 行
+quote-command-unavailable = このコマンドにはまだ引用を添付できません。通常のメッセージに書き直すか、引用を削除してから送信してください。
+
+quote-count =
+    { $count ->
+       *[other] { $count } 件の引用
+    }
+quote-selected-text = 選択したテキスト：
+quote-list-source = { $source }：
+quote-user-comment = ユーザーのコメント：
+quote-edit-comment = コメントを編集
+quote-delete-number = 引用 { $number } を削除：{ $source }
+quote-clear = 引用をすべて削除
+quote-edit-label = コメント { $number } を編集：{ $source }

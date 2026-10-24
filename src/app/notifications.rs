@@ -551,6 +551,7 @@ fn feedback_text(message: &gupi_conversation::feedback::Feedback, cx: &App) -> S
         Feedback::TemplateUnreadable => "resource-template-unreadable",
         Feedback::TemplateUnusedFiles => "resource-template-unused-files",
         Feedback::TemplateUnclosedQuote => "resource-template-unclosed-quote",
+        Feedback::QuotedCommandUnsupported => "quote-command-unavailable",
     };
     gupi_settings::i18n::t_with_args(cx, key, &args)
 }

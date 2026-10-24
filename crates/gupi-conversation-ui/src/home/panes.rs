@@ -530,6 +530,552 @@ mod tests {
         (home, visual)
     }
 
+    // Opening the palette captures the source before focus changes; adding a
+    // session attachment must leave the existing editor content untouched.
+    #[gpui_kit::test]
+    fn quote_palette_adds_attachment_without_editing_existing_draft(cx: &mut TestAppContext) {
+        use gpui_kit::base::input::InlineToken;
+        use gupi_conversation::history::DisplayMessage;
+        let (home, visual) = setup_initialized(
+            cx,
+            layout::LayoutState::default(),
+            false,
+            |home, window, cx| {
+                gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::English, cx);
+                home.update(cx, |home, cx| {
+                    home.state.update(cx, |state, cx| {
+                        let session = state.sessions_for_test().get_mut("empty").unwrap();
+                        *session.binding_for_test() = 1;
+                        *session.state_for_test() = Some(serde_json::from_value(serde_json::json!({
+                            "sessionId":"quote-fixture","isStreaming":false,"isCompacting":false
+                        })).unwrap());
+                        session.mark_transcript_message_for_test();
+                        session.live_for_test().push(DisplayMessage::new(
+                            "quote-answer".into(),
+                            serde_json::json!({"role":"assistant","stopReason":"stop","content":[{"type":"text","text":"Selected **answer**."}]}),
+                        ));
+                        *session.content_revision_for_test() += 1;
+                        session.attachments_for_test().push(
+                            gupi_conversation::attachments::Attachment::file("note.txt".into(), 0),
+                        );
+                        gupi_conversation::conversation::test_support::notify_session("empty", cx);
+                    });
+                    home.sync(false, window, cx);
+                    home.input.update(cx, |input, cx| {
+                        input.set_value("draft ", window, cx);
+                        input.replace_range_with_token(
+                            6..6,
+                            InlineToken::new("file-fixture", "@note.txt"),
+                            window,
+                            cx,
+                        ).unwrap();
+                        input.set_selected_range(0..5, cx);
+                    });
+                });
+            },
+        );
+        visual.run_until_parked();
+        visual.update(|window, cx| window.render_frame(cx));
+        let (original, original_selection, captured) = visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                let view = &home.views[home.shown_key.as_ref().unwrap()];
+                let markdown = view.markdown.get(
+                    "empty-text-quote-answer",
+                    "Selected **answer**.".into(),
+                    view.scroller.downgrade(),
+                    cx,
+                );
+                let text_view = markdown.read(cx).view.clone();
+                text_view.update(cx, |text, cx| {
+                    text.select_all(cx);
+                    text.focus_handle().focus(window, cx);
+                });
+                let captured = home.capture_quote(window, cx).unwrap();
+                let original = home.input.read(cx).content().clone();
+                let original_selection = home.input.read(cx).selected_range();
+                home.open_commands(false, window, cx);
+                (original, original_selection, captured)
+            })
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            window.input("Quote in composer", cx);
+            window.press("enter", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|_, cx| {
+            home.update(cx, |home, cx| {
+                assert_eq!(home.input.read(cx).content(), original);
+                assert_eq!(home.input.read(cx).selected_range(), original_selection);
+                let session = home.state.read(cx).current().unwrap();
+                assert_eq!(session.quotes().len(), 1);
+                assert_eq!(session.quotes()[0].selection.text, "Selected answer.\n");
+                assert_eq!(home.input.read(cx).content().tokens(), original.tokens());
+                assert_eq!(
+                    home.state.read(cx).current().unwrap().attachments().len(),
+                    1
+                );
+            })
+        });
+        visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                assert_eq!(home.input.read(cx).content(), original);
+                home.quote(&quote::Quote(Some(captured.clone())), window, cx);
+                home.state.update(cx, |state, _| {
+                    *state
+                        .sessions_for_test()
+                        .get_mut("empty")
+                        .unwrap()
+                        .binding_for_test() += 1;
+                });
+                home.quote(&quote::Quote(Some(captured)), window, cx);
+                assert_eq!(home.input.read(cx).content(), original);
+                assert_eq!(home.state.read(cx).current().unwrap().quotes().len(), 2);
+            })
+        });
+        let id = visual.update(|_, cx| {
+            home.read(cx).state.read(cx).current().unwrap().quotes()[0]
+                .id
+                .clone()
+        });
+        visual.update(|window, cx| {
+            assert_eq!(
+                window
+                    .find("quote-list-open")
+                    .label()
+                    .unwrap()
+                    .replace(['\u{2068}', '\u{2069}'], ""),
+                "2 quotes"
+            );
+            let pill = window.find("quote-list-open").bounds();
+            assert!(pill.size.height <= window.rem_size() * 1.5);
+            assert!(pill.contains(&window.find("quote-clear").bounds().center()));
+            home.read(cx).input.focus_handle(cx).focus(window, cx);
+            window.hover("quote-list-open", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert!(window.try_find(format!("quote-edit-{id}")).is_some());
+            // A one-line selection ending in a newline must not reserve blank
+            // preview rows before its comment or the next attachment.
+            assert!(
+                window
+                    .find(format!("quote-preview-{id}"))
+                    .bounds()
+                    .size
+                    .height
+                    <= window.rem_size() * 1.75
+            );
+            assert!(
+                home.read(cx)
+                    .input
+                    .focus_handle(cx)
+                    .contains_focused(window, cx)
+            );
+            window.dispatch_event(
+                PlatformInput::KeyDown(KeyDownEvent {
+                    keystroke: Keystroke::parse("escape").unwrap(),
+                    is_held: false,
+                    prefer_character_input: false,
+                }),
+                cx,
+            );
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert!(window.try_find(format!("quote-edit-{id}")).is_none());
+            assert!(
+                home.read(cx)
+                    .input
+                    .focus_handle(cx)
+                    .contains_focused(window, cx)
+            );
+            window.click("quote-list-open", cx);
+            window.click(format!("quote-edit-{id}"), cx);
+            assert!(window.try_find(format!("quote-edit-{id}")).is_none());
+            let card = window.find("quote-comment-group").bounds();
+            let pill = window.find("quote-list-open").bounds();
+            assert!(card.bottom() < pill.top());
+            window.input("Why this order?", cx);
+            window.press("enter", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert_eq!(
+                home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
+                "Why this order?"
+            );
+            window.click("quote-list-open", cx);
+            let preview = window.find(format!("quote-preview-{id}")).bounds();
+            let comment = window.find(format!("quote-comment-{id}")).bounds();
+            // The intervening comment label plus two small gaps, with no
+            // reserved preview lines between the actual text and its comment.
+            assert!(comment.top() - preview.bottom() <= window.rem_size() * 2.);
+        });
+        visual.update(|window, cx| {
+            window.click(format!("quote-edit-{id}"), cx);
+            // Existing comments start at the end, without replacing their text.
+            window.input(" + saved at end", cx);
+            window.press("enter", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert_eq!(
+                home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
+                "Why this order? + saved at end"
+            );
+            window.click("quote-list-open", cx);
+            window.click(format!("quote-edit-{id}"), cx);
+            window.press("secondary-a", cx);
+            window.input("Discard on Escape", cx);
+            window.press("escape", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert_eq!(
+                home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
+                "Why this order? + saved at end"
+            );
+            window.click("quote-list-open", cx);
+            window.click(format!("quote-edit-{id}"), cx);
+            window.press("secondary-a", cx);
+            window.input("Discard on Cancel", cx);
+            assert!(window.try_find(format!("quote-edit-{id}")).is_none());
+            window.click("quote-comment-cancel", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert_eq!(
+                home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
+                "Why this order? + saved at end"
+            );
+            window.click("quote-list-open", cx);
+            window.click(format!("quote-edit-{id}"), cx);
+            window.press("secondary-a", cx);
+            window.input("Discarded by outside click", cx);
+            window.click("conversation-composer", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert_eq!(
+                home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
+                "Why this order? + saved at end"
+            );
+            window.hover("quote-list-open", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            window.click(format!("quote-edit-{id}"), cx);
+            assert!(window.try_find(format!("quote-edit-{id}")).is_none());
+            window.click_at("quote-comment-group", point(px(20.), px(16.)), cx);
+            for key in ["left", "right", "up", "down", "shift-enter"] {
+                window.press(key, cx);
+                assert!(window.try_find("quote-comment-save").is_some());
+            }
+            window.input("unsaved floating edit", cx);
+            window.click("conversation-composer", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert!(window.try_find("quote-comment-save").is_none());
+            assert_eq!(
+                home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
+                "Why this order? + saved at end"
+            );
+            window.click("quote-list-open", cx);
+            window.click(format!("quote-remove-{id}"), cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert_eq!(
+                home.read(cx)
+                    .state
+                    .read(cx)
+                    .current()
+                    .unwrap()
+                    .quotes()
+                    .len(),
+                1
+            );
+            assert_eq!(
+                window
+                    .find("quote-list-open")
+                    .label()
+                    .unwrap()
+                    .replace(['\u{2068}', '\u{2069}'], ""),
+                "1 quote"
+            );
+            window.click("quote-clear", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|_, cx| {
+            assert!(
+                home.read(cx)
+                    .state
+                    .read(cx)
+                    .current()
+                    .unwrap()
+                    .quotes()
+                    .is_empty()
+            );
+            assert_eq!(home.read(cx).input.read(cx).content(), original);
+        });
+    }
+
+    #[gpui_kit::test]
+    fn quote_toolbar_adds_pointer_selection_and_hides_on_scroll(cx: &mut TestAppContext) {
+        use gupi_conversation::history::DisplayMessage;
+        let text = "Select this displayed answer to discuss its ordering.";
+        let (home, visual) = setup_initialized(
+            cx,
+            layout::LayoutState::default(),
+            false,
+            |home, window, cx| {
+                home.update(cx, |home, cx| {
+                home.state.update(cx, |state, cx| {
+                    let session = state.sessions_for_test().get_mut("empty").unwrap();
+                    *session.state_for_test() = Some(serde_json::from_value(serde_json::json!({"sessionId":"tools", "isStreaming":false, "isCompacting":false})).unwrap());
+                    session.mark_transcript_message_for_test();
+                    session.live_for_test().push(DisplayMessage::new("quote-tools".into(), serde_json::json!({"role":"assistant", "stopReason":"stop", "content":[{"type":"text", "text":text}]})));
+                    *session.content_revision_for_test() += 1;
+                    gupi_conversation::conversation::test_support::notify_session("empty", cx);
+                });
+                home.sync(false, window, cx);
+            });
+            },
+        );
+        visual.run_until_parked();
+        let view = visual.update(|window, cx| {
+            window.activate_window();
+            home.update(cx, |home, cx| {
+                let view = &home.views["empty"];
+                view.markdown
+                    .get(
+                        "empty-text-quote-tools",
+                        text.into(),
+                        view.scroller.downgrade(),
+                        cx,
+                    )
+                    .read(cx)
+                    .view
+                    .clone()
+            })
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            window.render_frame(cx);
+            let bounds = view.read(cx).bounds();
+            // Native events can all arrive before TextView paints its public
+            // selected text. Do not let the helper draw between pointer events.
+            let start = point(bounds.left() + px(2.), bounds.center().y);
+            let end = point(bounds.left() + px(160.), bounds.center().y);
+            window.dispatch_event(
+                PlatformInput::MouseMove(MouseMoveEvent {
+                    position: start,
+                    pressed_button: None,
+                    modifiers: Modifiers::default(),
+                }),
+                cx,
+            );
+            window.render_frame(cx);
+            window.dispatch_event(
+                PlatformInput::MouseDown(MouseDownEvent {
+                    position: start,
+                    button: MouseButton::Left,
+                    click_count: 1,
+                    ..Default::default()
+                }),
+                cx,
+            );
+            window.dispatch_event(
+                PlatformInput::MouseMove(MouseMoveEvent {
+                    position: end,
+                    pressed_button: Some(MouseButton::Left),
+                    modifiers: Modifiers::default(),
+                }),
+                cx,
+            );
+            window.dispatch_event(
+                PlatformInput::MouseUp(MouseUpEvent {
+                    position: end,
+                    button: MouseButton::Left,
+                    click_count: 1,
+                    ..Default::default()
+                }),
+                cx,
+            );
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert_ne!(window.find("quote-selection-add").disabled(), Some(true));
+            window.click("quote-selection-add", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert_eq!(
+                home.read(cx)
+                    .state
+                    .read(cx)
+                    .current()
+                    .unwrap()
+                    .quotes()
+                    .len(),
+                1
+            );
+            assert!(home.read(cx).input.read(cx).value().is_empty());
+            assert!(view.read(cx).selected_text().is_empty());
+            assert!(
+                home.read(cx).views["empty"]
+                    .quote_attachments
+                    .read(cx)
+                    .floating()
+            );
+            let markdown = home.update(cx, |home, cx| {
+                let view = &home.views["empty"];
+                view.markdown.get(
+                    "empty-text-quote-tools",
+                    text.into(),
+                    view.scroller.downgrade(),
+                    cx,
+                )
+            });
+            assert_eq!(
+                markdown.read(cx).highlighted_ranges().len(),
+                1,
+                "opening comment highlights its selected source"
+            );
+            home.update(cx, |home, cx| home.open_find(window, cx));
+            window.input("displayed", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            let markdown = home.update(cx, |home, cx| {
+                let view = &home.views["empty"];
+                view.markdown.get(
+                    "empty-text-quote-tools",
+                    text.into(),
+                    view.scroller.downgrade(),
+                    cx,
+                )
+            });
+            assert_eq!(
+                markdown.read(cx).highlighted_ranges().len(),
+                2,
+                "find and quote compose without overwriting"
+            );
+            home.update(cx, |home, cx| home.close_find(false, window, cx));
+            assert_eq!(
+                markdown.read(cx).highlighted_ranges().len(),
+                1,
+                "closing find preserves quote"
+            );
+            window.click_at("quote-comment-group", point(px(20.), px(16.)), cx);
+            window.input("Pointer comment", cx);
+            window.press("enter", cx);
+        });
+        // Let Textarea's PressEnter event reach its owner before a separate
+        // outside gesture; that gesture now correctly discards, never saves.
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert_eq!(
+                home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
+                "Pointer comment"
+            );
+            let markdown = home.update(cx, |home, cx| {
+                let view = &home.views["empty"];
+                view.markdown.get(
+                    "empty-text-quote-tools",
+                    text.into(),
+                    view.scroller.downgrade(),
+                    cx,
+                )
+            });
+            assert!(
+                markdown.read(cx).highlighted_ranges().is_empty(),
+                "saving ends source highlight"
+            );
+            let bounds = view.read(cx).bounds();
+            window.drag(
+                point(bounds.left() + px(2.), bounds.center().y),
+                point(bounds.left() + px(160.), bounds.center().y),
+                cx,
+            );
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert_eq!(
+                home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
+                "Pointer comment"
+            );
+            assert_ne!(window.find("quote-selection-add").disabled(), Some(true));
+            window.scroll(
+                "quote-selection-add",
+                ScrollDelta::Pixels(point(px(0.), px(-20.))),
+                cx,
+            );
+            assert!(window.try_find("quote-selection-add").is_none());
+        });
+    }
+
+    #[gpui_kit::test]
+    fn quote_diff_uses_real_path_and_single_side_lines(cx: &mut TestAppContext) {
+        use super::super::messages::diff::DiffBlock;
+        use gpui_kit::component::diff::{DiffLineRange, DiffSide};
+        let (home, visual) = setup(cx);
+        visual.update(|window, cx| {
+            home.update(cx, |home, cx| {
+                home.state.update(cx, |state, _| {
+                    *state
+                        .sessions_for_test()
+                        .get_mut("empty")
+                        .unwrap()
+                        .state_for_test() = Some(
+                        serde_json::from_value(serde_json::json!({
+                            "sessionId":"diff-fixture","isStreaming":false,"isCompacting":false
+                        }))
+                        .unwrap(),
+                    );
+                });
+                gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::English, cx);
+                let block = DiffBlock::patch(
+                    "--- a/file\n+++ b/file\n@@ -1,2 +1,2 @@\n-old\n+new\n context\n",
+                    cx,
+                );
+                let diff = block.state().unwrap();
+                diff.update(cx, |state, cx| {
+                    state.set_selected_lines(
+                        Some(DiffLineRange::new("file", DiffSide::Modified, 1, 2)),
+                        cx,
+                    )
+                });
+                let selection =
+                    quote::diff_selection(diff, "src/real.rs".into(), quote::FileKind::Staged, cx)
+                        .unwrap();
+                let capture = home.bind_quote(Ok(selection), cx).unwrap();
+                home.quote(&quote::Quote(Some(capture)), window, cx);
+                let quotes = home.state.read(cx).current().unwrap().quotes();
+                let text = quotes[0].formatted().replace(['\u{2068}', '\u{2069}'], "");
+                assert!(text.starts_with("Git · Staged — Content at selection: src/real.rs, modified side, lines 1–2\n```rust\n"), "{text}");
+                assert!(text.ends_with("new\ncontext\n```"), "{text}");
+                diff.update(cx, |state, cx| {
+                    state.set_selected_lines(
+                        Some(
+                            DiffLineRange::new("file", DiffSide::Original, 1, 1)
+                                .with_end_side(DiffSide::Modified),
+                        ),
+                        cx,
+                    )
+                });
+                assert!(matches!(
+                    quote::diff_selection(diff, "src/real.rs".into(), quote::FileKind::Staged, cx),
+                    Err(quote::Unavailable::DiffLines)
+                ));
+                assert!(home.input.read(cx).value().is_empty());
+                assert_eq!(home.state.read(cx).current().unwrap().quotes().len(), 1);
+            })
+        });
+    }
+
     #[gpui_kit::test]
     fn saved_source_ratio_is_applied_before_first_frame(cx: &mut TestAppContext) {
         let fixture = tempfile::tempdir().unwrap();

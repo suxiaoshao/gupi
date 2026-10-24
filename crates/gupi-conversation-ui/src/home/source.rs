@@ -6,11 +6,14 @@ use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{Icon, Selectable};
 
 pub(super) struct Preview {
+    quote_owner: Option<(WeakEntity<HomeView>, String)>,
     focus: FocusHandle,
     keyboard_open: bool,
     pub(super) path: PathBuf,
     root: Option<PathBuf>,
     editor: Entity<EditorState>,
+    revision: u64,
+    pub(super) quote_decoration: Option<gpui_kit::component::input::RangeDecorationCollection>,
     error: Option<&'static str>,
     loading: bool,
     loaded: bool,
@@ -39,11 +42,14 @@ impl Preview {
             state
         });
         let mut this = Self {
+            quote_owner: None,
             focus: cx.focus_handle(),
             keyboard_open,
             path,
             root,
             editor,
+            revision: 0,
+            quote_decoration: None,
             error: None,
             loading: false,
             loaded: false,
@@ -59,9 +65,72 @@ impl Preview {
         this
     }
 
+    pub(super) fn with_quote_owner(mut self, owner: WeakEntity<HomeView>, key: String) -> Self {
+        self.quote_owner = Some((owner, key));
+        self
+    }
+    pub(super) fn quote_selection(&self, cx: &App) -> Result<quote::Selection, quote::Unavailable> {
+        if !self.loaded {
+            return Err(quote::Unavailable::Selection);
+        }
+        let editor = self.editor.read(cx);
+        let range = editor.selected_range();
+        if range.is_empty() {
+            return Err(quote::Unavailable::Selection);
+        }
+        let text = editor.text().to_string();
+        let selected = text
+            .get(range.clone())
+            .ok_or(quote::Unavailable::Selection)?
+            .to_owned();
+        let start = text[..range.start].bytes().filter(|b| *b == b'\n').count() + 1;
+        let end = text[..range.end]
+            .strip_suffix('\n')
+            .unwrap_or(&text[..range.end])
+            .bytes()
+            .filter(|b| *b == b'\n')
+            .count()
+            + 1;
+        Ok(quote::Selection::new(
+            quote::Origin::File {
+                path: self.path.clone(),
+                start,
+                end,
+                language: editor.language_name().to_string(),
+                kind: quote::FileKind::Source,
+                original: false,
+            },
+            selected,
+        ))
+    }
+    pub(super) fn quote_source(
+        &self,
+        state: WeakEntity<Self>,
+        cx: &App,
+    ) -> Option<quote::highlight::Source> {
+        if !self.loaded || self.loading || self.error.is_some() {
+            return None;
+        }
+        self.quote_range(cx)
+            .filter(|range| !range.is_empty())
+            .map(|range| quote::highlight::Source::File {
+                state,
+                revision: self.revision,
+                range,
+            })
+    }
+    pub(super) fn quote_editor(&self, revision: u64, _: &App) -> Option<Entity<EditorState>> {
+        (self.loaded && !self.loading && self.error.is_none() && self.revision == revision)
+            .then(|| self.editor.clone())
+    }
     fn read(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.loading {
             return;
+        }
+        self.revision = self.revision.wrapping_add(1);
+        if let Some(collection) = self.quote_decoration.take() {
+            collection.clear(cx);
+            collection.dispose(cx);
         }
         self.loading = true;
         self.error = None;
@@ -130,6 +199,15 @@ impl Preview {
             self.focus.focus(window, cx);
         }
     }
+    pub(super) fn quote_range(&self, cx: &App) -> Option<std::ops::Range<usize>> {
+        self.loaded.then(|| self.editor.read(cx).selected_range())
+    }
+    pub(super) fn clear_quote_selection(&self, cx: &mut Context<Self>) {
+        self.editor.update(cx, |editor, cx| {
+            let end = editor.selected_range().end;
+            editor.set_selected_range(end..end, cx);
+        });
+    }
     pub(super) fn contains_focus(&self, window: &Window, cx: &App) -> bool {
         self.focus.contains_focused(window, cx)
     }
@@ -137,6 +215,11 @@ impl Preview {
 impl Render for Preview {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let path = self.path.to_string_lossy().into_owned();
+        let preview = cx.weak_entity();
+        let quote_owner = self.quote_owner.clone();
+        let quote_events = self.quote_owner.clone().map(|(owner, key)| {
+            quote::toolbar::region(quote::toolbar::Target::Source(preview.clone()), owner, key)
+        });
         v_flex()
             .id("source-pane")
             .relative()
@@ -320,13 +403,60 @@ impl Render for Preview {
             })
             .when(self.loaded, |view| {
                 view.child(
-                    div().flex_1().min_h_0().child(
-                        Editor::new(&self.editor)
-                            .readonly(true)
-                            .bordered(false)
-                            .aria_label(t(cx, "files-preview"))
-                            .h_full(),
-                    ),
+                    div()
+                        .relative()
+                        .flex_1()
+                        .min_h_0()
+                        .children(quote_events)
+                        .child(
+                            Editor::new(&self.editor)
+                                .context_menu(move |menu, _, cx| {
+                                    let selected = preview
+                                        .read_with(cx, |source, cx| source.quote_selection(cx))
+                                        .unwrap_or(Err(quote::Unavailable::Selection));
+                                    let empty =
+                                        selected.as_ref().map_or(true, |s| s.text.is_empty());
+                                    let capture = quote_owner
+                                        .as_ref()
+                                        .map(|(owner, key)| {
+                                            quote::capture(
+                                                owner,
+                                                key,
+                                                selected,
+                                                preview
+                                                    .read_with(cx, |source, cx| {
+                                                        source.quote_source(preview.clone(), cx)
+                                                    })
+                                                    .ok()
+                                                    .flatten(),
+                                                cx,
+                                            )
+                                        })
+                                        .unwrap_or(Err(quote::Unavailable::Composer));
+                                    let reason = capture.as_ref().err().copied();
+                                    menu.menu_with_disabled(
+                                        t(cx, "menu-copy"),
+                                        empty,
+                                        Box::new(gpui_kit::component::input::Copy),
+                                    )
+                                    .menu_with_disabled(
+                                        reason
+                                            .map(|reason| reason.menu_label(cx))
+                                            .unwrap_or_else(|| t(cx, "quote-in-composer")),
+                                        reason.is_some(),
+                                        Box::new(quote::Quote(capture.ok())),
+                                    )
+                                    .separator()
+                                    .menu(
+                                        t(cx, "menu-select-all"),
+                                        Box::new(gpui_kit::component::input::SelectAll),
+                                    )
+                                })
+                                .readonly(true)
+                                .bordered(false)
+                                .aria_label(t(cx, "files-preview"))
+                                .h_full(),
+                        ),
                 )
             })
             .when(self.focus.is_focused(window), |view| {
@@ -409,6 +539,36 @@ mod tests {
             });
             window.click("preview-wrap", cx);
             preview.update(cx, |this, _| assert!(this.wrap));
+            preview.update(cx, |this, cx| {
+                this.editor
+                    .update(cx, |editor, cx| editor.set_selected_range(3..7, cx))
+            });
+            let source = preview
+                .read(cx)
+                .quote_source(preview.downgrade(), cx)
+                .unwrap();
+            let mut active = crate::home::quote::highlight::Active::new(source.clone());
+            active.paint(true, cx);
+            let collection = preview.read(cx).quote_decoration.clone().unwrap();
+            assert_eq!(
+                collection.get_ranges(cx),
+                vec![3..7],
+                "partial-line source range is retained"
+            );
+            active.clear(cx);
+            assert!(
+                collection.get_ranges(cx).is_empty(),
+                "ending edit disposes its fill"
+            );
+            active.paint(true, cx);
+            let reloaded = preview.read(cx).quote_decoration.clone().unwrap();
+            preview.update(cx, |this, cx| this.read(window, cx));
+            active.paint(true, cx);
+            assert!(!source.valid(cx));
+            assert!(
+                reloaded.get_ranges(cx).is_empty(),
+                "reload cannot reuse the old source version"
+            );
         })
         .unwrap();
     }

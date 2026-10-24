@@ -34,6 +34,7 @@ action-check-pi = 重新检查 Pi
 action-reset = 备份并重置
 action-confirm = 确认
 action-cancel = 取消
+action-save = 保存
 home-ready = Pi 已就绪
 home-description = 当前版本提供环境设置与桌面偏好。对话功能将在下一阶段接入。
 action-locate = 显示配置文件夹
@@ -1369,3 +1370,63 @@ composer-thinking-load-failed = 无法加载思考强度选项。
 composer-model-change-failed = 无法确认模型或思考强度的切换结果。
 command-load-failed = 无法加载命令列表。
 resource-files-failed = 无法查找文件。请检查路径后重新搜索。
+
+quote-in-composer = 引用到输入框
+quote-select-text = 请选择要引用的文本。
+quote-select-diff-lines = 请从行号选择同一侧的内容。
+quote-composer-unavailable = 当前无法编辑普通消息草稿。
+quote-message-title =
+    { $role ->
+        [user] 用户 — 选中时的内容：
+       *[assistant] 助手 — 选中时的内容：
+    }
+quote-file-title = 文件 — 选中时的内容：{ $path }，{ $start }–{ $end } 行
+quote-turn-title = 本轮改动 — 选中时的内容：{ $path }、{ $side ->
+        [original] 旧侧
+       *[modified] 新侧
+    }、{ $start }–{ $end } 行
+quote-staged-title = Git · 已暂存 — 选中时的内容：{ $path }、{ $side ->
+        [original] 旧侧
+       *[modified] 新侧
+    }、{ $start }–{ $end } 行
+quote-unstaged-title = Git · 未暂存 — 选中时的内容：{ $path }、{ $side ->
+        [original] 旧侧
+       *[modified] 新侧
+    }、{ $start }–{ $end } 行
+quote-untracked-title = Git · 未跟踪 — 选中时的内容：{ $path }、{ $side ->
+        [original] 旧侧
+       *[modified] 新侧
+    }、{ $start }–{ $end } 行
+quote-disabled-menu =
+    { $reason ->
+        [selection] 引用到输入框 — 请先选择文本
+        [diff] 引用到输入框 — 请从行号选择同一侧
+       *[composer] 引用到输入框 — 消息草稿当前不可编辑
+    }
+
+quote-action = 引用
+quote-comment-placeholder = 添加评论（可选）…
+quote-comment-prefix = { "评论：" }
+quote-message-short =
+    { $role ->
+        [user] 你的消息
+       *[assistant] 助手回复
+    }
+quote-file-short = { $name } · { $start }–{ $end } 行
+quote-diff-short = { $name } · { $side ->
+        [original] 旧侧
+       *[modified] 新侧
+    } · { $start }–{ $end } 行
+quote-command-unavailable = 此命令暂不支持附带引用。请改写为普通消息，或移除引用后发送。
+
+quote-count =
+    { $count ->
+       *[other] { $count } 条引用
+    }
+quote-selected-text = 所选文本：
+quote-list-source = { $source }：
+quote-user-comment = 用户评论：
+quote-edit-comment = 编辑评论
+quote-delete-number = 删除引用 { $number }：{ $source }
+quote-clear = 清空引用
+quote-edit-label = 编辑评论 { $number }：{ $source }

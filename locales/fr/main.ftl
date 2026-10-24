@@ -34,6 +34,7 @@ action-check-pi = Vérifier Pi à nouveau
 action-reset = Sauvegarder et réinitialiser
 action-confirm = Confirmer
 action-cancel = Annuler
+action-save = Enregistrer
 home-ready = Pi est disponible
 home-description = Cette version propose la configuration de l’environnement et les préférences du bureau. La prise en charge des conversations est prévue pour la prochaine étape.
 action-locate = Afficher le dossier de configuration
@@ -1388,3 +1389,64 @@ composer-thinking-load-failed = Impossible de charger les options de réflexion.
 composer-model-change-failed = Impossible de confirmer le changement de modèle ou de niveau de réflexion.
 command-load-failed = Impossible de charger les commandes.
 resource-files-failed = Impossible de rechercher les fichiers. Vérifiez le chemin et relancez la recherche.
+
+quote-in-composer = Citer dans le champ de message
+quote-select-text = Sélectionnez le texte à citer.
+quote-select-diff-lines = Sélectionnez les numéros de ligne sur un seul côté de la comparaison.
+quote-composer-unavailable = Le brouillon du message normal ne peut pas être modifié actuellement.
+quote-message-title =
+    { $role ->
+        [user] Utilisateur  — Contenu lors de la sélection:
+       *[assistant] Assistant  — Contenu lors de la sélection:
+    }
+quote-file-title = Fichier  — Contenu lors de la sélection: { $path }, lignes { $start }–{ $end }
+quote-turn-title = Modifications de ce tour — Contenu lors de la sélection: { $path }, { $side ->
+        [original] côté original
+       *[modified] côté modifié
+    }, lignes { $start }–{ $end }
+quote-staged-title = Git · Indexé — Contenu lors de la sélection: { $path }, { $side ->
+        [original] côté original
+       *[modified] côté modifié
+    }, lignes { $start }–{ $end }
+quote-unstaged-title = Git · Non indexé — Contenu lors de la sélection: { $path }, { $side ->
+        [original] côté original
+       *[modified] côté modifié
+    }, lignes { $start }–{ $end }
+quote-untracked-title = Git · Non suivi — Contenu lors de la sélection: { $path }, { $side ->
+        [original] côté original
+       *[modified] côté modifié
+    }, lignes { $start }–{ $end }
+quote-disabled-menu =
+    { $reason ->
+        [selection] Citer dans le champ de message — sélectionnez du texte
+        [diff] Citer dans le champ de message — sélectionnez les lignes d’un côté
+       *[composer] Citer dans le champ de message — brouillon non modifiable
+    }
+
+quote-action = Citer
+quote-comment-placeholder = Ajouter un commentaire (facultatif)…
+quote-comment-prefix = { "Commentaire : " }
+quote-message-short =
+    { $role ->
+        [user] Votre message
+       *[assistant] Réponse de l’assistant
+    }
+quote-file-short = { $name } · lignes { $start }–{ $end }
+quote-diff-short = { $name } · { $side ->
+        [original] côté original
+       *[modified] côté modifié
+    } · { $start }–{ $end } lignes
+quote-command-unavailable = Cette commande ne prend pas encore en charge les citations. Reformulez-la en message normal ou retirez les citations avant l’envoi.
+
+quote-count =
+    { $count ->
+        [one] { $count } citation
+       *[other] { $count } citations
+    }
+quote-selected-text = Texte sélectionné :
+quote-list-source = { $source } :
+quote-user-comment = Commentaire utilisateur :
+quote-edit-comment = Modifier le commentaire
+quote-delete-number = Supprimer la citation { $number } : { $source }
+quote-clear = Effacer les citations
+quote-edit-label = Modifier le commentaire { $number } : { $source }

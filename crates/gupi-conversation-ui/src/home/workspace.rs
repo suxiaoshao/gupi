@@ -592,8 +592,10 @@ impl HomeView {
         }
         let root = self.state.read(cx).sessions()[&key].info().cwd.clone();
         let navigator_visible = !self.views[&key].workspace.navigator_hidden;
+        let quote_owner = cx.weak_entity();
         let preview = cx.new(|cx| {
-            let mut preview = source::Preview::new(path.clone(), Some(root), keyboard, window, cx);
+            let mut preview = source::Preview::new(path.clone(), Some(root), keyboard, window, cx)
+                .with_quote_owner(quote_owner, key.clone());
             preview.navigator_visible = navigator_visible;
             preview
         });
@@ -984,5 +986,19 @@ impl HomeView {
                 )
             })
             .into_any_element()
+    }
+}
+
+impl HomeView {
+    pub(in crate::home) fn workspace_quote(
+        &self,
+        window: &Window,
+        cx: &App,
+    ) -> Option<Result<quote::Selection, quote::Unavailable>> {
+        if !self.pane_layout.visible(Panel::Workspace) || self.workspace_layout.main_width <= 0. {
+            return None;
+        }
+        self.git_quote(window, cx)
+            .or_else(|| self.changes_quote(window, cx))
     }
 }

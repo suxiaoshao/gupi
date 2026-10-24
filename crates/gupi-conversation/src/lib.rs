@@ -5,5 +5,6 @@ pub mod feedback;
 pub mod history;
 pub mod host;
 pub mod notifications;
+pub mod quotes;
 pub mod session_catalog;
 pub mod tool_presentation;

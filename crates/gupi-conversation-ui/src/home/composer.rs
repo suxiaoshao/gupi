@@ -574,9 +574,7 @@ impl HomeView {
                     || session.composer_empty()
                     || !self.state.read(cx).can_submit(&key, cx);
                 let send = cx.listener(|this, _, _, cx| {
-                    if let Some(key) = this.shown_key.clone()
-                        && this.commit_quote_comment(&key, cx)
-                    {
+                    if let Some(key) = this.shown_key.clone() {
                         this.state
                             .update(cx, |s, cx| s.send(&key, StreamingBehavior::Steer, cx));
                     }
@@ -584,7 +582,6 @@ impl HomeView {
                 if running {
                     let state = self.state.clone();
                     let target = key.clone();
-                    let cards = view.quote_attachments.clone();
                     actions = actions.child(
                         DropdownButton::new("queue-send-mode")
                             .small()
@@ -604,14 +601,11 @@ impl HomeView {
                                 ] {
                                     let state = state.clone();
                                     let target = target.clone();
-                                    let cards = cards.clone();
                                     menu = menu.item(PopupMenuItem::new(t(cx, label)).on_click(
                                         move |_, _, cx| {
-                                            if cards.update(cx, |cards, cx| cards.commit(cx)) {
-                                                state.update(cx, |state, cx| {
-                                                    state.send(&target, mode.clone(), cx)
-                                                });
-                                            }
+                                            state.update(cx, |state, cx| {
+                                                state.send(&target, mode.clone(), cx)
+                                            });
                                         },
                                     ));
                                 }

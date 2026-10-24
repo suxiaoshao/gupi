@@ -1907,9 +1907,7 @@ impl ConversationState {
         notify_controls(key, cx);
         true
     }
-    /// Finish an already-open comment editor. Extension/preparation gates only
-    /// prevent starting edits; they must not discard a comment already typed.
-    /// A submission owns its captured attachments and cannot be overwritten.
+    /// Save a comment while its owning draft is editable.
     pub fn edit_quote(
         &mut self,
         key: &str,
@@ -1917,7 +1915,11 @@ impl ConversationState {
         comment: String,
         cx: &mut Context<Self>,
     ) -> bool {
-        let Some(session) = self.sessions.get_mut(key).filter(|s| !s.submitting()) else {
+        let Some(session) = self
+            .sessions
+            .get_mut(key)
+            .filter(|s| s.can_edit_draft() && s.pending_ui.is_empty())
+        else {
             return false;
         };
         let Some(quote) = session.quotes.iter_mut().find(|q| q.id == id) else {

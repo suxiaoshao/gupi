@@ -34,6 +34,7 @@ action-check-pi = Pi 다시 확인
 action-reset = 백업 후 초기화
 action-confirm = 확인
 action-cancel = 취소
+action-save = 저장
 home-ready = Pi를 사용할 수 있습니다
 home-description = 이 버전에서는 환경 설정과 데스크톱 환경설정을 제공합니다. 대화 기능은 다음 단계에서 제공할 예정입니다.
 action-locate = 설정 폴더 표시

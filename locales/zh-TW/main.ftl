@@ -34,6 +34,7 @@ action-check-pi = 重新檢查 Pi
 action-reset = 備份並重置
 action-confirm = 確認
 action-cancel = 取消
+action-save = 儲存
 home-ready = Pi 已就緒
 home-description = 當前版本提供環境設定與桌面偏好。對話功能將在下一階段接入。
 action-locate = 顯示設定檔案資料夾

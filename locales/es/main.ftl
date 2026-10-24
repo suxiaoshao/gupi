@@ -34,6 +34,7 @@ action-check-pi = Volver a comprobar Pi
 action-reset = Hacer una copia de seguridad y restablecer
 action-confirm = Confirmar
 action-cancel = Cancelar
+action-save = Guardar
 home-ready = Pi está disponible
 home-description = Esta versión ofrece la configuración del entorno y los ajustes de escritorio. La compatibilidad con conversaciones llegará en la siguiente etapa.
 action-locate = Mostrar la carpeta de configuración

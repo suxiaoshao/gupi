@@ -647,12 +647,25 @@ mod tests {
                     .replace(['\u{2068}', '\u{2069}'], ""),
                 "2 quotes"
             );
+            let pill = window.find("quote-list-open").bounds();
+            assert!(pill.size.height <= window.rem_size() * 1.5);
+            assert!(pill.contains(&window.find("quote-clear").bounds().center()));
             home.read(cx).input.focus_handle(cx).focus(window, cx);
             window.hover("quote-list-open", cx);
         });
         visual.run_until_parked();
         visual.update(|window, cx| {
             assert!(window.try_find(format!("quote-edit-{id}")).is_some());
+            // A one-line selection ending in a newline must not reserve blank
+            // preview rows before its comment or the next attachment.
+            assert!(
+                window
+                    .find(format!("quote-preview-{id}"))
+                    .bounds()
+                    .size
+                    .height
+                    <= window.rem_size() * 1.75
+            );
             assert!(
                 home.read(cx)
                     .input
@@ -683,45 +696,118 @@ mod tests {
             window.press("enter", cx);
         });
         visual.run_until_parked();
-        visual.update(|_, cx| {
+        visual.update(|window, cx| {
             assert_eq!(
                 home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
                 "Why this order?"
             );
+            let preview = window.find(format!("quote-preview-{id}")).bounds();
+            let comment = window.find(format!("quote-comment-{id}")).bounds();
+            // The intervening comment label plus two small gaps, with no
+            // reserved preview lines between the actual text and its comment.
+            assert!(comment.top() - preview.bottom() <= window.rem_size() * 2.);
         });
         visual.update(|window, cx| {
             window.click("quote-list-open", cx);
             window.click(format!("quote-edit-{id}"), cx);
+            // Existing comments start at the end, without replacing their text.
+            window.input(" + saved at end", cx);
+            window.press("enter", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert_eq!(
+                home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
+                "Why this order? + saved at end"
+            );
+            window.click(format!("quote-edit-{id}"), cx);
             window.press("secondary-a", cx);
-            window.input("Save on Escape", cx);
+            window.input("Discard on Escape", cx);
             window.press("escape", cx);
         });
         visual.run_until_parked();
         visual.update(|window, cx| {
             assert_eq!(
                 home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
-                "Save on Escape"
+                "Why this order? + saved at end"
             );
             window.click(format!("quote-edit-{id}"), cx);
             window.press("secondary-a", cx);
-            window.input("Keep this when preparation takes over", cx);
-            let state = home.read(cx).state.clone();
-            state.update(cx, |state, cx| {
-                assert!(state.begin_preparation("empty", cx));
-            });
-        });
-        visual.run_until_parked();
-        visual.update(|_, cx| {
-            let state = home.read(cx).state.clone();
-            assert_eq!(
-                state.read(cx).current().unwrap().quotes()[0].comment,
-                "Keep this when preparation takes over"
-            );
-            state.update(cx, |state, cx| state.finish_preparation("empty", None, cx));
+            window.input("Discard on Cancel", cx);
+            assert!(window.try_find(format!("quote-edit-{id}")).is_none());
+            window.click("quote-comment-cancel", cx);
         });
         visual.run_until_parked();
         visual.update(|window, cx| {
-            window.click("quote-list-open", cx);
+            assert_eq!(
+                home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
+                "Why this order? + saved at end"
+            );
+            window.click(format!("quote-edit-{id}"), cx);
+            window.press("secondary-a", cx);
+            window.input("Discarded by outside click", cx);
+            window.click("conversation-composer", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert_eq!(
+                home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
+                "Why this order? + saved at end"
+            );
+            window.hover("quote-list-open", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            window.click(format!("quote-edit-{id}"), cx);
+            window.hover("quote-comment-save", cx);
+        });
+        visual.run_until_parked();
+        visual
+            .executor()
+            .advance_clock(std::time::Duration::from_millis(100));
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert!(window.try_find("quote-comment-save").is_some());
+            window.click_at("quote-comment-group", point(px(20.), px(16.)), cx);
+            for key in ["left", "right", "up", "down", "shift-enter"] {
+                window.press(key, cx);
+                assert!(
+                    window.try_find("quote-comment-save").is_some(),
+                    "hover editing must survive {key} inside the input"
+                );
+            }
+            window.input("more\nlines\nwhile editing", cx);
+            assert!(window.try_find("quote-comment-save").is_some());
+            window.input(" + unsaved hover edit", cx);
+            // Focus alone does not own the edit's lifetime; the popup does.
+            home.read(cx).input.focus_handle(cx).focus(window, cx);
+        });
+        visual.run_until_parked();
+        visual
+            .executor()
+            .advance_clock(std::time::Duration::from_millis(100));
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert!(window.try_find("quote-comment-save").is_some());
+            window.hover("conversation-composer", cx);
+        });
+        visual.run_until_parked();
+        visual
+            .executor()
+            .advance_clock(std::time::Duration::from_millis(100));
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert!(window.try_find("quote-comment-save").is_none());
+            assert!(window.try_find(format!("quote-edit-{id}")).is_none());
+            assert_eq!(
+                home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
+                "Why this order? + saved at end"
+            );
+            window.hover("quote-list-open", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert!(window.try_find("quote-comment-save").is_none());
             window.click(format!("quote-remove-{id}"), cx);
         });
         visual.run_until_parked();
@@ -871,6 +957,15 @@ mod tests {
             );
             window.input("Pointer comment", cx);
             window.press("enter", cx);
+        });
+        // Let Textarea's PressEnter event reach its owner before a separate
+        // outside gesture; that gesture now correctly discards, never saves.
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert_eq!(
+                home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
+                "Pointer comment"
+            );
             let bounds = view.read(cx).bounds();
             window.drag(
                 point(bounds.left() + px(2.), bounds.center().y),

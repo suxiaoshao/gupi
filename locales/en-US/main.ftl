@@ -34,6 +34,7 @@ action-check-pi = Check Pi again
 action-reset = Back up and reset
 action-confirm = Confirm
 action-cancel = Cancel
+action-save = Save
 home-ready = Pi is available
 home-description = This version provides environment setup and desktop preferences. Conversation support is planned for the next stage.
 action-locate = Show configuration folder

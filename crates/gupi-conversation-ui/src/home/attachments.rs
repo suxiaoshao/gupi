@@ -224,6 +224,8 @@ impl HomeView {
         let handle = view.attachment_scroll.clone();
         Some(
             AttachmentGroup::new(SharedString::from(format!("composer-attachments-{key}")))
+                // InputGroup's BlockStart addon already owns the attachment inset.
+                .py_0()
                 .track_scroll(&handle)
                 .children(children)
                 .into_any_element(),

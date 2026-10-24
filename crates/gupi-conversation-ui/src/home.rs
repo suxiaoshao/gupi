@@ -368,12 +368,6 @@ impl HomeView {
     pub fn has_image_preview(&self, cx: &App) -> bool {
         self.image_preview.read(cx).is_open()
     }
-    fn commit_quote_comment(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
-        self.views.get(key).is_none_or(|view| {
-            view.quote_attachments
-                .update(cx, |cards, cx| cards.commit(cx))
-        })
-    }
     pub fn submit_or_paste(
         &mut self,
         secondary: bool,
@@ -406,7 +400,7 @@ impl HomeView {
             self.state.read(cx).can_submit(&key, cx)
                 && preview.is_none_or(|id| s.history().on_current_path(id))
         });
-        if allowed && self.commit_quote_comment(&key, cx) {
+        if allowed {
             self.state.update(cx, |s, cx| {
                 s.send(
                     &key,
@@ -481,11 +475,6 @@ impl HomeView {
             cx.observe_window_activation(window, |this, window, cx| {
                 crate::host::present(&this.state, window, this.notification_visible, cx);
                 if !window.is_window_active() {
-                    for view in this.views.values() {
-                        view.quote_attachments.update(cx, |cards, cx| {
-                            cards.commit(cx);
-                        });
-                    }
                     if this.quote_tools.dismiss() {
                         cx.notify();
                     }
@@ -722,11 +711,6 @@ impl HomeView {
         let key = self.state.read(cx).selected().clone();
         let changed = self.shown_key != key;
         if changed {
-            if let Some(view) = self.shown_key.as_ref().and_then(|key| self.views.get(key)) {
-                view.quote_attachments.update(cx, |cards, cx| {
-                    cards.commit(cx);
-                });
-            }
             self.quote_tools.dismiss();
             self.stop_shown_git_tasks();
             if let Some(view) = self.shown_key.as_ref().and_then(|key| self.views.get(key)) {

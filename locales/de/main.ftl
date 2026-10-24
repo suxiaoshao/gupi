@@ -34,6 +34,7 @@ action-check-pi = Pi erneut prüfen
 action-reset = Sichern und zurücksetzen
 action-confirm = Bestätigen
 action-cancel = Abbrechen
+action-save = Speichern
 home-ready = Pi ist verfügbar
 home-description = Diese Version bietet die Einrichtung der Umgebung und Desktop-Einstellungen. Unterstützung für Gespräche ist für die nächste Ausbaustufe geplant.
 action-locate = Konfigurationsordner anzeigen

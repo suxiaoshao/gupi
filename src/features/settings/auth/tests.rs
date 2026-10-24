@@ -199,6 +199,9 @@ async fn empty_ids_keep_their_identity_through_actions_and_candidate_edits(
 ) {
     cx.update(|cx| {
         gpui_kit::init(cx);
+        // Coordinate clicks must not race the dialog's wall-clock entrance motion;
+        // this test exercises credential identity and persistence, not animation.
+        cx.set_reduce_motion(true);
         crate::app::init_capability_hosts(cx);
         i18n::apply(gupi_settings::config::AppLanguage::English, cx);
     });
@@ -259,6 +262,7 @@ async fn empty_ids_keep_their_identity_through_actions_and_candidate_edits(
                 .contains("fixture-secret")
         );
         window.click("auth-save", cx);
+        assert!(owner.read(cx).saving.is_some());
     });
     cx.condition(&owner, |this, _| {
         this.saving.is_none() && this.loading.is_none()
@@ -278,6 +282,8 @@ async fn empty_ids_keep_their_identity_through_actions_and_candidate_edits(
     });
     cx.run_until_parked();
     cx.update(|window, cx| window.click("confirm", cx));
+    // Confirm dispatches a deferred action; run it before waiting for idle.
+    cx.run_until_parked();
     cx.condition(&owner, |this, _| {
         this.saving.is_none() && this.loading.is_none()
     })
@@ -320,6 +326,7 @@ async fn empty_ids_keep_their_identity_through_actions_and_candidate_edits(
         window.render_frame(cx);
         assert_eq!(window.find("auth-provider").label(), Some("⟨Empty ID⟩"));
         window.click("auth-save", cx);
+        assert!(owner.read(cx).saving.is_some());
     });
     cx.condition(&owner, |this, _| {
         this.saving.is_none() && this.loading.is_none()

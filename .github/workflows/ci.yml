@@ -18,6 +18,11 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: '0'
   RUST_BACKTRACE: '1'
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
+  # Build scripts and proc macros have independent profile overrides.
+  CARGO_PROFILE_DEV_BUILD_OVERRIDE_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_BUILD_OVERRIDE_DEBUG: line-tables-only
 
 jobs:
   changes:
@@ -96,6 +101,14 @@ jobs:
         uses: ./.github/actions/setup
         with:
           target: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        if: ${{ needs.changes.outputs.run != 'false' }}
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-ci-line-tables-only
+          cache-workspace-crates: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Cargo fmt
         if: ${{ needs.changes.outputs.run != 'false' }}

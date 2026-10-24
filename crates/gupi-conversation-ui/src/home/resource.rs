@@ -410,73 +410,102 @@ mod tests {
                 .is_some_and(|source| source.read(cx).path == file)
         })
         .await;
-        let picture = root.join("picture.png");
-        image::RgbaImage::from_pixel(1600, 400, image::Rgba([0, 128, 255, 255]))
-            .save(&picture)
-            .unwrap();
-        cx.update(|window, cx| {
-            home.read(cx)
-                .resource_context("a", cx)
-                .unwrap()
-                .open(picture, false, window, cx);
-        });
-        cx.wait_for(handle, std::time::Duration::from_secs(2), |window, _| {
-            window
-                .try_find("file-image-zoom-in")
-                .is_some_and(|button| button.disabled() != Some(true))
-        })
-        .await;
-        cx.update(|window, cx| {
-            for id in [
-                "file-image-original",
-                "file-image-zoom-out",
-                "file-image-zoom-in",
-                "file-image-fit",
-            ] {
-                window.click(id, cx);
-            }
-            let before = window.find("image-preview-bitmap").bounds().size.width;
-            let position = window.find("file-image-scroll").bounds().center();
-            let modifiers = Modifiers {
-                control: true,
-                ..Default::default()
-            };
-            window.dispatch_event(
-                MouseMoveEvent {
-                    position,
-                    pressed_button: None,
-                    modifiers,
+        for (name, width, height) in [("picture.png", 1600, 400), ("small.png", 100, 100)] {
+            let picture = root.join(name);
+            image::RgbaImage::from_pixel(width, height, image::Rgba([0, 128, 255, 255]))
+                .save(&picture)
+                .unwrap();
+            cx.update(|window, cx| {
+                home.read(cx).resource_context("a", cx).unwrap().open(
+                    picture.clone(),
+                    false,
+                    window,
+                    cx,
+                );
+            });
+            cx.wait_for(handle, std::time::Duration::from_secs(2), |window, cx| {
+                home.read(cx)
+                    .source()
+                    .is_some_and(|source| source.read(cx).path == picture)
+                    && window
+                        .try_find("file-image-zoom-in")
+                        .is_some_and(|button| button.disabled() != Some(true))
+            })
+            .await;
+            cx.update(|window, cx| {
+                if width == 100 {
+                    assert_eq!(
+                        window.find("image-preview-bitmap").bounds().size,
+                        size(px(100.), px(100.)),
+                        "initial Fit uses the small image's natural size before any controls"
+                    );
                 }
-                .to_platform_input(),
-                cx,
-            );
-            window.render_frame(cx);
-            window.dispatch_event(
-                ScrollWheelEvent {
-                    position,
-                    delta: ScrollDelta::Pixels(point(px(0.), px(20.))),
-                    modifiers,
-                    touch_phase: TouchPhase::Moved,
+                for id in [
+                    "file-image-original",
+                    "file-image-zoom-out",
+                    "file-image-zoom-in",
+                    "file-image-fit",
+                ] {
+                    window.click(id, cx);
                 }
-                .to_platform_input(),
-                cx,
-            );
-            window.render_frame(cx);
-            let after = window.find("image-preview-bitmap").bounds().size.width;
-            assert!(after > before, "modified wheel zooms the loaded image");
-            window.dispatch_event(
-                PinchEvent {
-                    position,
-                    delta: 0.1,
-                    modifiers: Modifiers::default(),
-                    phase: TouchPhase::Moved,
+                let before = window.find("image-preview-bitmap").bounds().size.width;
+                assert!(
+                    before <= px(width as f32),
+                    "Fit never enlarges the natural image"
+                );
+                if width == 100 {
+                    assert_eq!(before, px(100.), "small images fit at natural size");
                 }
-                .to_platform_input(),
-                cx,
-            );
-            window.render_frame(cx);
-            assert!(window.find("image-preview-bitmap").bounds().size.width > after);
-        });
+                window.click("file-image-zoom-in", cx);
+                window.render_frame(cx);
+                assert!(
+                    window.find("image-preview-bitmap").bounds().size.width > before,
+                    "zooming in from Fit must enlarge the displayed image"
+                );
+                window.click("file-image-fit", cx);
+                window.render_frame(cx);
+                let position = window.find("file-image-scroll").bounds().center();
+                let modifiers = Modifiers {
+                    control: true,
+                    ..Default::default()
+                };
+                window.dispatch_event(
+                    MouseMoveEvent {
+                        position,
+                        pressed_button: None,
+                        modifiers,
+                    }
+                    .to_platform_input(),
+                    cx,
+                );
+                window.render_frame(cx);
+                window.dispatch_event(
+                    ScrollWheelEvent {
+                        position,
+                        delta: ScrollDelta::Pixels(point(px(0.), px(20.))),
+                        modifiers,
+                        touch_phase: TouchPhase::Moved,
+                    }
+                    .to_platform_input(),
+                    cx,
+                );
+                window.render_frame(cx);
+                let after = window.find("image-preview-bitmap").bounds().size.width;
+                assert!(after > before, "modified wheel zooms the loaded image");
+                window.dispatch_event(
+                    PinchEvent {
+                        position,
+                        delta: 0.1,
+                        modifiers: Modifiers::default(),
+                        phase: TouchPhase::Moved,
+                    }
+                    .to_platform_input(),
+                    cx,
+                );
+                window.render_frame(cx);
+                assert!(window.find("image-preview-bitmap").bounds().size.width > after);
+            });
+        }
         let broken = root.join("broken.png");
         std::fs::write(&broken, "not a bitmap").unwrap();
         cx.update(|window, cx| {

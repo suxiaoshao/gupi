@@ -444,13 +444,13 @@ fn bitmap(
 ) -> AnyElement {
     let image_size = image_render_size(natural, zoom);
     let content_size = scroll_content_size(viewport, image_size);
-    bitmap_body(source, Some(image_size))
+    bitmap_body(source, image_size, false)
         .w(px(content_size.width))
         .h(px(content_size.height))
         .into_any_element()
 }
 
-fn bitmap_body(source: ImageSource, image_size: Option<PreviewSize>) -> Div {
+fn bitmap_body(source: ImageSource, image_size: PreviewSize, fit: bool) -> Div {
     div()
         .flex()
         .items_center()
@@ -458,19 +458,15 @@ fn bitmap_body(source: ImageSource, image_size: Option<PreviewSize>) -> Div {
         .relative()
         .min_w_full()
         .min_h_full()
-        .when(image_size.is_none(), |body| body.size_full())
+        .when(fit, |body| body.size_full())
         .child(
             div()
                 .id("image-preview-bitmap")
                 .test_support()
                 .flex_none()
-                .map(|image| {
-                    if let Some(size) = image_size {
-                        image.w(px(size.width)).h(px(size.height))
-                    } else {
-                        image.size_full()
-                    }
-                })
+                .w(px(image_size.width))
+                .h(px(image_size.height))
+                .when(fit, |image| image.max_w_full().max_h_full())
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .child(img(source).size_full().object_fit(ObjectFit::Contain)),
         )
@@ -574,11 +570,12 @@ impl Render for FileImage {
         let body = match image {
             Some(Ok(image)) => {
                 let natural = natural_size(&image);
-                let fit = fit_zoom_percent(natural, self.viewport());
                 let image_size = self
                     .zoom
-                    .map(|zoom| image_render_size(natural, clamp_zoom_percent(zoom, fit)));
-                let child = bitmap_body(ImageSource::Render(image), image_size);
+                    .map(|zoom| image_render_size(natural, zoom))
+                    .unwrap_or(natural);
+                let child =
+                    bitmap_body(ImageSource::Render(image), image_size, self.zoom.is_none());
                 div()
                     .id("file-image-scroll")
                     .test_support()

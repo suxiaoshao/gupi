@@ -336,6 +336,7 @@ enum CanvasImage {
 }
 
 struct Drag {
+    button: MouseButton,
     start: Point<f32>,
     pan: Point<f32>,
 }
@@ -556,7 +557,7 @@ impl Render for ImageCanvas {
             }
             None => div().p_3().child(t(cx, "files-loading")).into_any_element(),
         };
-        div()
+        let mut surface = div()
             .id(id)
             .test_support()
             .size_full()
@@ -566,23 +567,57 @@ impl Render for ImageCanvas {
                 CursorStyle::ClosedHand
             } else {
                 CursorStyle::OpenHand
-            })
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, event: &MouseDownEvent, _, cx| {
-                    if this.initialized {
-                        this.drag = Some(Drag {
-                            start: this.local(event.position),
-                            pan: this.camera.pan,
-                        });
-                        cx.notify();
-                    }
-                    cx.stop_propagation();
-                }),
-            )
+            });
+        for button in [MouseButton::Left, MouseButton::Middle] {
+            surface = surface
+                .on_mouse_down(
+                    button,
+                    cx.listener(|this, event: &MouseDownEvent, _, cx| {
+                        if this.initialized {
+                            this.drag = Some(Drag {
+                                button: event.button,
+                                start: this.local(event.position),
+                                pan: this.camera.pan,
+                            });
+                            cx.notify();
+                        }
+                        cx.stop_propagation();
+                    }),
+                )
+                .on_mouse_up(
+                    button,
+                    cx.listener(|this, event: &MouseUpEvent, _, cx| {
+                        if this
+                            .drag
+                            .as_ref()
+                            .is_some_and(|drag| drag.button == event.button)
+                        {
+                            this.move_drag(event.position);
+                            this.drag = None;
+                            cx.notify();
+                            cx.stop_propagation();
+                        }
+                    }),
+                )
+                .on_mouse_up_out(
+                    button,
+                    cx.listener(|this, event: &MouseUpEvent, _, cx| {
+                        if this
+                            .drag
+                            .as_ref()
+                            .is_some_and(|drag| drag.button == event.button)
+                        {
+                            this.move_drag(event.position);
+                            this.drag = None;
+                            cx.notify();
+                        }
+                    }),
+                );
+        }
+        surface
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
-                if this.drag.is_some() {
-                    if event.pressed_button == Some(MouseButton::Left) {
+                if let Some(drag) = &this.drag {
+                    if event.pressed_button == Some(drag.button) {
                         this.move_drag(event.position);
                     } else {
                         this.drag = None;
@@ -590,23 +625,6 @@ impl Render for ImageCanvas {
                     cx.notify();
                 }
             }))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|this, event: &MouseUpEvent, _, cx| {
-                    this.move_drag(event.position);
-                    this.drag = None;
-                    cx.notify();
-                    cx.stop_propagation();
-                }),
-            )
-            .on_mouse_up_out(
-                MouseButton::Left,
-                cx.listener(|this, event: &MouseUpEvent, _, cx| {
-                    this.move_drag(event.position);
-                    this.drag = None;
-                    cx.notify();
-                }),
-            )
             .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, window, cx| {
                 let delta = event.delta.pixel_delta(window.line_height()).map(f32::from);
                 if event.modifiers.control || event.modifiers.platform {

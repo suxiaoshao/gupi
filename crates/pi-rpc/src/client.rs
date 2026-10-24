@@ -183,19 +183,6 @@ impl Client {
             return Err(Error::Options("startup timeout must be positive"));
         }
         let deadline = Instant::now() + options.startup_timeout;
-        let mut child = launch(options.clone(), deadline).await?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or(Error::Options("missing piped stdin"))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or(Error::Options("missing piped stdout"))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or(Error::Options("missing piped stderr"))?;
         let (writes, writer_rx) = mpsc::channel(options.limits.writes);
         let (close, close_rx) = watch::channel(false);
         let (state_tx, state) = watch::channel(ConnectionState::Starting);
@@ -217,6 +204,19 @@ impl Client {
             }),
         };
         client.enqueue(serde_json::to_vec(&json!({"id":"0","type":"get_state"}))?)?;
+        // Finish fallible local initialization before a process exists. The private
+        // launcher always configures all three pipes, so extraction is infallible.
+        let mut child = launch(options.clone(), deadline).await?;
+        let stdin = child.stdin.take().expect("launcher configured piped stdin");
+        let stdout = child
+            .stdout
+            .take()
+            .expect("launcher configured piped stdout");
+        let stderr = child
+            .stderr
+            .take()
+            .expect("launcher configured piped stderr");
+
         let (writer_control, control_rx) = watch::channel(WriterControl::Open);
         let writer_task = tokio::spawn(writer(stdin, writer_rx, control_rx));
         let tail = Arc::new(Mutex::new(Vec::new()));
@@ -424,73 +424,69 @@ impl Client {
     }
 }
 
+/// Resolve with the same child PATH and working directory used by process launch.
+pub fn resolve_executable(options: &LaunchOptions) -> Result<PathBuf, Error> {
+    let paths = options
+        .env
+        .iter()
+        .rev()
+        .find(|(name, _)| {
+            if cfg!(windows) {
+                name.to_string_lossy().eq_ignore_ascii_case("PATH")
+            } else {
+                name == "PATH"
+            }
+        })
+        .map(|(_, value)| value.clone())
+        .or_else(|| {
+            (!options.clear_env)
+                .then(|| std::env::var_os("PATH"))
+                .flatten()
+        });
+    which::which_in(&options.executable, paths, &options.cwd)
+        .map_err(|error| Error::Io(format!("{}: {error}", options.executable.display())))
+}
+
 async fn launch(options: LaunchOptions, deadline: Instant) -> Result<Child, Error> {
     static SLOTS: OnceLock<Arc<Semaphore>> = OnceLock::new();
-    tokio::time::timeout_at(deadline, async move {
+    let resolving = options.clone();
+    let (_slot, executable) = tokio::time::timeout_at(deadline, async move {
         let slot = SLOTS
             .get_or_init(|| Arc::new(Semaphore::new(2)))
             .clone()
             .acquire_owned()
             .await
             .map_err(|_| Error::Closed)?;
-        // A cancelled JoinHandle drops the late output; kill_on_drop owns that Child.
-        tokio::task::spawn_blocking(move || {
-            let _slot = slot;
-            if Instant::now() >= deadline {
-                return Err(Error::StartupTimeout);
-            }
-            // Resolve configured command names inside the connection deadline,
-            // without requiring a separate `--version` probe (including PATHEXT
-            // launchers on Windows). Respect the child's PATH and working directory.
-            let paths = options
-                .env
-                .iter()
-                .rev()
-                .find(|(name, _)| {
-                    if cfg!(windows) {
-                        name.to_string_lossy().eq_ignore_ascii_case("PATH")
-                    } else {
-                        name == "PATH"
-                    }
-                })
-                .map(|(_, value)| value.clone())
-                .or_else(|| {
-                    (!options.clear_env)
-                        .then(|| std::env::var_os("PATH"))
-                        .flatten()
-                });
-            let executable = which::which_in(&options.executable, paths, &options.cwd)
-                .map_err(|error| Error::Io(format!("{}: {error}", options.executable.display())))?;
-            if Instant::now() >= deadline {
-                return Err(Error::StartupTimeout);
-            }
-            let mut command = tokio::process::Command::new(executable);
-            command
-                .arg("--mode")
-                .arg("rpc")
-                .args(options.args)
-                .current_dir(options.cwd)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .kill_on_drop(true);
-            if options.clear_env {
-                command.env_clear();
-            }
-            command.envs(options.env);
-            #[cfg(windows)]
-            command.creation_flags(0x08000000);
-            let child = command.spawn()?;
-            if Instant::now() >= deadline {
-                return Err(Error::StartupTimeout);
-            }
-            Ok(child)
-        })
-        .await
-        .map_err(|error| Error::Io(error.to_string()))?
+        // A timed-out blocking lookup may finish late, but can never create a Child.
+        let executable = tokio::task::spawn_blocking(move || resolve_executable(&resolving))
+            .await
+            .map_err(|error| Error::Io(error.to_string()))??;
+        Ok::<_, Error>((slot, executable))
     })
     .await
-    .map_err(|_| Error::StartupTimeout)?
+    .map_err(|_| Error::StartupTimeout)??;
+    if Instant::now() >= deadline {
+        return Err(Error::StartupTimeout);
+    }
+    let mut command = tokio::process::Command::new(executable);
+    command
+        .arg("--mode")
+        .arg("rpc")
+        .args(options.args)
+        .current_dir(options.cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    if options.clear_env {
+        command.env_clear();
+    }
+    command.envs(options.env);
+    #[cfg(windows)]
+    command.creation_flags(0x08000000);
+    // Once created, return the child to its owner without another cancellation point.
+    // The owner's startup deadline and close report now cover its exit.
+    Ok(command.spawn()?)
 }
 
 #[derive(Clone, Copy, PartialEq)]

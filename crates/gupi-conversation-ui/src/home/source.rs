@@ -91,9 +91,8 @@ impl Preview {
             .filter(|b| *b == b'\n')
             .count()
             + 1;
-        Ok(quote::Selection {
-            text: selected,
-            origin: quote::Origin::File {
+        Ok(quote::Selection::new(
+            quote::Origin::File {
                 path: self.path.clone(),
                 start,
                 end,
@@ -101,7 +100,8 @@ impl Preview {
                 kind: quote::FileKind::Source,
                 original: false,
             },
-        })
+            selected,
+        ))
     }
     pub(super) fn quote_source(
         &self,

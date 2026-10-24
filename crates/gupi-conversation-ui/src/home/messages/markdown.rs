@@ -54,10 +54,7 @@ impl Registry {
                 let text = view.selected_text();
                 (!text.is_empty()).then(|| {
                     (
-                        quote::Selection {
-                            text,
-                            origin: quote::Origin::Message { role: role.clone() },
-                        },
+                        quote::Selection::new(quote::Origin::Message { role: role.clone() }, text),
                         state.quote_source(entity.downgrade(), cx),
                     )
                 })
@@ -374,10 +371,10 @@ impl RenderOnce for Markdown {
                 .child(events)
                 .context_menu(move |menu, window, cx| {
                     let text = view.read(cx).selected_text();
-                    let selection = quote::Selection {
-                        text: text.clone(),
-                        origin: quote::Origin::Message { role: role.clone() },
-                    };
+                    let selection = quote::Selection::new(
+                        quote::Origin::Message { role: role.clone() },
+                        text.clone(),
+                    );
                     quote::menu(
                         menu,
                         owner.clone(),

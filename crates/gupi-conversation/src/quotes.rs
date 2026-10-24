@@ -25,11 +25,18 @@ pub enum FileKind {
     Untracked,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Selection {
     pub origin: Origin,
     pub text: String,
 }
+impl Selection {
+    pub fn new(origin: Origin, text: String) -> Self {
+        Self { origin, text }
+    }
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct QuoteAttachment {
     pub id: String,
     pub selection: Selection,

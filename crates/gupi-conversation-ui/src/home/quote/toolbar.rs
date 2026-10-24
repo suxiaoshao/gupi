@@ -39,9 +39,11 @@ impl Target {
     fn selection(&self, cx: &App) -> Result<Selection, Unavailable> {
         match self {
             Self::Text { state, role, .. } => state
-                .read_with(cx, |state, _| Selection {
-                    origin: Origin::Message { role: role.clone() },
-                    text: state.selected_text(),
+                .read_with(cx, |state, _| {
+                    Selection::new(
+                        Origin::Message { role: role.clone() },
+                        state.selected_text(),
+                    )
                 })
                 .map_err(|_| Unavailable::Selection),
             Self::Source(state) => state

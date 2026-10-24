@@ -340,9 +340,8 @@ pub(crate) fn diff_selection(
         .filter(|r| r.side() == r.end_side())
         .ok_or(Unavailable::DiffLines)?;
     let language = files::directory::language(&path).to_owned();
-    Ok(Selection {
-        text,
-        origin: Origin::File {
+    Ok(Selection::new(
+        Origin::File {
             path,
             start: range.start().min(range.end()),
             end: range.start().max(range.end()),
@@ -350,7 +349,8 @@ pub(crate) fn diff_selection(
             kind,
             original: range.side() == DiffSide::Original,
         },
-    })
+        text,
+    ))
 }
 pub(crate) fn diff_body(
     body: AnyElement,

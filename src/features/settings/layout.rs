@@ -277,6 +277,30 @@ impl SettingsView {
         let general = general.group(
             SettingGroup::new()
                 .title(t(cx, "settings-temporary-storage"))
+                .item({
+                    let controller = self.controller.clone();
+                    SettingItem::new(
+                        t(cx, "temporary-prewarm"),
+                        SettingField::render(move |_, _, cx| {
+                            let checked = controller.read(cx).preferences(cx).prewarm_temporary;
+                            let controller = controller.clone();
+                            gpui_kit::component::switch::Switch::new("temporary-prewarm")
+                                .accessibility_label(t(cx, "temporary-prewarm"))
+                                .checked(checked)
+                                .disabled(controller.read(cx).busy(cx))
+                                .on_click(move |checked, _, cx| {
+                                    controller.update(cx, |controller, cx| {
+                                        controller.set_preference(
+                                            PreferenceChange::PrewarmTemporary(*checked),
+                                            cx,
+                                        )
+                                    });
+                                })
+                        }),
+                    )
+                    .description(t(cx, "temporary-prewarm-help"))
+                    .keywords(["temporary prewarm 临时对话 预热"])
+                })
                 .item(
                     SettingItem::new(
                         t(cx, "temporary-clean-released"),

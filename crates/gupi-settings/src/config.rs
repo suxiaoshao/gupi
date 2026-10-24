@@ -52,6 +52,7 @@ pub struct AppConfig {
     pub dark_theme: Option<String>,
     pub language: AppLanguage,
     pub notifications: crate::notifications::Preferences,
+    pub prewarm_temporary: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_check_updates: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -132,6 +133,7 @@ impl PiSettings {
 
 #[derive(Clone, Debug)]
 pub enum PreferenceChange {
+    PrewarmTemporary(bool),
     Keybinding(String, Option<String>),
     ResetKeybindings,
     Notifications(crate::notifications::Preferences),
@@ -147,6 +149,7 @@ pub enum PreferenceChange {
 impl PreferenceChange {
     fn apply(self, config: &mut AppConfig) {
         match self {
+            Self::PrewarmTemporary(value) => config.prewarm_temporary = value,
             Self::AutoCheckUpdates(value) => config.auto_check_updates = Some(value),
             Self::SkipUpdate(value) => config.skipped_update = Some(value),
             Self::Notifications(value) => config.notifications = value,
@@ -313,6 +316,9 @@ fn write_config(
             }
             if value.notifications != baseline.notifications {
                 latest.notifications = value.notifications;
+            }
+            if value.prewarm_temporary != baseline.prewarm_temporary {
+                latest.prewarm_temporary = value.prewarm_temporary;
             }
             if value.auto_check_updates != baseline.auto_check_updates {
                 latest.auto_check_updates = value.auto_check_updates;
@@ -714,6 +720,7 @@ mod update_preference_tests {
         std::fs::write(&path, "language = 'chinese'\n").unwrap();
         let mut value = baseline.clone();
         PreferenceChange::AutoCheckUpdates(false).apply(&mut value);
+        PreferenceChange::PrewarmTemporary(true).apply(&mut value);
         write_config(
             path.clone(),
             PendingConfig {
@@ -731,6 +738,7 @@ mod update_preference_tests {
         assert_eq!(value.language, AppLanguage::Chinese);
         assert_eq!(value.auto_check_updates, Some(false));
         assert!(!value.checks_updates_automatically());
+        assert!(value.prewarm_temporary);
     }
 
     #[gpui_kit::test]

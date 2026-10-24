@@ -432,7 +432,8 @@ async fn reload_keeps_the_model_query_and_its_cleanup(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn changing_scope_closes_the_previous_model_query(cx: &mut TestAppContext) {
+async fn changing_scope_closes_the_previous_model_query(cx: &mut TestAppContext) {
+    cx.executor().allow_parking();
     cx.update(gpui_tokio::init);
     cx.update(gupi_pi_runtime::init);
     let agent = tempfile::tempdir().unwrap();
@@ -456,6 +457,8 @@ fn changing_scope_closes_the_previous_model_query(cx: &mut TestAppContext) {
     config.read_with(cx, |this, _| {
         assert!(matches!(this.models, super::Models::Idle))
     });
+    cx.update(|_, cx| gupi_pi_runtime::global(cx).update(cx, |pi, cx| pi.close_all(cx)))
+        .await;
 }
 
 #[gpui_kit::test]

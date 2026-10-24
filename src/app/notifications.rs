@@ -56,7 +56,8 @@ impl Target {
     fn valid(&self, cx: &App) -> bool {
         self.state.upgrade().is_some_and(|owner| {
             owner.read(cx).sessions().get(&self.key).is_some_and(|s| {
-                s.binding() == self.binding
+                !s.is_internal()
+                    && s.binding() == self.binding
                     && self.request.as_ref().is_none_or(|id| {
                         s.pending_ui().iter().any(|p| {
                             p.request.id == *id
@@ -447,9 +448,16 @@ impl Delivery {
         for source in self.sources.values() {
             if let Some(owner) = source.state.upgrade() {
                 let state = owner.read(cx);
-                count += state.sessions().values().filter(|s| s.unread()).count();
+                count += state
+                    .sessions()
+                    .values()
+                    .filter(|s| !s.is_internal() && s.unread())
+                    .count();
                 #[cfg(any(target_os = "macos", target_os = "windows"))]
                 for (key, s) in state.sessions() {
+                    if s.is_internal() {
+                        continue;
+                    }
                     if s.unread() || matches!(s.activity(), Activity::Waiting | Activity::Running) {
                         rows.push(TrayRow {
                             owner: owner.entity_id(),
@@ -705,6 +713,19 @@ mod tests {
             )
         });
         assert_eq!(badge(cx), 1);
+        state.update(cx, |state, _| {
+            state
+                .sessions_for_test()
+                .get_mut("b")
+                .unwrap()
+                .set_internal_for_test(true);
+        });
+        cx.update(refresh);
+        assert_eq!(
+            badge(cx),
+            0,
+            "internal standby sessions never contribute unread badges"
+        );
     }
     struct Page;
     impl Render for Page {

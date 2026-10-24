@@ -88,7 +88,7 @@ impl Session {
                 Some(error) => BodyState::Failed(error),
                 None => BodyState::New,
             },
-            (Transcript::New, CoreRead::CheckingFile { .. }) => {
+            (Transcript::New, CoreRead::PreparingDirectory | CoreRead::CheckingFile { .. }) => {
                 BodyState::Loading(LoadStage::CheckingFile)
             }
             (Transcript::New, CoreRead::Reading { .. }) => BodyState::Loading(LoadStage::History),
@@ -99,16 +99,18 @@ impl Session {
                 Some(error) => BodyState::Failed(error),
                 None => BodyState::Loading(LoadStage::Connecting),
             },
-            (Transcript::Unloaded, CoreRead::CheckingFile { .. }) => {
-                BodyState::Loading(LoadStage::CheckingFile)
-            }
+            (
+                Transcript::Unloaded,
+                CoreRead::PreparingDirectory | CoreRead::CheckingFile { .. },
+            ) => BodyState::Loading(LoadStage::CheckingFile),
             (Transcript::Unloaded, CoreRead::Reading { .. }) => {
                 BodyState::Loading(LoadStage::History)
             }
             (Transcript::Ready(_), CoreRead::Idle) => BodyState::Ready,
-            (Transcript::Ready(_), CoreRead::CheckingFile { .. }) => {
-                BodyState::Refreshing(LoadStage::CheckingFile)
-            }
+            (
+                Transcript::Ready(_),
+                CoreRead::PreparingDirectory | CoreRead::CheckingFile { .. },
+            ) => BodyState::Refreshing(LoadStage::CheckingFile),
             (Transcript::Ready(_), CoreRead::Reading { .. }) => {
                 BodyState::Refreshing(LoadStage::History)
             }

@@ -126,6 +126,7 @@ pub enum ReadScope {
 /// only the in-flight read and its scoped failure, not a duplicate snapshot.
 pub enum CoreRead {
     Idle,
+    PreparingDirectory,
     CheckingFile {
         _task: Task<()>,
     },
@@ -137,7 +138,10 @@ pub enum CoreRead {
 }
 impl CoreRead {
     pub fn running(&self) -> bool {
-        matches!(self, Self::CheckingFile { .. } | Self::Reading { .. })
+        matches!(
+            self,
+            Self::PreparingDirectory | Self::CheckingFile { .. } | Self::Reading { .. }
+        )
     }
     pub fn error(&self) -> Option<&str> {
         match self {

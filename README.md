@@ -176,7 +176,7 @@ Open the right-hand workspace and choose **Files** from its New Tab page to brow
 
 ![Project files and read-only source beside the conversation](docs/screenshots/files-en.jpg)
 
-The preview supports syntax highlighting, line numbers, selection, copying, search and line wrapping. It shows a snapshot: use **Reload** to read changes from disk. Opening the same file again preserves its reading position and search state. Previewing does not edit or save the file, or send its content to the model; use `@` in the composer to reference it in a message.
+Text previews support syntax highlighting, line numbers, selection, copying, search and line wrapping. Images have zoom controls; Markdown can switch between source and reading view. Markdown resolves local images relative to its file, while remote images appear as browser links. Unsupported types offer **Open with default app**. Previews show snapshots: use **Reload** to read changes from disk. Opening the same file again preserves its reading position and search state. Previewing does not edit or save the file, or send its content to the model; use `@` in the composer to reference it in a message.
 
 The workspace keeps Files, Git workspace changes and each reply's Changes in separate tabs. Drag tabs to reorder them, use the tab menu to close groups, or maximize the workspace. File previews keep the file tree available. Conversation history has its own panel beside the conversation.
 
@@ -205,11 +205,15 @@ On Windows and Linux, application menus and window controls occupy the top row; 
 
 File references appear as path tokens inside the message. Images appear as separate attachments; click a thumbnail for a larger preview. Image support and limits depend on the selected Pi model.
 
+Select text in a message, a read-only file preview, or one side of a diff to quote it into the composer. The selection toolbar opens an optional comment editor; the context menu and command palette can add the quote directly. Quotes collect in one attachment pill, where you can review, edit or remove them. Editing a comment highlights its source in messages or file previews; diff and restored-draft quotes do not show that highlight. Saved quotes and comments precede your draft when sent, survive send failures and are saved with persistent-session drafts. Quotes cannot be combined with slash commands or prompt templates.
+
 When sending fails, Gupi keeps the draft and attachments for you to retry. Queued messages follow Pi's queue behavior.
 
 ### Models, responses, and tools
 
-Responses render as Markdown with code blocks, lists, and tables. Expand a process section to inspect thinking and tool calls, or open tool details to read and copy their content. Click a local file resource to open it with the system's default application.
+Responses render as Markdown with code blocks, lists, and tables. Expand a process section to inspect thinking and tool calls, or open tool details to read and copy their content. In the main window, file, directory and skill-location references inside the session's project open in **Files**; external references and references in temporary conversations use the system's default application.
+
+Interface errors show a localized summary and keep their recovery actions visible. Expand **Technical details** to read the original system, process or RPC error. Pi responses and tool, shell and extension content remain verbatim.
 
 With Pi 1.3.0, recorded direct Shell commands appear as separate rows with output, exit status and a marker when excluded from model context. Active commands can show live output and a Stop action; long output supports expansion, copying, search and opening Pi's full-output file when available. The dedicated Shell input is not available yet: typing `!` or `!!` in the composer still sends a normal message.
 
@@ -337,7 +341,7 @@ Choose **Gupi → Check for updates…**, or open **Settings → About → Updat
 
 On macOS, choose **Download and install…** when a new version is available, then follow the update window. Use **Show update progress…** to bring that window back. Before installation, Gupi saves drafts, closes Pi connections, and restarts into the new version. Downloads begin only when you choose. Skipping a version stops automatic reminders for that version; you can still check and install it manually.
 
-Windows in-app installation is currently unavailable. Quit Gupi, download the latest MSI in your installed language from the release page, and run it to upgrade manually. Version checks and release/download links remain available. WinGet distribution is still pending community inclusion.
+Windows 0.1.10 fixes in-app MSI installation failing with error 1639 when the installation path contains spaces, including `C:\Program Files\Gupi`. Older clients still run their old update helper: quit Gupi and manually install 0.1.10 or later once, using the MSI in your installed language, to receive the fix. Subsequent updates use the corrected helper. WinGet distribution is still pending community inclusion.
 
 While settings are being saved, **Download and install…** is disabled. Settings changes are disabled while the update window is open and become available again when it closes and any pending save finishes.
 

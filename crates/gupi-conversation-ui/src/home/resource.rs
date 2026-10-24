@@ -464,7 +464,14 @@ mod tests {
                 );
                 window.click("file-image-fit", cx);
                 window.render_frame(cx);
-                let position = window.find("file-image-scroll").bounds().center();
+                let surface = window.find("file-image-canvas").bounds();
+                let position =
+                    surface.origin + point(surface.size.width * 0.35, surface.size.height * 0.6);
+                let prior = window.find("image-preview-bitmap").bounds();
+                let unit = point(
+                    (position.x - prior.left()) / prior.size.width,
+                    (position.y - prior.top()) / prior.size.height,
+                );
                 let modifiers = Modifiers {
                     control: true,
                     ..Default::default()
@@ -492,6 +499,14 @@ mod tests {
                 window.render_frame(cx);
                 let after = window.find("image-preview-bitmap").bounds().size.width;
                 assert!(after > before, "modified wheel zooms the loaded image");
+                let zoomed = window.find("image-preview-bitmap").bounds();
+                let anchored =
+                    zoomed.origin + point(zoomed.size.width * unit.x, zoomed.size.height * unit.y);
+                assert!(
+                    (anchored.x - position.x).abs() <= px(1. / window.scale_factor())
+                        && (anchored.y - position.y).abs() <= px(1. / window.scale_factor()),
+                    "wheel zoom keeps the image point under the pointer: {prior:?} -> {zoomed:?}, pointer={position:?}, actual={anchored:?}"
+                );
                 window.dispatch_event(
                     PinchEvent {
                         position,
@@ -504,6 +519,36 @@ mod tests {
                 );
                 window.render_frame(cx);
                 assert!(window.find("image-preview-bitmap").bounds().size.width > after);
+                for _ in 0..10 {
+                    if window.find("image-preview-bitmap").bounds().size.width > surface.size.width { break; }
+                    window.click("file-image-zoom-in", cx);
+                }
+                assert!(window.find("image-preview-bitmap").bounds().size.width > surface.size.width);
+                for direction in [1., -1.] {
+                    for _ in 0..20 {
+                        let image = window.find("image-preview-bitmap").bounds();
+                        if (direction > 0. && image.left() >= surface.left())
+                            || (direction < 0. && image.right() <= surface.right())
+                        {
+                            break;
+                        }
+                        window.drag(
+                            surface.center(),
+                            surface.center() + point(surface.size.width * 0.4 * direction, px(0.)),
+                            cx,
+                        );
+                    }
+                    let image = window.find("image-preview-bitmap").bounds();
+                    let edge = if direction > 0. {
+                        image.left()
+                    } else {
+                        image.right()
+                    };
+                    assert!(
+                        edge >= surface.left() && edge <= surface.right(),
+                        "both edges of an enlarged image can be reached by panning"
+                    );
+                }
             });
         }
         let broken = root.join("broken.png");

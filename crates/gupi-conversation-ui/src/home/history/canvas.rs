@@ -1,7 +1,7 @@
 mod geometry;
 use super::*;
+use crate::camera::Camera;
 use fluent_bundle::FluentArgs;
-use geometry::Camera;
 use geometry::clip_segment;
 use geometry::curve;
 use geometry::disclosure_bounds;
@@ -240,7 +240,8 @@ impl HistoryCanvas {
     }
     fn zoom(&mut self, factor: f32, anchor: Point<f32>, cx: &mut Context<Self>) {
         self.tooltip = None;
-        self.camera.zoom_at(anchor, self.camera.zoom * factor);
+        self.camera
+            .zoom_at(anchor, (self.camera.zoom * factor).clamp(0.001, 4.));
         self.hover = None;
         self.drag = None;
         self.labels.clear();

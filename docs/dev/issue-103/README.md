@@ -34,7 +34,7 @@
 - Kit [`component/input/editor.rs`](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/component/src/input/editor.rs) 与当前 `EditorState` 的 `set_readonly`、`set_value`、搜索/折行接口继续用于源码。
 - Kit [`base/text/state.rs:175`](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/base/src/text/state.rs#L175) 的 `TextViewState::markdown`、`:328` 的 `set_text`，以及 [`base/text/text_view.rs`](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/base/src/text/text_view.rs) 的 `TextView::new`、`scrollable`、`on_link_click` 可构成保留状态、可选择复制的 Markdown 阅读面。`MarkdownPlugin` 是公开的内容扩展点；不访问 `inner` 或私有解析状态。
 - Kit base [`text/text_view.rs:275`](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/base/src/text/text_view.rs#L275) 有公开 `image_source`，返回值同时用于绘制和尺寸测量，且不会回退原 URL；但 0.8.0 的 component TextView 未转发这个方法。因此阅读面直接使用 base TextView；远程图片入口单独通过公开 MarkdownPlugin 接入。
-- GPUI 的公开 `img`、`ImageSource` 和 `ScrollHandle` 用于图片显示与滚动；Kit 不提供统一文件类型查看器。图片直接交给公开组件加载、解码和显示，不建立应用自己的解码流程。
+- GPUI 的公开 `img`、`ImageSource` 和 `canvas` 用于图片显示与画布平移/缩放；Kit 不提供统一文件类型查看器。图片直接交给公开组件加载、解码和显示，不建立应用自己的解码流程。
 
 ## 所有权与打开路由
 
@@ -78,7 +78,7 @@ Files 的「用默认应用打开」始终直接走外部服务，不能再次�
 
 `Preview` 拥有路径、加载任务/版本以及互斥正文：源码、图片、Markdown 阅读态或不可预览状态。文本读取在后台，图片异步加载由 Kit 公开组件负责；结果只更新仍匹配的预览实例；切换文件释放上一个大图和任务。不在 render 中读文件或重复解析。保留显式 Reload，不加文件监听；同路径复用仍遵守现有 reload 行为。
 
-标题栏继续显示文件名、路径 tooltip、只读状态、Reload、树切换和关闭。折行仅在源码态显示；图片显示适配/缩放控制；Markdown 显示「源码 / 预览」的 Kit ToggleGroup 或同等级互斥控件。Markdown 切换与图片控件位于标题栏下的紧凑工具行，避免挤出窄正文中的 Reload、树切换和关闭。所有控件使用主题 token 和已有尺寸，不给正文再套卡片。正文区域 `min_h_0/min_w_0`，每种模式只保留一个主滚动拥有者。
+标题栏继续显示文件名、路径 tooltip、只读状态、Reload、树切换和关闭。折行仅在源码态显示；图片显示适配/缩放控制；Markdown 显示「源码 / 预览」的 Kit ToggleGroup 或同等级互斥控件。Markdown 切换与图片控件位于标题栏下的紧凑工具行，避免挤出窄正文中的 Reload、树切换和关闭。所有控件使用主题 token 和已有尺寸，不给正文再套卡片。正文区域 `min_h_0/min_w_0`，文本模式只保留一个主滚动拥有者，图片使用独立画布。
 
 ### 内容分类
 
@@ -92,7 +92,7 @@ Files 的「用默认应用打开」始终直接走外部服务，不能再次�
 | SVG、CSV/TSV、ipynb | 在现有文本限制内按源码显示，不建立图形、表格或 notebook 查看器。 |
 | PDF、Office、音视频、归档、其他二进制、解码失败或超限 | 保留标题和文件树位置，显示不可预览状态及显式外部打开按钮。 |
 
-提取现有 `image_preview` 的缩放主体时，尺寸来自 Files 正文视口，保留适配、原尺寸及缩放/滚动的现有基本交互。原有对话图片模态查看保持原行为；不要为了复用把文件预览转成草稿图片附件或创建临时发送数据。
+Files 与附件弹窗复用同一图片画布，和历史树共享 `Camera` 的 screen/world/zoom_at 几何；缩放限额由调用方负责（历史树上限 4 倍，图片上限 8 倍）。图片按 natural × zoom 绘制并用 pan 定位，不使用 ScrollHandle。首次 prepaint 取得真实画布尺寸后在同帧适应并居中，小图不放大；拖动或普通滚轮平移，修饰键滚轮/捏合按指针缩放，按钮按中心缩放。窗口尺寸改变时，适应态重新适应，手动视图保持中心。Files 保留适配/原尺寸控件，弹窗保留减/百分比/加，不新增快捷键或百分比输入。不要为了复用把文件预览转成草稿图片附件或创建临时发送数据。
 
 ### Markdown 切换与资源
 
@@ -158,14 +158,15 @@ Zed 的 `resolve_preview_image`（[`markdown_preview_view.rs:1516–1581`](../..
 
 ## 当前验证结果
 
-- 最终 `cargo fmt --all -- --check`、`cargo clippy -p gupi-conversation-ui -p gupi-settings -p gupi --all-targets --locked -- -D warnings` 通过；UI/settings 的 `--all-targets --locked` 测试分别通过 227/20 项。root 先前为 127 项通过；最终 base 图片改动后的三包运行在 root 停止：126 项通过、1 项认证测试失败，未继续重跑求绿；UI/settings 随后单独完成。
+- 当前画布版本的 `cargo fmt --all -- --check`、UI/root 的 `cargo clippy --all-targets --locked -- -D warnings` 及测试通过：UI 226、root 127 项。测试未新增数量，删除 1 项旧滚动锚点专用测试；既有 Files 与弹窗交互回归覆盖小图不放大、两侧平移可达和指针锚点缩放。settings 20 项是此前本地化改动时的通过结果，本次未改设置包。
 - 新增或扩展的正式入口回归覆盖组件边界/符号链接、旧会话及旧打开任务失效、目录定位、真实 composer token 指针激活、已加载 PNG 的按钮/滚轮/捏合、Markdown 同快照切换与 Reload。临时窗口 cwd 内文件仍走外部 opener 的分支已补入同一资源入口回归并单独通过。
 - 隔离 gallery 的中文浅色实测：对话文件、目录及历史技能位置进入 Files；目录保留原正文；PNG 显示并可操作缩放；Markdown 源码/阅读及本地链接可用；远程图片为显式链接；不支持文件显示「无法预览」和外部打开按钮；删除外部测试目标后显示本地化打开失败通知。深色查看了图片与 Markdown。外部打开只确认系统请求/错误反馈，不声称目标应用完成加载。
 - 最终 base 图片路线的新构建已在隔离 gallery 复测：800×400 的双色块/圆形图片在窄正文中完整按 2:1 缩小（约 700×350 屏幕像素），浅色与深色均确认；远程图片仍显示为显式链接。未加入自定义尺寸、缓存或引用式图片桥。
+- 画布新构建的中文浅色原生检查：Files 与弹窗的大小图首次适应、按钮放大、两侧边缘拖动到达、普通滚轮平移通过；深色查看两种画布。初始化后的控件可自行启用，无需用户额外点击。修饰键滚轮/捏合缩放由正式 GPUI 事件回归覆盖；Computer Use 没有公开捏合接口，未宣称原生捏合验收。图库退出并清理。
 - 原生临时窗口在工具随后观测时失活并按既有设计隐藏，该路径改由上述正式入口回归覆盖；未改失活行为。未做 Windows/Linux 原生验证；Windows 绝对路径断言仅在对应平台编译执行。gallery 已退出并清理测试数据，无模型请求。
 
 
-最终 root 失败的原始断言如下。未修改认证产品或测试；协调者已确认另行跟进，不将其推断为本轮图片改动导致，也不宣称已确定认证失败根因。
+先前本地图片路线运行中 root 失败的原始断言如下（本次画布门禁未复现）。未修改认证产品或测试；协调者已确认另行跟进，不将其推断为本轮图片改动导致，也不宣称已确定认证失败根因。
 
 ```text
 ---- features::settings::auth::tests::editor_retains_masked_keys_on_busy_and_saves_without_exposing_existing_values stdout ----

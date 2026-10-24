@@ -37,6 +37,9 @@ fn temporary_page_tab_search_and_recreation_preserve_the_draft(cx: &mut TestAppC
                 .unwrap(),
         );
         state.sessions_for_test().insert("first".into(), session);
+        let mut hidden = fixture_session("standby");
+        hidden.set_internal_for_test(true);
+        state.sessions_for_test().insert("standby".into(), hidden);
         *state.selected_for_test() = Some("first".into());
     });
     for suffix in [" one", " two"] {
@@ -48,6 +51,22 @@ fn temporary_page_tab_search_and_recreation_preserve_the_draft(cx: &mut TestAppC
         visual.simulate_resize(size(px(960.), px(620.)));
         visual.update(|window, _| window.activate_window());
         visual.run_until_parked();
+        visual.update(|window, cx| {
+            use gpui_kit::test::TestWindowExt as _;
+            assert!(window.try_find("temporary-session-first").is_some());
+            assert!(window.try_find("temporary-session-standby").is_none());
+            state.update(cx, |_, cx| {
+                gupi_conversation::conversation::test_support::notify_session("standby", cx)
+            });
+        });
+        visual.run_until_parked();
+        visual.update(|window, _| {
+            use gpui_kit::test::TestWindowExt as _;
+            assert!(
+                window.try_find("temporary-session-standby").is_none(),
+                "incremental projection must not insert an internal standby row"
+            );
+        });
         visual.simulate_input("no-match");
         visual.update(|_, cx| assert_eq!(state.read(cx).selected().as_deref(), Some("first")));
         visual.simulate_keystrokes("tab");

@@ -1,6 +1,6 @@
 # 临时会话预热
 
-状态：设计已确认，基线与完整环境资源测量已完成，预热尚未实施。对应 #102。
+已实现默认关闭的临时会话预热。自动化门禁与限定源码审查通过；本轮原生检查因 Computer Use 工具故障未完成，详见下方验证结果。
 
 ## 结果
 
@@ -10,7 +10,7 @@
 
 ## 当前流程与测量依据
 
-普通唤起经 `src/app/temporary.rs` 复用应用持有的临时会话。隐藏 600 秒只回收窗口，不关闭会话或 Pi；首次创建仍需启动 Pi。模板任务的真正新建分支在 `src/app/shortcuts.rs` 读取输入和模板后调用 `new_draft(None)`，进入 `begin_preparation`，每 30ms 检查本地会话状态和错误，等待上限 30 秒；并非每次轮询都发送 `get_state`。连接流程负责取得并应用 `get_state` / `get_entries`，模板准备随后读取 `get_commands`、应用指定的模型和思考级别、再读最终状态并 `complete_preparation`。有输入时继续 `send_draft`。
+普通唤起经 `src/app/temporary.rs` 复用应用持有的临时会话。隐藏 600 秒只回收窗口，不关闭会话或 Pi；真正新建时由 `new_temporary` 接管已就绪的待命项或冷启动。模板任务的真正新建分支在 `src/app/shortcuts.rs` 读取输入和模板后调用同一接点，并直接取得本次会话 key，在接管更新内进入 preparation，不通过全局当前选择猜测目标。随后每 30ms 检查本地会话状态和错误，等待上限 30 秒；并非每次轮询都发送 `get_state`。连接流程负责取得并应用 `get_state` / `get_entries`，模板准备随后读取 `get_commands`、应用指定的模型和思考级别、再读最终状态并 `complete_preparation`。有输入时继续 `send_draft`。
 
 #102 既有真实 HOME 测量中，Pi 1.4.0 加完整扩展、重复 cwd 的新进程首次状态中位数约 2 秒，完整样本最长约 8 秒；排除 CommandCode 0.3.0 后约 0.5 秒。独立剖析确认该扩展 factory 同步等待远端模型目录约 4 秒。辅助 RPC 在 entries 后约 5–8ms 完成，不代表整个 Gupi 模板准备耗时。这些数据继承工具环境代理，尚未验证 Finder 启动的网络路径，也不是原生快捷键全程测量。纯净进程约 120 MiB 的旧测量不用于本功能的设置说明。
 
@@ -19,8 +19,8 @@
 开关放在 `src/features/settings/layout.rs` 的 `settings-temporary-storage` 分组，与“清理已释放临时对话”同组，不另建设置页。复用现有设置字段、Kit 开关、帮助文字和持久化方式；新增布尔配置缺省为关闭，旧配置文件兼容。开关与说明沿用组件主题、键盘和无障碍行为，九语言同步，不添加自绘控件、确认弹窗或常驻进度界面。
 
 - 名称：**预热临时会话** / **Prewarm temporary conversations**。
-- 说明：**后台常驻一个 Pi 进程，实测约 60 MB 内存（随扩展变化），以加快新建临时会话。会提前执行扩展初始化、认证和网络请求。**
-- 英文：**Keep one Pi process ready in the background to start new temporary conversations faster. It uses about 60 MB of memory in measurements, depending on extensions, and runs extension initialization, authentication, and network requests in advance.**
+- 说明：**后台常驻一个 Pi 进程，实测约 60 MB 内存（随扩展变化），以加快新建临时会话。会提前执行扩展初始化、登录状态刷新和网络请求。**
+- 英文：**Keep one Pi process ready in the background to start new temporary conversations faster. It uses about 60 MB of memory in measurements, depending on extensions, and runs extension initialization, sign-in state refreshes, and network requests in advance.**
 
 N 必须来自实施第一步中完整扩展环境的待命进程 RSS 实测，按 MB 换算并合理取整，测量环境和范围保存在本文件；不是内存上限或每台机器的保证。不在产品中动态监测内存，也不以纯净环境数字或未经测量的占位值交付说明。空闲 CPU 同时测量，用于核对常驻代价。
 
@@ -55,7 +55,7 @@ N 必须来自实施第一步中完整扩展环境的待命进程 RSS 实测，�
 检查范围为：
 
 - 模板任务本次实际使用的模板文件；普通新建无模板时不额外扫描所有 prompt。模板必须在接管前完成读取与元数据检查。
-- 临时会话实际使用的 Pi agent 配置目录中，现有路径能力可定位的 `settings.json`、`models.json`、`auth.json`、`mcp.json`，以及该临时 cwd 的 `.pi/settings.json` 等现有作用域配置路径。缺省允许不存在的文件，持续不存在不算失效；原有文件消失或新文件出现须回退。普通项目 cwd 的配置不拿来替代临时 cwd 配置。
+- 临时会话实际使用的 Pi agent 配置目录中的 `settings.json`、`models.json`、`auth.json`、`mcp.json`，以及该临时 cwd 的 `.pi/settings.json`、`.pi/mcp.json`。缺省允许不存在的文件，持续不存在不算失效；原有文件消失或新文件出现须回退。普通项目 cwd 的配置不拿来替代临时 cwd 配置。
 - 本次实际启动的 Pi 可执行文件路径及其解析目标。应用已知的 Pi 启动路径变化直接令待命失效；同路径文件以修改时间检查。
 
 认证或扩展自行改写上述文件也按相同规则处理，不根据内容猜测“无影响”。若无法可靠确认某项就走冷启动，不为命中率降低检查。主题、语言、模板快捷键标题或按键等不改变 Pi 资源的设置，不使待命失效。
@@ -76,18 +76,31 @@ N 必须来自实施第一步中完整扩展环境的待命进程 RSS 实测，�
 
 本轮不发布 CommandCode 上游反馈，因为 issue 要求另行授权，而非项目禁止向 Pi 生态报告问题。Gupi 不跳过 provider、不缓存远端模型目录、不修改用户 Pi 配置。预热属于 Gupi 的连接生命周期职责；不以未经证实的参考产品预热机制作为事实依据，不给 Pi 补功能，也不为 Kit 添加绕行。
 
-## 实现顺序
+## 实现接点
 
-1. **基线与资源测量已完成。** 下方菜单入口样本已足以定位 Pi 初始化的主要等待，并给出完整扩展环境的空闲 RSS / CPU；不再要求分档计时或用户手动按键。临时计时和探针测完删除，不保留常驻埋点。
-2. **接入设置与单一 owner。** 增加默认关闭的配置和九语言开关说明，复用当前设置组；建立非选中创建、内部身份排除及最小丢弃接点，保持临时会话不持久化。
-3. **接入所有新建入口。** 共用后台元数据检查及原子接管，分别衔接普通连接和模板 preparation；未命中冷启动。启用立即准备，当前准备完成后补充，关闭与退出丢弃。
-4. **验证接管与资源生命周期。** 检查命中、未就绪/失效回退和关闭状态下的可见结果，确认补充不阻塞当前准备；设置说明使用下方实测的 N。只执行与本次生命周期和设置变更相关的门禁与原生检查。
+`conversation/prewarm.rs` 保存单一待命身份、有限资源基线和接管逻辑；`ConversationState` 保留所有 Session 的资源所有权。非选中创建与正常激活分离，临时导航及通知投影只排除内部项。普通首次创建、窗口内真正新建和模板新建共享此接点。
+
+目录准备任务由 Session 持有。内部丢弃先使 binding 失效，等待可能迟到的目录创建及进程关闭结果，再复用现有受限目录删除；无法确认退出时保留目录保护。Pi runtime 同时补齐启动期取消：可执行文件查找与 Child 创建分离，取消后不得迟到创建进程；已经创建的 Child 必须交给连接 owner 或显式关闭并等待结果。未另建进程管理层。
+
+设置通过已有配置观察接点驱动启停，原子接管后按核心快照或 `complete_preparation` 补充。开关关闭与现有退出 drain 共用内部丢弃路径；不改变已接管会话。
 
 ## 必要验证
 
 这是连接生命周期和资源所有权变更，需要按 AGENTS.md 选择能防止实际产品失败的回归覆盖：隐藏项不能被导航、通知或普通复用泄漏；多入口不能重复接管；资源变化不能命中已知过期待命；关闭/取消后不能有迟到进程或目录失去所有权。优先扩展已有正式入口测试，不另建模拟连接框架或逐字段夹具断言。模板设置、独立 cwd 和临时不落盘继续沿用现有契约。
 
 原生验证聚焦设置开关和三类新建入口的可见结果、命中与回退；设置说明须在实际窗口可读、可键盘操作，数字与完整环境测量一致。不扩大为全量 UI 验收，测量、测试和原生结果分别记录，不以其中一种替代另一种。
+
+## 实现验证
+
+2026-10-24，本地 macOS arm64：
+
+- `cargo fmt --all -- --check`、`cargo check -p gupi --locked` 通过。
+- `cargo clippy -p gupi -p gupi-conversation-ui -p gupi-conversation -p gupi-settings -p gupi-pi-runtime -p pi-rpc --all-targets --locked -- -D warnings` 通过。
+- 同六包 `cargo test --all-targets --locked` 通过：根包 127、UI 226、conversation 44、settings 20、runtime 4、pi-rpc 4；runtime 与 pi-rpc 各保留 1 个既有 ignored 集成探针，没有新增忽略项。
+- 回归覆盖非选中创建与接管保留核心快照、导航全量/增量及通知隔离、设置保存、模板/已知配置/可执行文件过期回退，以及迟到目录创建后的丢弃。真实子进程夹具分别验证启动读取中取消和连接交接后关闭；确认退出，若未创建 Child 则启动标记必须不存在。最后补充的标记断言及 cwd MCP 新鲜度检查另行通过针对性检查。
+- 架构师限定源码审查无阻塞；这是源码结论，不替代运行或原生验收。
+
+本轮已构建并启动隔离 gallery，但首次 Computer Use 绑定返回原始错误 `Computer Use server error -10005: cgWindowNotFound`，随即停止，不重试或换工具。设置开关、三类入口实际命中、关闭开关和退出清理尚未完成原生验收，也没有全局快捷键通过声明。自建 gallery 已退出，隔离数据已清理；未发送真实 prompt。
 
 ## 测量结果
 

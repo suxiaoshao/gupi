@@ -177,6 +177,9 @@ impl TemporaryView {
             self.answer_available = None;
         }
         let make_row = |key: String, info: gupi_conversation::session_catalog::SessionInfo| {
+            if state.sessions().get(&key).is_some_and(|s| s.is_internal()) {
+                return None;
+            }
             let title = navigation::display_title(&info, cx);
             if !matches_query(&title, &query) {
                 return None;
@@ -616,6 +619,7 @@ impl RenderOnce for SessionItem {
         let key = self.row.key;
         h_flex()
             .id(format!("temporary-session-{key}"))
+            .test_support()
             .w_full()
             .min_w_0()
             .h_9()

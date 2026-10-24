@@ -10,6 +10,7 @@ mod loading;
 mod messages;
 mod model_change;
 mod navigation;
+mod prewarm;
 mod queue;
 mod reads;
 mod reconnect;
@@ -220,6 +221,9 @@ pub use session_catalog::ScanProgress;
 
 pub struct Session {
     info: SessionInfo,
+    internal: bool,
+    replenish: bool,
+    directory: Option<Task<()>>,
     draft: InputContent,
     preparing: bool,
     attachments: Vec<crate::attachments::Attachment>,
@@ -431,6 +435,9 @@ impl Session {
         };
         Self {
             info,
+            internal: false,
+            replenish: false,
+            directory: None,
             draft: draft.into(),
             preparing: false,
             attachments: Vec::new(),
@@ -525,7 +532,10 @@ impl Session {
             && !self.submitting()
             && (!self.command.running() || self.command.clearing_queue())
             && self.state.is_some()
-            && !matches!(self.core_read, CoreRead::CheckingFile { .. })
+            && !matches!(
+                self.core_read,
+                CoreRead::PreparingDirectory | CoreRead::CheckingFile { .. }
+            )
     }
     pub fn busy(&self) -> bool {
         self.preparing
@@ -545,7 +555,10 @@ impl Session {
         } else if self.busy() || self.shell_running() {
             Activity::Running
         } else if matches!(self.command, SessionCommand::Deleting { .. })
-            || matches!(self.core_read, CoreRead::CheckingFile { .. })
+            || matches!(
+                self.core_read,
+                CoreRead::PreparingDirectory | CoreRead::CheckingFile { .. }
+            )
             || self.instance.is_some() && self.state.is_none()
         {
             Activity::Loading
@@ -757,6 +770,7 @@ pub struct ConversationState {
     catalog: CatalogState<Task<()>>,
     storage_error: Option<String>,
     temporary: bool,
+    prewarm: prewarm::Prewarm,
     command: PathBuf,
     discovery: Discovery,
     restore_task: Option<Task<()>>,
@@ -864,6 +878,7 @@ impl ConversationState {
         session.pending_template = Some(prepared.template);
         session.info.name = Some(prepared.name);
         self.set_draft(key, prepared.text, cx);
+        self.maintain_prewarm(key, cx);
         true
     }
     pub fn finish_preparation(&mut self, key: &str, error: Option<String>, cx: &mut Context<Self>) {
@@ -983,6 +998,7 @@ impl ConversationState {
             catalog: CatalogState::Idle,
             storage_error: None,
             temporary: false,
+            prewarm: prewarm::Prewarm::default(),
             command,
             discovery,
             restore_task: None,
@@ -1268,6 +1284,9 @@ impl ConversationState {
             .collect();
         // The local draft key stays stable even after Pi creates its session file.
         for (key, s) in &self.sessions {
+            if s.internal {
+                continue;
+            }
             if !s.info.path.as_os_str().is_empty() {
                 infos.remove(&s.info.key());
             }
@@ -1294,7 +1313,7 @@ impl ConversationState {
             self.discover_project(cwd.clone(), cx);
         }
         let reusable = |s: &Session| {
-            (self.temporary || s.info.cwd == cwd)
+            !s.internal && (self.temporary || s.info.cwd == cwd)
                 && !matches!(s.transcript, Transcript::Unloaded)
                 && !s.busy()
                 && !s.command.running()
@@ -1330,6 +1349,10 @@ impl ConversationState {
         if self.draining {
             return;
         }
+        if self.temporary {
+            self.new_temporary(None, false, cx).detach();
+            return;
+        }
         self.insert_draft(cwd);
         self.connect_selected(cx);
         notify_session(self.selected.as_ref().unwrap(), cx);
@@ -1341,6 +1364,11 @@ impl ConversationState {
         }
     }
     fn insert_draft(&mut self, cwd: Option<PathBuf>) {
+        if let Ok(key) = self.create_draft(cwd) {
+            self.selected = Some(key);
+        }
+    }
+    fn create_draft(&mut self, cwd: Option<PathBuf>) -> Result<String, String> {
         let cwd = cwd
             .or_else(|| self.current().map(|s| s.info.cwd.clone()))
             .unwrap_or_else(|| self.discovery.current.clone());
@@ -1358,7 +1386,7 @@ impl ConversationState {
                 Ok(root) => root.join(&key),
                 Err(error) => {
                     self.storage_error = Some(error.to_string());
-                    return;
+                    return Err(error.to_string());
                 }
             }
         } else {
@@ -1379,7 +1407,7 @@ impl ConversationState {
                 String::new(),
             ),
         );
-        self.selected = Some(key);
+        Ok(key)
     }
     pub fn open(&mut self, key: &str, cx: &mut Context<Self>) {
         if self.draining {
@@ -1410,7 +1438,7 @@ impl ConversationState {
     }
     /// Navigate to a retained session without starting or reconnecting Pi.
     pub fn select_existing(&mut self, key: &str, cx: &mut Context<Self>) {
-        if self.draining || !self.sessions.contains_key(key) {
+        if self.draining || self.sessions.get(key).is_none_or(|s| s.internal) {
             return;
         }
         if self.selected.as_deref() != Some(key) {
@@ -1450,23 +1478,23 @@ impl ConversationState {
             let directory = s.info.cwd.clone();
             let key = key.to_owned();
             let binding = s.binding;
-            s.core_read = CoreRead::CheckingFile {
-                _task: cx.spawn(async move |owner, cx| {
-                    let result = smol::unblock(move || std::fs::create_dir_all(directory)).await;
-                    let _ = owner.update(cx, |this, cx| {
-                        let Some(s) = this.sessions.get_mut(&key).filter(|s| s.binding == binding)
-                        else {
-                            return;
-                        };
-                        s.core_read
-                            .finish(result.as_ref().err().map(ToString::to_string));
-                        if result.is_ok() {
-                            this.launch(&key, cx);
-                        }
-                        notify_session(&key, cx);
-                    });
-                }),
-            };
+            s.core_read = CoreRead::PreparingDirectory;
+            s.directory = Some(cx.spawn(async move |owner, cx| {
+                let result = smol::unblock(move || std::fs::create_dir_all(directory)).await;
+                let _ = owner.update(cx, |this, cx| {
+                    let Some(s) = this.sessions.get_mut(&key).filter(|s| s.binding == binding)
+                    else {
+                        return;
+                    };
+                    s.directory = None;
+                    s.core_read
+                        .finish(result.as_ref().err().map(ToString::to_string));
+                    if result.is_ok() {
+                        this.launch(&key, cx);
+                    }
+                    notify_session(&key, cx);
+                });
+            }));
         } else if !s.info.path.as_os_str().is_empty() {
             let path = s.info.path.clone();
             let expected_id = s.info.id.clone();
@@ -1501,7 +1529,15 @@ impl ConversationState {
         let Some(s) = self.sessions.get_mut(key) else {
             return;
         };
-        let mut options = LaunchOptions::new(self.command.clone(), s.info.cwd.clone());
+        let command = self
+            .prewarm
+            .slot
+            .as_ref()
+            .filter(|slot| slot.key == key)
+            .and_then(|slot| slot.resources.as_ref())
+            .map(|resources| resources.executable.clone())
+            .unwrap_or_else(|| self.command.clone());
+        let mut options = LaunchOptions::new(command, s.info.cwd.clone());
         if self.temporary {
             options.args.push("--no-session".into());
         }
@@ -1547,6 +1583,18 @@ impl ConversationState {
             .collect::<Vec<_>>();
         for (key, id) in ids {
             let result = gupi_pi_runtime::global(cx).read(cx).client(id);
+            if self.sessions[&key].internal
+                && (result.is_err()
+                    || result.as_ref().is_ok_and(|client| {
+                        client.as_ref().is_some_and(|client| {
+                            matches!(client.state(), ConnectionState::Closed(_))
+                        })
+                    }))
+            {
+                tracing::warn!("Standby Pi connection failed");
+                self.discard_standby(cx);
+                continue;
+            }
             match result {
                 Ok(Some(client)) => match client.state() {
                     ConnectionState::Closed(report) => {
@@ -1754,6 +1802,7 @@ impl ConversationState {
                         }
                     }
                 }
+                this.maintain_prewarm(&key, cx);
                 notify_session(&key, cx);
             });
         });
@@ -1883,6 +1932,7 @@ impl ConversationState {
                 self.read_thinking(key, cx);
             }
         }
+        self.maintain_prewarm(key, cx);
     }
     pub fn set_draft(&mut self, key: &str, text: String, cx: &mut Context<Self>) {
         self.set_draft_content(key, text.into(), cx);
@@ -2826,6 +2876,7 @@ impl ConversationState {
         if let Some(scope) = refresh {
             self.read_session(&key, scope, cx);
         }
+        self.maintain_prewarm(&key, cx);
         if save_draft {
             self.save_changes(cx);
         }
@@ -2895,10 +2946,14 @@ impl ConversationState {
         }));
     }
     pub fn flush(&mut self, cx: &mut Context<Self>) -> Task<()> {
+        self.set_prewarm(false, cx);
         self.draining = true;
         self.catalog.transition(CatalogMessage::Cancel);
         let mut deletions = Vec::new();
         for s in self.sessions.values_mut() {
+            if let Some(directory) = s.directory.take() {
+                deletions.push(directory);
+            }
             s.reset_reads();
             s.attachments_read = None;
             s.submission = Submission::Idle;
@@ -2986,6 +3041,9 @@ impl Session {
 
 #[cfg(feature = "test-support")]
 impl Session {
+    pub fn set_internal_for_test(&mut self, internal: bool) {
+        self.internal = internal;
+    }
     pub fn info_for_test(&mut self) -> &mut SessionInfo {
         &mut self.info
     }

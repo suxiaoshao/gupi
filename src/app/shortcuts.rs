@@ -401,24 +401,11 @@ async fn run(
     let template = definition.template.clone();
     let body =
         smol::unblock(move || std::fs::read_to_string(template).map_err(|e| e.to_string())).await?;
-    let key = state.update(cx, |s, cx| {
-        let previous = s.selected().clone();
-        s.new_draft(None, cx);
-        if s.selected() == &previous {
-            return Err(s
-                .storage_error()
-                .clone()
-                .unwrap_or_else(|| "Could not create temporary conversation".into()));
-        }
-        let key = s
-            .selected()
-            .clone()
-            .ok_or("Could not create temporary conversation")?;
-        if !s.begin_preparation(&key, cx) {
-            return Err("Temporary preparation was cancelled".into());
-        }
-        Ok::<_, String>(key)
-    })?;
+    let key = state
+        .update(cx, |s, cx| {
+            s.new_temporary(Some(definition.template.clone()), true, cx)
+        })
+        .await?;
     cx.update(|cx| {
         cx.global_mut::<ShortcutsRuntime>()
             .active
@@ -547,7 +534,7 @@ mod validation_tests {
             gupi_pi_runtime::init(cx);
             crate::app::temporary::init(cx);
             // The configured command is available before any version probe.
-            crate::app::temporary::set_command("pi".into(), cx);
+            crate::app::temporary::configure("pi".into(), false, cx);
             let mut config = gupi_settings::shortcuts::Shortcuts::default();
             config.tasks.push({
                 let mut record = ShortcutTask::default();

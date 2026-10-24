@@ -84,7 +84,11 @@ impl StartupView {
         let store = config.read(cx).configuration();
         let config_sub = store.observe_in(cx, window, |_, op, window, cx| {
             if let Some(value) = op.data().and_then(|d| d.configured()) {
-                crate::app::temporary::set_command(value.pi_executable(), cx);
+                crate::app::temporary::configure(
+                    value.pi_executable(),
+                    value.prewarm_temporary,
+                    cx,
+                );
                 i18n::apply(value.language, cx);
                 crate::app::notifications::configure(value.notifications.clone(), cx);
                 gupi_updates::updates::get(cx).update(cx, |owner, cx| {

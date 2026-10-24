@@ -29,9 +29,24 @@ impl ConversationState {
         if !self.can_delete_temporary(key) {
             return;
         }
-        let s = self.sessions.get_mut(key).unwrap();
+        self.remove_temporary(key, false, cx);
+    }
+    pub(super) fn remove_temporary(&mut self, key: &str, internal: bool, cx: &mut Context<Self>) {
+        self.remove_temporary_with(key, internal, |path| trash_workspace(&path), cx);
+    }
+    fn remove_temporary_with(
+        &mut self,
+        key: &str,
+        internal: bool,
+        remove: impl FnOnce(PathBuf) -> Result<(), String> + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(s) = self.sessions.get_mut(key) else {
+            return;
+        };
         let directory = s.info.cwd.clone();
         s.binding += 1;
+        let directory_task = s.directory.take();
         s.reset_reads();
         s.state = None;
         s.clear_extension_ui();
@@ -43,12 +58,13 @@ impl ConversationState {
         let target = key.clone();
         let task = cx.spawn(async move |owner, cx| {
             let result = async {
+                if let Some(directory) = directory_task { directory.await; }
                 if let Some(close) = closing
                     && close.await.is_some_and(|report| report.status.is_none())
                 {
                     return Err("Pi process exit could not be confirmed".to_owned());
                 }
-                smol::unblock(move || trash_workspace(&directory)).await
+                smol::unblock(move || remove(directory)).await
             }
             .await;
             let _ = owner.update(cx, |this, cx| {
@@ -63,12 +79,11 @@ impl ConversationState {
                         }
                         notify_session(&key, cx);
                     }
-                    Err(error) => cx.emit(ConversationEvent::Notify {
-                        message: error.into(),
-                        error: true,
-                    }),
+                    Err(error) if internal => tracing::warn!(%error, "Could not discard standby conversation; retaining workspace protection"),
+                    Err(error) => cx.emit(ConversationEvent::Notify { message: error.into(), error: true }),
                 }
                 notify_session(&key, cx);
+                this.start_prewarm(cx);
             });
         });
         self.sessions.get_mut(&target).unwrap().command = SessionCommand::Deleting { task };
@@ -115,4 +130,55 @@ pub fn trash_workspace(path: &std::path::Path) -> Result<(), String> {
         context
     };
     context.delete(path).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ConversationState, Session, SessionInfo};
+    use gpui_kit::{AppContext as _, TestAppContext};
+    use std::path::PathBuf;
+    use std::prelude::v1::test;
+    #[gpui_kit::test]
+    async fn discard_waits_for_late_directory_creation_before_removing_session(
+        cx: &mut TestAppContext,
+    ) {
+        cx.executor().allow_parking();
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            crate::host::install_headless(cx);
+            gupi_pi_runtime::init(cx);
+        });
+        let fixture = tempfile::tempdir().unwrap();
+        let directory = fixture.path().join("draft-late");
+        let (release, wait) = smol::channel::bounded::<()>(1);
+        let owner = cx.new(|cx| ConversationState::temporary("unused-pi".into(), cx));
+        owner.update(cx, |state, cx| {
+            let mut session = Session::new(
+                SessionInfo::new(PathBuf::new(), "late".into(), directory.clone()),
+                String::new(),
+            );
+            session.internal = true;
+            let target = directory.clone();
+            session.directory = Some(cx.spawn(async move |_, _| {
+                wait.recv().await.unwrap();
+                std::fs::create_dir_all(target).unwrap();
+            }));
+            state.sessions.insert("late".into(), session);
+            state.remove_temporary_with(
+                "late",
+                true,
+                |path| std::fs::remove_dir_all(path).map_err(|e| e.to_string()),
+                cx,
+            );
+        });
+        cx.run_until_parked();
+        assert!(owner.read_with(cx, |state, _| state.sessions.contains_key("late")));
+        release.try_send(()).unwrap();
+        cx.condition(&owner, |state, _| !state.sessions.contains_key("late"))
+            .await;
+        assert!(
+            !directory.exists(),
+            "discard cannot leave a directory created after cancellation"
+        );
+    }
 }

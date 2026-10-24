@@ -15,6 +15,7 @@ pub(crate) struct Temporary {
     pub command: Option<PathBuf>,
     pub state: Option<Entity<ConversationState>>,
     pub config: Option<Entity<gupi_settings::config::ConfigController>>,
+    prewarm: bool,
     window: Option<WindowHandle<Root>>,
     pub draining: bool,
     pub cleanup: Option<Task<()>>,
@@ -33,6 +34,7 @@ pub fn init(cx: &mut App) {
         command: None,
         state: None,
         config: None,
+        prewarm: false,
         window: None,
         draining: false,
         cleanup: None,
@@ -44,12 +46,19 @@ pub fn init(cx: &mut App) {
         visible: false,
     });
 }
-pub fn set_command(command: PathBuf, cx: &mut App) {
+pub fn configure(command: PathBuf, prewarm: bool, cx: &mut App) {
+    cx.global_mut::<Temporary>().command = Some(command.clone());
+    cx.global_mut::<Temporary>().prewarm = prewarm;
+    if prewarm {
+        state(cx);
+    }
     let state = cx.global::<Temporary>().state.clone();
     if let Some(state) = state {
-        state.update(cx, |s, _| s.set_command(command.clone()));
+        state.update(cx, |s, cx| {
+            s.set_command(command.clone());
+            s.set_prewarm(prewarm, cx);
+        });
     }
-    cx.global_mut::<Temporary>().command = Some(command);
 }
 pub fn state(cx: &mut App) -> Option<Entity<ConversationState>> {
     if cx.global::<Temporary>().draining {
@@ -61,6 +70,8 @@ pub fn state(cx: &mut App) -> Option<Entity<ConversationState>> {
     let command = cx.global::<Temporary>().command.clone()?;
     let state = cx.new(|cx| ConversationState::temporary(command, cx));
     cx.global_mut::<Temporary>().state = Some(state.clone());
+    let prewarm = cx.global::<Temporary>().prewarm;
+    state.update(cx, |state, cx| state.set_prewarm(prewarm, cx));
     Some(state)
 }
 /// Hide the temporary surface before capture; the caller performs native work outside App borrows.

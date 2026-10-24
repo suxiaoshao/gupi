@@ -12,6 +12,8 @@ pub(super) struct Preview {
     pub(super) path: PathBuf,
     root: Option<PathBuf>,
     editor: Entity<EditorState>,
+    revision: u64,
+    pub(super) quote_decoration: Option<gpui_kit::component::input::RangeDecorationCollection>,
     error: Option<&'static str>,
     loading: bool,
     loaded: bool,
@@ -46,6 +48,8 @@ impl Preview {
             path,
             root,
             editor,
+            revision: 0,
+            quote_decoration: None,
             error: None,
             loading: false,
             loaded: false,
@@ -99,9 +103,34 @@ impl Preview {
             },
         })
     }
+    pub(super) fn quote_source(
+        &self,
+        state: WeakEntity<Self>,
+        cx: &App,
+    ) -> Option<quote::highlight::Source> {
+        if !self.loaded || self.loading || self.error.is_some() {
+            return None;
+        }
+        self.quote_range(cx)
+            .filter(|range| !range.is_empty())
+            .map(|range| quote::highlight::Source::File {
+                state,
+                revision: self.revision,
+                range,
+            })
+    }
+    pub(super) fn quote_editor(&self, revision: u64, _: &App) -> Option<Entity<EditorState>> {
+        (self.loaded && !self.loading && self.error.is_none() && self.revision == revision)
+            .then(|| self.editor.clone())
+    }
     fn read(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.loading {
             return;
+        }
+        self.revision = self.revision.wrapping_add(1);
+        if let Some(collection) = self.quote_decoration.take() {
+            collection.clear(cx);
+            collection.dispose(cx);
         }
         self.loading = true;
         self.error = None;
@@ -390,7 +419,18 @@ impl Render for Preview {
                                     let capture = quote_owner
                                         .as_ref()
                                         .map(|(owner, key)| {
-                                            quote::capture(owner, key, selected, cx)
+                                            quote::capture(
+                                                owner,
+                                                key,
+                                                selected,
+                                                preview
+                                                    .read_with(cx, |source, cx| {
+                                                        source.quote_source(preview.clone(), cx)
+                                                    })
+                                                    .ok()
+                                                    .flatten(),
+                                                cx,
+                                            )
                                         })
                                         .unwrap_or(Err(quote::Unavailable::Composer));
                                     let reason = capture.as_ref().err().copied();
@@ -499,6 +539,36 @@ mod tests {
             });
             window.click("preview-wrap", cx);
             preview.update(cx, |this, _| assert!(this.wrap));
+            preview.update(cx, |this, cx| {
+                this.editor
+                    .update(cx, |editor, cx| editor.set_selected_range(3..7, cx))
+            });
+            let source = preview
+                .read(cx)
+                .quote_source(preview.downgrade(), cx)
+                .unwrap();
+            let mut active = crate::home::quote::highlight::Active::new(source.clone());
+            active.paint(true, cx);
+            let collection = preview.read(cx).quote_decoration.clone().unwrap();
+            assert_eq!(
+                collection.get_ranges(cx),
+                vec![3..7],
+                "partial-line source range is retained"
+            );
+            active.clear(cx);
+            assert!(
+                collection.get_ranges(cx).is_empty(),
+                "ending edit disposes its fill"
+            );
+            active.paint(true, cx);
+            let reloaded = preview.read(cx).quote_decoration.clone().unwrap();
+            preview.update(cx, |this, cx| this.read(window, cx));
+            active.paint(true, cx);
+            assert!(!source.valid(cx));
+            assert!(
+                reloaded.get_ranges(cx).is_empty(),
+                "reload cannot reuse the old source version"
+            );
         })
         .unwrap();
     }

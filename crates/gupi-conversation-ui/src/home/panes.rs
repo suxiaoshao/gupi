@@ -692,6 +692,10 @@ mod tests {
             );
             window.click("quote-list-open", cx);
             window.click(format!("quote-edit-{id}"), cx);
+            assert!(window.try_find(format!("quote-edit-{id}")).is_none());
+            let card = window.find("quote-comment-group").bounds();
+            let pill = window.find("quote-list-open").bounds();
+            assert!(card.bottom() < pill.top());
             window.input("Why this order?", cx);
             window.press("enter", cx);
         });
@@ -701,6 +705,7 @@ mod tests {
                 home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
                 "Why this order?"
             );
+            window.click("quote-list-open", cx);
             let preview = window.find(format!("quote-preview-{id}")).bounds();
             let comment = window.find(format!("quote-comment-{id}")).bounds();
             // The intervening comment label plus two small gaps, with no
@@ -708,7 +713,6 @@ mod tests {
             assert!(comment.top() - preview.bottom() <= window.rem_size() * 2.);
         });
         visual.update(|window, cx| {
-            window.click("quote-list-open", cx);
             window.click(format!("quote-edit-{id}"), cx);
             // Existing comments start at the end, without replacing their text.
             window.input(" + saved at end", cx);
@@ -720,6 +724,7 @@ mod tests {
                 home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
                 "Why this order? + saved at end"
             );
+            window.click("quote-list-open", cx);
             window.click(format!("quote-edit-{id}"), cx);
             window.press("secondary-a", cx);
             window.input("Discard on Escape", cx);
@@ -731,6 +736,7 @@ mod tests {
                 home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
                 "Why this order? + saved at end"
             );
+            window.click("quote-list-open", cx);
             window.click(format!("quote-edit-{id}"), cx);
             window.press("secondary-a", cx);
             window.input("Discard on Cancel", cx);
@@ -743,6 +749,7 @@ mod tests {
                 home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
                 "Why this order? + saved at end"
             );
+            window.click("quote-list-open", cx);
             window.click(format!("quote-edit-{id}"), cx);
             window.press("secondary-a", cx);
             window.input("Discarded by outside click", cx);
@@ -759,55 +766,23 @@ mod tests {
         visual.run_until_parked();
         visual.update(|window, cx| {
             window.click(format!("quote-edit-{id}"), cx);
-            window.hover("quote-comment-save", cx);
-        });
-        visual.run_until_parked();
-        visual
-            .executor()
-            .advance_clock(std::time::Duration::from_millis(100));
-        visual.run_until_parked();
-        visual.update(|window, cx| {
-            assert!(window.try_find("quote-comment-save").is_some());
+            assert!(window.try_find(format!("quote-edit-{id}")).is_none());
             window.click_at("quote-comment-group", point(px(20.), px(16.)), cx);
             for key in ["left", "right", "up", "down", "shift-enter"] {
                 window.press(key, cx);
-                assert!(
-                    window.try_find("quote-comment-save").is_some(),
-                    "hover editing must survive {key} inside the input"
-                );
+                assert!(window.try_find("quote-comment-save").is_some());
             }
-            window.input("more\nlines\nwhile editing", cx);
-            assert!(window.try_find("quote-comment-save").is_some());
-            window.input(" + unsaved hover edit", cx);
-            // Focus alone does not own the edit's lifetime; the popup does.
-            home.read(cx).input.focus_handle(cx).focus(window, cx);
+            window.input("unsaved floating edit", cx);
+            window.click("conversation-composer", cx);
         });
-        visual.run_until_parked();
-        visual
-            .executor()
-            .advance_clock(std::time::Duration::from_millis(100));
-        visual.run_until_parked();
-        visual.update(|window, cx| {
-            assert!(window.try_find("quote-comment-save").is_some());
-            window.hover("conversation-composer", cx);
-        });
-        visual.run_until_parked();
-        visual
-            .executor()
-            .advance_clock(std::time::Duration::from_millis(100));
         visual.run_until_parked();
         visual.update(|window, cx| {
             assert!(window.try_find("quote-comment-save").is_none());
-            assert!(window.try_find(format!("quote-edit-{id}")).is_none());
             assert_eq!(
                 home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
                 "Why this order? + saved at end"
             );
-            window.hover("quote-list-open", cx);
-        });
-        visual.run_until_parked();
-        visual.update(|window, cx| {
-            assert!(window.try_find("quote-comment-save").is_none());
+            window.click("quote-list-open", cx);
             window.click(format!("quote-remove-{id}"), cx);
         });
         visual.run_until_parked();
@@ -955,6 +930,46 @@ mod tests {
                     .read(cx)
                     .floating()
             );
+            let markdown = home.update(cx, |home, cx| {
+                let view = &home.views["empty"];
+                view.markdown.get(
+                    "empty-text-quote-tools",
+                    text.into(),
+                    view.scroller.downgrade(),
+                    cx,
+                )
+            });
+            assert_eq!(
+                markdown.read(cx).highlighted_ranges().len(),
+                1,
+                "opening comment highlights its selected source"
+            );
+            home.update(cx, |home, cx| home.open_find(window, cx));
+            window.input("displayed", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            let markdown = home.update(cx, |home, cx| {
+                let view = &home.views["empty"];
+                view.markdown.get(
+                    "empty-text-quote-tools",
+                    text.into(),
+                    view.scroller.downgrade(),
+                    cx,
+                )
+            });
+            assert_eq!(
+                markdown.read(cx).highlighted_ranges().len(),
+                2,
+                "find and quote compose without overwriting"
+            );
+            home.update(cx, |home, cx| home.close_find(false, window, cx));
+            assert_eq!(
+                markdown.read(cx).highlighted_ranges().len(),
+                1,
+                "closing find preserves quote"
+            );
+            window.click_at("quote-comment-group", point(px(20.), px(16.)), cx);
             window.input("Pointer comment", cx);
             window.press("enter", cx);
         });
@@ -965,6 +980,19 @@ mod tests {
             assert_eq!(
                 home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
                 "Pointer comment"
+            );
+            let markdown = home.update(cx, |home, cx| {
+                let view = &home.views["empty"];
+                view.markdown.get(
+                    "empty-text-quote-tools",
+                    text.into(),
+                    view.scroller.downgrade(),
+                    cx,
+                )
+            });
+            assert!(
+                markdown.read(cx).highlighted_ranges().is_empty(),
+                "saving ends source highlight"
             );
             let bounds = view.read(cx).bounds();
             window.drag(

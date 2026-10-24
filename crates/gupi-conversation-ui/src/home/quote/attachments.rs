@@ -19,11 +19,17 @@ pub(in crate::home) fn init(cx: &mut App) {
         Some("GupiQuoteAttachment"),
     )]);
 }
+#[derive(Clone, Copy)]
+enum CommentAnchor {
+    Selection(Bounds<Pixels>),
+    Pill,
+}
 struct Editing {
     id: String,
     input: Entity<TextareaState>,
-    floating: Option<Bounds<Pixels>>,
+    anchor: CommentAnchor,
     bounds: Rc<std::cell::Cell<Option<Bounds<Pixels>>>>,
+    highlight: Option<highlight::Active>,
     _subscriptions: Vec<Subscription>,
 }
 pub(in crate::home) struct Attachments {
@@ -31,6 +37,7 @@ pub(in crate::home) struct Attachments {
     key: String,
     composer: Entity<TextareaState>,
     trigger_focus: FocusHandle,
+    pill_bounds: Rc<std::cell::Cell<Option<Bounds<Pixels>>>>,
     list_focus: FocusHandle,
     list_open: bool,
     pinned: bool,
@@ -40,6 +47,7 @@ pub(in crate::home) struct Attachments {
     close_task: Option<Task<()>>,
     scroll: ScrollHandle,
     editing: Option<Editing>,
+    sources: HashMap<String, highlight::Source>,
     enabled: bool,
     _subscription: Subscription,
 }
@@ -62,8 +70,14 @@ impl Attachments {
                 .as_ref()
                 .is_some_and(|editing| !this.quotes(cx).iter().any(|q| q.id == editing.id))
             {
-                this.editing = None;
+                this.discard(cx);
             }
+            let ids: std::collections::HashSet<_> = this
+                .quotes(cx)
+                .iter()
+                .map(|quote| quote.id.clone())
+                .collect();
+            this.sources.retain(|id, _| ids.contains(id));
             cx.notify();
         });
         Self {
@@ -71,6 +85,7 @@ impl Attachments {
             key,
             composer,
             trigger_focus: cx.focus_handle(),
+            pill_bounds: Rc::default(),
             list_focus: cx.focus_handle(),
             list_open: false,
             pinned: false,
@@ -80,8 +95,28 @@ impl Attachments {
             close_task: None,
             scroll: ScrollHandle::new(),
             editing: None,
+            sources: HashMap::new(),
             enabled: true,
             _subscription: subscription,
+        }
+    }
+    pub(in crate::home) fn remember_source(&mut self, id: String, source: highlight::Source) {
+        self.sources.insert(id, source);
+    }
+    pub(in crate::home) fn paint_source(
+        &mut self,
+        visible: impl Fn(&highlight::Source) -> bool,
+        cx: &mut App,
+    ) {
+        self.sources.retain(|_, source| source.valid(cx));
+        if let Some(editing) = &mut self.editing {
+            if !self.sources.contains_key(&editing.id) {
+                if let Some(mut highlight) = editing.highlight.take() {
+                    highlight.clear(cx);
+                }
+            } else if let Some(highlight) = &mut editing.highlight {
+                highlight.paint(self.sources.get(&editing.id).is_some_and(visible), cx);
+            }
         }
     }
     pub(in crate::home) fn set_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
@@ -107,7 +142,13 @@ impl Attachments {
                 .get(&self.key)
                 .is_some_and(|s| s.can_edit_draft() && s.pending_ui().is_empty())
     }
-    pub(in crate::home) fn open(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+    fn open(
+        &mut self,
+        id: &str,
+        anchor: CommentAnchor,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if !self.editable(cx) {
             return;
         }
@@ -118,6 +159,7 @@ impl Attachments {
         let Some(quote) = self.quotes(cx).iter().find(|q| q.id == id).cloned() else {
             return;
         };
+        self.discard(cx);
         let input = cx.new(|cx| {
             let mut input = TextareaState::new(window, cx)
                 .auto_grow(1, 4)
@@ -139,8 +181,9 @@ impl Attachments {
         self.editing = Some(Editing {
             id: id.to_owned(),
             input,
-            floating: None,
+            anchor,
             bounds: Rc::default(),
+            highlight: self.sources.get(id).cloned().map(highlight::Active::new),
             _subscriptions: subscriptions,
         });
         self.editing
@@ -153,7 +196,10 @@ impl Attachments {
     }
     /// End an editing session without modifying the saved attachment.
     fn discard(&mut self, cx: &mut Context<Self>) {
-        if self.editing.take().is_some() {
+        if let Some(mut editing) = self.editing.take() {
+            if let Some(highlight) = &mut editing.highlight {
+                highlight.clear(cx);
+            }
             cx.notify();
         }
     }
@@ -166,26 +212,16 @@ impl Attachments {
         }
         let comment = editing.input.read(cx).value().to_string();
         let id = editing.id.clone();
-        let floating = self.floating();
         if self.state.update(cx, |state, cx| {
             state.edit_quote(&self.key, &id, comment, cx)
         }) {
             self.discard(cx);
-            if floating || !self.list_open {
-                self.composer.focus_handle(cx).focus(window, cx);
-            } else {
-                self.list_focus.focus(window, cx);
-            }
+            self.composer.focus_handle(cx).focus(window, cx);
         }
     }
     fn cancel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let floating = self.floating();
         self.discard(cx);
-        if floating || !self.list_open {
-            self.composer.focus_handle(cx).focus(window, cx);
-        } else {
-            self.list_focus.focus(window, cx);
-        }
+        self.composer.focus_handle(cx).focus(window, cx);
         cx.notify();
     }
     pub(in crate::home) fn open_floating(
@@ -195,13 +231,12 @@ impl Attachments {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.list_open = false;
-        self.close_task = None;
-        self.open(id, window, cx);
-        if let Some(editing) = &mut self.editing {
-            editing.floating = Some(anchor);
-        }
-        cx.notify();
+        self.close_list(window, cx);
+        self.open(id, CommentAnchor::Selection(anchor), window, cx);
+    }
+    fn open_from_list(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.close_list(window, cx);
+        self.open(id, CommentAnchor::Pill, window, cx);
     }
     fn comment_input(&self, cx: &Context<Self>) -> AnyElement {
         let Some(editing) = &self.editing else {
@@ -222,18 +257,10 @@ impl Attachments {
         let id = editing.id.clone();
         v_flex()
             .id("quote-comment-editor")
-            // Popup already occludes the inline card. A second occluder would
-            // mask the list's hover hitbox while the pointer is inside it.
-            .when(editing.floating.is_some(), |card| card.occlude())
+            .occlude()
             .key_context("GupiQuoteComment")
             .on_action(cx.listener(|this, _: &CancelComment, window, cx| this.cancel(window, cx)))
-            .map(|card| {
-                if editing.floating.is_some() {
-                    card.w_72()
-                } else {
-                    card.w_full()
-                }
-            })
+            .w_72()
             .max_w_full()
             .min_w_0()
             .flex_none()
@@ -262,6 +289,7 @@ impl Attachments {
                                 h_flex()
                                     .flex_1()
                                     .justify_end()
+                                    .gap_2()
                                     .child(
                                         InputGroupButton::new("quote-comment-cancel")
                                             .secondary()
@@ -285,23 +313,28 @@ impl Attachments {
             .into_any_element()
     }
     pub(in crate::home) fn floating(&self) -> bool {
-        self.editing
-            .as_ref()
-            .is_some_and(|editing| editing.floating.is_some())
+        self.editing.is_some()
     }
     pub(in crate::home) fn render_floating(&self, cx: &Context<Self>) -> AnyElement {
         let Some(editing) = &self.editing else {
             return div().into_any_element();
         };
-        let Some(anchor) = editing.floating else {
-            return div().into_any_element();
-        };
+        let anchor = editing.anchor;
+        let pill_bounds = self.pill_bounds.clone();
         let bounds = editing.bounds.clone();
         let child = self.comment_input(cx);
         let owner = cx.weak_entity();
         let input_id = editing.input.entity_id();
         canvas(
             move |_, window, cx| {
+                let reference = match anchor {
+                    CommentAnchor::Selection(bounds) => Some(bounds),
+                    CommentAnchor::Pill => pill_bounds.get(),
+                };
+                let Some(reference) = reference else {
+                    bounds.set(None);
+                    return (None, bounds);
+                };
                 let gap = window.rem_size() * 0.5;
                 let viewport = window.viewport_size();
                 let mut child = div()
@@ -314,17 +347,22 @@ impl Attachments {
                     cx,
                 );
                 let origin = point(
-                    (anchor.center().x - measured.width / 2.)
+                    (reference.center().x - measured.width / 2.)
                         .clamp(gap, (viewport.width - gap - measured.width).max(gap)),
-                    anchor
-                        .top()
-                        .clamp(gap, (viewport.height - gap - measured.height).max(gap)),
+                    match anchor {
+                        CommentAnchor::Selection(_) => reference.top(),
+                        CommentAnchor::Pill => reference.top() - gap - measured.height,
+                    }
+                    .clamp(gap, (viewport.height - gap - measured.height).max(gap)),
                 );
                 bounds.set(Some(Bounds::new(origin, measured)));
                 child.prepaint_at(origin, window, cx);
-                (child, bounds)
+                (Some(child), bounds)
             },
-            move |_, (mut child, bounds), window, cx| {
+            move |_, (child, bounds), window, cx| {
+                let Some(mut child) = child else {
+                    return;
+                };
                 child.paint(window, cx);
                 window.on_mouse_event(move |event: &MouseDownEvent, phase, _, cx| {
                     if phase.capture()
@@ -363,7 +401,6 @@ impl Attachments {
         true
     }
     fn close_list(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.discard(cx);
         self.list_open = false;
         self.pinned = false;
         self.trigger_hovered = false;
@@ -441,7 +478,7 @@ impl Attachments {
         if !self.editable(cx) {
             return;
         }
-        self.editing = None;
+        self.discard(cx);
         let ids: Vec<_> = self
             .quotes(cx)
             .iter()
@@ -468,10 +505,6 @@ impl Attachments {
             .enumerate()
             .map(|(index, quote)| {
                 let id = quote.id.clone();
-                let editing = self
-                    .editing
-                    .as_ref()
-                    .filter(|editing| editing.id == id && editing.floating.is_none());
                 let mut args = FluentArgs::new();
                 args.set("number", (index + 1) as i64);
                 args.set("source", quote.short_title.clone());
@@ -553,8 +586,7 @@ impl Attachments {
                                                 text,
                                             )),
                                     )
-                                    .when_some(editing, |row, _| row.child(self.comment_input(cx)))
-                                    .when(editing.is_none() && !quote.comment.is_empty(), |row| {
+                                    .when(!quote.comment.is_empty(), |row| {
                                         row.child(
                                             div()
                                                 .text_xs()
@@ -575,40 +607,34 @@ impl Attachments {
                                         )
                                     }),
                             )
-                            .when(editing.is_none(), |row| {
-                                row.child(
-                                    Button::new(SharedString::from(format!("quote-edit-{id}")))
-                                        .ghost()
-                                        .xsmall()
-                                        .icon(IconName::Pencil)
-                                        .disabled(!editable)
-                                        .accessibility_label(t_with_args(
-                                            cx,
-                                            "quote-edit-label",
-                                            &args,
-                                        ))
-                                        .tooltip(t(cx, "quote-edit-comment"))
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            this.open(&edit_id, window, cx)
-                                        })),
-                                )
-                                .child(
-                                    Button::new(SharedString::from(format!("quote-remove-{id}")))
-                                        .ghost()
-                                        .xsmall()
-                                        .icon(IconName::Trash)
-                                        .disabled(!editable)
-                                        .accessibility_label(t_with_args(
-                                            cx,
-                                            "quote-delete-number",
-                                            &args,
-                                        ))
-                                        .tooltip(t_with_args(cx, "quote-delete-number", &args))
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            this.remove(&remove_id, window, cx)
-                                        })),
-                                )
-                            }),
+                            .child(
+                                Button::new(SharedString::from(format!("quote-edit-{id}")))
+                                    .ghost()
+                                    .xsmall()
+                                    .icon(IconName::Pencil)
+                                    .disabled(!editable)
+                                    .accessibility_label(t_with_args(cx, "quote-edit-label", &args))
+                                    .tooltip(t(cx, "quote-edit-comment"))
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.open_from_list(&edit_id, window, cx)
+                                    })),
+                            )
+                            .child(
+                                Button::new(SharedString::from(format!("quote-remove-{id}")))
+                                    .ghost()
+                                    .xsmall()
+                                    .icon(IconName::Trash)
+                                    .disabled(!editable)
+                                    .accessibility_label(t_with_args(
+                                        cx,
+                                        "quote-delete-number",
+                                        &args,
+                                    ))
+                                    .tooltip(t_with_args(cx, "quote-delete-number", &args))
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.remove(&remove_id, window, cx)
+                                    })),
+                            ),
                     )
                     .into_any_element()
             })
@@ -676,6 +702,17 @@ impl Attachments {
             }))
             .child(Icon::new(IconName::MessageCircle).size_3())
             .child(label.clone())
+            .child(
+                canvas(
+                    {
+                        let bounds = self.pill_bounds.clone();
+                        move |area, _, _| bounds.set(Some(area))
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .inset_0(),
+            )
             // One whole-pill trigger below the independently interactive action,
             // matching Attachment's click-layer/actions composition.
             .child(

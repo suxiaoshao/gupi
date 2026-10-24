@@ -13,6 +13,7 @@ const POINTER_DRAG_THRESHOLD: f64 = 2.;
 pub(in crate::home) enum Target {
     Text {
         state: WeakEntity<TextViewState>,
+        markdown: WeakEntity<super::super::messages::markdown::MarkdownState>,
         role: String,
     },
     Source(WeakEntity<source::Preview>),
@@ -37,7 +38,7 @@ impl Target {
     }
     fn selection(&self, cx: &App) -> Result<Selection, Unavailable> {
         match self {
-            Self::Text { state, role } => state
+            Self::Text { state, role, .. } => state
                 .read_with(cx, |state, _| Selection {
                     origin: Origin::Message { role: role.clone() },
                     text: state.selected_text(),
@@ -50,6 +51,19 @@ impl Target {
                 .upgrade()
                 .ok_or(Unavailable::Selection)
                 .and_then(|state| diff_selection(&state, path.clone(), *kind, cx)),
+        }
+    }
+    fn source(&self, cx: &App) -> Option<highlight::Source> {
+        match self {
+            Self::Text { markdown, .. } => markdown
+                .read_with(cx, |state, cx| state.quote_source(markdown.clone(), cx))
+                .ok()
+                .flatten(),
+            Self::Source(state) => state
+                .read_with(cx, |preview, cx| preview.quote_source(state.clone(), cx))
+                .ok()
+                .flatten(),
+            Self::Diff { .. } => None,
         }
     }
     fn metadata(&self, cx: &App) -> Metadata {
@@ -364,7 +378,12 @@ impl HomeView {
         if text.is_empty() {
             return;
         }
-        let capture = self.bind_quote(lease.target.selection(cx), cx);
+        let capture = self
+            .bind_quote(lease.target.selection(cx), cx)
+            .map(|mut snapshot| {
+                snapshot.source = lease.target.source(cx);
+                snapshot
+            });
         self.quote_tools.active = Some(Active {
             region: region.downgrade(),
             point,

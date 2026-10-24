@@ -1,6 +1,7 @@
 //! One-shot displayed selections become session-owned draft attachments.
 use super::*;
 pub(super) mod attachments;
+pub(super) mod highlight;
 pub(super) mod toolbar;
 use fluent_bundle::FluentArgs;
 use gpui_kit::component::diff::{DiffSide, DiffState};
@@ -14,6 +15,7 @@ pub(crate) struct Snapshot {
     key: String,
     binding: u64,
     selection: Selection,
+    source: Option<highlight::Source>,
 }
 #[derive(Clone, PartialEq, Action)]
 #[action(namespace = gupi, no_json)]
@@ -175,6 +177,7 @@ impl HomeView {
             key: self.shown_key.clone().unwrap(),
             binding: session.binding(),
             selection,
+            source: None,
         })
     }
     pub(crate) fn capture_quote(&self, window: &Window, cx: &App) -> Capture {
@@ -188,13 +191,22 @@ impl HomeView {
             .as_ref()
             .filter(|source| source.read(cx).contains_focus(window, cx))
         {
-            source.read(cx).quote_selection(cx)
+            return self
+                .bind_quote(source.read(cx).quote_selection(cx), cx)
+                .map(|mut snapshot| {
+                    snapshot.source = source.read(cx).quote_source(source.downgrade(), cx);
+                    snapshot
+                });
         } else if let Some(selection) = self.workspace_quote(window, cx) {
             selection
         } else {
-            view.markdown
-                .quote_selection(window, cx)
-                .ok_or(Unavailable::Selection)
+            if let Some((selection, source)) = view.markdown.quote_selection(window, cx) {
+                return self.bind_quote(Ok(selection), cx).map(|mut snapshot| {
+                    snapshot.source = source;
+                    snapshot
+                });
+            }
+            Err(Unavailable::Selection)
         };
         self.bind_quote(selection, cx)
     }
@@ -234,6 +246,13 @@ impl HomeView {
         if !added {
             return None;
         }
+        if let Some(source) = &snapshot.source
+            && let Some(view) = self.views.get(&snapshot.key)
+        {
+            view.quote_attachments.update(cx, |cards, _| {
+                cards.remember_source(id.clone(), source.clone());
+            });
+        }
         self.show_conversation(window, cx);
         if let Some(view) = self.views.get(&snapshot.key) {
             let session = &self.state.read(cx).sessions()[&snapshot.key];
@@ -255,10 +274,11 @@ impl HomeView {
     }
 }
 
-pub(crate) fn capture(
+pub(in crate::home) fn capture(
     owner: &WeakEntity<HomeView>,
     key: &str,
     selection: Result<Selection, Unavailable>,
+    source: Option<highlight::Source>,
     cx: &App,
 ) -> Capture {
     owner
@@ -266,7 +286,10 @@ pub(crate) fn capture(
             if home.shown_key.as_deref() != Some(key) {
                 return Err(Unavailable::Composer);
             }
-            home.bind_quote(selection, cx)
+            home.bind_quote(selection, cx).map(|mut snapshot| {
+                snapshot.source = source;
+                snapshot
+            })
         })
         .unwrap_or(Err(Unavailable::Composer))
 }
@@ -368,6 +391,7 @@ pub(crate) fn diff_body(
                     &owner,
                     &key,
                     diff_selection(&state, path.clone(), kind, cx),
+                    None,
                     cx,
                 ),
                 text,

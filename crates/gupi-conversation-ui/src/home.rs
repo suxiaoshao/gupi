@@ -1387,6 +1387,18 @@ impl Render for HomeView {
             self.fit_layout(window, cx);
         }
         self.sync_message_navigation(window, cx);
+        for (key, view) in &self.views {
+            let shown = self.shown_key.as_ref() == Some(key)
+                && self.state.read(cx).selected().as_ref() == Some(key);
+            let conversation = shown && (temporary || self.pane_layout.conversation > 0.);
+            let file = shown
+                && self.pane_layout.visible(panes::Panel::Workspace)
+                && view.workspace.active.is_none()
+                && self.workspace_layout.main_width > 0.;
+            view.quote_attachments.update(cx, |cards, cx| {
+                cards.paint_source(|source| source.visible(view, conversation, file), cx)
+            });
+        }
         let quote_tools = self.render_quote_tools(window, cx);
         if temporary {
             let empty =

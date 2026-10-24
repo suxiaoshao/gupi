@@ -19,6 +19,7 @@ use gpui_kit::component::message_scroller::MessageScrollerState;
 use gpui_kit::component::text::TextView;
 use gpui_kit::component::text::TextViewState;
 use gpui_kit::component::text::{RangeHighlight, RenderedText};
+use gpui_kit::prelude::FluentBuilder as _;
 use std::cell::Cell;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -97,6 +98,7 @@ pub(super) struct Markdown {
     row: RowTarget,
     stream_fade: bool,
     registry: Registry,
+    resource: Option<super::super::resource::Context>,
     quote: Option<(WeakEntity<HomeView>, String, String)>,
 }
 
@@ -115,9 +117,14 @@ impl Markdown {
             stream_fade: false,
             registry,
             quote: None,
+            resource: None,
         }
     }
 
+    pub(super) fn resources(mut self, context: Option<super::super::resource::Context>) -> Self {
+        self.resource = context;
+        self
+    }
     pub(in crate::home) fn quote(
         mut self,
         owner: WeakEntity<HomeView>,
@@ -344,7 +351,15 @@ impl RenderOnce for Markdown {
         // MessageContent aligns children instead of stretching them. Give the
         // Markdown root the available width before its list items are measured.
         let content = TextView::new(&view)
-            .plugin(super::resources::ResourceLinks)
+            .when_some(self.resource, |view, context| {
+                let base = context.cwd.clone();
+                let link_context = context.clone();
+                let link_base = base.clone();
+                view.plugin(super::resources::ResourceLinks { context, base })
+                    .on_link_click(move |url, event, window, cx| {
+                        link_context.open_link(url, &link_base, event, window, cx)
+                    })
+            })
             .w_full()
             .min_w_0()
             .selectable(true)

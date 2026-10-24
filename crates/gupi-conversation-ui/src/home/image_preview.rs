@@ -1,11 +1,11 @@
-//! Window-filling image viewer with local zoom state and modal focus ownership.
-use gpui_kit::component::ActiveTheme;
+//! Shared bitmap/zoom composition; only PreviewHost owns the modal lifecycle.
 use gpui_kit::component::Disableable;
 use gpui_kit::component::Icon;
 use gpui_kit::component::button::Button;
 use gpui_kit::component::button::ButtonVariants;
 use gpui_kit::component::h_flex;
 use gpui_kit::component::label::Label;
+use gpui_kit::component::{ActiveTheme, Sizable};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use gupi_conversation::attachments::ImageAttachment;
@@ -278,9 +278,6 @@ impl ImagePreview {
         zoom: f32,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let image_size = image_render_size(natural, zoom);
-        let content_size = scroll_content_size(viewport, image_size);
-        let origin = centered_image_origin(content_size, image_size);
         div()
             .id("image-preview-scroll")
             .test_support()
@@ -293,28 +290,7 @@ impl ImagePreview {
             .track_scroll(&self.scroll)
             .on_scroll_wheel(cx.listener(Self::scroll_zoom))
             .on_pinch(cx.listener(Self::pinch_zoom))
-            .child(
-                div()
-                    .relative()
-                    .w(px(content_size.width))
-                    .h(px(content_size.height))
-                    .child(
-                        div()
-                            .id("image-preview-bitmap")
-                            .test_support()
-                            .absolute()
-                            .left(px(origin.x))
-                            .top(px(origin.y))
-                            .w(px(image_size.width))
-                            .h(px(image_size.height))
-                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                            .child(
-                                img(self.image.source())
-                                    .size_full()
-                                    .object_fit(ObjectFit::Contain),
-                            ),
-                    ),
-            )
+            .child(bitmap(self.image.source(), natural, viewport, zoom))
             .into_any_element()
     }
 
@@ -456,6 +432,265 @@ impl Render for ImagePreview {
                             .on_click(cx.listener(|this, _, window, cx| this.close(window, cx))),
                     ),
             )
+    }
+}
+
+/// Shared bitmap composition. The modal and Files supply their own viewport and scroll owner.
+fn bitmap(
+    source: ImageSource,
+    natural: PreviewSize,
+    viewport: PreviewSize,
+    zoom: f32,
+) -> AnyElement {
+    let image_size = image_render_size(natural, zoom);
+    let content_size = scroll_content_size(viewport, image_size);
+    bitmap_body(source, Some(image_size))
+        .w(px(content_size.width))
+        .h(px(content_size.height))
+        .into_any_element()
+}
+
+fn bitmap_body(source: ImageSource, image_size: Option<PreviewSize>) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .justify_center()
+        .relative()
+        .min_w_full()
+        .min_h_full()
+        .when(image_size.is_none(), |body| body.size_full())
+        .child(
+            div()
+                .id("image-preview-bitmap")
+                .test_support()
+                .flex_none()
+                .map(|image| {
+                    if let Some(size) = image_size {
+                        image.w(px(size.width)).h(px(size.height))
+                    } else {
+                        image.size_full()
+                    }
+                })
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .child(img(source).size_full().object_fit(ObjectFit::Contain)),
+        )
+}
+
+fn natural_size(image: &RenderImage) -> PreviewSize {
+    let size = image.size(0);
+    PreviewSize {
+        width: u32::from(size.width) as f32,
+        height: u32::from(size.height) as f32,
+    }
+}
+
+/// A Files-owned image body; loading and decoding stay in GPUI's public image cache.
+pub(super) struct FileImage {
+    path: std::path::PathBuf,
+    cache: Entity<RetainAllImageCache>,
+    scroll: ScrollHandle,
+    zoom: Option<f32>,
+}
+impl FileImage {
+    pub(super) fn new(path: std::path::PathBuf, cx: &mut Context<Self>) -> Self {
+        Self {
+            path,
+            cache: RetainAllImageCache::new(cx),
+            scroll: ScrollHandle::new(),
+            zoom: None,
+        }
+    }
+    fn image(
+        &self,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Option<Result<Arc<RenderImage>, ImageCacheError>> {
+        self.cache.update(cx, |cache, cx| {
+            cache.load(&Resource::from(self.path.clone()), window, cx)
+        })
+    }
+    fn viewport(&self) -> PreviewSize {
+        let bounds = self.scroll.bounds();
+        PreviewSize {
+            width: f32::from(bounds.size.width).max(1.),
+            height: f32::from(bounds.size.height).max(1.),
+        }
+    }
+    fn set_zoom(
+        &mut self,
+        natural: PreviewSize,
+        requested: Option<f32>,
+        anchor: Option<Point<Pixels>>,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let viewport = self.viewport();
+        let fit = fit_zoom_percent(natural, viewport);
+        let old = self.zoom.map(|z| clamp_zoom_percent(z, fit)).unwrap_or(fit);
+        let next = requested.map(|z| clamp_zoom_percent(z, fit)).unwrap_or(fit);
+        let anchor = anchor
+            .map(|p| preview_point_from_pixels(p - self.scroll.bounds().origin))
+            .unwrap_or(PreviewPoint {
+                x: viewport.width / 2.,
+                y: viewport.height / 2.,
+            });
+        let offset = anchored_scroll_offset(
+            preview_point_from_pixels(self.scroll.offset()),
+            viewport,
+            natural,
+            old,
+            next,
+            anchor,
+        );
+        self.zoom = requested.map(|_| next);
+        self.scroll.set_offset(point(px(offset.x), px(offset.y)));
+        cx.notify();
+    }
+    fn step(
+        &mut self,
+        natural: PreviewSize,
+        direction: ZoomStep,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let fit = fit_zoom_percent(natural, self.viewport());
+        self.set_zoom(
+            natural,
+            Some(next_zoom_step(self.zoom.unwrap_or(fit), fit, direction)),
+            None,
+            window,
+            cx,
+        );
+    }
+}
+impl Render for FileImage {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let image = self.image(window, cx);
+        let natural = image
+            .as_ref()
+            .and_then(|result| result.as_ref().ok())
+            .map(|image| natural_size(image));
+        let ready = natural.is_some();
+        let body = match image {
+            Some(Ok(image)) => {
+                let natural = natural_size(&image);
+                let fit = fit_zoom_percent(natural, self.viewport());
+                let image_size = self
+                    .zoom
+                    .map(|zoom| image_render_size(natural, clamp_zoom_percent(zoom, fit)));
+                let child = bitmap_body(ImageSource::Render(image), image_size);
+                div()
+                    .id("file-image-scroll")
+                    .test_support()
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
+                    .min_w_0()
+                    .overflow_scroll()
+                    .track_scroll(&self.scroll)
+                    .on_scroll_wheel(cx.listener(
+                        move |this, event: &ScrollWheelEvent, window, cx| {
+                            if event.modifiers.control || event.modifiers.platform {
+                                let delta = event.delta.pixel_delta(px(20.)).y;
+
+                                let fit = fit_zoom_percent(natural, this.viewport());
+                                let current = this.zoom.unwrap_or(fit);
+                                let factor = (f32::from(delta) * 0.01).exp();
+                                this.set_zoom(
+                                    natural,
+                                    Some(current * factor),
+                                    Some(event.position),
+                                    window,
+                                    cx,
+                                );
+                                cx.stop_propagation();
+                            }
+                        },
+                    ))
+                    .on_pinch(cx.listener(move |this, event: &PinchEvent, window, cx| {
+                        let fit = fit_zoom_percent(natural, this.viewport());
+                        this.set_zoom(
+                            natural,
+                            Some(this.zoom.unwrap_or(fit) * (1. + event.delta).max(0.01)),
+                            Some(event.position),
+                            window,
+                            cx,
+                        );
+                        cx.stop_propagation();
+                    }))
+                    .child(child)
+                    .into_any_element()
+            }
+            Some(Err(_)) => {
+                crate::home::source::unavailable("files-unsupported", self.path.clone(), cx)
+                    .into_any_element()
+            }
+            None => div().p_3().child(t(cx, "files-loading")).into_any_element(),
+        };
+        gpui_kit::component::v_flex()
+            .size_full()
+            .min_w_0()
+            .min_h_0()
+            .child(
+                h_flex()
+                    .flex_none()
+                    .px_3()
+                    .gap_1()
+                    .child(
+                        Button::new("file-image-zoom-out")
+                            .small()
+                            .ghost()
+                            .icon(IconName::Minus)
+                            .disabled(!ready)
+                            .accessibility_label(t(cx, "image-preview-zoom-out"))
+                            .tooltip(t(cx, "image-preview-zoom-out"))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                if let Some(natural) = natural {
+                                    this.step(natural, ZoomStep::Out, window, cx);
+                                }
+                            })),
+                    )
+                    .child(
+                        Button::new("file-image-fit")
+                            .small()
+                            .ghost()
+                            .label(t(cx, "image-preview-fit"))
+                            .disabled(!ready)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                if let Some(natural) = natural {
+                                    this.set_zoom(natural, None, None, window, cx);
+                                }
+                            })),
+                    )
+                    .child(
+                        Button::new("file-image-original")
+                            .small()
+                            .ghost()
+                            .label("100%")
+                            .disabled(!ready)
+                            .accessibility_label(t(cx, "image-preview-actual-size"))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                if let Some(natural) = natural {
+                                    this.set_zoom(natural, Some(100.), None, window, cx);
+                                }
+                            })),
+                    )
+                    .child(
+                        Button::new("file-image-zoom-in")
+                            .small()
+                            .ghost()
+                            .icon(IconName::Plus)
+                            .disabled(!ready)
+                            .accessibility_label(t(cx, "image-preview-zoom-in"))
+                            .tooltip(t(cx, "image-preview-zoom-in"))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                if let Some(natural) = natural {
+                                    this.step(natural, ZoomStep::In, window, cx);
+                                }
+                            })),
+                    ),
+            )
+            .child(body)
     }
 }
 

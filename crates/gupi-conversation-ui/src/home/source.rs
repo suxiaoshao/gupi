@@ -5,18 +5,80 @@ use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{Icon, Selectable};
 
+mod markdown;
+use gpui_kit::component::button::{Toggle, ToggleGroup};
+use gpui_kit::component::text::TextViewState;
+
+enum Body {
+    Text {
+        markdown: Option<Entity<TextViewState>>,
+        reading: bool,
+    },
+    Image(Entity<image_preview::FileImage>),
+}
+enum Loaded {
+    Text(directory::Source, bool),
+    Image,
+}
+fn load(path: &std::path::Path) -> Result<Loaded, &'static str> {
+    let metadata = std::fs::metadata(path).map_err(|_| "files-read-failed")?;
+    if !metadata.is_file() {
+        return Err("files-unsupported");
+    }
+    let extension = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if matches!(
+        extension.as_str(),
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp"
+    ) {
+        return Ok(Loaded::Image);
+    }
+    let source = directory::source(path)?;
+    Ok(Loaded::Text(
+        source,
+        matches!(extension.as_str(), "md" | "markdown"),
+    ))
+}
+pub(super) fn unavailable(reason: &'static str, path: PathBuf, cx: &App) -> Div {
+    v_flex()
+        .p_3()
+        .gap_2()
+        .min_w_0()
+        .child(div().text_sm().child(t(cx, "files-unavailable")))
+        .when(reason != "files-unsupported", |view| {
+            view.child(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(t(cx, reason)),
+            )
+        })
+        .child(
+            Button::new("preview-open-external")
+                .small()
+                .outline()
+                .label(t(cx, "files-open-external"))
+                .on_click(move |_, window, cx| resource::open_external(path.clone(), window, cx)),
+        )
+}
+
 pub(super) struct Preview {
-    quote_owner: Option<(WeakEntity<HomeView>, String)>,
+    owner: Option<(WeakEntity<HomeView>, String)>,
     focus: FocusHandle,
     keyboard_open: bool,
     pub(super) path: PathBuf,
+    // The routed target owns identity; preserve the requested spelling for presentation.
+    display_path: PathBuf,
     root: Option<PathBuf>,
     editor: Entity<EditorState>,
     revision: u64,
     pub(super) quote_decoration: Option<gpui_kit::component::input::RangeDecorationCollection>,
     error: Option<&'static str>,
     loading: bool,
-    loaded: bool,
+    body: Option<Body>,
     long_line: bool,
     wrap: bool,
     /// Mirrors the owning Files tab's tree visibility for the header toggle.
@@ -42,9 +104,10 @@ impl Preview {
             state
         });
         let mut this = Self {
-            quote_owner: None,
+            owner: None,
             focus: cx.focus_handle(),
             keyboard_open,
+            display_path: path.clone(),
             path,
             root,
             editor,
@@ -52,7 +115,7 @@ impl Preview {
             quote_decoration: None,
             error: None,
             loading: false,
-            loaded: false,
+            body: None,
             long_line: false,
             wrap: false,
             navigator_visible: true,
@@ -65,12 +128,23 @@ impl Preview {
         this
     }
 
-    pub(super) fn with_quote_owner(mut self, owner: WeakEntity<HomeView>, key: String) -> Self {
-        self.quote_owner = Some((owner, key));
+    fn is_source(&self) -> bool {
+        matches!(self.body, Some(Body::Text { reading: false, .. }))
+            && !self.loading
+            && self.error.is_none()
+    }
+    pub(super) fn with_owner(mut self, owner: WeakEntity<HomeView>, key: String) -> Self {
+        self.owner = Some((owner, key));
         self
     }
+    pub(super) fn set_display_path(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        if self.display_path != path {
+            self.display_path = path;
+            cx.notify();
+        }
+    }
     pub(super) fn quote_selection(&self, cx: &App) -> Result<quote::Selection, quote::Unavailable> {
-        if !self.loaded {
+        if !self.is_source() {
             return Err(quote::Unavailable::Selection);
         }
         let editor = self.editor.read(cx);
@@ -108,7 +182,7 @@ impl Preview {
         state: WeakEntity<Self>,
         cx: &App,
     ) -> Option<quote::highlight::Source> {
-        if !self.loaded || self.loading || self.error.is_some() {
+        if !self.is_source() {
             return None;
         }
         self.quote_range(cx)
@@ -120,28 +194,38 @@ impl Preview {
             })
     }
     pub(super) fn quote_editor(&self, revision: u64, _: &App) -> Option<Entity<EditorState>> {
-        (self.loaded && !self.loading && self.error.is_none() && self.revision == revision)
-            .then(|| self.editor.clone())
+        (self.is_source() && self.revision == revision).then(|| self.editor.clone())
     }
     fn read(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.loading {
             return;
         }
+        let reading = matches!(self.body, Some(Body::Text { reading: true, .. }));
         self.revision = self.revision.wrapping_add(1);
         if let Some(collection) = self.quote_decoration.take() {
             collection.clear(cx);
             collection.dispose(cx);
         }
+        self.body = None;
+        self.long_line = false;
         self.loading = true;
         self.error = None;
         let path = self.path.clone();
-        let task = cx.background_spawn(async move { directory::source(&path) });
+        let task = cx.background_spawn(async move { load(&path) });
         self.task = Some(cx.spawn_in(window, async move |owner, cx| {
             let result = task.await;
             let _ = owner.update_in(cx, |this, window, cx| {
                 this.loading = false;
                 match result {
-                    Ok(source) => {
+                    Ok(Loaded::Image) => {
+                        this.body =
+                            Some(Body::Image(cx.new(|cx| {
+                                image_preview::FileImage::new(this.path.clone(), cx)
+                            })));
+                    }
+                    Ok(Loaded::Text(source, is_markdown)) => {
+                        let markdown = is_markdown
+                            .then(|| cx.new(|cx| TextViewState::markdown(&source.text, cx)));
                         this.long_line = source.long_line;
                         this.editor.update(cx, |editor, cx| {
                             editor.set_highlighter(
@@ -157,7 +241,8 @@ impl Preview {
                                 editor.focus(window, cx);
                             }
                         });
-                        this.loaded = true;
+                        let reading = reading && markdown.is_some();
+                        this.body = Some(Body::Text { markdown, reading });
                     }
                     Err(error) => this.error = Some(error),
                 }
@@ -182,7 +267,7 @@ impl Preview {
             cx.propagate();
             return;
         }
-        if self.editor.read(cx).search_session().open {
+        if self.is_source() && self.editor.read(cx).search_session().open {
             self.editor.update(cx, |editor, cx| {
                 editor.close_search(cx);
                 editor.focus(window, cx);
@@ -193,14 +278,65 @@ impl Preview {
         cx.stop_propagation();
     }
     pub(super) fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.loaded {
+        if self.is_source() {
             self.editor.update(cx, |e, cx| e.focus(window, cx));
+        } else if let Some(Body::Text {
+            markdown: Some(state),
+            reading: true,
+        }) = &self.body
+        {
+            state.read(cx).focus_handle().clone().focus(window, cx);
         } else {
             self.focus.focus(window, cx);
         }
     }
     pub(super) fn quote_range(&self, cx: &App) -> Option<std::ops::Range<usize>> {
-        self.loaded.then(|| self.editor.read(cx).selected_range())
+        self.is_source()
+            .then(|| self.editor.read(cx).selected_range())
+    }
+    fn markdown_controls(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let Some(Body::Text {
+            markdown: Some(_),
+            reading,
+        }) = &self.body
+        else {
+            return None;
+        };
+        let reading = *reading;
+        Some(
+            h_flex()
+                .flex_none()
+                .h_9()
+                .px_3()
+                .border_b_1()
+                .border_color(cx.theme().border)
+                .child(
+                    ToggleGroup::new("preview-mode")
+                        .small()
+                        .segmented()
+                        .child(
+                            Toggle::new("preview-source")
+                                .label(t(cx, "files-source"))
+                                .checked(!reading),
+                        )
+                        .child(
+                            Toggle::new("preview-markdown")
+                                .label(t(cx, "files-preview"))
+                                .checked(reading),
+                        )
+                        .on_click(cx.listener(|this, checks: &Vec<bool>, _, cx| {
+                            // Keep one mode selected; activating the other adds
+                            // its check, while clicking the current mode cannot clear it.
+                            if checks.iter().all(|checked| *checked)
+                                && let Some(Body::Text { reading, .. }) = &mut this.body
+                            {
+                                *reading = !*reading;
+                                cx.notify();
+                            }
+                        })),
+                )
+                .into_any_element(),
+        )
     }
     pub(super) fn clear_quote_selection(&self, cx: &mut Context<Self>) {
         self.editor.update(cx, |editor, cx| {
@@ -214,10 +350,10 @@ impl Preview {
 }
 impl Render for Preview {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let path = self.path.to_string_lossy().into_owned();
+        let path = self.display_path.to_string_lossy().into_owned();
         let preview = cx.weak_entity();
-        let quote_owner = self.quote_owner.clone();
-        let quote_events = self.quote_owner.clone().map(|(owner, key)| {
+        let quote_owner = self.owner.clone();
+        let quote_events = self.owner.clone().map(|(owner, key)| {
             quote::toolbar::region(quote::toolbar::Target::Source(preview.clone()), owner, key)
         });
         v_flex()
@@ -256,16 +392,16 @@ impl Render for Preview {
                     .child(
                         div()
                             .id("preview-path")
-                            .flex_none()
+                            .flex_1()
                             .max_w(rems(14.))
                             .min_w_0()
                             .text_sm()
                             .font_weight(FontWeight::MEDIUM)
                             .truncate()
                             .child(
-                                self.path
+                                self.display_path
                                     .file_name()
-                                    .unwrap_or(self.path.as_os_str())
+                                    .unwrap_or(self.display_path.as_os_str())
                                     .to_string_lossy()
                                     .into_owned(),
                             )
@@ -281,7 +417,7 @@ impl Render for Preview {
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
                             .child(
-                                self.path
+                                self.display_path
                                     .parent()
                                     .map(|p| {
                                         self.root
@@ -302,22 +438,24 @@ impl Render for Preview {
                             .child(Icon::new(IconName::Lock).size_3())
                             .child(div().text_xs().child(t(cx, "files-readonly"))),
                     )
-                    .child(
-                        Button::new("preview-wrap")
-                            .small()
-                            .ghost()
-                            .selected(self.wrap)
-                            .icon(IconName::TextWrap)
-                            .tooltip(t(cx, "files-wrap"))
-                            .accessibility_label(t(cx, "files-wrap"))
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.wrap = !this.wrap;
-                                this.editor.update(cx, |editor, cx| {
-                                    editor.set_soft_wrap(this.wrap, window, cx)
-                                });
-                                cx.notify();
-                            })),
-                    )
+                    .when(self.is_source(), |header| {
+                        header.child(
+                            Button::new("preview-wrap")
+                                .small()
+                                .ghost()
+                                .selected(self.wrap)
+                                .icon(IconName::TextWrap)
+                                .tooltip(t(cx, "files-wrap"))
+                                .accessibility_label(t(cx, "files-wrap"))
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.wrap = !this.wrap;
+                                    this.editor.update(cx, |editor, cx| {
+                                        editor.set_soft_wrap(this.wrap, window, cx)
+                                    });
+                                    cx.notify();
+                                })),
+                        )
+                    })
                     .child(
                         Button::new("preview-reload")
                             .small()
@@ -379,19 +517,59 @@ impl Render for Preview {
                             .on_click(cx.listener(|_, _, _, cx| cx.emit(Event::Close))),
                     ),
             )
+            .children(self.markdown_controls(cx))
             .when(self.loading, |view| {
                 view.child(div().p_3().text_sm().child(t(cx, "files-loading")))
             })
             .when_some(self.error, |view, error| {
-                view.child(
-                    div()
-                        .p_3()
-                        .text_sm()
-                        .text_color(cx.theme().danger)
-                        .child(t(cx, error)),
-                )
+                view.child(unavailable(error, self.path.clone(), cx))
             })
-            .when(self.long_line, |view| {
+            .when_some(self.body.as_ref(), |view, body| match body {
+                Body::Image(image) => {
+                    view.child(div().flex_1().min_h_0().min_w_0().child(image.clone()))
+                }
+                Body::Text {
+                    markdown: Some(state),
+                    reading: true,
+                } => {
+                    let context = self.owner.as_ref().and_then(|(home, key)| {
+                        home.read_with(cx, |home, cx| home.resource_context(key, cx))
+                            .ok()
+                            .flatten()
+                    });
+                    let base = self.path.parent().unwrap_or(&self.path).to_owned();
+                    let image_base = base.clone();
+                    view.child(
+                        div().flex_1().min_w_0().min_h_0().child(
+                            gpui_kit::base::TextView::new(state)
+                                .image_source(move |uri| {
+                                    resource::local_path(uri.as_ref(), &image_base)
+                                        .map(ImageSource::from)
+                                        .unwrap_or_else(|| ImageSource::from(uri.clone()))
+                                })
+                                .plugin(markdown::RemoteImages)
+                                .when_some(context, |view, context| {
+                                    let link_context = context.clone();
+                                    let link_base = base.clone();
+                                    view.plugin(messages::resources::ResourceLinks {
+                                        context,
+                                        base,
+                                    })
+                                    .on_link_click(
+                                        move |url, event, window, cx| {
+                                            link_context
+                                                .open_link(url, &link_base, event, window, cx)
+                                        },
+                                    )
+                                })
+                                .selectable(true)
+                                .scrollable(true),
+                        ),
+                    )
+                }
+                _ => view,
+            })
+            .when(self.long_line && self.is_source(), |view| {
                 view.child(
                     div()
                         .px_3()
@@ -401,7 +579,7 @@ impl Render for Preview {
                         .child(t(cx, "files-long-line")),
                 )
             })
-            .when(self.loaded, |view| {
+            .when(self.is_source(), |view| {
                 view.child(
                     div()
                         .relative()
@@ -481,6 +659,91 @@ mod tests {
     use gpui_kit::test::TestWindowExt;
     use gpui_kit::{AppContext, ClipboardItem, TestAppContext, px, size};
 
+    // Switching modes must not reread disk, and local/reference pictures must
+    // resolve as file assets while remote pictures remain explicit links.
+    #[gpui_kit::test]
+    async fn markdown_modes_keep_snapshot_and_render_file_relative_images(cx: &mut TestAppContext) {
+        use gpui_kit::test::TestAppContextExt as _;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("README.md");
+        let image = directory.path().join("local image.png");
+        image::RgbaImage::from_pixel(800, 400, image::Rgba([255, 128, 0, 255]))
+            .save(&image)
+            .unwrap();
+        let text = "# Frozen snapshot\n\n![local](local%20image.png)\n\n![remote](https://example.com/remote.png)\n";
+        std::fs::write(&path, text).unwrap();
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            crate::host::install_headless(cx);
+            app_theme::init(cx);
+            gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::English, cx);
+        });
+        let mut preview = None;
+        let (_, cx) = cx.add_window_view(|window, cx| {
+            let view = cx.new(|cx| Preview::new(path, None, false, window, cx));
+            preview = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let preview = preview.unwrap();
+        let handle = cx.update(|window, _| window.window_handle());
+        cx.condition(&preview, |preview, _| !preview.loading).await;
+        cx.simulate_resize(size(px(320.), px(600.)));
+        cx.update(|window, cx| {
+            window.render_frame(cx);
+            assert!(window.find("source-close").bounds().right() <= window.viewport_size().width);
+            assert!(
+                window.find("preview-markdown").bounds().right() <= window.viewport_size().width
+            );
+            assert!(preview.read(cx).is_source());
+            window.click("preview-markdown", cx);
+            assert!(!preview.read(cx).is_source());
+        });
+        let remote = format!("preview-image-{}", text.find("![remote]").unwrap());
+        cx.wait_for(handle, std::time::Duration::from_secs(2), |window, cx| {
+            window.try_find(remote.clone()).is_some()
+                && gpui_kit::ImageSource::from(image.clone()).is_asset_cached(cx)
+        })
+        .await;
+        let reading = preview.read_with(cx, |preview, _| match preview.body.as_ref().unwrap() {
+            super::Body::Text {
+                markdown: Some(state),
+                ..
+            } => state.clone(),
+            _ => panic!("expected Markdown snapshot"),
+        });
+        std::fs::write(
+            preview.read_with(cx, |preview, _| preview.path.clone()),
+            "# Changed on disk\n",
+        )
+        .unwrap();
+        cx.update(|window, cx| {
+            window.click("preview-source", cx);
+            assert_eq!(preview.read(cx).editor.read(cx).value().as_str(), text);
+            window.click("preview-markdown", cx);
+            assert!(
+                reading
+                    .read(cx)
+                    .rendered_text()
+                    .as_str()
+                    .contains("Frozen snapshot")
+            );
+            window.click("preview-reload", cx);
+        });
+        cx.condition(&preview, |preview, _| !preview.loading).await;
+        cx.update(|window, cx| {
+            assert!(
+                !preview.read(cx).is_source(),
+                "Reload keeps this file's reading mode"
+            );
+            assert_eq!(
+                preview.read(cx).editor.read(cx).value().as_str(),
+                "# Changed on disk\n"
+            );
+            window.click("preview-source", cx);
+            assert!(preview.read(cx).is_source());
+        });
+    }
+
     #[gpui_kit::test]
     fn source_preview_rejects_edits_and_keeps_copy_available(cx: &mut TestAppContext) {
         const SOURCE: &str = "fn main() { println!(\"hello\"); }";
@@ -496,7 +759,10 @@ mod tests {
                 // Install a deterministic source snapshot in the production view.
                 this.task = None;
                 this.loading = false;
-                this.loaded = true;
+                this.body = Some(super::Body::Text {
+                    markdown: None,
+                    reading: false,
+                });
                 this.editor.update(cx, |editor, cx| {
                     editor.set_highlighter("rust", cx);
                     editor.set_value(SOURCE, window, cx);

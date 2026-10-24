@@ -111,11 +111,13 @@ fn reference_path(value: &str) -> Option<PathBuf> {
     path.is_absolute().then_some(path)
 }
 
-pub(super) struct ResourceLinks;
+pub(in crate::home) struct ResourceLinks {
+    pub(in crate::home) context: super::super::resource::Context,
+    pub(in crate::home) base: PathBuf,
+}
 
 struct ResourcePath {
-    path: PathBuf,
-    directory: bool,
+    url: String,
 }
 
 impl MarkdownPlugin for ResourceLinks {
@@ -132,15 +134,7 @@ impl MarkdownPlugin for ResourceLinks {
             return None;
         };
         // Leave web URLs and rich/nested link labels to the ordinary renderer.
-        let path = if link.url.starts_with("file:") {
-            url::Url::parse(&link.url).ok()?.to_file_path().ok()?
-        } else {
-            let path = PathBuf::from(&link.url);
-            if !path.is_absolute() {
-                return None;
-            }
-            path
-        };
+        super::super::resource::local_path(&link.url, &self.base)?;
         let mut label = String::new();
         for child in &link.children {
             let markdown_ast::Node::Text(text) = child else {
@@ -155,8 +149,7 @@ impl MarkdownPlugin for ResourceLinks {
             MarkdownNode::new(
                 self.name(),
                 ResourcePath {
-                    directory: path.is_dir(),
-                    path,
+                    url: link.url.clone(),
                 },
             )
             .text(label)
@@ -166,18 +159,16 @@ impl MarkdownPlugin for ResourceLinks {
 
     fn render(&self, node: &MarkdownNode, _: &mut Window, _: &mut App) -> impl IntoElement {
         let resource = node.data::<ResourcePath>().expect("path link data");
-        let path = resource.path.clone();
+        let path = super::super::resource::local_path(&resource.url, &self.base)
+            .expect("local resource URL");
+        let context = self.context.clone();
         Button::new(format!(
             "file-link-{}",
             node.source_range().map_or(0, |r| r.start)
         ))
         .ghost()
         .xsmall()
-        .icon(if resource.directory {
-            IconName::Folder
-        } else {
-            IconName::FileText
-        })
+        .icon(IconName::FileText)
         .max_w_full()
         .min_w_0()
         .label(if reference_path(node.as_text()).as_ref() == Some(&path) {
@@ -189,7 +180,14 @@ impl MarkdownPlugin for ResourceLinks {
             node.as_text().to_owned()
         })
         .tooltip(path.to_string_lossy().to_string())
-        .on_click(move |_, _, cx| cx.open_with_system(&path))
+        .on_click(move |event, window, cx| {
+            context.open(
+                path.clone(),
+                matches!(event, gpui_kit::ClickEvent::Keyboard(_)),
+                window,
+                cx,
+            );
+        })
     }
 }
 

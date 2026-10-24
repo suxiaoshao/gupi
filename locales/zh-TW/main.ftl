@@ -699,7 +699,7 @@ files-expanded = 已展開
 files-collapsed = 已收合
 files-incomplete = 部分項目無法讀取，點擊重試
 files-read-failed = 無法讀取檔案或目錄，請重試
-files-unsupported = 此檔案暫不支援文字預覽
+files-unsupported = 無法預覽此檔案
 files-too-large = 檔案超過預覽上限（1 MiB 或 20,000 行）
 files-long-line = 存在超長行，已關閉語法醒目提示
 files-no-session = 選擇對話以瀏覽專案檔案
@@ -1348,7 +1348,7 @@ workspace-close = 關閉工作區
 diff-invalid-path = 檔名不是有效 UTF-8，無法讀取
 diff-no-text-changes = 沒有文字變更
 
-diff-external-failed = 無法開啟檔案。檔案可能已不存在，或沒有可用的應用程式。
+resource-open-failed = 無法開啟檔案。檔案可能已不存在，或沒有可用的應用程式。
 
 diff-conflict-label = 衝突
 diff-read-failed = 讀取失敗，請重試。
@@ -1430,3 +1430,8 @@ quote-edit-comment = 編輯評論
 quote-delete-number = 刪除引用 { $number }：{ $source }
 quote-clear = 清空引用
 quote-edit-label = 編輯評論 { $number }：{ $source }
+files-unavailable = 無法預覽
+files-open-external = 用預設應用程式開啟
+files-open-remote-image = 在瀏覽器中開啟圖片
+image-preview-fit = 符合視窗
+image-preview-actual-size = 原始尺寸

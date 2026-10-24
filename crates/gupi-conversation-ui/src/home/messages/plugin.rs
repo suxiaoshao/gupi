@@ -20,7 +20,7 @@ impl HomeView {
                                 div()
                                     .id(format!("{key}-{id}"))
                                     .test_support()
-                                    .child(self.text_view(key, row, id, text.to_owned())),
+                                    .child(self.text_view(key, row, id, text.to_owned(), cx)),
                             );
                         }
                     }
@@ -41,6 +41,7 @@ impl HomeView {
                 row,
                 format!("plugin-{}", message.id),
                 text.to_owned(),
+                cx,
             ));
         }
         let title = message.value["customType"]

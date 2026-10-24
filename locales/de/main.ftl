@@ -699,7 +699,7 @@ files-expanded = Aufgeklappt
 files-collapsed = Zugeklappt
 files-incomplete = Einige Einträge konnten nicht gelesen werden. Erneut versuchen
 files-read-failed = Datei oder Ordner konnte nicht gelesen werden. Erneut versuchen
-files-unsupported = Diese Datei unterstützt keine Textvorschau
+files-unsupported = Diese Datei kann nicht angezeigt werden
 files-too-large = Vorschaulimit überschritten (1 MiB oder 20.000 Zeilen)
 files-long-line = Lange Zeilen: Syntaxhervorhebung deaktiviert
 files-no-session = Wählen Sie eine Unterhaltung, um Projektdateien anzuzeigen
@@ -1367,7 +1367,7 @@ workspace-close = Arbeitsbereich schließen
 diff-invalid-path = Der Dateiname ist kein gültiges UTF-8 und kann nicht gelesen werden
 diff-no-text-changes = Keine Textänderungen
 
-diff-external-failed = Die Datei konnte nicht geöffnet werden. Sie existiert möglicherweise nicht mehr oder es ist keine geeignete Anwendung verfügbar.
+resource-open-failed = Die Datei konnte nicht geöffnet werden. Sie existiert möglicherweise nicht mehr oder es ist keine geeignete Anwendung verfügbar.
 
 diff-conflict-label = Konflikt
 diff-read-failed = Änderungen konnten nicht gelesen werden. Bitte erneut versuchen.
@@ -1450,3 +1450,8 @@ quote-edit-comment = Kommentar bearbeiten
 quote-delete-number = Zitat { $number } löschen: { $source }
 quote-clear = Zitate leeren
 quote-edit-label = Kommentar { $number } bearbeiten: { $source }
+files-unavailable = Vorschau nicht verfügbar
+files-open-external = Mit Standard-App öffnen
+files-open-remote-image = Bild im Browser öffnen
+image-preview-fit = Einpassen
+image-preview-actual-size = Originalgröße

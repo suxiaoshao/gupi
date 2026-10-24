@@ -29,7 +29,7 @@ pub(super) mod metadata;
 pub(super) mod navigator;
 mod plugin;
 mod presentation;
-mod resources;
+pub(super) mod resources;
 pub(super) mod row_sync;
 mod shell;
 mod tool_details;
@@ -395,7 +395,14 @@ fn current_run_id<'a>(rows: impl DoubleEndedIterator<Item = &'a ChatRow>) -> Opt
     })
 }
 impl HomeView {
-    fn text_view(&self, key: &str, row: &str, id: String, text: String) -> markdown::Markdown {
+    fn text_view(
+        &self,
+        key: &str,
+        row: &str,
+        id: String,
+        text: String,
+        cx: &App,
+    ) -> markdown::Markdown {
         markdown::Markdown::new(
             format!("{key}-{id}"),
             text,
@@ -403,6 +410,7 @@ impl HomeView {
             self.views[key].markdown.clone(),
         )
         .row(row.to_owned(), self.views[key].row_positions.clone())
+        .resources(self.resource_context(key, cx))
     }
     fn step_user_message(&mut self, next: bool, window: &mut Window, cx: &mut Context<Self>) {
         // Only the reading region / rail binds these actions, never the composer or source.
@@ -738,79 +746,92 @@ impl HomeView {
                         .as_ref()
                         .map_or(text.as_str(), |skill| skill.arguments),
                 );
-                let content =
-                    MessageContent::new()
-                        .when(!images.is_empty(), |content| {
-                            content.child(
-                                h_flex()
-                                    .id(format!("user-images-{key}-{}", m.id))
-                                    .test_support()
-                                    .max_w_full()
-                                    .flex_wrap()
-                                    .justify_end()
-                                    .gap_2()
-                                    .children(images),
-                            )
-                        })
-                        .when_some(skill, |content, skill| {
-                            let path = PathBuf::from(skill.path);
-                            content.child(
-                                v_flex()
-                                    .max_w_full()
-                                    .min_w_0()
-                                    .items_end()
-                                    .gap_1()
-                                    .child(
-                                        h_flex().gap_1().child(
-                                            Button::new(format!("skill-open-{}", m.id))
-                                                .ghost()
-                                                .small()
-                                                .icon(IconName::BookOpen)
-                                                .label(skill.name.to_owned())
-                                                .tooltip(skill.path.to_owned())
-                                                .on_click(move |_, _, cx| {
-                                                    cx.open_with_system(&path)
-                                                }),
-                                        ),
-                                    )
-                                    .child(
-                                        self.fold(
-                                            (key, &row.id),
-                                            &format!("skill-{}", m.id),
-                                            Disclosure::resource(t(cx, "resource-skill-content")),
-                                            false,
+                let content = MessageContent::new()
+                    .when(!images.is_empty(), |content| {
+                        content.child(
+                            h_flex()
+                                .id(format!("user-images-{key}-{}", m.id))
+                                .test_support()
+                                .max_w_full()
+                                .flex_wrap()
+                                .justify_end()
+                                .gap_2()
+                                .children(images),
+                        )
+                    })
+                    .when_some(skill, |content, skill| {
+                        let path = PathBuf::from(skill.path);
+                        let resource = self.resource_context(key, cx);
+                        content.child(
+                            v_flex()
+                                .max_w_full()
+                                .min_w_0()
+                                .items_end()
+                                .gap_1()
+                                .child(
+                                    h_flex().gap_1().child(
+                                        Button::new(format!("skill-open-{}", m.id))
+                                            .ghost()
+                                            .small()
+                                            .icon(IconName::BookOpen)
+                                            .label(skill.name.to_owned())
+                                            .tooltip(skill.path.to_owned())
+                                            .on_click(move |event, window, cx| {
+                                                if let Some(resource) = &resource {
+                                                    resource.open(
+                                                        path.clone(),
+                                                        matches!(event, ClickEvent::Keyboard(_)),
+                                                        window,
+                                                        cx,
+                                                    );
+                                                }
+                                            }),
+                                    ),
+                                )
+                                .child(
+                                    self.fold(
+                                        (key, &row.id),
+                                        &format!("skill-{}", m.id),
+                                        Disclosure::resource(t(cx, "resource-skill-content")),
+                                        false,
+                                        self.text_view(
+                                            key,
+                                            &row.id,
+                                            format!("skill-text-{}", m.id),
+                                            skill.body.to_owned(),
+                                            cx,
+                                        )
+                                        .into_any_element(),
+                                        cx,
+                                    ),
+                                ),
+                        )
+                    })
+                    .when(!body.trim().is_empty(), |content| {
+                        content.bubble(
+                            Bubble::new().with_variant(BubbleVariant::Muted).content(
+                                BubbleContent::new().child(
+                                    div()
+                                        .id(format!("user-text-{key}-{}", m.id))
+                                        .test_support()
+                                        .child(
                                             self.text_view(
                                                 key,
                                                 &row.id,
-                                                format!("skill-text-{}", m.id),
-                                                skill.body.to_owned(),
+                                                format!("text-{}", m.id),
+                                                body,
+                                                cx,
                                             )
-                                            .into_any_element(),
-                                            cx,
-                                        ),
-                                    ),
-                            )
-                        })
-                        .when(!body.trim().is_empty(), |content| {
-                            content.bubble(
-                                Bubble::new().with_variant(BubbleVariant::Muted).content(
-                                    BubbleContent::new().child(
-                                        div()
-                                            .id(format!("user-text-{key}-{}", m.id))
-                                            .test_support()
-                                            .child(
-                                                self.text_view(
-                                                    key,
-                                                    &row.id,
-                                                    format!("text-{}", m.id),
-                                                    body,
-                                                )
-                                                .quote(owner.clone(), key, "user"),
+                                            .quote(
+                                                owner.clone(),
+                                                key,
+                                                "user",
                                             ),
-                                    ),
+                                        ),
                                 ),
-                            )
-                        });
+                            ),
+                        )
+                    });
                 let label = t(cx, "conversation-fork");
                 div()
                     .id(row.id.clone())
@@ -859,6 +880,7 @@ impl HomeView {
                     &row.id,
                     format!("text-{}", m.id),
                     m.text(),
+                    cx,
                 )))
                 .into_any_element(),
             RowKind::Run {
@@ -968,6 +990,7 @@ impl HomeView {
                                                 &row.id,
                                                 format!("text-{}", m.id),
                                                 content.answer_text.clone(),
+                                                cx,
                                             )
                                             .quote(owner.clone(), key, "assistant")
                                             .stream_fade(),

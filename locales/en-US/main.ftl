@@ -699,7 +699,7 @@ files-expanded = Expanded
 files-collapsed = Collapsed
 files-incomplete = Some entries could not be read. Retry
 files-read-failed = Could not read this file or directory. Retry
-files-unsupported = This file does not support text preview
+files-unsupported = This file cannot be previewed
 files-too-large = File exceeds the preview limit (1 MiB or 20,000 lines)
 files-long-line = Long lines: syntax highlighting is disabled
 files-no-session = Select a conversation to browse project files
@@ -1367,7 +1367,7 @@ workspace-close = Close workspace
 diff-invalid-path = The file name is not valid UTF-8 and cannot be read
 diff-no-text-changes = No text changes
 
-diff-external-failed = Could not open the file. It may no longer exist, or no application can open it.
+resource-open-failed = Could not open the file. It may no longer exist, or no application can open it.
 
 diff-conflict-label = Conflict
 diff-read-failed = Couldn’t read changes. Retry.
@@ -1450,3 +1450,8 @@ quote-edit-comment = Edit comment
 quote-delete-number = Delete quote { $number }: { $source }
 quote-clear = Clear quotes
 quote-edit-label = Edit comment { $number }: { $source }
+files-unavailable = Preview unavailable
+files-open-external = Open with default app
+files-open-remote-image = Open image in browser
+image-preview-fit = Fit
+image-preview-actual-size = Actual size

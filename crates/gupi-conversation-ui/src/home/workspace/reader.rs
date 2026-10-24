@@ -1,6 +1,6 @@
 //! Shared reading policy for recorded and worktree changes; source data stays in adapters.
 use super::*;
-use gpui_kit::component::{menu::DropdownMenu, notification::Notification};
+use gpui_kit::component::menu::DropdownMenu;
 use messages::diff::DiffBlock;
 
 const SPLIT_MIN_REM: f32 = 48.;
@@ -440,19 +440,7 @@ impl HomeView {
         ) {
             if matches!(command, Command::External) {
                 if let Some(path) = self.reader_external_path(cx) {
-                    let task = crate::host::open_file(path, cx);
-                    cx.spawn_in(window, async move |_, cx| {
-                        if let Err(error) = task.await {
-                            tracing::warn!(%error, "external file open failed");
-                            let _ = cx.update(|window, cx| {
-                                window.push_notification(
-                                    Notification::error(t(cx, "diff-external-failed")),
-                                    cx,
-                                );
-                            });
-                        }
-                    })
-                    .detach();
+                    resource::open_external(path, window, cx);
                 }
             } else if let Some(text) = self.reader_copy(command) {
                 cx.write_to_clipboard(ClipboardItem::new_string(text));

@@ -699,7 +699,7 @@ files-expanded = 已展开
 files-collapsed = 已收起
 files-incomplete = 部分项目无法读取，点击重试
 files-read-failed = 无法读取文件或目录，请重试
-files-unsupported = 此文件暂不支持文本预览
+files-unsupported = 无法预览此文件
 files-too-large = 文件超过预览上限（1 MiB 或 20,000 行）
 files-long-line = 存在超长行，已关闭语法高亮
 files-no-session = 选择会话以浏览项目文件
@@ -1348,7 +1348,7 @@ workspace-close = 关闭工作区
 diff-invalid-path = 文件名不是有效 UTF-8，无法读取
 diff-no-text-changes = 没有文本改动
 
-diff-external-failed = 无法打开文件。文件可能已不存在，或没有可用的应用。
+resource-open-failed = 无法打开文件。文件可能已不存在，或没有可用的应用。
 
 diff-conflict-label = 冲突
 diff-read-failed = 读取失败，请重试。
@@ -1430,3 +1430,8 @@ quote-edit-comment = 编辑评论
 quote-delete-number = 删除引用 { $number }：{ $source }
 quote-clear = 清空引用
 quote-edit-label = 编辑评论 { $number }：{ $source }
+files-unavailable = 无法预览
+files-open-external = 用默认应用打开
+files-open-remote-image = 在浏览器中打开图片
+image-preview-fit = 适配
+image-preview-actual-size = 原始尺寸

@@ -698,7 +698,7 @@ files-expanded = Expandido
 files-collapsed = Contraído
 files-incomplete = No se pudieron leer algunas entradas. Reintentar
 files-read-failed = No se pudo leer el archivo o la carpeta. Reintentar
-files-unsupported = Este archivo no admite vista previa de texto
+files-unsupported = No se puede previsualizar este archivo
 files-too-large = Se superó el límite de vista previa (1 MiB o 20.000 líneas)
 files-long-line = Líneas largas: resaltado de sintaxis desactivado
 files-no-session = Selecciona una conversación para explorar sus archivos
@@ -1366,7 +1366,7 @@ workspace-close = Cerrar espacio de trabajo
 diff-invalid-path = El nombre del archivo no es UTF-8 válido y no se puede leer
 diff-no-text-changes = Sin cambios de texto
 
-diff-external-failed = No se pudo abrir el archivo. Puede que ya no exista o que no haya una aplicación disponible.
+resource-open-failed = No se pudo abrir el archivo. Puede que ya no exista o que no haya una aplicación disponible.
 
 diff-conflict-label = Conflicto
 diff-read-failed = No se pudieron leer los cambios. Vuelve a intentarlo.
@@ -1449,3 +1449,8 @@ quote-edit-comment = Editar comentario
 quote-delete-number = Eliminar cita { $number }: { $source }
 quote-clear = Borrar citas
 quote-edit-label = Editar comentario { $number }: { $source }
+files-unavailable = Vista previa no disponible
+files-open-external = Abrir con la aplicación predeterminada
+files-open-remote-image = Abrir imagen en el navegador
+image-preview-fit = Ajustar
+image-preview-actual-size = Tamaño real

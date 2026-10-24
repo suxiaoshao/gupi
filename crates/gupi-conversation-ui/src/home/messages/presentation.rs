@@ -239,7 +239,7 @@ impl HomeView {
             ActivityBlock::Message(Activity::Text { id, text, .. }) => Message::new()
                 .content(
                     MessageContent::new().child(
-                        self.text_view(key, row, id.clone(), text.clone())
+                        self.text_view(key, row, id.clone(), text.clone(), cx)
                             .stream_fade(),
                     ),
                 )
@@ -348,7 +348,7 @@ impl HomeView {
                 div()
                     .pl_6()
                     .child(
-                        self.text_view(key, row, id.clone(), text.clone())
+                        self.text_view(key, row, id.clone(), text.clone(), cx)
                             .stream_fade(),
                     )
                     .into_any_element(),

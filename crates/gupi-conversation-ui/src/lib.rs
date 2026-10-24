@@ -1,4 +1,5 @@
 //! Gupi internal conversation-ui capability.
+mod camera;
 pub mod chrome;
 pub mod command_palette;
 pub mod composer;

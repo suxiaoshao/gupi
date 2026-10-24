@@ -487,10 +487,17 @@ impl Files {
         }
         self.reveal_path = None;
         self.rebuild(window, cx);
-        self.focus_open(window, cx);
+        self.focus_path(Some(path), window, cx);
     }
-    pub(super) fn focus_open(&self, window: &mut Window, cx: &mut Context<Self>) {
-        let mut path = self.open_path.clone();
+    fn focus_path(&self, mut path: Option<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
+        if path.as_ref() == Some(&self.root) {
+            self.list.update(cx, |list, cx| {
+                list.set_selected_index(None, window, cx);
+                list.scroll_handle()
+                    .base_handle()
+                    .set_offset(point(px(0.), px(0.)));
+            });
+        }
         while let Some(p) = path {
             if let Some(ix) = self
                 .list
@@ -1096,6 +1103,18 @@ mod tests {
                     cx,
                 );
                 assert!(!this.expanded.contains(&PathBuf::from("/project/src")));
+                this.set_open_path(Some("/project/README.md".into()), cx);
+                this.reveal("/project/src".into(), window, cx);
+                assert_eq!(
+                    this.selected(cx).unwrap().path,
+                    PathBuf::from("/project/src")
+                );
+                assert_eq!(
+                    this.open_path.as_deref(),
+                    Some(std::path::Path::new("/project/README.md"))
+                );
+                this.reveal("/project".into(), window, cx);
+                assert!(this.selected(cx).is_none());
                 this.generation += 1;
                 this.install(
                     0,

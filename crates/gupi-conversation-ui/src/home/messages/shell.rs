@@ -165,6 +165,7 @@ impl HomeView {
                 &row.id,
                 format!("shell-{}-command", message.id),
                 code(command),
+                cx,
             ));
         let mut preview_truncated = false;
         if !output.is_empty() {
@@ -187,6 +188,7 @@ impl HomeView {
                     &row.id,
                     format!("shell-{}-output", message.id),
                     code(&preview),
+                    cx,
                 )
                 .into_any_element(),
             );

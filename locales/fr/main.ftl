@@ -699,7 +699,7 @@ files-expanded = Développé
 files-collapsed = Réduit
 files-incomplete = Certaines entrées sont illisibles. Réessayer
 files-read-failed = Impossible de lire le fichier ou le dossier. Réessayer
-files-unsupported = Ce fichier ne prend pas en charge l’aperçu texte
+files-unsupported = Impossible d’afficher un aperçu de ce fichier
 files-too-large = Limite d’aperçu dépassée (1 MiB ou 20 000 lignes)
 files-long-line = Lignes longues : coloration syntaxique désactivée
 files-no-session = Sélectionnez une conversation pour parcourir ses fichiers
@@ -1367,7 +1367,7 @@ workspace-close = Fermer l’espace de travail
 diff-invalid-path = Le nom du fichier n’est pas en UTF-8 valide et ne peut pas être lu
 diff-no-text-changes = Aucune modification de texte
 
-diff-external-failed = Impossible d’ouvrir le fichier. Il n’existe peut-être plus ou aucune application adaptée n’est disponible.
+resource-open-failed = Impossible d’ouvrir le fichier. Il n’existe peut-être plus ou aucune application adaptée n’est disponible.
 
 diff-conflict-label = Conflit
 diff-read-failed = Impossible de lire les modifications. Réessayez.
@@ -1450,3 +1450,8 @@ quote-edit-comment = Modifier le commentaire
 quote-delete-number = Supprimer la citation { $number } : { $source }
 quote-clear = Effacer les citations
 quote-edit-label = Modifier le commentaire { $number } : { $source }
+files-unavailable = Aperçu indisponible
+files-open-external = Ouvrir avec l’application par défaut
+files-open-remote-image = Ouvrir l’image dans le navigateur
+image-preview-fit = Ajuster
+image-preview-actual-size = Taille réelle

@@ -14,6 +14,7 @@ mod panes;
 pub mod pickers;
 mod progress;
 pub(crate) mod quote;
+mod resource;
 mod session_info;
 mod slash;
 pub(crate) use slash::FileInsertion;
@@ -120,6 +121,8 @@ pub struct HomeView {
     projects_with_more: HashSet<PathBuf>,
     open_projects: HashSet<PathBuf>,
     layout_save: Option<Task<()>>,
+    resource_open: Option<Task<()>>,
+    resource_owner: WeakEntity<Self>,
     progress: Entity<progress::RetryView>,
     pane_layout: panes::PaneLayout,
     workspace_layout: workspace::layout::Layout,
@@ -598,6 +601,8 @@ impl HomeView {
             projects_with_more: HashSet::new(),
             open_projects: HashSet::new(),
             layout_save: None,
+            resource_open: None,
+            resource_owner: cx.weak_entity(),
             progress: cx.new(progress::RetryView::new),
             pane_layout: panes::PaneLayout::default(),
             workspace_layout: workspace::layout::Layout::default(),
@@ -700,6 +705,9 @@ impl HomeView {
     ) {
         if self.notification_visible != visible {
             self.notification_visible = visible;
+            if !visible {
+                self.resource_open = None;
+            }
             self.sync_git(window, cx);
             self.sync_worktree(window, cx);
             crate::host::present(&self.state, window, visible, cx);
@@ -710,6 +718,9 @@ impl HomeView {
         self.sync_git(window, cx);
         let key = self.state.read(cx).selected().clone();
         let changed = self.shown_key != key;
+        if changed {
+            self.resource_open = None;
+        }
         if changed {
             self.quote_tools.dismiss();
             self.stop_shown_git_tasks();

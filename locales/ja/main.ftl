@@ -692,7 +692,7 @@ files-expanded = 展開済み
 files-collapsed = 折りたたみ
 files-incomplete = 一部の項目を読み込めません。再試行
 files-read-failed = ファイルまたはフォルダーを読み込めません。再試行
-files-unsupported = このファイルはテキストプレビューに対応していません
+files-unsupported = このファイルはプレビューできません
 files-too-large = プレビュー上限（1 MiB または20,000行）を超えています
 files-long-line = 長い行があるため構文強調を無効にしました
 files-no-session = 会話を選択してプロジェクトのファイルを表示
@@ -1341,7 +1341,7 @@ workspace-close = ワークスペースを閉じる
 diff-invalid-path = ファイル名が有効な UTF-8 ではないため読み取れません
 diff-no-text-changes = テキストの変更はありません
 
-diff-external-failed = ファイルを開けませんでした。ファイルが存在しないか、対応するアプリがありません。
+resource-open-failed = ファイルを開けませんでした。ファイルが存在しないか、対応するアプリがありません。
 
 diff-conflict-label = 競合
 diff-read-failed = 変更を読み込めませんでした。再試行してください。
@@ -1423,3 +1423,8 @@ quote-edit-comment = コメントを編集
 quote-delete-number = 引用 { $number } を削除：{ $source }
 quote-clear = 引用をすべて削除
 quote-edit-label = コメント { $number } を編集：{ $source }
+files-unavailable = プレビューできません
+files-open-external = デフォルトのアプリで開く
+files-open-remote-image = ブラウザーで画像を開く
+image-preview-fit = 全体を表示
+image-preview-actual-size = 実際のサイズ

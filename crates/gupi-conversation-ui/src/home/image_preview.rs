@@ -1,11 +1,12 @@
-//! Window-filling image viewer with local zoom state and modal focus ownership.
-use gpui_kit::component::ActiveTheme;
+//! Shared pan/zoom image canvas; only PreviewHost owns the modal lifecycle.
+use crate::camera::Camera;
 use gpui_kit::component::Disableable;
 use gpui_kit::component::Icon;
 use gpui_kit::component::button::Button;
 use gpui_kit::component::button::ButtonVariants;
 use gpui_kit::component::h_flex;
 use gpui_kit::component::label::Label;
+use gpui_kit::component::{ActiveTheme, Sizable};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use gupi_conversation::attachments::ImageAttachment;
@@ -22,11 +23,6 @@ struct PreviewSize {
     width: f32,
     height: f32,
 }
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct PreviewPoint {
-    x: f32,
-    y: f32,
-}
 #[derive(Clone, Copy)]
 enum ZoomStep {
     In,
@@ -35,11 +31,9 @@ enum ZoomStep {
 
 struct ImagePreview {
     host: WeakEntity<PreviewHost>,
-    image: PreviewImage,
+    canvas: Entity<ImageCanvas>,
     name: Option<String>,
-    natural_size: PreviewSize,
-    zoom_percent: Option<f32>,
-    scroll: ScrollHandle,
+    _subscription: Subscription,
 }
 
 enum PreviewImage {
@@ -146,22 +140,20 @@ fn open_source(
     window: &mut Window,
     cx: &mut App,
 ) {
-    let (width, height) = image.dimensions();
     host.update(cx, |host, cx| {
         if host.preview.is_none() {
             host.previous_focus = window.focused(cx);
         }
         let owner = cx.weak_entity();
-        host.preview = Some(cx.new(|_| ImagePreview {
-            host: owner,
-            image,
-            name,
-            natural_size: PreviewSize {
-                width: width as f32,
-                height: height as f32,
-            },
-            zoom_percent: None,
-            scroll: ScrollHandle::new(),
+        host.preview = Some(cx.new(|cx| {
+            let canvas = cx.new(|_| ImageCanvas::new(CanvasImage::Preview(image)));
+            let subscription = cx.observe(&canvas, |_, _, cx| cx.notify());
+            ImagePreview {
+                host: owner,
+                canvas,
+                name,
+                _subscription: subscription,
+            }
         }));
         host.focus.focus(window, cx);
         cx.notify();
@@ -172,150 +164,19 @@ impl ImagePreview {
     fn close(&self, window: &mut Window, cx: &mut Context<Self>) {
         let _ = self.host.update(cx, |host, cx| host.close(window, cx));
     }
-    fn viewport(window: &Window) -> PreviewSize {
-        let size = window.viewport_size();
-        let rem: f32 = window.rem_size().into();
-        PreviewSize {
-            width: (f32::from(size.width) - rem * 7.).max(1.),
-            height: (f32::from(size.height) - rem * 8.75).max(1.),
-        }
+    fn step(&mut self, direction: ZoomStep, _: &mut Window, cx: &mut Context<Self>) {
+        self.canvas
+            .update(cx, |canvas, cx| canvas.step(direction, cx));
     }
 
-    fn zoom(&self, viewport: PreviewSize) -> f32 {
-        let natural = self.natural_size;
-        let fit = fit_zoom_percent(natural, viewport);
-        self.zoom_percent
-            .map(|zoom| clamp_zoom_percent(zoom, fit))
-            .unwrap_or(fit)
-    }
-
-    fn set_zoom(
-        &mut self,
-        next: f32,
-        anchor: Option<Point<Pixels>>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let natural = self.natural_size;
-        let viewport = Self::viewport(window);
-        let next = clamp_zoom_percent(next, fit_zoom_percent(natural, viewport));
-        let bounds = self.scroll.bounds();
-        let anchor = anchor
-            .map(|p| preview_point_from_pixels(p - bounds.origin))
-            .unwrap_or(PreviewPoint {
-                x: viewport.width / 2.,
-                y: viewport.height / 2.,
-            });
-        let offset = anchored_scroll_offset(
-            preview_point_from_pixels(self.scroll.offset()),
-            viewport,
-            natural,
-            self.zoom(viewport),
-            next,
-            anchor,
-        );
-        self.zoom_percent = Some(next);
-        self.scroll.set_offset(point(px(offset.x), px(offset.y)));
-        cx.notify();
-    }
-
-    fn step(&mut self, direction: ZoomStep, window: &mut Window, cx: &mut Context<Self>) {
-        let natural = self.natural_size;
-        let viewport = Self::viewport(window);
-        self.set_zoom(
-            next_zoom_step(
-                self.zoom(viewport),
-                fit_zoom_percent(natural, viewport),
-                direction,
-            ),
-            None,
-            window,
-            cx,
-        );
-    }
-
-    fn scroll_zoom(
-        &mut self,
-        event: &ScrollWheelEvent,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if !(event.modifiers.control || event.modifiers.platform) {
-            return;
-        }
-        let delta: f32 = match event.delta {
-            ScrollDelta::Pixels(p) => p.y.into(),
-            ScrollDelta::Lines(lines) => lines.y * 20.,
-        };
-        let factor = if delta > 0. {
-            1. + delta.abs() * 0.01
-        } else {
-            1. / (1. + delta.abs() * 0.01)
-        };
-        cx.stop_propagation();
-        self.set_zoom(
-            self.zoom(Self::viewport(window)) * factor,
-            Some(event.position),
-            window,
-            cx,
-        );
-    }
-
-    fn pinch_zoom(&mut self, event: &PinchEvent, window: &mut Window, cx: &mut Context<Self>) {
-        cx.stop_propagation();
-        self.set_zoom(
-            self.zoom(Self::viewport(window)) * (1. + event.delta).max(0.01),
-            Some(event.position),
-            window,
-            cx,
-        );
-    }
-
-    fn render_image(
-        &self,
-        natural: PreviewSize,
-        viewport: PreviewSize,
-        zoom: f32,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let image_size = image_render_size(natural, zoom);
-        let content_size = scroll_content_size(viewport, image_size);
-        let origin = centered_image_origin(content_size, image_size);
+    fn render_image(&self) -> impl IntoElement {
         div()
-            .id("image-preview-scroll")
-            .test_support()
             .absolute()
             .top(rems(3.25))
             .bottom(rems(5.5))
             .left(rems(3.5))
             .right(rems(3.5))
-            .overflow_scroll()
-            .track_scroll(&self.scroll)
-            .on_scroll_wheel(cx.listener(Self::scroll_zoom))
-            .on_pinch(cx.listener(Self::pinch_zoom))
-            .child(
-                div()
-                    .relative()
-                    .w(px(content_size.width))
-                    .h(px(content_size.height))
-                    .child(
-                        div()
-                            .id("image-preview-bitmap")
-                            .test_support()
-                            .absolute()
-                            .left(px(origin.x))
-                            .top(px(origin.y))
-                            .w(px(image_size.width))
-                            .h(px(image_size.height))
-                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                            .child(
-                                img(self.image.source())
-                                    .size_full()
-                                    .object_fit(ObjectFit::Contain),
-                            ),
-                    ),
-            )
-            .into_any_element()
+            .child(self.canvas.clone())
     }
 
     fn render_controls(
@@ -326,6 +187,7 @@ impl ImagePreview {
         cx: &Context<Self>,
     ) -> AnyElement {
         let fit = fit_zoom_percent(natural, viewport);
+        let ready = self.canvas.read(cx).initialized;
         let zoom_out = t(cx, "image-preview-zoom-out");
         let zoom_in = t(cx, "image-preview-zoom-in");
         h_flex()
@@ -355,7 +217,9 @@ impl ImagePreview {
                             .tooltip(zoom_out.clone())
                             .accessibility_label(zoom_out)
                             .disabled(
-                                next_zoom_step(zoom, fit, ZoomStep::Out) >= zoom - ZOOM_EPSILON,
+                                !ready
+                                    || next_zoom_step(zoom, fit, ZoomStep::Out)
+                                        >= zoom - ZOOM_EPSILON,
                             )
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.step(ZoomStep::Out, window, cx)
@@ -378,7 +242,9 @@ impl ImagePreview {
                             .tooltip(zoom_in.clone())
                             .accessibility_label(zoom_in)
                             .disabled(
-                                next_zoom_step(zoom, fit, ZoomStep::In) <= zoom + ZOOM_EPSILON,
+                                !ready
+                                    || next_zoom_step(zoom, fit, ZoomStep::In)
+                                        <= zoom + ZOOM_EPSILON,
                             )
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.step(ZoomStep::In, window, cx)
@@ -390,9 +256,11 @@ impl ImagePreview {
 }
 
 impl Render for ImagePreview {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let viewport = Self::viewport(window);
-        let zoom = self.zoom(viewport);
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let canvas = self.canvas.read(cx);
+        let viewport = canvas.viewport();
+        let natural = canvas.natural.expect("modal image dimensions");
+        let zoom = canvas.camera.zoom * 100.;
         let close = t(cx, "image-preview-close");
         div()
             .id("image-preview")
@@ -410,8 +278,8 @@ impl Render for ImagePreview {
                     this.close(window, cx);
                 }),
             )
-            .child(self.render_image(self.natural_size, viewport, zoom, cx))
-            .child(self.render_controls(self.natural_size, viewport, zoom, cx))
+            .child(self.render_image())
+            .child(self.render_controls(natural, viewport, zoom, cx))
             .child(
                 h_flex()
                     .absolute()
@@ -459,10 +327,403 @@ impl Render for ImagePreview {
     }
 }
 
-fn preview_point_from_pixels(point: Point<Pixels>) -> PreviewPoint {
-    PreviewPoint {
-        x: point.x.into(),
-        y: point.y.into(),
+enum CanvasImage {
+    Preview(PreviewImage),
+    File {
+        path: std::path::PathBuf,
+        cache: Entity<RetainAllImageCache>,
+    },
+}
+
+struct Drag {
+    start: Point<f32>,
+    pan: Point<f32>,
+}
+
+struct ImageCanvas {
+    image: CanvasImage,
+    natural: Option<PreviewSize>,
+    camera: Camera,
+    bounds: Bounds<Pixels>,
+    initialized: bool,
+    fitting: bool,
+    drag: Option<Drag>,
+}
+
+struct Frame {
+    bitmap: Option<AnyElement>,
+    mask: ContentMask<Pixels>,
+}
+
+impl ImageCanvas {
+    fn new(image: CanvasImage) -> Self {
+        let natural = match &image {
+            CanvasImage::Preview(image) => {
+                let (width, height) = image.dimensions();
+                Some(PreviewSize {
+                    width: width as f32,
+                    height: height as f32,
+                })
+            }
+            CanvasImage::File { .. } => None,
+        };
+        Self {
+            image,
+            natural,
+            camera: Camera::default(),
+            bounds: Bounds::default(),
+            initialized: false,
+            fitting: true,
+            drag: None,
+        }
+    }
+    fn viewport(&self) -> PreviewSize {
+        PreviewSize {
+            width: self.bounds.size.width.into(),
+            height: self.bounds.size.height.into(),
+        }
+    }
+    fn center(&self) -> Point<f32> {
+        point(
+            f32::from(self.bounds.size.width),
+            f32::from(self.bounds.size.height),
+        ) / 2.
+    }
+    fn local(&self, position: Point<Pixels>) -> Point<f32> {
+        (position - self.bounds.origin).map(f32::from)
+    }
+    fn fit(&mut self, cx: &mut Context<Self>) {
+        if !self.initialized {
+            return;
+        }
+        let natural = self.natural.expect("initialized image");
+        self.camera.zoom = fit_zoom_percent(natural, self.viewport()) / 100.;
+        self.camera.pan =
+            self.center() - point(natural.width, natural.height) * (self.camera.zoom / 2.);
+        self.fitting = true;
+        self.drag = None;
+        cx.notify();
+    }
+    fn set_zoom(&mut self, percent: f32, anchor: Option<Point<Pixels>>, cx: &mut Context<Self>) {
+        if !self.initialized {
+            return;
+        }
+        let natural = self.natural.expect("initialized image");
+        let zoom = clamp_zoom_percent(percent, fit_zoom_percent(natural, self.viewport())) / 100.;
+        let anchor = anchor
+            .map(|p| self.local(p))
+            .unwrap_or_else(|| self.center());
+        self.camera.zoom_at(anchor, zoom);
+        self.fitting = false;
+        self.drag = None;
+        cx.notify();
+    }
+    fn step(&mut self, direction: ZoomStep, cx: &mut Context<Self>) {
+        let Some(natural) = self.natural else {
+            return;
+        };
+        self.set_zoom(
+            next_zoom_step(
+                self.camera.zoom * 100.,
+                fit_zoom_percent(natural, self.viewport()),
+                direction,
+            ),
+            None,
+            cx,
+        );
+    }
+    fn move_drag(&mut self, position: Point<Pixels>) {
+        if let Some(drag) = &self.drag {
+            self.camera.pan = drag.pan + self.local(position) - drag.start;
+            self.fitting = false;
+        }
+    }
+    fn prepare(
+        &mut self,
+        bounds: Bounds<Pixels>,
+        natural: PreviewSize,
+        source: ImageSource,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Frame {
+        let old_center = self.center();
+        let resized = bounds.size != self.bounds.size;
+        self.bounds = bounds;
+        let mask = ContentMask {
+            bounds: bounds.intersect(&window.content_mask().bounds),
+        };
+        if bounds.size.width <= px(0.) || bounds.size.height <= px(0.) {
+            return Frame { bitmap: None, mask };
+        }
+        let initializing = !self.initialized;
+        self.natural = Some(natural);
+        if initializing || (resized && self.fitting) {
+            self.camera.zoom = fit_zoom_percent(natural, self.viewport()) / 100.;
+            self.camera.pan =
+                self.center() - point(natural.width, natural.height) * (self.camera.zoom / 2.);
+            self.initialized = true;
+        } else if resized {
+            self.camera.pan += self.center() - old_center;
+        }
+        if resized {
+            self.drag = None;
+        }
+        let image_size = image_render_size(natural, self.camera.zoom * 100.);
+        let mut bitmap = div()
+            .id("image-preview-bitmap")
+            .test_support()
+            .w(px(image_size.width))
+            .h(px(image_size.height))
+            .child(img(source).size_full().object_fit(ObjectFit::Contain))
+            .into_any_element();
+        window.with_content_mask(Some(mask), |window| {
+            bitmap.layout_as_root(
+                size(
+                    AvailableSpace::Definite(px(image_size.width)),
+                    AvailableSpace::Definite(px(image_size.height)),
+                ),
+                window,
+                cx,
+            );
+            bitmap.prepaint_at(bounds.origin + self.camera.pan.map(px), window, cx);
+        });
+        // The body uses this frame's geometry. Notify observers after prepaint,
+        // when the outer controls can consume the initialized viewport.
+        if initializing || resized {
+            let owner = cx.weak_entity();
+            cx.defer(move |cx| {
+                let _ = owner.update(cx, |_, cx| cx.notify());
+            });
+        }
+        Frame {
+            bitmap: Some(bitmap),
+            mask,
+        }
+    }
+}
+
+impl Render for ImageCanvas {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let (id, image) = match &self.image {
+            CanvasImage::Preview(image) => (
+                "image-preview-canvas",
+                Some(Ok((image.source(), self.natural.unwrap()))),
+            ),
+            CanvasImage::File { path, cache } => {
+                let image = cache.update(cx, |cache, cx| {
+                    cache.load(&Resource::from(path.clone()), window, cx)
+                });
+                (
+                    "file-image-canvas",
+                    image.map(|result| {
+                        result.map(|image| {
+                            let pixels = image.size(0);
+                            let natural = PreviewSize {
+                                width: u32::from(pixels.width) as f32,
+                                height: u32::from(pixels.height) as f32,
+                            };
+                            (ImageSource::Render(image), natural)
+                        })
+                    }),
+                )
+            }
+        };
+        let content = match image {
+            Some(Ok((source, natural))) => {
+                let owner = cx.entity().clone();
+                canvas(
+                    move |bounds, window, cx| {
+                        owner.update(cx, |this, cx| {
+                            this.prepare(bounds, natural, source, window, cx)
+                        })
+                    },
+                    |_, mut frame: Frame, window, cx| {
+                        window.with_content_mask(Some(frame.mask), |window| {
+                            if let Some(bitmap) = &mut frame.bitmap {
+                                bitmap.paint(window, cx);
+                            }
+                        })
+                    },
+                )
+                .size_full()
+                .into_any_element()
+            }
+            Some(Err(_)) => {
+                let CanvasImage::File { path, .. } = &self.image else {
+                    unreachable!()
+                };
+                super::source::unavailable("files-unsupported", path.clone(), cx).into_any_element()
+            }
+            None => div().p_3().child(t(cx, "files-loading")).into_any_element(),
+        };
+        div()
+            .id(id)
+            .test_support()
+            .size_full()
+            .relative()
+            .overflow_hidden()
+            .cursor(if self.drag.is_some() {
+                CursorStyle::ClosedHand
+            } else {
+                CursorStyle::OpenHand
+            })
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, event: &MouseDownEvent, _, cx| {
+                    if this.initialized {
+                        this.drag = Some(Drag {
+                            start: this.local(event.position),
+                            pan: this.camera.pan,
+                        });
+                        cx.notify();
+                    }
+                    cx.stop_propagation();
+                }),
+            )
+            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
+                if this.drag.is_some() {
+                    if event.pressed_button == Some(MouseButton::Left) {
+                        this.move_drag(event.position);
+                    } else {
+                        this.drag = None;
+                    }
+                    cx.notify();
+                }
+            }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, event: &MouseUpEvent, _, cx| {
+                    this.move_drag(event.position);
+                    this.drag = None;
+                    cx.notify();
+                    cx.stop_propagation();
+                }),
+            )
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|this, event: &MouseUpEvent, _, cx| {
+                    this.move_drag(event.position);
+                    this.drag = None;
+                    cx.notify();
+                }),
+            )
+            .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, window, cx| {
+                let delta = event.delta.pixel_delta(window.line_height()).map(f32::from);
+                if event.modifiers.control || event.modifiers.platform {
+                    this.set_zoom(
+                        this.camera.zoom * 100. * (delta.y * 0.01).exp(),
+                        Some(event.position),
+                        cx,
+                    );
+                } else {
+                    this.camera.pan += delta;
+                    this.drag = None;
+                    this.fitting = false;
+                    cx.notify();
+                }
+                cx.stop_propagation();
+            }))
+            .on_pinch(cx.listener(|this, event: &PinchEvent, _, cx| {
+                this.set_zoom(
+                    this.camera.zoom * 100. * (1. + event.delta).max(0.01),
+                    Some(event.position),
+                    cx,
+                );
+                cx.stop_propagation();
+            }))
+            .child(content)
+    }
+}
+
+/// Files owns the same canvas as the attachment popup, plus its compact controls.
+pub(super) struct FileImage {
+    canvas: Entity<ImageCanvas>,
+    _subscription: Subscription,
+}
+impl FileImage {
+    pub(super) fn new(path: std::path::PathBuf, cx: &mut Context<Self>) -> Self {
+        let canvas = cx.new(|cx| {
+            ImageCanvas::new(CanvasImage::File {
+                path,
+                cache: RetainAllImageCache::new(cx),
+            })
+        });
+        let subscription = cx.observe(&canvas, |_, _, cx| cx.notify());
+        Self {
+            canvas,
+            _subscription: subscription,
+        }
+    }
+}
+impl Render for FileImage {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let ready = self.canvas.read(cx).initialized;
+        gpui_kit::component::v_flex()
+            .size_full()
+            .min_w_0()
+            .min_h_0()
+            .child(
+                h_flex()
+                    .flex_none()
+                    .px_3()
+                    .gap_1()
+                    .child(
+                        Button::new("file-image-zoom-out")
+                            .small()
+                            .ghost()
+                            .icon(IconName::Minus)
+                            .disabled(!ready)
+                            .accessibility_label(t(cx, "image-preview-zoom-out"))
+                            .tooltip(t(cx, "image-preview-zoom-out"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.canvas
+                                    .update(cx, |canvas, cx| canvas.step(ZoomStep::Out, cx))
+                            })),
+                    )
+                    .child(
+                        Button::new("file-image-fit")
+                            .small()
+                            .ghost()
+                            .label(t(cx, "image-preview-fit"))
+                            .disabled(!ready)
+                            .accessibility_label(t(cx, "image-preview-fit"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.canvas.update(cx, |canvas, cx| canvas.fit(cx))
+                            })),
+                    )
+                    .child(
+                        Button::new("file-image-original")
+                            .small()
+                            .ghost()
+                            .label("100%")
+                            .disabled(!ready)
+                            .accessibility_label(t(cx, "image-preview-actual-size"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.canvas
+                                    .update(cx, |canvas, cx| canvas.set_zoom(100., None, cx))
+                            })),
+                    )
+                    .child(
+                        Button::new("file-image-zoom-in")
+                            .small()
+                            .ghost()
+                            .icon(IconName::Plus)
+                            .disabled(!ready)
+                            .accessibility_label(t(cx, "image-preview-zoom-in"))
+                            .tooltip(t(cx, "image-preview-zoom-in"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.canvas
+                                    .update(cx, |canvas, cx| canvas.step(ZoomStep::In, cx))
+                            })),
+                    ),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .min_h_0()
+                    .child(self.canvas.clone()),
+            )
     }
 }
 
@@ -525,81 +786,14 @@ fn image_render_size(natural_size: PreviewSize, zoom_percent: f32) -> PreviewSiz
     }
 }
 
-fn scroll_content_size(viewport_size: PreviewSize, image_size: PreviewSize) -> PreviewSize {
-    PreviewSize {
-        width: image_size.width.max(viewport_size.width),
-        height: image_size.height.max(viewport_size.height),
-    }
-}
-
-fn centered_image_origin(content_size: PreviewSize, image_size: PreviewSize) -> PreviewPoint {
-    PreviewPoint {
-        x: ((content_size.width - image_size.width) / 2.).max(0.),
-        y: ((content_size.height - image_size.height) / 2.).max(0.),
-    }
-}
-
-fn anchored_scroll_offset(
-    old_offset: PreviewPoint,
-    viewport_size: PreviewSize,
-    natural_size: PreviewSize,
-    old_zoom_percent: f32,
-    new_zoom_percent: f32,
-    anchor: PreviewPoint,
-) -> PreviewPoint {
-    let old_image_size = image_render_size(natural_size, old_zoom_percent);
-    let new_image_size = image_render_size(natural_size, new_zoom_percent);
-    let old_content_size = scroll_content_size(viewport_size, old_image_size);
-    let new_content_size = scroll_content_size(viewport_size, new_image_size);
-    let old_image_origin = centered_image_origin(old_content_size, old_image_size);
-    let new_image_origin = centered_image_origin(new_content_size, new_image_size);
-
-    let content_point = PreviewPoint {
-        x: anchor.x - old_offset.x,
-        y: anchor.y - old_offset.y,
-    };
-    let image_unit = PreviewPoint {
-        x: (content_point.x - old_image_origin.x) / old_image_size.width,
-        y: (content_point.y - old_image_origin.y) / old_image_size.height,
-    };
-    let next_content_point = PreviewPoint {
-        x: new_image_origin.x + image_unit.x * new_image_size.width,
-        y: new_image_origin.y + image_unit.y * new_image_size.height,
-    };
-
-    clamp_scroll_offset(
-        PreviewPoint {
-            x: anchor.x - next_content_point.x,
-            y: anchor.y - next_content_point.y,
-        },
-        viewport_size,
-        new_content_size,
-    )
-}
-
-fn clamp_scroll_offset(
-    offset: PreviewPoint,
-    viewport_size: PreviewSize,
-    content_size: PreviewSize,
-) -> PreviewPoint {
-    let min_x = (viewport_size.width - content_size.width).min(0.);
-    let min_y = (viewport_size.height - content_size.height).min(0.);
-    PreviewPoint {
-        x: offset.x.clamp(min_x, 0.),
-        y: offset.y.clamp(min_y, 0.),
-    }
-}
-
 fn format_zoom_percent(zoom_percent: f32) -> String {
     format!("{:.0}", zoom_percent.round())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::PreviewPoint;
     use super::PreviewSize;
     use super::ZoomStep;
-    use super::anchored_scroll_offset;
     use super::fit_zoom_percent;
     use super::next_zoom_step;
 
@@ -634,26 +828,5 @@ mod tests {
         assert_eq!(next_zoom_step(75., 62., ZoomStep::Out), 62.);
         assert_eq!(next_zoom_step(100., 100., ZoomStep::In), 125.);
         assert_eq!(next_zoom_step(100., 100., ZoomStep::Out), 100.);
-    }
-
-    #[test]
-    fn anchored_scroll_offset_keeps_focus_point_stable() {
-        let old_offset = PreviewPoint { x: -100., y: -50. };
-        let viewport_size = PreviewSize {
-            width: 1000.,
-            height: 800.,
-        };
-        let natural_size = PreviewSize {
-            width: 2000.,
-            height: 1600.,
-        };
-        let anchor = PreviewPoint { x: 500., y: 400. };
-
-        let next =
-            anchored_scroll_offset(old_offset, viewport_size, natural_size, 50., 100., anchor);
-
-        assert_eq!(next, PreviewPoint { x: -700., y: -500. });
-        let restored = anchored_scroll_offset(next, viewport_size, natural_size, 100., 50., anchor);
-        assert_eq!(restored, PreviewPoint { x: 0., y: 0. });
     }
 }

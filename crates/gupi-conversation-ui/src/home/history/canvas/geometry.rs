@@ -4,33 +4,6 @@ use gpui_kit::Size;
 use gpui_kit::point;
 use gpui_kit::size;
 
-#[derive(Clone, Copy, Debug)]
-pub(super) struct Camera {
-    pub zoom: f32,
-    pub pan: Point<f32>,
-}
-impl Default for Camera {
-    fn default() -> Self {
-        Self {
-            zoom: 1.,
-            pan: point(0., 0.),
-        }
-    }
-}
-impl Camera {
-    pub fn screen(self, p: Point<f32>) -> Point<f32> {
-        p * self.zoom + self.pan
-    }
-    pub fn world(self, p: Point<f32>) -> Point<f32> {
-        (p - self.pan) / self.zoom
-    }
-    pub fn zoom_at(&mut self, anchor: Point<f32>, zoom: f32) {
-        let world = self.world(anchor);
-        self.zoom = zoom.clamp(0.001, 4.);
-        self.pan = anchor - world * self.zoom;
-    }
-}
-
 /// Same cubic geometry is used for painting, labels and pointer distance.
 pub(super) fn curve(a: Point<f32>, b: Point<f32>) -> [Point<f32>; 33] {
     let c = point(a.x, (a.y + b.y) / 2.);
@@ -142,6 +115,7 @@ pub(super) fn label_bounds(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::camera::Camera;
     #[test]
     fn pointer_zoom_and_relayout_anchor_stay_in_screen_space() {
         let mut camera = Camera {

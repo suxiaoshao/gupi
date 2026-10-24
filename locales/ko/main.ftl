@@ -692,7 +692,7 @@ files-expanded = 펼침
 files-collapsed = 접힘
 files-incomplete = 일부 항목을 읽지 못했습니다. 다시 시도
 files-read-failed = 파일 또는 폴더를 읽지 못했습니다. 다시 시도
-files-unsupported = 텍스트 미리 보기를 지원하지 않는 파일입니다
+files-unsupported = 이 파일은 미리 볼 수 없습니다
 files-too-large = 미리 보기 한도(1 MiB 또는 20,000줄)를 초과했습니다
 files-long-line = 긴 줄이 있어 구문 강조를 껐습니다
 files-no-session = 대화를 선택하여 프로젝트 파일을 확인하세요
@@ -1341,7 +1341,7 @@ workspace-close = 작업 영역 닫기
 diff-invalid-path = 파일 이름이 올바른 UTF-8이 아니므로 읽을 수 없습니다
 diff-no-text-changes = 텍스트 변경 없음
 
-diff-external-failed = 파일을 열 수 없습니다. 파일이 더 이상 존재하지 않거나 사용할 수 있는 앱이 없습니다.
+resource-open-failed = 파일을 열 수 없습니다. 파일이 더 이상 존재하지 않거나 사용할 수 있는 앱이 없습니다.
 
 diff-conflict-label = 충돌
 diff-read-failed = 변경 사항을 읽지 못했습니다. 다시 시도하세요.
@@ -1423,3 +1423,8 @@ quote-edit-comment = 댓글 편집
 quote-delete-number = 인용 { $number } 삭제: { $source }
 quote-clear = 인용 모두 지우기
 quote-edit-label = 댓글 { $number } 편집: { $source }
+files-unavailable = 미리 볼 수 없음
+files-open-external = 기본 앱으로 열기
+files-open-remote-image = 브라우저에서 이미지 열기
+image-preview-fit = 화면에 맞춤
+image-preview-actual-size = 실제 크기

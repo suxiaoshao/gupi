@@ -572,6 +572,7 @@ impl HomeView {
         else {
             return;
         };
+        self.resource_open = None;
         self.views
             .get_mut(&key)
             .unwrap()
@@ -584,6 +585,7 @@ impl HomeView {
         self.sync_worktree(window, cx);
         self.remember_file(path.clone());
         if let Some(source) = self.source().filter(|s| s.read(cx).path == path) {
+            source.update(cx, |source, cx| source.set_display_path(path.clone(), cx));
             self.fit_layout(window, cx);
             if keyboard {
                 source.update(cx, |s, cx| s.focus(window, cx));
@@ -595,7 +597,7 @@ impl HomeView {
         let quote_owner = cx.weak_entity();
         let preview = cx.new(|cx| {
             let mut preview = source::Preview::new(path.clone(), Some(root), keyboard, window, cx)
-                .with_quote_owner(quote_owner, key.clone());
+                .with_owner(quote_owner, key.clone());
             preview.navigator_visible = navigator_visible;
             preview
         });

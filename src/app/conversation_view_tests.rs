@@ -690,6 +690,19 @@ fn user_message_images_are_compact_separate_and_open_preview(cx: &mut TestAppCon
         let original = window.find("image-preview-bitmap").bounds();
         window.click("image-preview-zoom-in", cx);
         assert!(window.find("image-preview-bitmap").bounds().size.width > original.size.width);
+        let surface = window.find("image-preview-canvas").bounds();
+        let before_pan = window.find("image-preview-bitmap").bounds();
+        window.drag(
+            surface.center(),
+            surface.center() + gpui_kit::point(px(80.), px(30.)),
+            cx,
+        );
+        let after_pan = window.find("image-preview-bitmap").bounds();
+        assert_eq!(after_pan.size, before_pan.size);
+        assert_eq!(
+            after_pan.origin - before_pan.origin,
+            gpui_kit::point(px(80.), px(30.))
+        );
         window.press("escape", cx);
         assert!(!window.try_find("image-preview").is_some());
         assert_eq!(state.read(cx).current().unwrap().live().len(), 2);

@@ -434,6 +434,7 @@ impl HomeView {
             }
         } else {
             let owner = cx.entity().downgrade();
+            let resource = self.resource_context(&key, cx);
             let input = Textarea::new(&self.input)
                 .aria_label(t(cx, "conversation-input"))
                 .token(|context, _, _| {
@@ -446,14 +447,26 @@ impl HomeView {
                     })
                 })
                 .on_token_click(cx.listener(
-                    |this,
-                     event: &gpui_kit::component::input::InlineTokenClickEvent,
-                     window,
-                     cx| {
+                    move |this,
+                          event: &gpui_kit::component::input::InlineTokenClickEvent,
+                          window,
+                          cx| {
+                        let Some(resource) = resource
+                            .as_ref()
+                            .filter(|resource| resource.is_current(this, cx))
+                        else {
+                            return;
+                        };
                         if let Some(path) =
                             gupi_resources::composer_resources::file_path(event.token())
                         {
-                            cx.open_with_system(path);
+                            this.open_resource(
+                                resource.clone(),
+                                path.to_path_buf(),
+                                matches!(event.click(), ClickEvent::Keyboard(_)),
+                                window,
+                                cx,
+                            );
                             return;
                         }
                         let command = this
@@ -469,6 +482,7 @@ impl HomeView {
                             })
                             .cloned();
                         if let Some(command) = command {
+                            let resource = resource.clone();
                             window.open_dialog(cx, move |dialog, _, cx| {
                                 let path = command
                                     .source_info
@@ -486,8 +500,17 @@ impl HomeView {
                                             Button::new("open-resource-file")
                                                 .small()
                                                 .label(t(cx, "resource-open-file"))
-                                                .on_click(move |_, _, cx| {
-                                                    cx.open_with_system(&path)
+                                                .on_click({
+                                                    let resource = resource.clone();
+                                                    move |_, window, cx| {
+                                                        window.close_dialog(cx);
+                                                        resource.open(
+                                                            path.clone(),
+                                                            true,
+                                                            window,
+                                                            cx,
+                                                        );
+                                                    }
                                                 }),
                                         )
                                     })

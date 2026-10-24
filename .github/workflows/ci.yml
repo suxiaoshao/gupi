@@ -97,6 +97,14 @@ jobs:
         with:
           target: ${{ matrix.target }}
 
+      - name: Cache Rust dependencies
+        if: ${{ needs.changes.outputs.run != 'false' }}
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: ${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-ci-debug
+          cache-workspace-crates: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
       - name: Cargo fmt
         if: ${{ needs.changes.outputs.run != 'false' }}
         run: cargo fmt --all -- --check

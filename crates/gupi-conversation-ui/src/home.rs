@@ -67,7 +67,7 @@ struct SessionView {
     input: Entity<TextareaState>,
     // Last persisted/external snapshot, excluding the editor's uncommitted IME text.
     input_draft: gpui_kit::component::input::InputContent,
-    quote_cards: Entity<quote::cards::Cards>,
+    quote_attachments: Entity<quote::attachments::Attachments>,
     attachment_scroll: ScrollHandle,
     _input_subscriptions: Vec<Subscription>,
     history_canvas: Entity<history::canvas::HistoryCanvas>,
@@ -369,9 +369,10 @@ impl HomeView {
         self.image_preview.read(cx).is_open()
     }
     fn commit_quote_comment(&mut self, key: &str, cx: &mut Context<Self>) -> bool {
-        self.views
-            .get(key)
-            .is_none_or(|view| view.quote_cards.update(cx, |cards, cx| cards.commit(cx)))
+        self.views.get(key).is_none_or(|view| {
+            view.quote_attachments
+                .update(cx, |cards, cx| cards.commit(cx))
+        })
     }
     pub fn submit_or_paste(
         &mut self,
@@ -429,7 +430,7 @@ impl HomeView {
         cx: &mut Context<Self>,
     ) -> Self {
         actions::init(cx);
-        quote::cards::init(cx);
+        quote::attachments::init(cx);
         messages::navigator::init(cx);
         files::init(cx);
         for context in [
@@ -481,7 +482,7 @@ impl HomeView {
                 crate::host::present(&this.state, window, this.notification_visible, cx);
                 if !window.is_window_active() {
                     for view in this.views.values() {
-                        view.quote_cards.update(cx, |cards, cx| {
+                        view.quote_attachments.update(cx, |cards, cx| {
                             cards.commit(cx);
                         });
                     }
@@ -666,6 +667,18 @@ impl HomeView {
                         this.finish_pane_drag(window, cx);
                         cx.stop_active_drag(window);
                         cx.stop_propagation();
+                    } else if !window.has_active_dialog(cx)
+                        && !this.has_image_preview(cx)
+                        && this
+                            .shown_key
+                            .as_ref()
+                            .and_then(|key| this.views.get(key))
+                            .is_some_and(|view| {
+                                view.quote_attachments
+                                    .update(cx, |quotes, cx| quotes.dismiss_on_escape(window, cx))
+                            })
+                    {
+                        cx.stop_propagation();
                     }
                 });
             }));
@@ -710,7 +723,7 @@ impl HomeView {
         let changed = self.shown_key != key;
         if changed {
             if let Some(view) = self.shown_key.as_ref().and_then(|key| self.views.get(key)) {
-                view.quote_cards.update(cx, |cards, cx| {
+                view.quote_attachments.update(cx, |cards, cx| {
                     cards.commit(cx);
                 });
             }
@@ -916,11 +929,16 @@ impl HomeView {
                     }
                 },
             );
-            let quote_cards = cx.new(|cx| {
-                quote::cards::Cards::new(self.state.clone(), key.clone(), input.clone(), cx)
+            let quote_attachments = cx.new(|cx| {
+                quote::attachments::Attachments::new(
+                    self.state.clone(),
+                    key.clone(),
+                    input.clone(),
+                    cx,
+                )
             });
             self._subscriptions
-                .push(cx.observe(&quote_cards, |_, _, cx| cx.notify()));
+                .push(cx.observe(&quote_attachments, |_, _, cx| cx.notify()));
             self.views.insert(
                 key.clone(),
                 SessionView {
@@ -929,7 +947,7 @@ impl HomeView {
                     source: None,
                     source_subscription: None,
                     workspace: workspace::Tabs::new(cx),
-                    quote_cards,
+                    quote_attachments,
                     attachment_scroll: ScrollHandle::new(),
                     input,
                     input_draft: draft,

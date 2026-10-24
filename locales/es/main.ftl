@@ -1422,9 +1422,7 @@ quote-disabled-menu =
     }
 
 quote-action = Citar
-quote-preview-title = { $source } · Contenido al seleccionar
 quote-comment-placeholder = Añadir comentario (opcional)…
-quote-delete = Eliminar cita
 quote-comment-prefix = { "Comentario: " }
 quote-message-short =
     { $role ->
@@ -1436,10 +1434,17 @@ quote-diff-short = { $name } · { $side ->
         [original] lado original
        *[modified] lado modificado
     } · { $start }–{ $end } líneas
-quote-card-label = Cita: { $source }{ $comment ->
-        [yes] , con comentario
-       *[no] { "" }
-    }
-quote-delete-label = Eliminar cita: { $source }
-
 quote-command-unavailable = Este comando aún no admite citas. Reescríbelo como un mensaje normal o elimina las citas antes de enviarlo.
+
+quote-count =
+    { $count ->
+        [one] { $count } cita
+       *[other] { $count } citas
+    }
+quote-selected-text = Texto seleccionado:
+quote-list-source = { $source }:
+quote-user-comment = Comentario del usuario:
+quote-edit-comment = Editar comentario
+quote-delete-number = Eliminar cita { $number }: { $source }
+quote-clear = Borrar citas
+quote-edit-label = Editar comentario { $number }: { $source }

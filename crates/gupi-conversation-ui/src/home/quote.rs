@@ -1,6 +1,6 @@
 //! One-shot displayed selections become session-owned draft attachments.
 use super::*;
-pub(super) mod cards;
+pub(super) mod attachments;
 pub(super) mod toolbar;
 use fluent_bundle::FluentArgs;
 use gpui_kit::component::diff::{DiffSide, DiffState};
@@ -236,11 +236,20 @@ impl HomeView {
         }
         self.show_conversation(window, cx);
         if let Some(view) = self.views.get(&snapshot.key) {
-            let count = self.state.read(cx).sessions()[&snapshot.key]
+            let session = &self.state.read(cx).sessions()[&snapshot.key];
+            // All quote IDs share one visible slot, at the first quote's place.
+            let index = session
                 .attachment_order()
-                .len();
-            view.attachment_scroll
-                .scroll_to_item(count.saturating_sub(1));
+                .iter()
+                .take_while(|id| !session.quotes().iter().any(|quote| &quote.id == *id))
+                .filter(|id| {
+                    session
+                        .attachments()
+                        .iter()
+                        .any(|attachment| &attachment.id == *id)
+                })
+                .count();
+            view.attachment_scroll.scroll_to_item(index);
         }
         Some(id)
     }

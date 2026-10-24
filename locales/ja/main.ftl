@@ -1397,9 +1397,7 @@ quote-disabled-menu =
     }
 
 quote-action = 引用
-quote-preview-title = { $source } · 選択時の内容
 quote-comment-placeholder = コメントを追加（任意）…
-quote-delete = 引用を削除
 quote-comment-prefix = { "コメント：" }
 quote-message-short =
     { $role ->
@@ -1411,10 +1409,16 @@ quote-diff-short = { $name } · { $side ->
         [original] 変更前
        *[modified] 変更後
     } · { $start }–{ $end } 行
-quote-card-label = 引用：{ $source }{ $comment ->
-        [yes] , コメントあり
-       *[no] { "" }
-    }
-quote-delete-label = 引用を削除：{ $source }
-
 quote-command-unavailable = このコマンドにはまだ引用を添付できません。通常のメッセージに書き直すか、引用を削除してから送信してください。
+
+quote-count =
+    { $count ->
+       *[other] { $count } 件の引用
+    }
+quote-selected-text = 選択したテキスト：
+quote-list-source = { $source }：
+quote-user-comment = ユーザーのコメント：
+quote-edit-comment = コメントを編集
+quote-delete-number = 引用 { $number } を削除：{ $source }
+quote-clear = 引用をすべて削除
+quote-edit-label = コメント { $number } を編集：{ $source }

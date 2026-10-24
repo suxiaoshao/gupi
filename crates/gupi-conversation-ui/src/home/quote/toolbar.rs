@@ -392,7 +392,7 @@ impl HomeView {
             && let Some(anchor) = anchor
             && let Some(view) = self.views.get(&snapshot.key)
         {
-            view.quote_cards
+            view.quote_attachments
                 .update(cx, |cards, cx| cards.open_floating(&id, anchor, window, cx));
         }
         cx.notify();
@@ -406,7 +406,7 @@ impl HomeView {
             .shown_key
             .as_ref()
             .and_then(|key| self.views.get(key))
-            .map(|view| view.quote_cards.clone())
+            .map(|view| view.quote_attachments.clone())
             && cards.read(cx).floating()
         {
             return cards.update(cx, |cards, cx| cards.render_floating(cx));

@@ -76,12 +76,12 @@ impl HomeView {
     pub(super) fn render_composer(
         &self,
         max_width: Pixels,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         #[cfg(feature = "performance")]
         let _span = tracing::debug_span!(target: "gupi::performance", "composer.render").entered();
-        let attachments = self.render_attachments(cx);
+        let attachments = self.render_attachments(window, cx);
         let Some(session) = self.state.read(cx).current() else {
             return div().into_any_element();
         };
@@ -584,7 +584,7 @@ impl HomeView {
                 if running {
                     let state = self.state.clone();
                     let target = key.clone();
-                    let cards = view.quote_cards.clone();
+                    let cards = view.quote_attachments.clone();
                     actions = actions.child(
                         DropdownButton::new("queue-send-mode")
                             .small()

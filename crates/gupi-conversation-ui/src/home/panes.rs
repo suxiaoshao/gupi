@@ -620,6 +620,7 @@ mod tests {
         visual.update(|window, cx| {
             home.update(cx, |home, cx| {
                 assert_eq!(home.input.read(cx).content(), original);
+                home.quote(&quote::Quote(Some(captured.clone())), window, cx);
                 home.state.update(cx, |state, _| {
                     *state
                         .sessions_for_test()
@@ -629,7 +630,7 @@ mod tests {
                 });
                 home.quote(&quote::Quote(Some(captured)), window, cx);
                 assert_eq!(home.input.read(cx).content(), original);
-                assert_eq!(home.state.read(cx).current().unwrap().quotes().len(), 1);
+                assert_eq!(home.state.read(cx).current().unwrap().quotes().len(), 2);
             })
         });
         let id = visual.update(|_, cx| {
@@ -638,7 +639,46 @@ mod tests {
                 .clone()
         });
         visual.update(|window, cx| {
-            window.click(format!("quote-open-{id}"), cx);
+            assert_eq!(
+                window
+                    .find("quote-list-open")
+                    .label()
+                    .unwrap()
+                    .replace(['\u{2068}', '\u{2069}'], ""),
+                "2 quotes"
+            );
+            home.read(cx).input.focus_handle(cx).focus(window, cx);
+            window.hover("quote-list-open", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert!(window.try_find(format!("quote-edit-{id}")).is_some());
+            assert!(
+                home.read(cx)
+                    .input
+                    .focus_handle(cx)
+                    .contains_focused(window, cx)
+            );
+            window.dispatch_event(
+                PlatformInput::KeyDown(KeyDownEvent {
+                    keystroke: Keystroke::parse("escape").unwrap(),
+                    is_held: false,
+                    prefer_character_input: false,
+                }),
+                cx,
+            );
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert!(window.try_find(format!("quote-edit-{id}")).is_none());
+            assert!(
+                home.read(cx)
+                    .input
+                    .focus_handle(cx)
+                    .contains_focused(window, cx)
+            );
+            window.click("quote-list-open", cx);
+            window.click(format!("quote-edit-{id}"), cx);
             window.input("Why this order?", cx);
             window.press("enter", cx);
         });
@@ -650,7 +690,8 @@ mod tests {
             );
         });
         visual.update(|window, cx| {
-            window.click(format!("quote-open-{id}"), cx);
+            window.click("quote-list-open", cx);
+            window.click(format!("quote-edit-{id}"), cx);
             window.press("secondary-a", cx);
             window.input("Save on Escape", cx);
             window.press("escape", cx);
@@ -661,7 +702,7 @@ mod tests {
                 home.read(cx).state.read(cx).current().unwrap().quotes()[0].comment,
                 "Save on Escape"
             );
-            window.click(format!("quote-open-{id}"), cx);
+            window.click(format!("quote-edit-{id}"), cx);
             window.press("secondary-a", cx);
             window.input("Keep this when preparation takes over", cx);
             let state = home.read(cx).state.clone();
@@ -679,7 +720,32 @@ mod tests {
             state.update(cx, |state, cx| state.finish_preparation("empty", None, cx));
         });
         visual.run_until_parked();
-        visual.update(|window, cx| window.click(format!("quote-remove-{id}"), cx));
+        visual.update(|window, cx| {
+            window.click("quote-list-open", cx);
+            window.click(format!("quote-remove-{id}"), cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            assert_eq!(
+                home.read(cx)
+                    .state
+                    .read(cx)
+                    .current()
+                    .unwrap()
+                    .quotes()
+                    .len(),
+                1
+            );
+            assert_eq!(
+                window
+                    .find("quote-list-open")
+                    .label()
+                    .unwrap()
+                    .replace(['\u{2068}', '\u{2069}'], ""),
+                "1 quote"
+            );
+            window.click("quote-clear", cx);
+        });
         visual.run_until_parked();
         visual.update(|_, cx| {
             assert!(
@@ -797,7 +863,12 @@ mod tests {
             );
             assert!(home.read(cx).input.read(cx).value().is_empty());
             assert!(view.read(cx).selected_text().is_empty());
-            assert!(home.read(cx).views["empty"].quote_cards.read(cx).floating());
+            assert!(
+                home.read(cx).views["empty"]
+                    .quote_attachments
+                    .read(cx)
+                    .floating()
+            );
             window.input("Pointer comment", cx);
             window.press("enter", cx);
             let bounds = view.read(cx).bounds();

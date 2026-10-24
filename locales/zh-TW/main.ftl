@@ -1404,9 +1404,7 @@ quote-disabled-menu =
     }
 
 quote-action = 引用
-quote-preview-title = { $source } · 選取時的內容
 quote-comment-placeholder = 新增評論（選填）…
-quote-delete = 刪除引用
 quote-comment-prefix = { "評論：" }
 quote-message-short =
     { $role ->
@@ -1418,10 +1416,16 @@ quote-diff-short = { $name } · { $side ->
         [original] 舊側
        *[modified] 新側
     } · { $start }–{ $end } 行
-quote-card-label = 引用：{ $source }{ $comment ->
-        [yes] , 含評論
-       *[no] { "" }
-    }
-quote-delete-label = 刪除引用：{ $source }
-
 quote-command-unavailable = 此命令暫不支援附帶引用。請改寫為一般訊息，或移除引用後傳送。
+
+quote-count =
+    { $count ->
+       *[other] { $count } 則引用
+    }
+quote-selected-text = 所選文字：
+quote-list-source = { $source }：
+quote-user-comment = 使用者評論：
+quote-edit-comment = 編輯評論
+quote-delete-number = 刪除引用 { $number }：{ $source }
+quote-clear = 清空引用
+quote-edit-label = 編輯評論 { $number }：{ $source }

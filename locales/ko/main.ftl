@@ -1397,9 +1397,7 @@ quote-disabled-menu =
     }
 
 quote-action = 인용
-quote-preview-title = { $source } · 선택 당시 내용
 quote-comment-placeholder = 댓글 추가 (선택 사항)…
-quote-delete = 인용 삭제
 quote-comment-prefix = { "댓글: " }
 quote-message-short =
     { $role ->
@@ -1411,10 +1409,16 @@ quote-diff-short = { $name } · { $side ->
         [original] 원본 쪽
        *[modified] 수정 쪽
     } · { $start }–{ $end } 행
-quote-card-label = 인용: { $source }{ $comment ->
-        [yes] , 댓글 있음
-       *[no] { "" }
-    }
-quote-delete-label = 인용 삭제: { $source }
-
 quote-command-unavailable = 이 명령은 아직 인용을 지원하지 않습니다. 일반 메시지로 다시 작성하거나 인용을 제거한 뒤 보내세요.
+
+quote-count =
+    { $count ->
+       *[other] { $count } 개의 인용
+    }
+quote-selected-text = 선택한 텍스트:
+quote-list-source = { $source }:
+quote-user-comment = 사용자 댓글:
+quote-edit-comment = 댓글 편집
+quote-delete-number = 인용 { $number } 삭제: { $source }
+quote-clear = 인용 모두 지우기
+quote-edit-label = 댓글 { $number } 편집: { $source }

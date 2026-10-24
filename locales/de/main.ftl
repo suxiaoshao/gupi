@@ -1423,9 +1423,7 @@ quote-disabled-menu =
     }
 
 quote-action = Zitieren
-quote-preview-title = { $source } · Inhalt bei Auswahl
 quote-comment-placeholder = Kommentar hinzufügen (optional)…
-quote-delete = Zitat löschen
 quote-comment-prefix = { "Kommentar: " }
 quote-message-short =
     { $role ->
@@ -1437,10 +1435,17 @@ quote-diff-short = { $name } · { $side ->
         [original] ursprüngliche Seite
        *[modified] geänderte Seite
     } · { $start }–{ $end } Zeilen
-quote-card-label = Zitat: { $source }{ $comment ->
-        [yes] , mit Kommentar
-       *[no] { "" }
-    }
-quote-delete-label = Zitat löschen: { $source }
-
 quote-command-unavailable = Dieser Befehl unterstützt noch keine Zitate. Formuliere ihn als normale Nachricht oder entferne die Zitate vor dem Senden.
+
+quote-count =
+    { $count ->
+        [one] { $count } Zitat
+       *[other] { $count } Zitate
+    }
+quote-selected-text = Ausgewählter Text:
+quote-list-source = { $source }:
+quote-user-comment = Benutzerkommentar:
+quote-edit-comment = Kommentar bearbeiten
+quote-delete-number = Zitat { $number } löschen: { $source }
+quote-clear = Zitate leeren
+quote-edit-label = Kommentar { $number } bearbeiten: { $source }

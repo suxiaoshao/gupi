@@ -1423,9 +1423,7 @@ quote-disabled-menu =
     }
 
 quote-action = Quote
-quote-preview-title = { $source } · Content at selection
 quote-comment-placeholder = Add a comment (optional)…
-quote-delete = Delete quote
 quote-comment-prefix = { "Comment: " }
 quote-message-short =
     { $role ->
@@ -1437,10 +1435,17 @@ quote-diff-short = { $name } · { $side ->
         [original] original side
        *[modified] modified side
     } · { $start }–{ $end } lines
-quote-card-label = Quote: { $source }{ $comment ->
-        [yes] , with comment
-       *[no] { "" }
-    }
-quote-delete-label = Delete quote: { $source }
-
 quote-command-unavailable = This command does not support quotes yet. Rewrite it as a normal message, or remove the quotes before sending.
+
+quote-count =
+    { $count ->
+        [one] { $count } quote
+       *[other] { $count } quotes
+    }
+quote-selected-text = Selected text:
+quote-list-source = { $source }:
+quote-user-comment = User comment:
+quote-edit-comment = Edit comment
+quote-delete-number = Delete quote { $number }: { $source }
+quote-clear = Clear quotes
+quote-edit-label = Edit comment { $number }: { $source }

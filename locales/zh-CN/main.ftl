@@ -1404,9 +1404,7 @@ quote-disabled-menu =
     }
 
 quote-action = 引用
-quote-preview-title = { $source } · 选中时的内容
 quote-comment-placeholder = 添加评论（可选）…
-quote-delete = 删除引用
 quote-comment-prefix = { "评论：" }
 quote-message-short =
     { $role ->
@@ -1418,10 +1416,16 @@ quote-diff-short = { $name } · { $side ->
         [original] 旧侧
        *[modified] 新侧
     } · { $start }–{ $end } 行
-quote-card-label = 引用：{ $source }{ $comment ->
-        [yes] , 含评论
-       *[no] { "" }
-    }
-quote-delete-label = 删除引用：{ $source }
-
 quote-command-unavailable = 此命令暂不支持附带引用。请改写为普通消息，或移除引用后发送。
+
+quote-count =
+    { $count ->
+       *[other] { $count } 条引用
+    }
+quote-selected-text = 所选文本：
+quote-list-source = { $source }：
+quote-user-comment = 用户评论：
+quote-edit-comment = 编辑评论
+quote-delete-number = 删除引用 { $number }：{ $source }
+quote-clear = 清空引用
+quote-edit-label = 编辑评论 { $number }：{ $source }

@@ -97,7 +97,11 @@ impl HomeView {
             false
         }
     }
-    pub(super) fn render_attachments(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(super) fn render_attachments(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         let session = self.state.read(cx).current()?;
         if session.attachments().is_empty() && session.quotes().is_empty() {
             return None;
@@ -114,7 +118,7 @@ impl HomeView {
         let quote_ids: Vec<_> = quotes.iter().map(|q| q.id.clone()).collect();
         let order = session.attachment_order().to_vec();
         if let Some(view) = self.views.get(&key) {
-            view.quote_cards
+            view.quote_attachments
                 .update(cx, |cards, cx| cards.set_enabled(editable, cx));
         }
         let mut cards: HashMap<String, AnyElement> = attachments
@@ -192,16 +196,13 @@ impl HomeView {
                 (attachment.id.clone(), card.into_any_element())
             })
             .collect();
-        if let Some(view) = self.views.get(&key) {
-            for quote in quotes {
-                let id = quote.id.clone();
-                cards.insert(
-                    id,
-                    view.quote_cards
-                        .update(cx, |cards, cx| cards.render_card(quote, cx)),
-                );
-            }
-        }
+        let mut pill = (!quotes.is_empty()).then(|| {
+            self.views
+                .get(&key)
+                .unwrap()
+                .quote_attachments
+                .update(cx, |quotes, cx| quotes.render_pill(window, cx))
+        });
         let mut children = Vec::new();
         for id in order
             .iter()
@@ -210,7 +211,14 @@ impl HomeView {
         {
             if let Some(card) = cards.remove(id) {
                 children.push(card);
+            } else if quote_ids.contains(id)
+                && let Some(pill) = pill.take()
+            {
+                children.push(pill);
             }
+        }
+        if let Some(pill) = pill {
+            children.push(pill);
         }
         let view = self.views.get(&key)?;
         let handle = view.attachment_scroll.clone();

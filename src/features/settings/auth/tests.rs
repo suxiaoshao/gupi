@@ -19,6 +19,9 @@ async fn editor_retains_masked_keys_on_busy_and_saves_without_exposing_existing_
 ) {
     cx.update(|cx| {
         gpui_kit::init(cx);
+        // Coordinate clicks must not race the dialog's wall-clock entrance motion;
+        // this test exercises masked credentials and persistence, not animation.
+        cx.set_reduce_motion(true);
         crate::app::init_capability_hosts(cx);
         i18n::apply(gupi_settings::config::AppLanguage::English, cx);
     });

@@ -1468,3 +1468,5 @@ shell-run = Run
 shell-input-running = Command running; stop it in the conversation
 shell-history-previous = Previous command
 shell-history-next = Next command
+
+conversation-input-handled = Sent to extension

@@ -500,6 +500,34 @@ impl Session {
             Submission::Idle => {}
         }
     }
+    fn accept_submission(
+        &mut self,
+        revision: Option<u64>,
+        used_template: bool,
+        attachment_ids: &[String],
+        quotes: &[std::sync::Arc<crate::quotes::QuoteAttachment>],
+    ) -> bool {
+        self.finish_submission(true);
+        let mut changed = false;
+        if used_template {
+            self.pending_template = None;
+        }
+        self.attachments.retain(|a| !attachment_ids.contains(&a.id));
+        let before = self.quotes.len();
+        self.quotes
+            .retain(|q| !quotes.iter().any(|sent| sent.id == q.id));
+        changed |= before != self.quotes.len();
+        self.attachment_order.retain(|id| {
+            self.quotes.iter().any(|q| &q.id == id) || self.attachments.iter().any(|a| &a.id == id)
+        });
+        // Extension editor updates belong to the next submission.
+        if revision == Some(self.draft_revision) {
+            changed |= !self.draft.text().is_empty();
+            self.draft = "".into();
+            self.draft_revision += 1;
+        }
+        changed
+    }
     fn fail_submission(&mut self, error: String, cx: &mut Context<ConversationState>) {
         if self.submitting() {
             self.finish_submission(false);
@@ -2214,26 +2242,16 @@ impl ConversationState {
                 };
                 let mut draft_changed = false;
                 match result {
-                    Ok(_) => {
-                        s.finish_submission(true);
-                        if used_template {
-                            s.pending_template = None;
+                    Ok(disposition) => {
+                        // Queued and started inputs show up through Pi's queue and run events.
+                        if disposition == pi_rpc::protocol::InputDisposition::Handled {
+                            cx.emit(ConversationEvent::Notify {
+                                message: crate::feedback::Feedback::InputHandled,
+                                error: false,
+                            });
                         }
-                        s.attachments.retain(|a| !attachment_ids.contains(&a.id));
-                        let before = s.quotes.len();
-                        s.quotes
-                            .retain(|q| !quotes.iter().any(|sent| sent.id == q.id));
-                        draft_changed |= before != s.quotes.len();
-                        s.attachment_order.retain(|id| {
-                            s.quotes.iter().any(|q| &q.id == id)
-                                || s.attachments.iter().any(|a| &a.id == id)
-                        });
-                        // Extension editor updates belong to the next submission.
-                        if revision == Some(s.draft_revision) {
-                            draft_changed |= !s.draft.text().is_empty();
-                            s.draft = "".into();
-                            s.draft_revision += 1;
-                        }
+                        draft_changed =
+                            s.accept_submission(revision, used_template, &attachment_ids, &quotes);
                     }
                     Err(error) => {
                         s.error = Some(SessionError::Runtime(error.to_string()));
@@ -3103,6 +3121,24 @@ mod tests {
     use gpui_kit::AppContext;
     use gpui_kit::TestAppContext;
     use std::path::PathBuf;
+
+    #[test]
+    fn accepted_input_preserves_event_owned_run_and_newer_draft() {
+        for running in [false, true] {
+            for newer in [false, true] {
+                let mut session = super::Session::from_rpc_messages(&[]);
+                session.draft = if newer { "next draft" } else { "submitted" }.into();
+                session.draft_revision = if newer { 5 } else { 4 };
+                session.run = super::RunState::Idle;
+                if running {
+                    session.run.start();
+                }
+                session.accept_submission(Some(4), false, &[], &[]);
+                assert_eq!(session.running(), running);
+                assert_eq!(session.draft.text(), if newer { "next draft" } else { "" });
+            }
+        }
+    }
 
     #[gpui::test]
     fn attachment_reads_follow_the_session_and_cancel_on_removal(cx: &mut TestAppContext) {

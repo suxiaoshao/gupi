@@ -1468,3 +1468,5 @@ shell-run = Ausführen
 shell-input-running = Befehl läuft; im Gespräch stoppen
 shell-history-previous = Vorheriger Befehl
 shell-history-next = Nächster Befehl
+
+conversation-input-handled = An Erweiterung übergeben

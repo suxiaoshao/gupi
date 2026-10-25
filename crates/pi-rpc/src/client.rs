@@ -368,8 +368,11 @@ impl Client {
     pub async fn clear_queue(&self) -> Result<ClearedQueue, Error> {
         self.data(Command::ClearQueue).await
     }
-    pub async fn prompt(&self, prompt: Prompt) -> Result<Response, Error> {
-        self.request(Command::Prompt(prompt)).await
+    pub async fn prompt(&self, prompt: Prompt) -> Result<InputDisposition, Error> {
+        Ok(self
+            .request(Command::Prompt(prompt))
+            .await?
+            .input_disposition())
     }
     pub async fn abort(&self) -> Result<Response, Error> {
         self.request(Command::Abort).await
@@ -799,6 +802,56 @@ fn rejection(response: &Response) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Older/newer Pi replies must remain accepted without inventing execution facts.
+    #[tokio::test]
+    async fn prompt_returns_disposition_without_rejecting_unknown_success() {
+        let shared = Arc::new(Shared {
+            requests: Mutex::new(Requests {
+                accepting: true,
+                pending: HashMap::new(),
+            }),
+            next_id: AtomicU64::new(1),
+        });
+        let (writes, mut receive) = mpsc::channel(4);
+        let (close, _) = watch::channel(false);
+        let (_, state) = watch::channel(ConnectionState::Starting);
+        let client = Client {
+            inner: Arc::new(Inner {
+                shared: shared.clone(),
+                writes,
+                close,
+                state,
+                limits: Limits::default(),
+            }),
+        };
+        for (data, expected) in [
+            (json!({"disposition":"handled"}), InputDisposition::Handled),
+            (json!({"disposition":"queued"}), InputDisposition::Queued),
+            (json!({"disposition":"started"}), InputDisposition::Started),
+            (json!({}), InputDisposition::Unknown),
+            (
+                json!({"disposition":"new-behavior"}),
+                InputDisposition::Unknown,
+            ),
+        ] {
+            let sender = client.clone();
+            let task =
+                tokio::spawn(async move { sender.prompt(Prompt::new("fixture input")).await });
+            let command: Value =
+                serde_json::from_slice(&receive.recv().await.unwrap().bytes).unwrap();
+            let id = command["id"].as_str().unwrap();
+            let pending = shared.requests.lock().unwrap().pending.remove(id).unwrap();
+            pending
+                .reply
+                .send(Ok(serde_json::from_value(json!({
+                    "id":id,"command":"prompt","success":true,"data":data
+                }))
+                .unwrap()))
+                .unwrap();
+            assert_eq!(task.await.unwrap().unwrap(), expected);
+        }
+    }
 
     #[tokio::test]
     async fn bash_identity_is_available_before_stream_delivery_and_result_wait() {

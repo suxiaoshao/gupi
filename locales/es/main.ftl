@@ -1467,3 +1467,5 @@ shell-run = Ejecutar
 shell-input-running = Comando en ejecución; puedes detenerlo en la conversación
 shell-history-previous = Comando anterior
 shell-history-next = Comando siguiente
+
+conversation-input-handled = Enviado a la extensión

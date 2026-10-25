@@ -550,6 +550,7 @@ fn feedback_text(message: &gupi_conversation::feedback::Feedback, cx: &App) -> S
     use gupi_conversation::feedback::Feedback;
     let mut args = FluentArgs::new();
     let key = match message {
+        Feedback::InputHandled => "conversation-input-handled",
         Feedback::Message(message) => return message.clone(),
         Feedback::DeleteFailed(_) => "conversation-delete-failed",
         Feedback::Exported(path) => {

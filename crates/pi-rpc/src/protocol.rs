@@ -268,6 +268,28 @@ pub struct Response {
     pub extra: Map<String, Value>,
 }
 
+/// How Pi accepted an input, independently of execution or queue events.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum InputDisposition {
+    Handled,
+    Queued,
+    Started,
+    /// Accepted by Pi, without a recognized disposition from this version.
+    Unknown,
+}
+
+impl Response {
+    pub fn input_disposition(&self) -> InputDisposition {
+        match self.data.get("disposition").and_then(Value::as_str) {
+            Some("handled") => InputDisposition::Handled,
+            Some("queued") => InputDisposition::Queued,
+            Some("started") => InputDisposition::Started,
+            _ => InputDisposition::Unknown,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct ExtensionRequest {
     pub id: String,

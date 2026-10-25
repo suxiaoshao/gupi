@@ -39,6 +39,8 @@ pub const APP: &[Kind] = &[
     Kind::Quit,
 ];
 pub const SESSION: &[Kind] = &[
+    Kind::PreviousShellCommand,
+    Kind::NextShellCommand,
     Kind::Find,
     Kind::Model,
     Kind::Compact,
@@ -108,6 +110,8 @@ pub fn label(kind: Kind, sidebar: bool, history: bool, cx: &App) -> String {
             Kind::Reveal => "action-locate",
             Kind::CopyPath => "conversation-copy-path",
             Kind::Delete => "conversation-delete",
+            Kind::PreviousShellCommand => "shell-history-previous",
+            Kind::NextShellCommand => "shell-history-next",
             Kind::Palette => "command-palette",
         },
     )

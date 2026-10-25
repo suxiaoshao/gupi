@@ -1437,3 +1437,14 @@ files-open-external = 用默认应用打开
 files-open-remote-image = 在浏览器中打开图片
 image-preview-fit = 适配
 image-preview-actual-size = 原始尺寸
+
+shell-placeholder = 输入要运行的命令
+shell-command = Shell 命令
+shell-include = 加入上下文
+shell-context-help = ! 加入模型上下文，!! 不加入；进入 Shell 时连按 ! 可切换为不加入。命令不会触发模型回复。
+shell-return-help = 返回消息；有任务时，Esc 优先停止任务。
+shell-return = 返回消息
+shell-run = 运行
+shell-input-running = 命令运行中，可在对话中停止
+shell-history-previous = 上一条命令
+shell-history-next = 下一条命令

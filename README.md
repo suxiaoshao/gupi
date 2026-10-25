@@ -215,7 +215,9 @@ Responses render as Markdown with code blocks, lists, and tables. Expand a proce
 
 Interface errors show a localized summary and keep their recovery actions visible. Expand **Technical details** to read the original system, process or RPC error. Pi responses and tool, shell and extension content remain verbatim.
 
-With Pi 1.3.0, recorded direct Shell commands appear as separate rows with output, exit status and a marker when excluded from model context. Active commands can show live output and a Stop action; long output supports expansion, copying, search and opening Pi's full-output file when available. The dedicated Shell input is not available yet: typing `!` or `!!` in the composer still sends a normal message.
+With Pi 1.3.0, recorded direct Shell commands appear as separate rows with output, exit status and a marker when excluded from model context. Active commands can show live output and a Stop action; long output supports expansion, copying, search and opening Pi's full-output file when available. At the start of a draft, with no selection, type `!` to enter the independent Bash editor without changing the message draft. An immediate second `!`, or pasting `!! pwd` at that position, selects exclusion from model context; `!` includes output by default. The card’s **Include in context** switch changes this option without adding a prefix to the command.
+
+In Shell, **Enter** runs the command and **Shift+Enter** inserts a newline. Accepted commands clear the editor and leave it in Shell. Use **Back to message** (✕), idle **Esc**, or **Backspace** in an empty Shell to restore the original draft; Esc first closes editor overlays/search, then stops an active task. The command palette’s **Previous command / Next command** actions recall this conversation’s in-memory Shell inputs without executing them; arrow keys keep moving the caret.
 
 With focus in conversation messages, **Cmd/Ctrl+F** searches that conversation. In the composer or source editor, it searches that control’s own text. Token totals and the context indicator below the composer open usage details. The model control also lets you change the thinking level when the selected model supports it.
 
@@ -314,7 +316,7 @@ On **Pi → MCP**, save or discard edits before using a server's **Log in** or *
 | Cmd/Ctrl+N | New conversation |
 | Cmd/Ctrl+P | Search conversations |
 | Cmd/Ctrl+Shift+P | Command palette |
-| Cmd/Ctrl+F | Search the focused messages, draft, or source editor |
+| Cmd/Ctrl+F | Search the focused messages, draft, Shell command, or source editor |
 | Cmd/Ctrl+L | Focus the composer |
 | Cmd/Ctrl+Alt+/ | Model and thinking |
 | Cmd/Ctrl+Alt+B | Conversation history |

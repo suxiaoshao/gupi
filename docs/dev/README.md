@@ -26,7 +26,9 @@
 
 **[主窗口工作区、历史面板与标题栏](workspace-layout/README.md)**：稳定的对话/工作区双区域外壳、工作区内部响应式布局与窄窗口单区；统一分隔比例、状态归属、历史面板边界及必要验证。已确认设计，响应式布局待实现；[面板界面细节](workspace-layout/panel-polish.md) 规定标题栏与标签表现。
 
-**[Shell 命令](bang-commands/README.md)**：Pi 直接 Shell 命令（`!` / `!!`）的实时输出、停止和历史展示；输入框入口尚未接入。
+**[独立 Shell 输入框（Gupi #82）](issue-82/README.md)**：保留普通草稿的 `!` / `!!` 入口、单卡片 Bash 编辑器、上下文开关、运行/返回与内存命令召回。
+
+**[Shell 命令](bang-commands/README.md)**：Pi 直接 Shell 命令的 RPC、实时输出、停止与历史展示；与独立输入卡片共用执行入口。
 
 **[应用架构改造](capability-architecture/README.md)**：六个能力 crate 的当前职责、依赖和验证；[接口与依赖收敛](capability-architecture/refinement.md)记录官方 skill 核对结果。
 

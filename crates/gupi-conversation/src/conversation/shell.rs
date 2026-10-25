@@ -152,12 +152,12 @@ impl ConversationState {
         command: String,
         exclude_from_context: bool,
         cx: &mut Context<Self>,
-    ) {
+    ) -> bool {
         if command.trim().is_empty() || !self.can_run_shell(key, cx) {
-            return;
+            return false;
         }
         let Some(client) = self.client(key, cx) else {
-            return;
+            return false;
         };
         let request = match client.bash(command.clone(), exclude_from_context) {
             Ok(request) => request,
@@ -165,7 +165,7 @@ impl ConversationState {
                 self.sessions.get_mut(key).unwrap().error =
                     Some(SessionError::Runtime(error.to_string()));
                 notify_session(key, cx);
-                return;
+                return false;
             }
         };
         let id = request.id().to_owned();
@@ -202,6 +202,7 @@ impl ConversationState {
         ));
         s.content_revision += 1;
         notify_session(key, cx);
+        true
     }
     pub fn stop_shell(&mut self, key: &str, cx: &mut Context<Self>) {
         let Some(client) = self.client(key, cx) else {

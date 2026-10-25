@@ -16,6 +16,7 @@ mod progress;
 pub(crate) mod quote;
 mod resource;
 mod session_info;
+mod shell;
 mod slash;
 pub(crate) use slash::FileInsertion;
 mod source;
@@ -66,6 +67,7 @@ struct SessionView {
     source_subscription: Option<Subscription>,
     workspace: workspace::Tabs,
     input: Entity<TextareaState>,
+    shell: shell::Input,
     // Last persisted/external snapshot, excluding the editor's uncommitted IME text.
     input_draft: gpui_kit::component::input::InputContent,
     quote_attachments: Entity<quote::attachments::Attachments>,
@@ -427,6 +429,7 @@ impl HomeView {
         cx: &mut Context<Self>,
     ) -> Self {
         actions::init(cx);
+        shell::init(cx);
         quote::attachments::init(cx);
         messages::navigator::init(cx);
         files::init(cx);
@@ -717,6 +720,16 @@ impl HomeView {
     fn sync(&mut self, force: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.sync_git(window, cx);
         let key = self.state.read(cx).selected().clone();
+        let shell_focused = self
+            .shown_key
+            .as_ref()
+            .and_then(|key| self.views.get(key))
+            .is_some_and(|view| {
+                view.shell
+                    .editor
+                    .focus_handle(cx)
+                    .contains_focused(window, cx)
+            });
         let changed = self.shown_key != key;
         if changed {
             self.resource_open = None;
@@ -873,7 +886,7 @@ impl HomeView {
                 input
             });
             let input_key = key.clone();
-            let input_subscriptions = vec![
+            let mut input_subscriptions = vec![
                 cx.observe(&input, |_, _, cx| cx.notify()),
                 cx.subscribe_in(
                     &input,
@@ -912,6 +925,25 @@ impl HomeView {
                     },
                 ),
             ];
+            let shell = shell::Input::new(window, cx);
+            let shell_key = key.clone();
+            input_subscriptions.push(cx.observe(&shell.editor, |_, _, cx| cx.notify()));
+            input_subscriptions.push(cx.subscribe_in(
+                &shell.editor,
+                window,
+                move |this, _, event, window, cx| {
+                    if let Some(view) = this.views.get_mut(&shell_key)
+                        && matches!(event, InputEvent::Change | InputEvent::Blur)
+                    {
+                        view.shell.second_bang = false;
+                    }
+                    if this.shown_key.as_ref() == Some(&shell_key)
+                        && matches!(event, InputEvent::PressEnter { shift: false, .. })
+                    {
+                        this.run_shell_input(window, cx);
+                    }
+                },
+            ));
             let root = self.state.read(cx).sessions()[&key].info().cwd.clone();
             let files = cx.new(|cx| files::Files::new(root, window, cx));
             let files_key = key.clone();
@@ -946,6 +978,7 @@ impl HomeView {
                     attachment_scroll: ScrollHandle::new(),
                     input,
                     input_draft: draft,
+                    shell,
                     _input_subscriptions: input_subscriptions,
                     history_canvas,
                     history_projection: None,
@@ -979,10 +1012,10 @@ impl HomeView {
         // The page selects the session's retained editor; switching never resets it.
         let input = self.views[&key].input.clone();
         if self.input.entity_id() != input.entity_id() {
-            let focused = self.input.read(cx).focus_handle(cx).is_focused(window);
+            let focused = shell_focused || self.input.read(cx).focus_handle(cx).is_focused(window);
             self.input = input;
             if focused {
-                self.input.update(cx, |input, cx| input.focus(window, cx));
+                self.focus_composer(window, cx);
             }
         }
         let view = self.views.get_mut(&key).unwrap();
@@ -1259,7 +1292,12 @@ impl HomeView {
             self.questionnaire_subscriptions.clear();
             self.input_questionnaire = None;
             if !window.has_active_dialog(cx) {
-                self.input.update(cx, |input, cx| input.focus(window, cx));
+                let shell = &self.views[&key].shell;
+                if shell.open {
+                    shell.editor.focus_handle(cx).focus(window, cx);
+                } else {
+                    self.input.update(cx, |input, cx| input.focus(window, cx));
+                }
             }
         }
         self.fit_layout(window, cx);

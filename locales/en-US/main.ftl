@@ -1457,3 +1457,14 @@ files-open-external = Open with default app
 files-open-remote-image = Open image in browser
 image-preview-fit = Fit
 image-preview-actual-size = Actual size
+
+shell-placeholder = Enter a command to run
+shell-command = Shell command
+shell-include = Include in context
+shell-context-help = ! includes output in model context; !! excludes it. Press ! twice when entering Shell to exclude output. Commands do not trigger a model response.
+shell-return-help = Back to message; Esc stops active tasks first.
+shell-return = Back to message
+shell-run = Run
+shell-input-running = Command running; stop it in the conversation
+shell-history-previous = Previous command
+shell-history-next = Next command

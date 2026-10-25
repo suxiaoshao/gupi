@@ -133,6 +133,7 @@ fn local_icon(kind: Kind) -> IconName {
     match kind {
         Kind::New => IconName::Plus,
         Kind::Settings => IconName::Settings,
+        Kind::PreviousShellCommand | Kind::NextShellCommand => IconName::SquareTerminal,
         Kind::Model => IconName::Brain,
         Kind::ProjectFiles => IconName::Folder,
         Kind::History | Kind::OpenHistory => IconName::GitBranch,

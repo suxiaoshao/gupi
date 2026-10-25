@@ -1,6 +1,6 @@
 # 独立 Shell 输入框
 
-状态：已实现双输入与内存命令召回，受影响门禁通过；本轮原生验证因 Computer Use 启动故障未执行。采用 Kit Editor + 底栏；Pi 的执行语义与适合沿用的处理方案见下表，GUI 呈现不受 TUI 单缓冲形式限制。基于 `feat/82-shell-input` 的 `b7e113f`、锁定的 GPUI Kit 0.8.0。本文负责输入侧；执行、实时输出和历史继续遵循 [Shell 命令交互](../bang-commands/README.md)。
+状态：已实现双输入与内存命令召回，受影响门禁及中文浅色、深色的原生输入流程验证通过。采用 Kit Editor + 底栏；Pi 的执行语义与适合沿用的处理方案见下表，GUI 呈现不受 TUI 单缓冲形式限制。基于 `feat/82-shell-input` 的 `b7e113f`、锁定的 GPUI Kit 0.8.0。本文负责输入侧；执行、实时输出和历史继续遵循 [Shell 命令交互](../bang-commands/README.md)。
 
 ## 结果
 
@@ -180,4 +180,6 @@ Esc 的任务优先级采用 Pi；本项不移植 TUI“停止时自动取回整
 - `cargo clippy -p gupi -p gupi-conversation-ui -p gupi-conversation -p gupi-settings --all-targets --locked -- -D warnings` 通过。
 - 同四包 `cargo test --all-targets --locked` 通过：gupi 127、gupi-conversation 43、gupi-conversation-ui 228、gupi-settings 20。九语言 Shell 文案键与参数校验通过。
 - 架构师限定源码复审无剩余阻塞；不视为原生验收。
-- Computer Use 首次 `getState` 返回 `Native apps: Error: Sky Computer Use native pipe startup failed`，已立即停止该验证路径，未重试或绕行。中文浅/深色、窄窗、实际键盘布局/IME、运行 `pwd` / `echo`、排除上下文及停止尚未原生验证；未发送模型提示词。此前 Gallery 构建因尚在修正的公共 action 路径错误退出，未启动应用或创建 Gallery 夹具。
+- Codex 重启后，对 `8846c71` 的新构建使用隔离 UI Gallery 完成中文浅/深色原生验证：已有草稿 `保留草稿 keep-draft` 在开头键入 `!` 后原样保留；第二个 `!` 切换为不加入上下文；非起点输入得到 `保!留草稿…`，选区替换得到 `!留草稿…`，二者均不切换 Shell；粘贴 `!! pwd` 只得到命令 `pwd`。Enter 执行 `pwd` 与两行 `echo`，Shift+Enter 插入换行，执行接受后清空并留在 Shell。输出中确认目录和 `first` / `second`，并显示“不加入模型上下文”。
+- 原生停止与返回：`echo stop-check; sleep 60` 经 Esc 取消，仍留在 Shell；深色下另一条同类命令经既有停止按钮取消。查找开启时第一下 Esc 仅关闭查找，下一下空闲 Esc 才返回消息；空 Shell Backspace 返回，普通草稿完整。命令面板的上一条/下一条分别召回已执行命令、恢复浏览前的未运行输入，未重复执行历史命令。浅深色截图观察 Bash 高亮、底栏与输出可读；只改变 Gallery 自身主题。
+- 本轮未发现需改产品代码的问题，未发送模型提示词。实际字符入口使用 Computer Use 合成 `Shift+1`，未验证真实 IME 组字、其它键盘布局或跨平台行为；模型与 Shell 同时运行时的 Esc 顺序未原生验证。未扩展到窄窗矩阵。退出 Gallery 后已确认进程结束、隔离数据自动移除。

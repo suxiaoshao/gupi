@@ -1,14 +1,14 @@
 # 独立 Shell 输入框
 
-状态：已实现双输入与内存命令召回，受影响门禁及中文浅色、深色的原生输入流程验证通过。采用 Kit Editor + 底栏；Pi 的执行语义与适合沿用的处理方案见下表，GUI 呈现不受 TUI 单缓冲形式限制。基于 `feat/82-shell-input` 的 `b7e113f`、锁定的 GPUI Kit 0.8.0。本文负责输入侧；执行、实时输出和历史继续遵循 [Shell 命令交互](../bang-commands/README.md)。
+状态：双输入与内存命令召回已实现，既有行为验证见文末；本次单卡片视觉重设计已确认、尚未实现。采用 Kit Editor + 同卡片底栏；Pi 的执行语义与适合沿用的处理方案见下表，GUI 呈现不受 TUI 单缓冲形式限制。组件依据为锁定的 GPUI Kit 0.8.0。本文负责输入侧；执行、实时输出和历史继续遵循 [Shell 命令交互](../bang-commands/README.md)。
 
 ## 结果
 
 当前会话有两个独立输入：普通 Composer 保留原草稿，Shell 使用 Kit Editor 编辑 Bash 命令。界面在同一输入位置切换，Shell 标识、高亮与底栏明确表示模式；`!` / `!!` 只是入口及上下文选择，不显示在命令正文中。普通正文、文件/技能 token、图片、引用附件及选区不被入口吞掉，也不随命令发送或清空。命令接受执行后清空 Shell 正文并留在 Shell，返回消息时恢复原 Composer。
 
-Shell 正文使用 Kit `Editor`，底栏由公开的 `Toolbar`、`ToggleGroup` 和 `Button` 直接组合。Pi 负责执行、扩展处理、上下文和历史；Gupi 只把正文送入现有 `bash` RPC。Shell 不是终端模拟器，不新增交互式终端、Shell 历史搜索、路径补全、LSP 或命令解释器。
+Shell 正文使用 Kit `Editor`，与中性 Shell 标签、cwd、上下文 Switch、返回和运行按钮组合在同一张输入卡片中；空态高度、外框和发送位置与普通 Composer 对齐。Pi 负责执行、扩展处理、上下文和历史；Gupi 只把正文送入现有 `bash` RPC。Shell 不是终端模拟器，不新增交互式终端、Shell 历史搜索、路径补全、LSP 或命令解释器。
 
-[Issue #82](https://github.com/suxiaoshao/gupi/issues/82) 正文中的 InputGroup 外框和 2–8 行自动增高已不符合当前 Kit 能力，不能照旧承诺。[Kit 维护者对 #3657 的结论](https://github.com/longbridge/gpui-kit/pull/3657#issuecomment-6379788798) 是由调用方直接组合 Editor 与工具栏，不增加 InputGroup 变体。本文不复制该 PR，不改依赖，也不自绘仿造 InputGroup。
+[Issue #82](https://github.com/suxiaoshao/gupi/issues/82) 的输入行为继续沿用；Shell 不承诺 Editor 的 2–8 行自动增高。Kit 0.8.0 的 `InputGroupControl` 只接受 Input/Textarea，[Kit 维护者对 #3657 的结论](https://github.com/longbridge/gpui-kit/pull/3657#issuecomment-6379788798) 是由调用方组合 Editor 与工具栏。本次以公开 Editor、主题样式和控件组合一张卡片，不把 Editor 塞入假的 InputGroup，不复制其控制器或未合入 PR，不改依赖。
 
 ## 所有权
 
@@ -26,15 +26,26 @@ Shell 正文使用 Kit `Editor`，底栏由公开的 `Toolbar`、`ToggleGroup` �
 
 ## 关键决定
 
-### Kit Editor + 底栏
+### 一张输入卡片
 
-上方使用 Kit `Editor` 默认外观，下方直接组合 `Toolbar`、`ToggleGroup` 和 `Button`。外层只安排布局，不仿造 InputGroup 外框，不要求与普通 Composer 的轮廓、焦点环或高度一致。普通输入框未来如何实现不影响本项，也不需要先做自写编辑组件的选型。
+Editor 与底栏置于同一个纵向容器，只有外层一圈边框。外层通过公开 `Styled` 使用 `border_1()`、`theme.input` 和 `theme.radius`，表面保持中性，浅深色取主题颜色；Editor 使用 `appearance(false)` 去掉自身表面、圆角与边框。仅 `bordered(false)` 会保留 Editor 自身背景与圆角，因此本项优先使用前者。外层在 Editor 聚焦时调用公开 `ThemeStyled::focus_ring_style(window, cx)`，沿用 Kit 的边框焦点色、环宽和主题开关，不手写焦点环；底栏控件保留各自的键盘焦点提示，外环不能被父层裁掉。
 
-Editor 使用 Bash 高亮、等宽字体、软换行，隐藏行号、折叠与缩进线。采用 `8rem` 固定编辑区域和 Kit 内部滚动；这是本项的初始布局值，不是“2–8 行自动增高”的模拟。Kit 0.8.0 没有 Editor 自动高度，按公开能力使用，不读取私有 display map 或按行高补算。
+这是应用层的正常组件组合：主题、布局与焦点外观由应用组合，文字编辑、IME、选择、撤销、命中与滚动仍全部由 Kit Editor 管理。0.8.0 没有接受 Editor 的 InputGroup control 或与其等价的通用输入框架；无需因此修改依赖或复制 InputGroup 实现。Shell 卡片不是新输入组件，也不引入绘制代理、私有布局访问或常驻的隐藏 Composer。
 
-底栏显示 `SquareTerminal`、“Shell”、真实会话 cwd、`! 加入上下文 / !! 不加入` 单选切换和 primary “运行”。目录过长时截断并提供完整 tooltip；未就绪时显示连接状态并禁用运行。运行中显示“命令运行中，可在对话中停止”，继续复用现有输出行的停止入口。提供键盘可达的 ghost “返回消息”；其空闲行为与 Esc 相同，清除未运行的 Shell 输入后返回，不另存一个可恢复的命令草稿。显式“返回消息”只退出输入面板，不停止正在运行的任务；任务停止由 Esc 的优先级或既有停止按钮处理。
+Editor 使用 Bash 高亮、等宽字体、软换行，隐藏行号、折叠与缩进线。**只要求空态时两种输入卡片等高**：编辑区高度用一处应用布局值 `rems(4.)`，对应当前普通 Composer 最小两行在 InputGroup 中的 `min_h_16` 区域。这是一项明确的 rem 布局选择，不读取或复制 Kit 私有行高常量，不模拟 Editor 自动增高。命令多了由 Editor 内部滚动。底栏使用与普通 Composer 相同的公开间距尺度和发送按钮高度，空态且底栏单行时切换不跳动；普通 Composer 多行、有附件或底栏换行时不承诺等高。不做高度测量、同步缓存或新增常驻组件。
 
-底栏用组件自身的主题、尺寸与焦点行为；窄窗先压缩目录，必要时按控件组换行，保持运行与返回可达。不手量控件宽度，不为统一外观补画边框。Shell 模式隐藏普通附件、模型选择、token 统计和发送下拉，隐藏不代表发送或删除附件。
+### 底栏：身份、选项、操作
+
+底栏与 Editor 共用卡片外框，不再有独立工具栏边框、额外卡片或编辑区与底栏之间的外部间隔。以普通 flex 行组合下列公开控件，左右组垂直居中：
+
+- **左侧身份**：使用 `Tag::secondary().small()`，内部组合 Kit 的 `SquareTerminal` 图标与“Shell”。Tag 用中性 secondary 变体，不用 primary、warning 或其它语义色。cwd 紧随其后，采用 muted 小字；只有实际位于用户家目录内的路径才将该目录前缀显示为 `~`（按路径组件判断，不用字符串前缀误缩写相似目录名）。过长路径 ellipsis，tooltip 始终显示完整原路径；只改变显示，不改变执行 cwd。
+- **右侧选项**：小号 `Switch`，可见标签“加入上下文”，checked 对应 `!excludeFromContext`，替代 ToggleGroup。tooltip 写明：“! 加入模型上下文，!! 不加入；进入 Shell 时连按 ! 可切换为不加入。命令不会触发模型回复。”这里的连按仍指既定第二前缀机会，不增加任意时刻的切换快捷键。Switch 使用默认状态样式；其 checked 色表示选项，不用于给 Shell 模式染色。
+- **返回**：`Button.ghost().small()`，只显示 Kit `X` 图标，提供“返回消息”的无障碍名称。tooltip 用“返回消息”并显示 `Esc`，同时说明 Esc 在有任务时优先停止任务；按钮仍按既定规则直接退出输入面板，不把它误说成停止按钮。
+- **运行**：只显示 Kit `Play` 图标，primary，提供“运行”的无障碍名称及 tooltip。使用与普通发送按钮相同的公开 `InputGroupButton.small()`，其图标按钮为 `size_8`；该组件可独立作为 Element 使用，不要求外面存在 InputGroup。普通 `Button.small()` 实际为 `size_6`，不能用同名 small 宣称等尺寸。运行按钮位于底栏最右，右侧 inset 与普通发送按钮对齐；禁用使用 Kit 默认样式，不另画禁用颜色。
+
+右侧按 Switch → 返回 → 运行排序，运行是唯一 primary 提交动作。运行中提示收进底栏，采用 muted 小字“命令运行中，可在对话中停止”，不再在卡片外或底栏下单独占一行；停止仍复用对话输出的现有入口。连接提示也仅在真实连接中显示，运行禁用原因不一概写成“正在连接”。窄窗优先压缩 cwd 和状态文本，保留控件与必要 tooltip，不为省宽度改变动作语义或增加菜单机制。
+
+不用整块主色或语义色区分 Shell：依靠中性 Shell 标签、Bash 高亮与等宽正文、“输入要运行的命令”占位文字表示模式。运行按钮、Switch 状态和焦点环各自沿用 Kit 默认交互色，不是 Shell 模式色。Shell 模式继续隐藏普通附件、模型选择、token 统计和发送下拉；隐藏不代表发送或删除。普通草稿与 Shell 的进入、返回、执行、停止行为均不随此次外观修改而变化。
 
 ### Kit 0.8.0 能力边界
 
@@ -45,14 +56,16 @@ Editor 使用 Bash 高亮、等宽字体、软换行，隐藏行号、折叠与�
 | Bash、等宽、软换行 | `EditorState::language("bash")`、`soft_wrap(true)`；沿用现有应用高亮初始化。Editor 自带主题代码字体、字号和相对行高，不复制其私有行高常量。[Editor render](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/component/src/input/editor.rs#L166)、[EditorState](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/base/src/input/base/state.rs#L11962)。 |
 | 隐藏行号、折叠、缩进线 | 公开 `set_line_number(false)`、`set_folding(false)`、`set_indent_guides(false)`；使用运行时 setter，不依赖标为 doc-hidden 的构造器。缩进线实现见 [indent.rs](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/base/src/input/editor/indent.rs#L181)。其余编辑行为保留 Kit 默认，不照搬 Zed 整套编辑器配置。 |
 | 占位符与提交 | `placeholder` 显示“输入要运行的命令”，`submit_on_enter(true)`、`InputEvent::PressEnter` 处理提交；Shift+Enter 仍由 Kit 插入换行。[提交实现](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/base/src/input/base/state.rs#L2167)。 |
-| 高度 | Editor 只有公开 `.h(...)` 与 `Styled` 布局；`auto_grow` / `set_auto_grow` 属于 TextareaMode，不属于 EditorMode。[Textarea 与 Editor 分界](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/base/src/input/base/state.rs#L11900)。采用固定 `8rem` 编辑区域、内部滚动；这不是精确 2–8 行，也不按 display map 算高度。 |
+| 高度 | Editor 公开 `.h(...)`；`auto_grow` 属于 TextareaMode，不属于 EditorMode。采用一处 `rems(4.)` 固定编辑区、内部滚动，对齐普通 Composer 的最小两行输入区域；只保证空态单行底栏等高。[Editor height](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/component/src/input/editor.rs#L55)、[InputGroup render_control](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/component/src/input/group.rs#L272)。 |
 | 选择、撤销与 IME | Kit 原生 Editor 行为；公开 `selected_range` / `set_selected_range`、`EntityInputHandler::marked_text_range` 可用于模式入口判断。组合中的 marked text 不切面板。入口只消费当前用户的前缀输入；程序化恢复、撤销或普通草稿本来含有 `!`，不作为新的切换请求。[输入处理](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/base/src/input/base/state.rs#L4303)。 |
 | 键入入口 | 使用 GPUI `KeyBinding::new("!", …, Some("GupiComposer > Input && !GupiQuoteComment"))` 与对应 action handler；命中且符合进入条件时消费，不符合时 `cx.propagate()`。这是按键绑定，不是已提交文字的回调；平台 IME 直接提交不保证经过绑定，详见入口规则。 |
 | 粘贴 | Textarea 和 Editor 都有公开 `on_paste`；普通输入符合入口条件时消费本次前缀粘贴，避免先写入普通草稿再整份重建。其余粘贴交给所在输入组件。Shell 不附加图片，不在本项移植 Pi 的剪贴板图片临时文件和路径转义。[Editor on_paste](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/component/src/input/editor.rs#L124)。 |
 | 搜索与 Esc | Kit 提供 `search_session()`、`close_search()`；Kit 的 Escape 处理菜单、额外光标、补全及 IME，但 `unmark_text` 后仍可 propagate。应用不能把同一次取消 IME 的 Esc 又解释为停任务/退出。[Escape](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/base/src/input/base/state.rs#L2288)、[搜索](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/base/src/input/editor/search.rs#L136)。 |
-| 底栏 | `Toolbar` / `ToolbarGroup` 提供语义和键盘导航，`ToggleGroup` / `Button` 提供控件行为；不使用 InputGroupAddon 包裹一个假的 Input。[Toolbar](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/component/src/toolbar.rs#L136)。 |
+| 单卡片表面与焦点 | `Editor::appearance(false)`、`bordered(false)` 均公开；外层用 `Styled` 与主题 input/radius，Editor 焦点条件下用 `ThemeStyled::focus_ring_style`。不调用私有 GroupAppearance 或 focus_ring 函数。[Editor appearance](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/component/src/input/editor.rs#L60)、[ThemeStyled](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/component/src/styled.rs#L128)、[InputGroupControl](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/component/src/input/group.rs#L460)。 |
+| 标签与 Switch | `Tag::secondary().small().child(...)` 可容纳图标与文字；Badge 是叠加计数/点的组件，不用于这里的图文标签。Switch 提供 `small`、`label`、`checked`、`on_change`、`tooltip` 与无障碍标签，无需自做切换控件。[Tag](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/component/src/tag.rs#L135)、[Switch](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/component/src/switch.rs#L35)。 |
+| 图标按钮与 tooltip | `InputGroupButton` 的公开 `IntoElement` 允许独立使用；small 图标按钮与现有发送按钮同为 `size_8`。返回用 ghost 小号 Button；`Tooltip::key_binding` 可展示 Esc。`Play`、`X`、`SquareTerminal` 均在 `gpui_kit::assets::IconName` 目录中。[InputGroupButton](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/component/src/input/group.rs#L479)、[尺寸](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/component/src/input/group.rs#L602)、[IntoElement](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/component/src/input/group.rs#L655)、[Tooltip](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/component/src/tooltip.rs#L80)。 |
 
-Zed 是编辑体验上限，不是另一套实现依赖。本机 Zed `79fe6a645f` 的 `crates/editor/src/editor.rs:485–500` 有 `AutoHeight` 与 `Full` 模式；Kit 没有对应 Editor 自动高度，就不复制 Zed 的测量和滚动实现。本项采用 Kit Editor 固定高度，不再把是否对齐 Composer 或改用 Textarea 列为待选项。
+Zed 是编辑体验上限，不是另一套实现依赖。本机 Zed `79fe6a645f` 的 `crates/editor/src/editor.rs:485–500` 有 `AutoHeight` 与 `Full` 模式；Kit 没有对应 Editor 自动高度，就不复制 Zed 的测量和滚动实现。本项使用上述固定编辑区和 Kit 内部滚动，空态对齐是应用布局，不复制 Zed 的自动高度。
 
 ### 参照 Pi：语义、处理方案与 TUI 形式
 
@@ -146,18 +159,20 @@ Esc 的任务优先级采用 Pi；本项不移植 TUI“停止时自动取回整
 
 ### 范围与简化
 
-本项只组合已有 Editor 与底栏，不自写输入组件，不为将来输入组件建立接口框架，也不以富文本选型作为前置条件。Pi 负责执行与记录，Zed 只作为代码编辑体验的参考上限，不移植它的终端、自动高度或编辑器布局。
+本项只用公开 Editor、控件和主题样式组合输入卡片，不自写输入组件，不为将来输入组件建立接口框架，也不以富文本选型作为前置条件。Pi 负责执行与记录，Zed 只作为代码编辑体验的参考上限，不移植它的终端、自动高度或编辑器布局。
 
 不加命令危险性扫描、每次执行确认、粘贴确认、跨会话确认、超时自动取消、断线重试或新命令队列。Shell 内普通文本粘贴沿用光标插入；普通 Composer 的前缀入口只消费本次输入，不存在“替换原消息草稿前确认”的需要。必要的会话归属、IME 与一次动作只提交一次，沿用现有所有者和组件入口，不增加通用保护框架。
 
 ## 实现顺序
 
-1. 在 Home 组合独立 Kit Editor + 底栏，保留原 Composer entity 和草稿；不等待输入组件研究或 InputGroup 扩展。
-2. 用 Composer/Shell 各自上下文的 `"!"` keybinding 和现有 `on_paste` 接入入口、第二个 `!`、空 Backspace 与返回操作；先证明消费及 `cx.propagate()` 回落均保留原草稿、IME 不被截断，再接入 Shell 内存历史和显式召回。运行与返回动作限定到焦点上下文，不能同时触发消息发送或临时窗口快捷动作。
-3. 调用现有 Shell 能力，接受后清空并留在 Shell，本地拒绝保留；沿用执行输出、停止和历史刷新。会话切换与异步结果不得覆盖新会话/下一条输入。
+1. 将既有 Shell Editor 与底栏收进单卡片，移除 Editor 自身 appearance；接入主题外框与公开焦点环，将编辑区统一到一处 `4rem`，只对齐普通 Composer 空态。保留现有两份输入 entity 和草稿，不增加测量或隐藏组件。
+2. 将底栏改为中性 Tag、缩写 cwd、小号 Switch、X 返回和 Play 运行按钮，运行中提示移入底栏；沿用现有上下文布尔值、动作和提交判断。保留已有 `!`/粘贴/第二前缀/Backspace/Esc、内存历史与显式召回，不重做输入路由。
+3. 核对新控件仍调用现有 Shell 能力，接受后清空并留在 Shell、本地拒绝保留，以及输出和停止行为不变。用现有真实组件回归验证公开控件接线，不为每个样式 builder 增加测试。
 4. 同步九种语言的可见文案、tooltip 和无障碍名称；命令、路径及输出不翻译。完成受影响验证并记录实际结果，交付试用，不并入输出侧重构。
 
 ## 必要验证
+
+此次视觉重设计复用现有回归；只有新控件接线可能破坏用户行为时才扩展原测试，不另列样式测试矩阵。浅色/深色原生各确认一次：单层边框与完整焦点环、空态切换高度、发送/运行按钮实际尺寸及右侧对齐、Switch 与第二前缀状态一致、底栏内运行提示；窄窗确认 cwd 截断且操作可达。普通 Composer 多行或附件造成的高度差不作为失败。新外观未完成前，下方旧版原生记录只证明旧版行为，不能作为新卡片的视觉验收。
 
 新增行为的主要风险是误把普通草稿送去执行、破坏 IME/选择、按键穿透到旧发送入口，以及 Shell 结果覆盖另一会话或下一条输入。按 AGENTS.md 优先扩展现有 Home 正式组件回归与 Shell 能力回归：通过真实输入/粘贴和按钮/键盘路径观察草稿保留、RPC 类型及上下文参数、执行期间可继续编辑、返回焦点的用户结果；不为每个字段、builder 或禁用谓词另建测试，也不重新验证 Kit 整套编辑器。
 
@@ -169,7 +184,9 @@ Esc 的任务优先级采用 Pi；本项不移植 TUI“停止时自动取回整
 
 无新增产品选择。键入入口按用户指定改为正式 GPUI keybinding；它支持普通按键的消费与回落，不承诺拦截所有 IME 提交。双输入、隐藏前缀、原草稿保留、提交后留在 Shell 和显式历史召回不变。不为补齐上述平台边界增加写入后检测、私有 API 或自写输入组件。
 
-## 实现与验证
+## 既有实现与验证
+
+以下记录对应视觉重设计前的双输入实现；单卡片、Switch、图标底栏与新高度尚待实现和验证。
 
 `SessionView` 持有 Shell Editor、模式、上下文选项及内存历史；原 Textarea entity 不替换。入口使用两个上下文的 `!` Action 和普通输入的 `on_paste`。Shell 父级仅通过公开光标/选区 Action 的 capture 结束第二前缀机会，并继续传播给 Kit；空输入处无位移的 Left 也能结束该机会，无全局字符拦截。Kit 提交时发出 `PressEnter` 并传播 Enter，Shell 父级消费这次传播，避免平台再次插入换行。运行按钮与提交共用现有提交条件及历史分支预览限制。
 

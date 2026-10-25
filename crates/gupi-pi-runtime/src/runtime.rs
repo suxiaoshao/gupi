@@ -213,7 +213,10 @@ impl PiState {
                         _consumer: Self::consume(id, client.clone(), events, cx),
                         client,
                     }),
-                    Err(error) => Instance::Failed(error),
+                    Err(error) => {
+                        tracing::warn!(instance = ?id, stage = "process_launch", category = error.category(), failed = true, "Pi failure");
+                        Instance::Failed(error)
+                    },
                 };
                 owner.instances.insert(id, instance);
                 cx.emit(ConnectionChanged(id));

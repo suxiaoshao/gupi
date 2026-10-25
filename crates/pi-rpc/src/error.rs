@@ -29,3 +29,20 @@ impl From<serde_json::Error> for Error {
         Self::Protocol(error.to_string())
     }
 }
+
+impl Error {
+    /// Stable diagnostic metadata; never includes protocol or operating-system text.
+    pub fn category(&self) -> &'static str {
+        match self {
+            Self::Io(_) => "io",
+            Self::Protocol(_) => "protocol",
+            Self::Rejected { .. } => "rejected",
+            Self::Closed => "closed",
+            Self::StartupTimeout => "startup_timeout",
+            Self::ShutdownTimeout => "shutdown_timeout",
+            Self::NotReady => "not_ready",
+            Self::Capacity(_) => "capacity",
+            Self::Options(_) => "options",
+        }
+    }
+}

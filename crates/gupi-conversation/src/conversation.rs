@@ -4,6 +4,7 @@ mod command;
 mod compaction;
 mod content;
 mod deletion;
+mod diagnostics;
 mod execution;
 mod export;
 mod loading;
@@ -738,11 +739,25 @@ struct Snapshot {
     state: protocol::SessionState,
     entries: Option<protocol::Entries>,
 }
-async fn snapshot(client: &Client, scope: ReadScope) -> Result<Snapshot, pi_rpc::Error> {
-    client.ready().await?;
-    let state = client.get_state().await?;
+async fn snapshot(
+    client: &Client,
+    scope: ReadScope,
+) -> Result<Snapshot, (&'static str, pi_rpc::Error)> {
+    client
+        .ready()
+        .await
+        .map_err(|error| ("connection_ready", error))?;
+    let state = client
+        .get_state()
+        .await
+        .map_err(|error| ("state_read", error))?;
     let entries = if scope >= ReadScope::History {
-        Some(client.get_entries().await?)
+        Some(
+            client
+                .get_entries()
+                .await
+                .map_err(|error| ("history_read", error))?,
+        )
     } else {
         None
     };
@@ -1551,6 +1566,9 @@ impl ConversationState {
                         return;
                     };
                     s.directory = None;
+                    if result.is_err() {
+                        s.log_failure("directory_prepare", "io");
+                    }
                     s.core_read
                         .finish(result.as_ref().err().map(ToString::to_string));
                     if result.is_ok() {
@@ -1576,8 +1594,8 @@ impl ConversationState {
                         Ok(info) if info.cwd == expected_cwd && (info.id == expected_id || expected_id.starts_with("draft-") || expected_id == key) => {
                             s.info = info; this.launch(&key, cx);
                         }
-                        Ok(_) => { let error = "Session identity or working directory changed; refresh the session catalog.".to_owned(); s.core_read.finish(Some(error.clone())); s.fail_submission(error, cx); }
-                        Err(error) => { s.core_read.finish(Some(error.clone())); s.fail_submission(error, cx); }
+                        Ok(_) => { s.log_failure("session_file_read", "identity_changed"); let error = "Session identity or working directory changed; refresh the session catalog.".to_owned(); s.core_read.finish(Some(error.clone())); s.fail_submission(error, cx); }
+                        Err(error) => { s.log_failure("session_file_read", "metadata"); s.core_read.finish(Some(error.clone())); s.fail_submission(error, cx); }
                     }
                     notify_session(&key, cx);
                 });
@@ -1614,6 +1632,7 @@ impl ConversationState {
                 s.pending_count = 0;
             }
             Err(error) => {
+                s.log_failure("connection_launch", error.category());
                 s.error = Some(SessionError::Runtime(error.to_string()));
                 s.fail_submission(error.to_string(), cx);
             }
@@ -1656,6 +1675,7 @@ impl ConversationState {
                 Ok(Some(client)) => match client.state() {
                     ConnectionState::Closed(report) => {
                         let s = self.sessions.get_mut(&key).unwrap();
+                        s.log_exit(&report);
                         s.error = Some(SessionError::Runtime(
                             report.reason.map(|e| e.to_string()).unwrap_or_else(|| {
                                 if report.stderr.is_empty() {
@@ -1712,6 +1732,9 @@ impl ConversationState {
                 },
                 Err(error) => {
                     let s = self.sessions.get_mut(&key).unwrap();
+                    if !matches!(error, pi_rpc::Error::Closed) {
+                        s.log_failure("connection_launch", error.category());
+                    }
                     s.error = Some(SessionError::Runtime(error.to_string()));
                     s.disconnect_shell();
                     s.finish_submission(false);
@@ -1787,8 +1810,11 @@ impl ConversationState {
                     .as_ref()
                     .is_some_and(|id| *id != snapshot.state.session_id)
                 {
-                    Err(pi_rpc::Error::Protocol(
-                        "session changed while reading conversation".into(),
+                    Err((
+                        "state_read",
+                        pi_rpc::Error::Protocol(
+                            "session changed while reading conversation".into(),
+                        ),
                     ))
                 } else {
                     Ok(snapshot)
@@ -1803,7 +1829,7 @@ impl ConversationState {
                     s.event_revision != event_revision || s.model_revision != model_revision;
                 let mut again = s
                     .core_read
-                    .finish(result.as_ref().err().map(ToString::to_string));
+                    .finish(result.as_ref().err().map(|(_, error)| error.to_string()));
                 let mut result = result;
                 if let Ok(snapshot) = &mut result
                     && snapshot.entries.is_some()
@@ -1852,8 +1878,11 @@ impl ConversationState {
                             this.read_session(&key, next, cx);
                         }
                     }
-                    Err(_) => {
+                    Err((stage, error)) => {
                         let s = this.sessions.get_mut(&key).unwrap();
+                        if !matches!(error, pi_rpc::Error::Closed) {
+                            s.log_failure(stage, error.category());
+                        }
                         if s.command.reconnecting() {
                             s.command.finish();
                         }
@@ -2269,8 +2298,11 @@ impl ConversationState {
                 return;
             }
             let result = match prepared {
-                Ok(prompt) => client.prompt(prompt).await.map_err(|e| e.to_string()),
-                Err(error) => Err(error),
+                Ok(prompt) => client
+                    .prompt(prompt)
+                    .await
+                    .map_err(|error| ("input_submit", error.category(), error.to_string())),
+                Err(error) => Err(("input_prepare", "attachment_encoding", error)),
             };
             let _ = owner.update(cx, |this, cx| {
                 let Some(s) = this.sessions.get_mut(&key).filter(|s| {
@@ -2291,9 +2323,8 @@ impl ConversationState {
                         draft_changed =
                             s.accept_submission(revision, used_template, &attachment_ids, &quotes);
                     }
-                    Err(error) => {
-                        s.error = Some(SessionError::Runtime(error.to_string()));
-                        s.fail_submission(error.to_string(), cx);
+                    Err((stage, category, error)) => {
+                        s.reject_submission(stage, category, error, cx);
                     }
                 }
                 if draft_changed {
@@ -2599,6 +2630,9 @@ impl ConversationState {
                         content_changed = true;
                         refresh = Some(ReadScope::History);
                         if was_running && !s.interrupted {
+                            if matches!(s.error, Some(SessionError::Response)) {
+                                s.log_failure("agent_settled", "model_response");
+                            }
                             if has_output && s.final_answer_text().is_some() {
                                 notice = Some(crate::notifications::Kind::Completed);
                             } else if s.error.is_some() {

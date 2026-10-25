@@ -1,4 +1,4 @@
-//! Command search paths shared by every Pi-related subprocess.
+//! Login-shell exports shared by every Pi-related subprocess.
 use gpui_kit::{App, Global};
 use gpui_tokio::Tokio;
 use std::{ffi::OsString, fmt::Display};
@@ -9,19 +9,16 @@ use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct Snapshot {
-    path: Option<OsString>,
+    variables: Vec<(OsString, OsString)>,
     warning: Option<String>,
 }
 impl Snapshot {
     pub fn variables(&self) -> Vec<(OsString, OsString)> {
-        self.path
-            .iter()
-            .map(|path| ("PATH".into(), path.clone()))
-            .collect()
+        self.variables.clone()
     }
     pub fn explain(&self, error: impl Display) -> String {
         match &self.warning {
-            Some(warning) => format!("{error}\nShell PATH: {warning}"),
+            Some(warning) => format!("{error}\nShell environment: {warning}"),
             None => error.to_string(),
         }
     }
@@ -29,7 +26,7 @@ impl Snapshot {
 
 #[derive(Clone)]
 pub struct Environment {
-    inherited: Option<OsString>,
+    inherited: Vec<(OsString, OsString)>,
     capture: bool,
     #[cfg(any(target_os = "macos", test))]
     loaded: Arc<Mutex<Option<Snapshot>>>,
@@ -65,7 +62,7 @@ fn should_capture() -> bool {
 impl Environment {
     fn new(capture: bool) -> Self {
         Self {
-            inherited: std::env::var_os("PATH"),
+            inherited: std::env::vars_os().collect(),
             capture,
             #[cfg(any(target_os = "macos", test))]
             loaded: Arc::new(Mutex::new(None)),
@@ -74,11 +71,13 @@ impl Environment {
     pub async fn load(&self, refresh: bool) -> Snapshot {
         #[cfg(target_os = "macos")]
         if self.capture {
-            return self.load_with(refresh, crate::shell_path::capture()).await;
+            return self
+                .load_with(refresh, crate::shell_environment::capture())
+                .await;
         }
         let _ = (refresh, self.capture);
         Snapshot {
-            path: self.inherited.clone(),
+            variables: self.inherited.clone(),
             warning: None,
         }
     }
@@ -86,22 +85,22 @@ impl Environment {
     async fn load_with(
         &self,
         refresh: bool,
-        capture: impl Future<Output = Result<OsString, String>>,
+        capture: impl Future<Output = Result<Vec<(OsString, OsString)>, String>>,
     ) -> Snapshot {
         let mut loaded = self.loaded.lock().await;
         if !refresh && let Some(snapshot) = &*loaded {
             return snapshot.clone();
         }
         let snapshot = match capture.await {
-            Ok(path) => Snapshot {
-                path: Some(path),
+            Ok(variables) => Snapshot {
+                variables,
                 warning: None,
             },
             Err(warning) => {
                 // Keep absolute/system-installed commands usable when shell setup fails.
-                tracing::warn!("Could not load login shell PATH; using inherited command paths");
+                tracing::warn!("Could not load login shell environment; using inherited exports");
                 Snapshot {
-                    path: self.inherited.clone(),
+                    variables: self.inherited.clone(),
                     warning: Some(warning),
                 }
             }
@@ -115,9 +114,9 @@ impl Environment {
 mod tests {
     use super::*;
     #[tokio::test]
-    async fn cached_failure_uses_inherited_paths_until_explicit_retry() {
+    async fn cached_failure_uses_inherited_environment_until_explicit_retry() {
         let environment = Environment {
-            inherited: Some("/original/bin".into()),
+            inherited: vec![("PATH".into(), "/original/bin".into())],
             capture: true,
             loaded: Arc::new(Mutex::new(None)),
         };
@@ -133,18 +132,23 @@ mod tests {
             .clone()
             .load_with(false, async { panic!("must share cached result") })
             .await;
-        assert_eq!(cached.path, failed.path);
+        assert_eq!(cached.variables, failed.variables);
         let retried = environment
-            .load_with(true, async { Ok("/node/bin:/pi/bin".into()) })
+            .load_with(true, async {
+                Ok(vec![
+                    ("PATH".into(), "/node/bin:/pi/bin".into()),
+                    ("HTTPS_PROXY".into(), "http://proxy.example:8080".into()),
+                ])
+            })
             .await;
-        assert_eq!(retried.path, Some("/node/bin:/pi/bin".into()));
+        assert_eq!(retried.variables().len(), 2);
         assert!(retried.warning.is_none());
         assert_eq!(
             environment
                 .load_with(false, async { panic!("must reuse successful result") })
                 .await
-                .path,
-            retried.path
+                .variables,
+            retried.variables
         );
     }
 }

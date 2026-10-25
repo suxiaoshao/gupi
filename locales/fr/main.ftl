@@ -1460,10 +1460,9 @@ image-preview-actual-size = Taille réelle
 
 shell-placeholder = Saisir une commande à exécuter
 shell-command = Commande Shell
-shell-include = ! Inclure au contexte
-shell-exclude = !! Exclure
-shell-include-help = La sortie est incluse dans le contexte du modèle. La commande ne déclenche pas de réponse du modèle.
-shell-exclude-help = La sortie est exclue du contexte du modèle, mais reste enregistrée dans l’historique de la conversation.
+shell-include = Inclure dans le contexte
+shell-context-help = ! inclut la sortie dans le contexte du modèle ; !! l’exclut. Appuyez deux fois sur ! en ouvrant Shell pour l’exclure. Les commandes ne déclenchent pas de réponse du modèle.
+shell-return-help = Retour au message ; Échap arrête d’abord les tâches actives.
 shell-return = Retour au message
 shell-run = Exécuter
 shell-input-running = Commande en cours ; arrêtez-la dans la conversation

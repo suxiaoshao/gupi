@@ -1459,10 +1459,9 @@ image-preview-actual-size = Tamanho real
 
 shell-placeholder = Digite um comando para executar
 shell-command = Comando Shell
-shell-include = ! Incluir no contexto
-shell-exclude = !! Excluir
-shell-include-help = A saída é incluída no contexto do modelo. O comando não inicia uma resposta do modelo.
-shell-exclude-help = A saída é excluída do contexto do modelo, mas permanece no histórico da conversa.
+shell-include = Incluir no contexto
+shell-context-help = ! inclui a saída no contexto do modelo; !! a exclui. Pressione ! duas vezes ao entrar no Shell para excluí-la. Os comandos não iniciam respostas do modelo.
+shell-return-help = Voltar à mensagem; Esc interrompe primeiro as tarefas ativas.
 shell-return = Voltar à mensagem
 shell-run = Executar
 shell-input-running = Comando em execução; pare-o na conversa

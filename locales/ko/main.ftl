@@ -1433,10 +1433,9 @@ image-preview-actual-size = 실제 크기
 
 shell-placeholder = 실행할 명령 입력
 shell-command = Shell 명령
-shell-include = ! 컨텍스트에 포함
-shell-exclude = !! 제외
-shell-include-help = 출력을 모델 컨텍스트에 포함합니다. 명령은 모델 응답을 시작하지 않습니다.
-shell-exclude-help = 출력을 모델 컨텍스트에서 제외하지만 대화 기록에는 저장합니다.
+shell-include = 컨텍스트에 포함
+shell-context-help = !는 출력을 모델 컨텍스트에 포함하고 !!는 제외합니다. Shell 진입 시 !를 연속 두 번 누르면 제외로 전환됩니다. 명령은 모델 응답을 시작하지 않습니다.
+shell-return-help = 메시지로 돌아가기. 실행 중인 작업이 있으면 Esc는 먼저 작업을 중지합니다.
 shell-return = 메시지로 돌아가기
 shell-run = 실행
 shell-input-running = 명령 실행 중; 대화에서 중지할 수 있습니다

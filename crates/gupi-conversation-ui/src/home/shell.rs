@@ -1,7 +1,8 @@
 use super::*;
-use gpui_kit::component::button::{Toggle, ToggleGroup};
-use gpui_kit::component::input::{self, Editor, EditorState};
-use gpui_kit::component::toolbar::{Toolbar, ToolbarGroup};
+use gpui_kit::component::ThemeStyled;
+use gpui_kit::component::input::{self, Editor, EditorState, InputGroupButton};
+use gpui_kit::component::switch::Switch;
+use gpui_kit::component::tag::Tag;
 use gpui_kit::component::tooltip::Tooltip;
 use gupi_conversation::conversation::{BodyState, LoadStage};
 use std::cell::Cell;
@@ -319,15 +320,39 @@ impl HomeView {
         });
         cx.notify();
     }
-    pub(super) fn render_shell_composer(&self, cx: &Context<Self>) -> AnyElement {
+    pub(super) fn render_shell_composer(
+        &self,
+        window: &mut Window,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let key = self.shown_key.as_ref().unwrap();
         let shell = &self.views[key].shell;
         let session = &self.state.read(cx).sessions()[key];
         let owner = cx.weak_entity();
         let composition = Rc::new(Cell::new(false));
         let capture_composition = composition.clone();
-        let path = session.info().cwd.to_string_lossy().into_owned();
-        let tooltip_path = path.clone();
+        let cwd = &session.info().cwd;
+        let tooltip_path = cwd.to_string_lossy().into_owned();
+        let path = std::env::home_dir()
+            .and_then(|home| {
+                cwd.strip_prefix(home)
+                    .ok()
+                    .map(|path| PathBuf::from("~").join(path))
+            })
+            .unwrap_or_else(|| cwd.clone())
+            .to_string_lossy()
+            .into_owned();
+        let status = if session.shell_running() {
+            Some(t(cx, "shell-input-running"))
+        } else if matches!(
+            session.body_state(),
+            BodyState::Loading(LoadStage::Connecting)
+                | BodyState::Refreshing(LoadStage::Connecting)
+        ) {
+            Some(t(cx, "conversation-connecting"))
+        } else {
+            None
+        };
         let can_run =
             !shell.editor.read(cx).value().trim().is_empty() && self.can_run_shell_input(key, cx);
         let panel = div()
@@ -338,7 +363,13 @@ impl HomeView {
             .flex_col()
             .w_full()
             .min_w_0()
-            .gap_2()
+            .border_1()
+            .border_color(cx.theme().input)
+            .rounded(cx.theme().radius)
+            .bg(cx.theme().background)
+            .when(shell.editor.focus_handle(cx).is_focused(window), |card| {
+                card.focus_ring_style(window, cx)
+            })
             .on_action(cx.listener(|home, _: &Bang, window, cx| home.shell_bang(window, cx)))
             // Kit emits PressEnter for submission and propagates the action.
             // Consume it here so the platform cannot also insert a newline.
@@ -389,7 +420,8 @@ impl HomeView {
                     }))
                     .child(
                         Editor::new(&shell.editor)
-                            .h(rems(8.))
+                            .appearance(false)
+                            .h(rems(4.))
                             .aria_label(t(cx, "shell-command"))
                             .on_paste(move |_, _, cx| {
                                 let _ = owner.update(cx, |home, _| {
@@ -406,103 +438,104 @@ impl HomeView {
                     ),
             )
             .child(
-                Toolbar::new("shell-toolbar")
+                h_flex()
+                    .id("shell-toolbar")
                     .w_full()
-                    .flex_wrap()
-                    .content(
+                    .min_w_0()
+                    .gap_2()
+                    .px(gpui_kit::component::Size::Medium.input_px())
+                    .py_1p5()
+                    .pb_2()
+                    .child(
                         h_flex()
                             .flex_1()
                             .min_w_0()
                             .gap_2()
-                            .child(gpui_kit::component::Icon::new(IconName::SquareTerminal))
-                            .child(t(cx, "shell-title"))
+                            .child(
+                                Tag::secondary().small().flex_none().child(
+                                    h_flex()
+                                        .gap_1()
+                                        .child(
+                                            gpui_kit::component::Icon::new(
+                                                IconName::SquareTerminal,
+                                            )
+                                            .small(),
+                                        )
+                                        .child(t(cx, "shell-title")),
+                                ),
+                            )
                             .child(
                                 div()
                                     .id("shell-cwd")
                                     .min_w_0()
-                                    .flex_1()
-                                    .overflow_hidden()
-                                    .text_ellipsis()
+                                    .flex_shrink_1()
+                                    .text_sm()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .truncate()
                                     .child(path)
                                     .tooltip(move |window, cx| {
                                         Tooltip::new(tooltip_path.clone()).build(window, cx)
                                     }),
-                            ),
+                            )
+                            .when_some(status, |identity, status| {
+                                identity.child(
+                                    div()
+                                        .min_w_0()
+                                        .flex_shrink_1()
+                                        .text_sm()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .truncate()
+                                        .child(status),
+                                )
+                            }),
                     )
                     .child(
-                        ToggleGroup::new("shell-context")
-                            .segmented()
+                        h_flex()
+                            .flex_none()
+                            .gap_2()
                             .child(
-                                Toggle::new("shell-include")
+                                Switch::new("shell-context")
+                                    .small()
                                     .label(t(cx, "shell-include"))
                                     .checked(!shell.exclude)
-                                    .tooltip(t(cx, "shell-include-help")),
+                                    .tooltip(t(cx, "shell-context-help"))
+                                    .on_change(cx.listener(|home, checked: &bool, _, cx| {
+                                        home.views
+                                            .get_mut(home.shown_key.as_ref().unwrap())
+                                            .unwrap()
+                                            .shell
+                                            .exclude = !checked;
+                                        cx.notify();
+                                    })),
                             )
-                            .child(
-                                Toggle::new("shell-exclude")
-                                    .label(t(cx, "shell-exclude"))
-                                    .checked(shell.exclude)
-                                    .tooltip(t(cx, "shell-exclude-help")),
-                            )
-                            .on_click(cx.listener(|home, checks: &Vec<bool>, _, cx| {
-                                let shell = &mut home
-                                    .views
-                                    .get_mut(home.shown_key.as_ref().unwrap())
-                                    .unwrap()
-                                    .shell;
-                                shell.exclude = if shell.exclude && checks[0] {
-                                    false
-                                } else if !shell.exclude && checks[1] {
-                                    true
-                                } else {
-                                    shell.exclude
-                                };
-                                cx.notify();
-                            })),
-                    )
-                    .content(
-                        ToolbarGroup::new("shell-actions")
                             .child(
                                 Button::new("shell-return")
                                     .ghost()
-                                    .label(t(cx, "shell-return"))
+                                    .small()
+                                    .icon(IconName::X)
+                                    .accessibility_label(t(cx, "shell-return"))
+                                    .tooltip_with_action(
+                                        t(cx, "shell-return-help"),
+                                        &EscapeShell,
+                                        Some("GupiShell"),
+                                    )
                                     .on_click(cx.listener(|home, _, window, cx| {
                                         home.exit_shell(window, cx)
                                     })),
                             )
                             .child(
-                                Button::new("shell-run")
+                                InputGroupButton::new("shell-run")
                                     .primary()
-                                    .label(t(cx, "shell-run"))
+                                    .small()
+                                    .icon(IconName::Play)
+                                    .accessibility_label(t(cx, "shell-run"))
+                                    .tooltip(t(cx, "shell-run"))
                                     .disabled(!can_run)
                                     .on_click(cx.listener(|home, _, window, cx| {
                                         home.run_shell_input(window, cx)
                                     })),
                             ),
                     ),
-            )
-            .when(session.shell_running(), |panel| {
-                panel.child(
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(t(cx, "shell-input-running")),
-                )
-            })
-            .when(
-                matches!(
-                    session.body_state(),
-                    BodyState::Loading(LoadStage::Connecting)
-                        | BodyState::Refreshing(LoadStage::Connecting)
-                ),
-                |panel| {
-                    panel.child(
-                        div()
-                            .text_sm()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(t(cx, "conversation-connecting")),
-                    )
-                },
             );
         // Observe caret actions before Kit handles them: a clamped movement
         // may propagate without changing the selection or emitting an event.

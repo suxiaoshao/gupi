@@ -433,7 +433,7 @@ impl HomeView {
                 _ => {}
             }
         } else if self.shell_open() {
-            editor = editor.child(self.render_shell_composer(cx));
+            editor = editor.child(self.render_shell_composer(window, cx));
         } else {
             let owner = cx.entity().downgrade();
             let resource = self.resource_context(&key, cx);

@@ -1440,10 +1440,9 @@ image-preview-actual-size = 原始尺寸
 
 shell-placeholder = 输入要运行的命令
 shell-command = Shell 命令
-shell-include = ! 加入上下文
-shell-exclude = !! 不加入
-shell-include-help = 输出会加入模型上下文，命令不会触发模型回复
-shell-exclude-help = 输出不加入模型上下文，但仍记录在会话历史中
+shell-include = 加入上下文
+shell-context-help = ! 加入模型上下文，!! 不加入；进入 Shell 时连按 ! 可切换为不加入。命令不会触发模型回复。
+shell-return-help = 返回消息；有任务时，Esc 优先停止任务。
 shell-return = 返回消息
 shell-run = 运行
 shell-input-running = 命令运行中，可在对话中停止

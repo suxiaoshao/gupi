@@ -82,6 +82,22 @@ fn shell_key_entry_preserves_rich_draft_and_normal_character_routes(cx: &mut Tes
         assert!(shell.exclude);
         assert!(shell.editor.read(cx).value().is_empty());
     });
+    // The controlled Switch updates the same option as the second prefix.
+    visual.update(|window, cx| window.click("shell-context", cx));
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        assert!(!home.read(cx).views["empty"].shell.exclude);
+        window.click("shell-context", cx);
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        assert!(home.read(cx).views["empty"].shell.exclude);
+        home.read(cx).views["empty"]
+            .shell
+            .editor
+            .focus_handle(cx)
+            .focus(window, cx);
+    });
     // The third bang is command text, not another hidden prefix.
     visual.simulate_keystrokes("!");
     visual.simulate_input(" echo");

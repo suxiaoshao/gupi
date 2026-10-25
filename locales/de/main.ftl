@@ -1460,10 +1460,9 @@ image-preview-actual-size = Originalgröße
 
 shell-placeholder = Befehl zum Ausführen eingeben
 shell-command = Shell-Befehl
-shell-include = ! Im Kontext
-shell-exclude = !! Ausschließen
-shell-include-help = Die Ausgabe wird in den Modellkontext aufgenommen. Der Befehl löst keine Modellantwort aus.
-shell-exclude-help = Die Ausgabe bleibt außerhalb des Modellkontexts, wird aber im Gesprächsverlauf gespeichert.
+shell-include = In Kontext aufnehmen
+shell-context-help = ! nimmt die Ausgabe in den Modellkontext auf, !! schließt sie aus. Beim Öffnen von Shell zweimal ! drücken, um sie auszuschließen. Befehle lösen keine Modellantwort aus.
+shell-return-help = Zurück zur Nachricht; Esc stoppt zuerst aktive Aufgaben.
 shell-return = Zurück zur Nachricht
 shell-run = Ausführen
 shell-input-running = Befehl läuft; im Gespräch stoppen

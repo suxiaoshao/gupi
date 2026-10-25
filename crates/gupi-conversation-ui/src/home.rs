@@ -1292,7 +1292,12 @@ impl HomeView {
             self.questionnaire_subscriptions.clear();
             self.input_questionnaire = None;
             if !window.has_active_dialog(cx) {
-                self.input.update(cx, |input, cx| input.focus(window, cx));
+                let shell = &self.views[&key].shell;
+                if shell.open {
+                    shell.editor.focus_handle(cx).focus(window, cx);
+                } else {
+                    self.input.update(cx, |input, cx| input.focus(window, cx));
+                }
             }
         }
         self.fit_layout(window, cx);

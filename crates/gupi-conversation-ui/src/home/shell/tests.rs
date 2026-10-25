@@ -52,6 +52,80 @@ fn setup(cx: &mut TestAppContext) -> (Entity<HomeView>, &mut VisualTestContext) 
 }
 
 #[gpui_kit::test]
+fn extension_request_returns_focus_to_visible_shell(cx: &mut TestAppContext) {
+    use gupi_conversation::conversation::PendingUi;
+    use pi_rpc::protocol::{ExtensionRequest, UiMethod};
+
+    let (home, visual) = setup(cx);
+    visual.simulate_keystrokes("!");
+    let (state, original) = visual.update(|_, cx| {
+        let home = home.read(cx);
+        (home.state.clone(), home.input.read(cx).content())
+    });
+    visual.update(|_, cx| {
+        state.update(cx, |state, cx| {
+            state
+                .sessions_for_test()
+                .get_mut("empty")
+                .unwrap()
+                .pending_ui_for_test()
+                .push_back(PendingUi::new(
+                    ExtensionRequest {
+                        id: "shell-question".into(),
+                        method: UiMethod::Editor {
+                            title: "Extension question".into(),
+                            prefill: None,
+                        },
+                    },
+                    None,
+                    String::new(),
+                    None,
+                ));
+            gupi_conversation::conversation::test_support::notify_session("empty", cx);
+        });
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        assert!(
+            home.read(cx)
+                .extension_input
+                .focus_handle(cx)
+                .is_focused(window)
+        );
+    });
+    // Pi finishes its request; the next keystrokes must reach the visible input.
+    visual.update(|_, cx| {
+        state.update(cx, |state, cx| {
+            state
+                .sessions_for_test()
+                .get_mut("empty")
+                .unwrap()
+                .pending_ui_for_test()
+                .clear();
+            gupi_conversation::conversation::test_support::notify_session("empty", cx);
+        });
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        window.render_frame(cx);
+        assert!(window.find("shell-composer").visible());
+        assert!(
+            home.read(cx).views["empty"]
+                .shell
+                .editor
+                .focus_handle(cx)
+                .is_focused(window)
+        );
+    });
+    visual.simulate_input("pwd");
+    visual.update(|_, cx| {
+        let home = home.read(cx);
+        assert_eq!(home.views["empty"].shell.editor.read(cx).value(), "pwd");
+        assert_eq!(home.input.read(cx).content(), original);
+    });
+}
+
+#[gpui_kit::test]
 fn shell_key_entry_preserves_rich_draft_and_normal_character_routes(cx: &mut TestAppContext) {
     let (home, visual) = setup(cx);
     visual.run_until_parked();

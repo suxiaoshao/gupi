@@ -7,6 +7,7 @@ mod find;
 mod git;
 mod history;
 mod image_preview;
+mod input_history;
 mod messages;
 pub mod navigation;
 pub mod palette;
@@ -70,6 +71,7 @@ struct SessionView {
     shell: shell::Input,
     // Last persisted/external snapshot, excluding the editor's uncommitted IME text.
     input_draft: gpui_kit::component::input::InputContent,
+    input_browse: Option<input_history::Browse>,
     quote_attachments: Entity<quote::attachments::Attachments>,
     attachment_scroll: ScrollHandle,
     _input_subscriptions: Vec<Subscription>,
@@ -430,6 +432,7 @@ impl HomeView {
     ) -> Self {
         actions::init(cx);
         shell::init(cx);
+        input_history::init(cx);
         quote::attachments::init(cx);
         messages::navigator::init(cx);
         files::init(cx);
@@ -904,6 +907,7 @@ impl HomeView {
                             }
                             let content = input.read(cx).content();
                             let value = content.text().to_string();
+                            this.input_edited(&input_key, &value);
                             this.state.update(cx, |state, cx| {
                                 state.set_draft_content(&input_key, content, cx);
                             });
@@ -978,6 +982,7 @@ impl HomeView {
                     attachment_scroll: ScrollHandle::new(),
                     input,
                     input_draft: draft,
+                    input_browse: None,
                     shell,
                     _input_subscriptions: input_subscriptions,
                     history_canvas,
@@ -1179,6 +1184,7 @@ impl HomeView {
         }
         let view = self.views.get_mut(&key).unwrap();
         if view.input_draft != draft {
+            view.input_browse = None;
             // Only a changed external snapshot replaces editor content. Ordinary
             // refreshes must preserve selection, undo history and IME composition.
             view.input

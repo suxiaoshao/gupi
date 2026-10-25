@@ -278,10 +278,45 @@ pub struct Session {
     model_revision: u64,
     read_serial: u64,
     submission: Submission,
+    /// Submitted composer text, oldest first; filled from the transcript once.
+    input_history: Option<Vec<String>>,
 }
+const INPUT_HISTORY_LIMIT: usize = 100;
 impl Session {
     pub fn info(&self) -> &SessionInfo {
         &self.info
+    }
+    pub fn input_history(&self) -> &[String] {
+        self.input_history.as_deref().unwrap_or_default()
+    }
+    // Pi records the submitted editor text, trimmed and without consecutive repeats.
+    fn record_input(&mut self, text: &str) {
+        let text = text.trim();
+        let history = self.input_history.get_or_insert_with(Vec::new);
+        if text.is_empty() || history.last().is_some_and(|last| last == text) {
+            return;
+        }
+        history.push(text.to_owned());
+        if history.len() > INPUT_HISTORY_LIMIT {
+            history.remove(0);
+        }
+    }
+    // A resumed session recalls the user messages on its current path, as Pi does.
+    fn seed_input_history(&mut self) {
+        if self.input_history.is_some() {
+            return;
+        }
+        let texts: Vec<_> = self
+            .history()
+            .messages(self.history().leaf.as_deref())
+            .iter()
+            .filter(|message| message.role() == "user")
+            .map(DisplayMessage::text)
+            .collect();
+        self.input_history = Some(Vec::new());
+        for text in texts {
+            self.record_input(&text);
+        }
     }
     pub fn draft(&self) -> &InputContent {
         &self.draft
@@ -490,6 +525,7 @@ impl Session {
             model_revision: 0,
             read_serial: 0,
             submission: Submission::Idle,
+            input_history: None,
         }
     }
     fn finish_submission(&mut self, accepted: bool) {
@@ -1838,6 +1874,7 @@ impl ConversationState {
         let s = self.sessions.get_mut(key).unwrap();
         let previous_revision = s.history().revision;
         s.transcript.replace(entries);
+        s.seed_input_history();
         s.history_dirty = false;
         if s.history().revision != previous_revision {
             s.content_revision += 1;
@@ -1890,6 +1927,7 @@ impl ConversationState {
                 s.summary_retry = None;
             }
             s.transcript.replace(entries);
+            s.seed_input_history();
             s.history_dirty = false;
             let saved = s
                 .history()
@@ -2271,6 +2309,10 @@ impl ConversationState {
             _task: task,
             result: reply,
         };
+        if revision.is_some() {
+            let text = s.draft.text().to_string();
+            s.record_input(&text);
+        }
         Some(receiver)
     }
     pub fn abort(&mut self, key: &str, cx: &mut Context<Self>) {
@@ -3047,6 +3089,7 @@ impl Session {
     }
     pub fn replace_entries_for_test(&mut self, entries: protocol::Entries) {
         self.transcript.replace(entries);
+        self.seed_input_history();
     }
 }
 
@@ -3121,6 +3164,32 @@ mod tests {
     use gpui_kit::AppContext;
     use gpui_kit::TestAppContext;
     use std::path::PathBuf;
+
+    #[test]
+    fn input_history_restores_current_path_and_bounds_submitted_text() {
+        let mut session = super::Session::from_rpc_messages(&[]);
+        session.transcript.replace(serde_json::from_value(serde_json::json!({
+            "entries": [
+                {"type":"message","id":"a","parentId":null,"timestamp":"2026-10-25T00:00:00Z","message":{"role":"user","content":" first "}},
+                {"type":"message","id":"b","parentId":"a","timestamp":"2026-10-25T00:00:00Z","message":{"role":"assistant","content":"answer"}},
+                {"type":"message","id":"c","parentId":"b","timestamp":"2026-10-25T00:00:00Z","message":{"role":"user","content":" second "}},
+                {"type":"message","id":"other","parentId":"a","timestamp":"2026-10-25T00:00:00Z","message":{"role":"user","content":"other branch"}}
+            ], "leafId":"c"
+        })).unwrap());
+        session.seed_input_history();
+        assert_eq!(session.input_history(), ["first", "second"]);
+        session.record_input(" second ");
+        session.record_input("   ");
+        assert_eq!(session.input_history(), ["first", "second"]);
+        for index in 0..101 {
+            session.record_input(&format!(" input {index} "));
+        }
+        assert_eq!(session.input_history().len(), 100);
+        assert_eq!(session.input_history().first().unwrap(), "input 1");
+        assert_eq!(session.input_history().last().unwrap(), "input 100");
+        session.seed_input_history();
+        assert_eq!(session.input_history().last().unwrap(), "input 100");
+    }
 
     #[test]
     fn accepted_input_preserves_event_owned_run_and_newer_draft() {

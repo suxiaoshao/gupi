@@ -20,6 +20,10 @@ impl Completion {
     pub(super) fn dismiss_file_query(&mut self) {
         self.file_dismissed = true;
     }
+    /// Recalled text is not a newly typed command; leave the palette closed.
+    pub(super) fn recalled(&mut self, text: &str) {
+        self.leading_slash = text.starts_with('/');
+    }
     fn changed(&mut self, text: &str) -> bool {
         let leading = text.starts_with('/');
         if !leading {

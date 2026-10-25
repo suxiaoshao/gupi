@@ -677,6 +677,16 @@ impl HomeView {
                 .on_action(cx.listener(|this, _: &super::shell::Bang, window, cx| {
                     this.shell_bang(window, cx);
                 }))
+                .on_action(cx.listener(
+                    |this, _: &super::input_history::PreviousInput, window, cx| {
+                        this.previous_input(window, cx);
+                    },
+                ))
+                .on_action(
+                    cx.listener(|this, _: &super::input_history::NextInput, window, cx| {
+                        this.next_input(window, cx);
+                    }),
+                )
                 // Undo may restore the original @ query. Keep editing focus
                 // in the composer while the input performs its own history edit.
                 .capture_action(

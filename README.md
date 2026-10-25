@@ -170,25 +170,39 @@ The sidebar groups conversations by project. Open a session to resume it, or pre
 
 The folder selected when creating a session becomes Pi's working directory and cannot be changed later. The titlebar shows its Git branch, or a short commit ID for detached HEAD. Session menus provide rename, reveal paths, stop generation, end the running connection, and move to Trash.
 
-### Project files and source
+### Files, previews, and workspace tabs
 
 Open the right-hand workspace and choose **Files** from its New Tab page to browse the current conversation's project directory. Click folders to expand or collapse them, refresh after external changes, and select a text file to open its read-only source preview.
 
-![Project files and read-only source beside the conversation](docs/screenshots/files-en.jpg)
+![Tabbed Files workspace with a project tree, Markdown preview, and local image](docs/screenshots/files-en.jpg)
 
-Text previews support syntax highlighting, line numbers, selection, copying, search and line wrapping. Images have zoom controls; Markdown can switch between source and reading view. Markdown resolves local images relative to its file, while remote images appear as browser links. Unsupported types offer **Open with default app**. Previews show snapshots: use **Reload** to read changes from disk. Opening the same file again preserves its reading position and search state. Previewing does not edit or save the file, or send its content to the model; use `@` in the composer to reference it in a message.
+Text previews support syntax highlighting, line numbers, selection, copying, search and line wrapping. Markdown can switch between source and reading view, with local images resolved relative to the Markdown file; remote images appear as browser links. Unsupported types offer **Open with default app**. Previews show snapshots: use **Reload** to read changes from disk. Opening the same file again preserves its reading position and search state. Previewing does not edit or save the file, or send its content to the model; use `@` in the composer to reference it in a message.
 
-The workspace keeps Files, Git workspace changes and each reply's Changes in separate tabs. Drag tabs to reorder them, use the tab menu to close groups, or maximize the workspace. File previews keep the file tree available. Conversation history has its own panel beside the conversation.
+Images open on a zoomable canvas in Files and attachment previews. Drag with the **left or middle mouse button**, or scroll, to pan. Pinch or hold **Cmd/Ctrl** while scrolling to zoom. Fit keeps small images at their original size and shrinks larger images to the available area.
+
+The workspace keeps Files, Git workspace changes and each reply's Changes in separate tabs. Drag tabs to reorder them, use the tab menu to close groups, or maximize the workspace. The file tree sits beside the preview when space permits; use the file-tree button to browse it in a narrower area. Conversation history has its own panel beside the conversation.
 
 After an agent reply, choose **View changes** on its file-change card to open that reply's Changes tab. Keep several replies' tabs open to compare recorded edits. Repeated edits to the same file are composed where possible; unsupported chains fall back to individual operations. These cards describe recorded `edit`/`write` tool calls, not a Git diff or changes made through shell commands, and provide no rollback action. Temporary conversations retain inline diffs.
-
-Choose **Changes** from the workspace launcher to read the repository's actual **Unstaged**, **Staged** or **Untracked** changes. The read-only reader keeps these sources separate from Pi's recorded edits. Filter paths, step between files, choose unified or split view, expand context, wrap lines and copy patches or available file versions. Narrow diff areas use unified view. Binary files, conflicts and oversized or unavailable content show explicit states; this view does not stage, discard or commit changes.
 
 `@` completion follows Pi's path matching and ranking, including hidden files, ignore rules, quoted paths with spaces, and relative/home/absolute directories. Choosing a directory continues browsing; choosing a file inserts its reference without sending a message.
 
 Use arrow keys to navigate the file tree and **Enter** to open a file. **Cmd/Ctrl+F** searches the focused source editor, composer or message area. Text previews are limited to 1 MiB and 20,000 lines; unsupported encodings, binary files and oversized files show an explanation.
 
 On Windows and Linux, application menus and window controls occupy the top row; conversation and page actions sit below it. Drag the blank area in the top row to move the window. macOS uses its system menu bar. Upgrading from 0.1.3 resets old window-position and pane-width preferences once; subsequent layout choices are saved.
+
+### Git changes
+
+Choose **Git** from the workspace's New Tab page to read the current project's working-tree changes, independently of Pi's recorded `edit`/`write` calls.
+
+![Git workspace with staged, unstaged, and untracked files and a read-only diff](docs/screenshots/git-en.jpg)
+
+- **Staged** compares HEAD with the index.
+- **Unstaged** compares the index with the working-tree file.
+- **Untracked** compares an empty file with the new file; these entries are marked **U** in the Unstaged group.
+
+Switch the file list between list and tree views, filter paths, or step through files with the previous/next buttons. Reading options include unified or split diff, word differences, line wrapping and all unchanged lines. Narrow areas use unified view. You can copy a file path or the displayed file's full text; Git patch export is not provided. Conflicts, binary files, oversized files and files with no text changes have explicit states.
+
+The titlebar shows the session directory's Git branch, or a short commit ID for detached HEAD, and refreshes after external branch changes. The Git reader also refreshes automatically while visible. It is read-only: there are no stage, discard or commit actions.
 
 ### Messages and attachments
 
@@ -246,6 +260,8 @@ To reuse the whole session, choose **Duplicate conversation** from its menu. To 
 Open **Temporary conversation** from the application or tray menu. On macOS and Windows, you can assign a global shortcut in **Settings → Keyboard shortcuts**. Linux does not currently have a global-shortcut backend.
 
 Temporary conversations are useful for a translation, a short explanation, or another task you do not want in the project sidebar. You can keep several in the temporary window and search their titles. Hiding the window does not stop a running response.
+
+In **Settings → General → Temporary conversation storage**, **Prewarm temporary conversations** is off by default. Enabling it keeps one Pi process ready to reduce the wait when a new temporary conversation is needed. Measurements show about **60 MB of resident memory**, depending on extensions. It runs extension initialization, sign-in state refreshes and network requests in advance. Templates and configuration are loaded when that standby session starts; later changes take effect in the next standby session. Turning the setting off discards the standby process without closing conversations already in use.
 
 - Use **Cmd/Ctrl+K** for actions such as copy, paste back, choose model, show the working directory, or delete the temporary conversation.
 - With no message or attachment to send, **Enter** pastes the selected conversation's last complete answer back into the previously active app. In the search field or list, Enter also pastes back.

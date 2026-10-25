@@ -1448,3 +1448,5 @@ shell-run = 运行
 shell-input-running = 命令运行中，可在对话中停止
 shell-history-previous = 上一条命令
 shell-history-next = 下一条命令
+
+conversation-input-handled = 已交由扩展处理

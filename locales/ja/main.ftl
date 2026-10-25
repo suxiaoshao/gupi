@@ -1441,3 +1441,5 @@ shell-run = 実行
 shell-input-running = コマンド実行中。会話内で停止できます
 shell-history-previous = 前のコマンド
 shell-history-next = 次のコマンド
+
+conversation-input-handled = 拡張機能に引き渡しました

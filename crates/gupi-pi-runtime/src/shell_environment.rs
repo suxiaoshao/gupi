@@ -1,8 +1,8 @@
-//! Capture the PATH from the user's login shell for GUI launches on macOS.
+//! Capture the exported environment from the user's login shell for GUI launches on macOS.
 //!
-//! The shell starts this executable again with `--gupi-print-shell-path`. The
-//! helper writes a NUL-framed byte string so startup-file output cannot be
-//! mistaken for PATH, and non-UTF-8 paths survive the round trip.
+//! The shell starts this executable again with `--gupi-print-shell-environment`. The
+//! helper writes a NUL-framed byte sequence so startup-file output cannot be
+//! mistaken for captured variables, and non-UTF-8 values survive the round trip.
 
 use std::{
     ffi::{CStr, OsStr, OsString},
@@ -24,54 +24,75 @@ use std::os::unix::{
     process::CommandExt,
 };
 
-const FRAME_MARKER: &[u8] = b"\0GUPI-SHELL-PATH-v1\0";
+const FRAME_MARKER: &[u8] = b"\0GUPI-SHELL-ENVIRONMENT-v1\0";
 const MAX_OUTPUT_BYTES: usize = 1024 * 1024;
 const CAPTURE_TIMEOUT: Duration = Duration::from_secs(10);
-const HELPER_ENV: &str = "GUPI_SHELL_PATH_HELPER";
+const HELPER_ENV: &str = "GUPI_SHELL_ENVIRONMENT_HELPER";
 
-/// Capture only PATH from the current user's default login shell.
-pub(crate) async fn capture() -> Result<OsString, String> {
+/// Capture exported variables from the current user's default login shell.
+pub(crate) async fn capture() -> Result<Vec<(OsString, OsString)>, String> {
     let (shell, home) = login_shell_and_home()?;
     let helper =
         std::env::current_exe().map_err(|error| format!("resolve Gupi executable: {error}"))?;
     capture_with(&shell, &home, helper.as_os_str(), CAPTURE_TIMEOUT).await
 }
 
-/// Entry point used by `main` before GPUI starts in shell PATH helper mode.
-pub fn print_path() -> io::Result<()> {
-    let path = std::env::var_os("PATH")
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "PATH is not set"))?;
-    let frame = path_frame(&path);
+/// Entry point used by `main` before GPUI starts in shell environment helper mode.
+pub fn print_environment() -> io::Result<()> {
+    let frame = environment_frame(std::env::vars_os());
     use io::Write;
     let mut stdout = io::stdout().lock();
     stdout.write_all(&frame)?;
     stdout.flush()
 }
 
-fn path_frame(path: &OsStr) -> Vec<u8> {
-    let mut frame = Vec::with_capacity(FRAME_MARKER.len() + path.as_bytes().len() + 1);
-    frame.extend_from_slice(FRAME_MARKER);
-    frame.extend_from_slice(path.as_bytes());
+fn environment_frame(variables: impl IntoIterator<Item = (OsString, OsString)>) -> Vec<u8> {
+    let mut frame = FRAME_MARKER.to_vec();
+    for (name, value) in variables {
+        if name == "SHLVL" || name == HELPER_ENV {
+            continue;
+        }
+        frame.extend_from_slice(name.as_bytes());
+        frame.push(b'=');
+        frame.extend_from_slice(value.as_bytes());
+        frame.push(0);
+    }
     frame.push(0);
     frame
 }
 
-fn parse_path_frame(output: &[u8]) -> Result<OsString, String> {
+fn parse_environment_frame(output: &[u8]) -> Result<Vec<(OsString, OsString)>, String> {
     let marker_start = output
         .windows(FRAME_MARKER.len())
         .position(|window| window == FRAME_MARKER)
-        .ok_or_else(|| "login shell did not return a PATH frame".to_owned())?;
-    let value_start = marker_start + FRAME_MARKER.len();
-    let value_end = output[value_start..]
-        .iter()
-        .position(|byte| *byte == 0)
-        .map(|offset| value_start + offset)
-        .ok_or_else(|| "login shell returned an incomplete PATH frame".to_owned())?;
-    Ok(OsString::from_vec(output[value_start..value_end].to_vec()))
+        .ok_or_else(|| "login shell did not return an environment frame".to_owned())?;
+    let mut rest = &output[marker_start + FRAME_MARKER.len()..];
+    let mut variables = Vec::new();
+    loop {
+        let end = rest
+            .iter()
+            .position(|byte| *byte == 0)
+            .ok_or_else(|| "login shell returned an incomplete environment frame".to_owned())?;
+        let entry = &rest[..end];
+        if entry.is_empty() {
+            return Ok(variables);
+        }
+        let separator = entry
+            .iter()
+            .position(|byte| *byte == b'=')
+            .filter(|index| *index > 0)
+            .ok_or_else(|| "login shell returned an invalid environment entry".to_owned())?;
+        variables.push((
+            OsString::from_vec(entry[..separator].to_vec()),
+            OsString::from_vec(entry[separator + 1..].to_vec()),
+        ));
+        rest = &rest[end + 1..];
+    }
 }
 
 fn capture_command(shell: &OsStr, home: &Path, helper: &OsStr) -> Result<Command, String> {
-    const EXEC_HELPER: &str = "exec \"$GUPI_SHELL_PATH_HELPER\" --gupi-print-shell-path";
+    const EXEC_HELPER: &str =
+        "exec \"$GUPI_SHELL_ENVIRONMENT_HELPER\" --gupi-print-shell-environment";
     let mut command = Command::new(shell);
     match Path::new(shell).file_name().and_then(OsStr::to_str) {
         Some("sh" | "bash" | "zsh" | "dash" | "ksh") => {
@@ -81,7 +102,7 @@ fn capture_command(shell: &OsStr, home: &Path, helper: &OsStr) -> Result<Command
             // Some version managers update PATH from fish_prompt hooks.
             command.args([
                 "-l", "-i", "-c",
-                "emit fish_prompt >/dev/null 2>/dev/null; exec \"$GUPI_SHELL_PATH_HELPER\" --gupi-print-shell-path",
+                "emit fish_prompt >/dev/null 2>/dev/null; exec \"$GUPI_SHELL_ENVIRONMENT_HELPER\" --gupi-print-shell-environment",
             ]);
         }
         Some("csh" | "tcsh") => {
@@ -97,7 +118,7 @@ fn capture_command(shell: &OsStr, home: &Path, helper: &OsStr) -> Result<Command
             command.args([
                 "-l",
                 "-e",
-                "exec $env.GUPI_SHELL_PATH_HELPER --gupi-print-shell-path",
+                "exec $env.GUPI_SHELL_ENVIRONMENT_HELPER --gupi-print-shell-environment",
             ]);
         }
         _ => {
@@ -125,7 +146,7 @@ async fn capture_with(
     home: &Path,
     helper: &OsStr,
     deadline: Duration,
-) -> Result<OsString, String> {
+) -> Result<Vec<(OsString, OsString)>, String> {
     let mut child = capture_command(shell, home, helper)?
         .spawn()
         .map_err(|error| format!("start login shell: {error}"))?;
@@ -156,7 +177,7 @@ async fn capture_with(
         if !status.success() {
             return Err("login shell exited unsuccessfully".to_owned());
         }
-        parse_path_frame(&stdout)
+        parse_environment_frame(&stdout)
     })
     .await;
 
@@ -171,7 +192,7 @@ async fn capture_with(
             let _ = child.wait().await;
             match result {
                 Ok(Err(error)) => Err(error),
-                _ => Err("login shell PATH capture timed out".to_owned()),
+                _ => Err("login shell environment capture timed out".to_owned()),
             }
         }
     }
@@ -305,21 +326,32 @@ mod tests {
     use super::*;
     use std::os::unix::ffi::OsStringExt;
 
+    // Startup chatter and byte values must not corrupt variables passed to Pi.
     #[test]
-    fn path_frame_preserves_non_utf8_bytes_and_ignores_shell_noise() {
-        let path = OsString::from_vec(b"/usr/bin:/tmp/\xff-bin".to_vec());
-        let frame = path_frame(&path);
-        let mut noisy = b"zsh startup notice\n".to_vec();
-        noisy.extend_from_slice(&frame);
+    fn environment_frame_preserves_exports_and_excludes_capture_variables() {
+        let variables = vec![
+            (
+                "PATH".into(),
+                OsString::from_vec(b"/usr/bin:/sample/\xff-bin".to_vec()),
+            ),
+            ("HTTPS_PROXY".into(), "http://proxy.example:8080".into()),
+            ("NODE_OPTIONS".into(), "--max-old-space-size=2048".into()),
+            (
+                "TEST_API_KEY".into(),
+                "fixture-only=not-a-credential\nsecond line".into(),
+            ),
+            ("EMPTY".into(), "".into()),
+        ];
+        let mut exported = variables.clone();
+        exported.push(("SHLVL".into(), "9".into()));
+        exported.push((HELPER_ENV.into(), "/capture/helper".into()));
+        let mut noisy = b"shell startup notice\n".to_vec();
+        noisy.extend(environment_frame(exported));
         noisy.extend_from_slice(b"\ntrailing shell output");
-        assert_eq!(
-            parse_path_frame(&noisy).unwrap().as_bytes(),
-            path.as_bytes()
-        );
-        assert!(
-            noisy
-                .windows(FRAME_MARKER.len())
-                .any(|window| window == FRAME_MARKER)
-        );
+        assert_eq!(parse_environment_frame(&noisy).unwrap(), variables);
+        assert!(parse_environment_frame(b"no frame").is_err());
+        let mut incomplete = environment_frame(variables);
+        incomplete.pop();
+        assert!(parse_environment_frame(&incomplete).is_err());
     }
 }

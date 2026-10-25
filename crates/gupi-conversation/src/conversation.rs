@@ -4,6 +4,7 @@ mod command;
 mod compaction;
 mod content;
 mod deletion;
+mod diagnostics;
 mod execution;
 mod export;
 mod loading;
@@ -278,10 +279,45 @@ pub struct Session {
     model_revision: u64,
     read_serial: u64,
     submission: Submission,
+    /// Submitted composer text, oldest first; filled from the transcript once.
+    input_history: Option<Vec<String>>,
 }
+const INPUT_HISTORY_LIMIT: usize = 100;
 impl Session {
     pub fn info(&self) -> &SessionInfo {
         &self.info
+    }
+    pub fn input_history(&self) -> &[String] {
+        self.input_history.as_deref().unwrap_or_default()
+    }
+    // Pi records the submitted editor text, trimmed and without consecutive repeats.
+    fn record_input(&mut self, text: &str) {
+        let text = text.trim();
+        let history = self.input_history.get_or_insert_with(Vec::new);
+        if text.is_empty() || history.last().is_some_and(|last| last == text) {
+            return;
+        }
+        history.push(text.to_owned());
+        if history.len() > INPUT_HISTORY_LIMIT {
+            history.remove(0);
+        }
+    }
+    // A resumed session recalls the user messages on its current path, as Pi does.
+    fn seed_input_history(&mut self) {
+        if self.input_history.is_some() {
+            return;
+        }
+        let texts: Vec<_> = self
+            .history()
+            .messages(self.history().leaf.as_deref())
+            .iter()
+            .filter(|message| message.role() == "user")
+            .map(DisplayMessage::text)
+            .collect();
+        self.input_history = Some(Vec::new());
+        for text in texts {
+            self.record_input(&text);
+        }
     }
     pub fn draft(&self) -> &InputContent {
         &self.draft
@@ -490,6 +526,7 @@ impl Session {
             model_revision: 0,
             read_serial: 0,
             submission: Submission::Idle,
+            input_history: None,
         }
     }
     fn finish_submission(&mut self, accepted: bool) {
@@ -499,6 +536,34 @@ impl Session {
             }
             Submission::Idle => {}
         }
+    }
+    fn accept_submission(
+        &mut self,
+        revision: Option<u64>,
+        used_template: bool,
+        attachment_ids: &[String],
+        quotes: &[std::sync::Arc<crate::quotes::QuoteAttachment>],
+    ) -> bool {
+        self.finish_submission(true);
+        let mut changed = false;
+        if used_template {
+            self.pending_template = None;
+        }
+        self.attachments.retain(|a| !attachment_ids.contains(&a.id));
+        let before = self.quotes.len();
+        self.quotes
+            .retain(|q| !quotes.iter().any(|sent| sent.id == q.id));
+        changed |= before != self.quotes.len();
+        self.attachment_order.retain(|id| {
+            self.quotes.iter().any(|q| &q.id == id) || self.attachments.iter().any(|a| &a.id == id)
+        });
+        // Extension editor updates belong to the next submission.
+        if revision == Some(self.draft_revision) {
+            changed |= !self.draft.text().is_empty();
+            self.draft = "".into();
+            self.draft_revision += 1;
+        }
+        changed
     }
     fn fail_submission(&mut self, error: String, cx: &mut Context<ConversationState>) {
         if self.submitting() {
@@ -674,11 +739,25 @@ struct Snapshot {
     state: protocol::SessionState,
     entries: Option<protocol::Entries>,
 }
-async fn snapshot(client: &Client, scope: ReadScope) -> Result<Snapshot, pi_rpc::Error> {
-    client.ready().await?;
-    let state = client.get_state().await?;
+async fn snapshot(
+    client: &Client,
+    scope: ReadScope,
+) -> Result<Snapshot, (&'static str, pi_rpc::Error)> {
+    client
+        .ready()
+        .await
+        .map_err(|error| ("connection_ready", error))?;
+    let state = client
+        .get_state()
+        .await
+        .map_err(|error| ("state_read", error))?;
     let entries = if scope >= ReadScope::History {
-        Some(client.get_entries().await?)
+        Some(
+            client
+                .get_entries()
+                .await
+                .map_err(|error| ("history_read", error))?,
+        )
     } else {
         None
     };
@@ -1487,6 +1566,9 @@ impl ConversationState {
                         return;
                     };
                     s.directory = None;
+                    if result.is_err() {
+                        s.log_failure("directory_prepare", "io");
+                    }
                     s.core_read
                         .finish(result.as_ref().err().map(ToString::to_string));
                     if result.is_ok() {
@@ -1512,8 +1594,8 @@ impl ConversationState {
                         Ok(info) if info.cwd == expected_cwd && (info.id == expected_id || expected_id.starts_with("draft-") || expected_id == key) => {
                             s.info = info; this.launch(&key, cx);
                         }
-                        Ok(_) => { let error = "Session identity or working directory changed; refresh the session catalog.".to_owned(); s.core_read.finish(Some(error.clone())); s.fail_submission(error, cx); }
-                        Err(error) => { s.core_read.finish(Some(error.clone())); s.fail_submission(error, cx); }
+                        Ok(_) => { s.log_failure("session_file_read", "identity_changed"); let error = "Session identity or working directory changed; refresh the session catalog.".to_owned(); s.core_read.finish(Some(error.clone())); s.fail_submission(error, cx); }
+                        Err(error) => { s.log_failure("session_file_read", "metadata"); s.core_read.finish(Some(error.clone())); s.fail_submission(error, cx); }
                     }
                     notify_session(&key, cx);
                 });
@@ -1550,6 +1632,7 @@ impl ConversationState {
                 s.pending_count = 0;
             }
             Err(error) => {
+                s.log_failure("connection_launch", error.category());
                 s.error = Some(SessionError::Runtime(error.to_string()));
                 s.fail_submission(error.to_string(), cx);
             }
@@ -1592,6 +1675,7 @@ impl ConversationState {
                 Ok(Some(client)) => match client.state() {
                     ConnectionState::Closed(report) => {
                         let s = self.sessions.get_mut(&key).unwrap();
+                        s.log_exit(&report);
                         s.error = Some(SessionError::Runtime(
                             report.reason.map(|e| e.to_string()).unwrap_or_else(|| {
                                 if report.stderr.is_empty() {
@@ -1648,6 +1732,9 @@ impl ConversationState {
                 },
                 Err(error) => {
                     let s = self.sessions.get_mut(&key).unwrap();
+                    if !matches!(error, pi_rpc::Error::Closed) {
+                        s.log_failure("connection_launch", error.category());
+                    }
                     s.error = Some(SessionError::Runtime(error.to_string()));
                     s.disconnect_shell();
                     s.finish_submission(false);
@@ -1723,8 +1810,11 @@ impl ConversationState {
                     .as_ref()
                     .is_some_and(|id| *id != snapshot.state.session_id)
                 {
-                    Err(pi_rpc::Error::Protocol(
-                        "session changed while reading conversation".into(),
+                    Err((
+                        "state_read",
+                        pi_rpc::Error::Protocol(
+                            "session changed while reading conversation".into(),
+                        ),
                     ))
                 } else {
                     Ok(snapshot)
@@ -1739,7 +1829,7 @@ impl ConversationState {
                     s.event_revision != event_revision || s.model_revision != model_revision;
                 let mut again = s
                     .core_read
-                    .finish(result.as_ref().err().map(ToString::to_string));
+                    .finish(result.as_ref().err().map(|(_, error)| error.to_string()));
                 let mut result = result;
                 if let Ok(snapshot) = &mut result
                     && snapshot.entries.is_some()
@@ -1788,8 +1878,11 @@ impl ConversationState {
                             this.read_session(&key, next, cx);
                         }
                     }
-                    Err(_) => {
+                    Err((stage, error)) => {
                         let s = this.sessions.get_mut(&key).unwrap();
+                        if !matches!(error, pi_rpc::Error::Closed) {
+                            s.log_failure(stage, error.category());
+                        }
                         if s.command.reconnecting() {
                             s.command.finish();
                         }
@@ -1810,6 +1903,7 @@ impl ConversationState {
         let s = self.sessions.get_mut(key).unwrap();
         let previous_revision = s.history().revision;
         s.transcript.replace(entries);
+        s.seed_input_history();
         s.history_dirty = false;
         if s.history().revision != previous_revision {
             s.content_revision += 1;
@@ -1862,6 +1956,7 @@ impl ConversationState {
                 s.summary_retry = None;
             }
             s.transcript.replace(entries);
+            s.seed_input_history();
             s.history_dirty = false;
             let saved = s
                 .history()
@@ -2203,8 +2298,11 @@ impl ConversationState {
                 return;
             }
             let result = match prepared {
-                Ok(prompt) => client.prompt(prompt).await.map_err(|e| e.to_string()),
-                Err(error) => Err(error),
+                Ok(prompt) => client
+                    .prompt(prompt)
+                    .await
+                    .map_err(|error| ("input_submit", error.category(), error.to_string())),
+                Err(error) => Err(("input_prepare", "attachment_encoding", error)),
             };
             let _ = owner.update(cx, |this, cx| {
                 let Some(s) = this.sessions.get_mut(&key).filter(|s| {
@@ -2214,30 +2312,19 @@ impl ConversationState {
                 };
                 let mut draft_changed = false;
                 match result {
-                    Ok(_) => {
-                        s.finish_submission(true);
-                        if used_template {
-                            s.pending_template = None;
+                    Ok(disposition) => {
+                        // Queued and started inputs show up through Pi's queue and run events.
+                        if disposition == pi_rpc::protocol::InputDisposition::Handled {
+                            cx.emit(ConversationEvent::Notify {
+                                message: crate::feedback::Feedback::InputHandled,
+                                error: false,
+                            });
                         }
-                        s.attachments.retain(|a| !attachment_ids.contains(&a.id));
-                        let before = s.quotes.len();
-                        s.quotes
-                            .retain(|q| !quotes.iter().any(|sent| sent.id == q.id));
-                        draft_changed |= before != s.quotes.len();
-                        s.attachment_order.retain(|id| {
-                            s.quotes.iter().any(|q| &q.id == id)
-                                || s.attachments.iter().any(|a| &a.id == id)
-                        });
-                        // Extension editor updates belong to the next submission.
-                        if revision == Some(s.draft_revision) {
-                            draft_changed |= !s.draft.text().is_empty();
-                            s.draft = "".into();
-                            s.draft_revision += 1;
-                        }
+                        draft_changed =
+                            s.accept_submission(revision, used_template, &attachment_ids, &quotes);
                     }
-                    Err(error) => {
-                        s.error = Some(SessionError::Runtime(error.to_string()));
-                        s.fail_submission(error.to_string(), cx);
+                    Err((stage, category, error)) => {
+                        s.reject_submission(stage, category, error, cx);
                     }
                 }
                 if draft_changed {
@@ -2253,6 +2340,10 @@ impl ConversationState {
             _task: task,
             result: reply,
         };
+        if revision.is_some() {
+            let text = s.draft.text().to_string();
+            s.record_input(&text);
+        }
         Some(receiver)
     }
     pub fn abort(&mut self, key: &str, cx: &mut Context<Self>) {
@@ -2539,6 +2630,9 @@ impl ConversationState {
                         content_changed = true;
                         refresh = Some(ReadScope::History);
                         if was_running && !s.interrupted {
+                            if matches!(s.error, Some(SessionError::Response)) {
+                                s.log_failure("agent_settled", "model_response");
+                            }
                             if has_output && s.final_answer_text().is_some() {
                                 notice = Some(crate::notifications::Kind::Completed);
                             } else if s.error.is_some() {
@@ -3029,6 +3123,7 @@ impl Session {
     }
     pub fn replace_entries_for_test(&mut self, entries: protocol::Entries) {
         self.transcript.replace(entries);
+        self.seed_input_history();
     }
 }
 
@@ -3103,6 +3198,50 @@ mod tests {
     use gpui_kit::AppContext;
     use gpui_kit::TestAppContext;
     use std::path::PathBuf;
+
+    #[test]
+    fn input_history_restores_current_path_and_bounds_submitted_text() {
+        let mut session = super::Session::from_rpc_messages(&[]);
+        session.transcript.replace(serde_json::from_value(serde_json::json!({
+            "entries": [
+                {"type":"message","id":"a","parentId":null,"timestamp":"2026-10-25T00:00:00Z","message":{"role":"user","content":" first "}},
+                {"type":"message","id":"b","parentId":"a","timestamp":"2026-10-25T00:00:00Z","message":{"role":"assistant","content":"answer"}},
+                {"type":"message","id":"c","parentId":"b","timestamp":"2026-10-25T00:00:00Z","message":{"role":"user","content":" second "}},
+                {"type":"message","id":"other","parentId":"a","timestamp":"2026-10-25T00:00:00Z","message":{"role":"user","content":"other branch"}}
+            ], "leafId":"c"
+        })).unwrap());
+        session.seed_input_history();
+        assert_eq!(session.input_history(), ["first", "second"]);
+        session.record_input(" second ");
+        session.record_input("   ");
+        assert_eq!(session.input_history(), ["first", "second"]);
+        for index in 0..101 {
+            session.record_input(&format!(" input {index} "));
+        }
+        assert_eq!(session.input_history().len(), 100);
+        assert_eq!(session.input_history().first().unwrap(), "input 1");
+        assert_eq!(session.input_history().last().unwrap(), "input 100");
+        session.seed_input_history();
+        assert_eq!(session.input_history().last().unwrap(), "input 100");
+    }
+
+    #[test]
+    fn accepted_input_preserves_event_owned_run_and_newer_draft() {
+        for running in [false, true] {
+            for newer in [false, true] {
+                let mut session = super::Session::from_rpc_messages(&[]);
+                session.draft = if newer { "next draft" } else { "submitted" }.into();
+                session.draft_revision = if newer { 5 } else { 4 };
+                session.run = super::RunState::Idle;
+                if running {
+                    session.run.start();
+                }
+                session.accept_submission(Some(4), false, &[], &[]);
+                assert_eq!(session.running(), running);
+                assert_eq!(session.draft.text(), if newer { "next draft" } else { "" });
+            }
+        }
+    }
 
     #[gpui::test]
     fn attachment_reads_follow_the_session_and_cancel_on_removal(cx: &mut TestAppContext) {

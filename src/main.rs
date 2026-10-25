@@ -19,9 +19,9 @@ fn main() {
     }
     #[cfg(target_os = "macos")]
     if std::env::args_os().nth(1).as_deref()
-        == Some(std::ffi::OsStr::new("--gupi-print-shell-path"))
+        == Some(std::ffi::OsStr::new("--gupi-print-shell-environment"))
     {
-        if gupi_pi_runtime::print_path().is_err() {
+        if gupi_pi_runtime::print_environment().is_err() {
             std::process::exit(1);
         }
         return;

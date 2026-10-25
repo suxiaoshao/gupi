@@ -223,11 +223,15 @@ Select text in a message, a read-only file preview, or one side of a diff to quo
 
 When sending fails, Gupi keeps the draft and attachments for you to retry. Queued messages follow Pi's queue behavior.
 
+At the message editor's visual-row boundaries, use **Up / Down** to recall this session's sent messages and return to your unsent draft. Message history and Shell command history are separate. When Pi reports that it handled an input, Gupi shows a nonblocking notice; an accepted submission does not by itself mean model generation has started.
+
 ### Models, responses, and tools
 
 Responses render as Markdown with code blocks, lists, and tables. Expand a process section to inspect thinking and tool calls, or open tool details to read and copy their content. In the main window, file, directory and skill-location references inside the session's project open in **Files**; external references and references in temporary conversations use the system's default application.
 
 Interface errors show a localized summary and keep their recovery actions visible. Expand **Technical details** to read the original system, process or RPC error. Pi responses and tool, shell and extension content remain verbatim.
+
+For codemode and MCP activity with explicit parent attribution, open the parent tool's details to inspect its nested calls, statuses, arguments and available durations/errors. The reader initially shows eight recent calls and can expand all recorded calls. Unknown parentage and incomplete records remain distinct from a failed parent tool.
 
 With Pi 1.3.0, recorded direct Shell commands appear as separate rows with output, exit status and a marker when excluded from model context. Active commands can show live output and a Stop action; long output supports expansion, copying, search and opening Pi's full-output file when available. At the start of a draft, with no selection, type `!` to enter the independent Bash editor without changing the message draft. An immediate second `!`, or pasting `!! pwd` at that position, selects exclusion from model context; `!` includes output by default. The card’s **Include in context** switch changes this option without adding a prefix to the command.
 
@@ -370,7 +374,7 @@ If the install button is unavailable, use the release page or your original pack
 | Symptom | What to check |
 | --- | --- |
 | Pi cannot be found | Run `pi --version` in your terminal. Set the executable's absolute path in **Settings → Pi**, check it, and reconnect the session. |
-| Pi works in a terminal but not from the Dock | Use **Check Pi** to refresh command discovery. Gupi reads the login shell's `PATH` on macOS; other required environment variables must also be available, or launch Gupi from your configured terminal. |
+| Pi works in a terminal but not from the Dock | Use **Check Pi** to refresh command discovery. On macOS, Gupi forwards the login shell's exported environment to Pi, including provider variables as well as `PATH`. Check that the variables are exported by that shell. |
 | Windows cannot find Pi | Put Pi/Node.js on the user or system `PATH`, or launch Gupi from a terminal with the correct environment. Gupi does not load PowerShell profiles itself. |
 | The executable check passes, but a model request fails | Verify the provider login, selected model, and credentials in Pi. Read the error in the affected conversation. |
 | Build fails on macOS | Verify that full Xcode is selected and `xcrun metal --version` succeeds. |
@@ -379,6 +383,8 @@ If the install button is unavailable, use the release page or your original pack
 **Check Pi** verifies the executable version, not your model account; Pi manages accounts, credentials, and model requests. Gupi does not reproduce every terminal extension interface.
 
 ### Data and diagnostics
+
+Connection, history-read, submission and final model failures write structured diagnostic metadata to the existing local log. These new failure records do not include response text, credentials or raw stderr; original error details remain available in the interface.
 
 | Data | Location |
 | --- | --- |

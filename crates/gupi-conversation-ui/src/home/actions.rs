@@ -60,6 +60,8 @@ impl HomeView {
             | Kind::TrashTemporary
             | Kind::TemporarySession(_) => false,
             Kind::Palette | Kind::QuickOpen | Kind::Settings | Kind::ShowMain | Kind::Quit => true,
+            Kind::PreviousShellCommand => self.shell_history_available(false),
+            Kind::NextShellCommand => self.shell_history_available(true),
             Kind::New | Kind::Sidebar => !state.draining(),
             Kind::Scan => !state.draining() && !state.scanning(),
             Kind::FocusInput | Kind::History | Kind::OpenHistory | Kind::ProjectFiles => {
@@ -142,6 +144,8 @@ impl HomeView {
         }
         let key = self.state.read(cx).selected().clone();
         match action.0 {
+            Kind::PreviousShellCommand => self.recall_shell(false, window, cx),
+            Kind::NextShellCommand => self.recall_shell(true, window, cx),
             Kind::CloseSource => self.close_source(window, cx),
             Kind::FocusSource => {
                 self.select_workspace_tab(None, window, cx);
@@ -262,7 +266,13 @@ impl HomeView {
                 }
                 return;
             }
-            self.input.update(cx, |input, cx| input.focus(window, cx));
+            if let Some(view) = self.shown_key.as_ref().and_then(|key| self.views.get(key))
+                && view.shell.open
+            {
+                view.shell.editor.focus_handle(cx).focus(window, cx);
+            } else {
+                self.input.update(cx, |input, cx| input.focus(window, cx));
+            }
         } else {
             self.focus_handle.focus(window, cx);
         }

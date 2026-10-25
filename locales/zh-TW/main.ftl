@@ -1437,3 +1437,15 @@ files-open-external = 用預設應用程式開啟
 files-open-remote-image = 在瀏覽器中開啟圖片
 image-preview-fit = 符合視窗
 image-preview-actual-size = 原始尺寸
+
+shell-placeholder = 輸入要執行的命令
+shell-command = Shell 命令
+shell-include = ! 加入上下文
+shell-exclude = !! 不加入
+shell-include-help = 輸出會加入模型上下文，命令不會觸發模型回覆
+shell-exclude-help = 輸出不加入模型上下文，但仍記錄在對話歷史中
+shell-return = 返回訊息
+shell-run = 執行
+shell-input-running = 命令執行中，可在對話中停止
+shell-history-previous = 上一條命令
+shell-history-next = 下一條命令

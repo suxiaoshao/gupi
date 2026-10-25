@@ -440,7 +440,7 @@ impl Element for ResizeEvents {
 }
 
 #[cfg(test)]
-mod tests {
+pub(in crate::home) mod tests {
     use super::*;
     use core::prelude::v1::test;
     use gpui_kit::test::TestWindowExt as _;
@@ -467,7 +467,7 @@ mod tests {
         setup_initialized(cx, preferences, false, |_, _, _| {})
     }
 
-    fn setup_initialized(
+    pub(in crate::home) fn setup_initialized(
         cx: &mut gpui_kit::TestAppContext,
         preferences: layout::LayoutState,
         temporary: bool,

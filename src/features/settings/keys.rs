@@ -39,7 +39,9 @@ impl Group {
             | Kind::Scan
             | Kind::ShowMain
             | Kind::Quit => Self::Application,
-            Kind::FocusInput
+            Kind::PreviousShellCommand
+            | Kind::NextShellCommand
+            | Kind::FocusInput
             | Kind::Model
             | Kind::Stop
             | Kind::Find

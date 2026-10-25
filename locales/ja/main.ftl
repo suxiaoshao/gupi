@@ -1430,3 +1430,15 @@ files-open-external = デフォルトのアプリで開く
 files-open-remote-image = ブラウザーで画像を開く
 image-preview-fit = 全体を表示
 image-preview-actual-size = 実際のサイズ
+
+shell-placeholder = 実行するコマンドを入力
+shell-command = Shell コマンド
+shell-include = ! コンテキストに含める
+shell-exclude = !! 含めない
+shell-include-help = 出力をモデルのコンテキストに含めます。コマンドはモデルの応答を開始しません。
+shell-exclude-help = 出力をモデルのコンテキストに含めませんが、会話履歴には記録します。
+shell-return = メッセージに戻る
+shell-run = 実行
+shell-input-running = コマンド実行中。会話内で停止できます
+shell-history-previous = 前のコマンド
+shell-history-next = 次のコマンド

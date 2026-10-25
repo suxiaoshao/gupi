@@ -1457,3 +1457,15 @@ files-open-external = Open with default app
 files-open-remote-image = Open image in browser
 image-preview-fit = Fit
 image-preview-actual-size = Actual size
+
+shell-placeholder = Enter a command to run
+shell-command = Shell command
+shell-include = ! Include in context
+shell-exclude = !! Exclude
+shell-include-help = Output is included in model context. The command does not trigger a model response.
+shell-exclude-help = Output is excluded from model context but is still recorded in conversation history.
+shell-return = Back to message
+shell-run = Run
+shell-input-running = Command running; stop it in the conversation
+shell-history-previous = Previous command
+shell-history-next = Next command

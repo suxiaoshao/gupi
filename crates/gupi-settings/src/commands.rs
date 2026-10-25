@@ -37,6 +37,8 @@ pub enum Kind {
     Delete,
     SessionInfo,
     Find,
+    PreviousShellCommand,
+    NextShellCommand,
 }
 impl Kind {
     pub fn temporary_only(self) -> bool {
@@ -85,6 +87,8 @@ impl Kind {
             Self::Reveal => "reveal locate file",
             Self::CopyPath => "copy path",
             Self::Delete => "delete trash",
+            Self::PreviousShellCommand => "previous shell command history 上一条命令",
+            Self::NextShellCommand => "next shell command history 下一条命令",
             Self::Find => "find search text 查找 正文",
             Self::SessionInfo => "session information info details 会话信息",
         }

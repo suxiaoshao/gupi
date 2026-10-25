@@ -1456,3 +1456,15 @@ files-open-external = Abrir con la aplicación predeterminada
 files-open-remote-image = Abrir imagen en el navegador
 image-preview-fit = Ajustar
 image-preview-actual-size = Tamaño real
+
+shell-placeholder = Escribe un comando para ejecutar
+shell-command = Comando de Shell
+shell-include = ! Incluir en contexto
+shell-exclude = !! Excluir
+shell-include-help = La salida se incluye en el contexto del modelo. El comando no genera una respuesta del modelo.
+shell-exclude-help = La salida se excluye del contexto del modelo, pero se conserva en el historial de la conversación.
+shell-return = Volver al mensaje
+shell-run = Ejecutar
+shell-input-running = Comando en ejecución; puedes detenerlo en la conversación
+shell-history-previous = Comando anterior
+shell-history-next = Comando siguiente

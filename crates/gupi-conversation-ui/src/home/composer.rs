@@ -432,6 +432,8 @@ impl HomeView {
                 }
                 _ => {}
             }
+        } else if self.shell_open() {
+            editor = editor.child(self.render_shell_composer(cx));
         } else {
             let owner = cx.entity().downgrade();
             let resource = self.resource_context(&key, cx);
@@ -520,7 +522,10 @@ impl HomeView {
                 ))
                 .on_paste(move |item, window, cx| {
                     owner
-                        .update(cx, |this, cx| this.paste_attachments(item, window, cx))
+                        .update(cx, |this, cx| {
+                            this.paste_shell_entry(item, window, cx)
+                                || this.paste_attachments(item, window, cx)
+                        })
                         .unwrap_or(false)
                 });
             let Some(view) = self.views.get(&key) else {
@@ -669,6 +674,9 @@ impl HomeView {
             editor = div()
                 .relative()
                 .key_context("GupiComposer")
+                .on_action(cx.listener(|this, _: &super::shell::Bang, window, cx| {
+                    this.shell_bang(window, cx);
+                }))
                 // Undo may restore the original @ query. Keep editing focus
                 // in the composer while the input performs its own history edit.
                 .capture_action(

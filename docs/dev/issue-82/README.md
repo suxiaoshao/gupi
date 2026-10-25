@@ -1,6 +1,6 @@
 # 独立 Shell 输入框
 
-状态：双输入设计已确认，尚未实现。采用 Kit Editor + 底栏；Pi 的执行语义与适合沿用的处理方案见下表，GUI 呈现不受 TUI 单缓冲形式限制。基于 `feat/82-shell-input` 的 `b7e113f`、锁定的 GPUI Kit 0.8.0。本文负责输入侧；执行、实时输出和历史继续遵循 [Shell 命令交互](../bang-commands/README.md)。
+状态：已实现双输入与内存命令召回，受影响门禁通过；本轮原生验证因 Computer Use 启动故障未执行。采用 Kit Editor + 底栏；Pi 的执行语义与适合沿用的处理方案见下表，GUI 呈现不受 TUI 单缓冲形式限制。基于 `feat/82-shell-input` 的 `b7e113f`、锁定的 GPUI Kit 0.8.0。本文负责输入侧；执行、实时输出和历史继续遵循 [Shell 命令交互](../bang-commands/README.md)。
 
 ## 结果
 
@@ -168,3 +168,16 @@ Esc 的任务优先级采用 Pi；本项不移植 TUI“停止时自动取回整
 ## 剩余待定点
 
 无新增产品选择。键入入口按用户指定改为正式 GPUI keybinding；它支持普通按键的消费与回落，不承诺拦截所有 IME 提交。双输入、隐藏前缀、原草稿保留、提交后留在 Shell 和显式历史召回不变。不为补齐上述平台边界增加写入后检测、私有 API 或自写输入组件。
+
+## 实现与验证
+
+`SessionView` 持有 Shell Editor、模式、上下文选项及内存历史；原 Textarea entity 不替换。入口使用两个上下文的 `!` Action 和普通输入的 `on_paste`。Shell 父级仅通过公开光标/选区 Action 的 capture 结束第二前缀机会，并继续传播给 Kit；空输入处无位移的 Left 也能结束该机会，无全局字符拦截。Kit 提交时发出 `PressEnter` 并传播 Enter，Shell 父级消费这次传播，避免平台再次插入换行。运行按钮与提交共用现有提交条件及历史分支预览限制。
+
+2026-10-25 验证：
+
+- 两条新增真实 Home 组件回归覆盖：原 `InputContent`、token、附件、选区及撤销/重做保留；`!` / `!!` / 第三个 `!`；非起点和选区替换的放行；前缀粘贴；Shift+Enter 换行；本地拒绝不清空；显式历史召回恢复正文、选区与上下文选项；查找、IME 取消与退出的 Esc 次序；空 Shell Backspace 返回。
+- `cargo fmt --all -- --check`、`cargo check -p gupi --locked` 通过。
+- `cargo clippy -p gupi -p gupi-conversation-ui -p gupi-conversation -p gupi-settings --all-targets --locked -- -D warnings` 通过。
+- 同四包 `cargo test --all-targets --locked` 通过：gupi 127、gupi-conversation 43、gupi-conversation-ui 228、gupi-settings 20。九语言 Shell 文案键与参数校验通过。
+- 架构师限定源码复审无剩余阻塞；不视为原生验收。
+- Computer Use 首次 `getState` 返回 `Native apps: Error: Sky Computer Use native pipe startup failed`，已立即停止该验证路径，未重试或绕行。中文浅/深色、窄窗、实际键盘布局/IME、运行 `pwd` / `echo`、排除上下文及停止尚未原生验证；未发送模型提示词。此前 Gallery 构建因尚在修正的公共 action 路径错误退出，未启动应用或创建 Gallery 夹具。

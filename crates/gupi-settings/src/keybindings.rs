@@ -25,6 +25,18 @@ impl Command {
 
 pub const COMMANDS: &[Command] = &[
     Command {
+        id: "shell_previous",
+        label: "shell-history-previous",
+        kind: Kind::PreviousShellCommand,
+        default: "",
+    },
+    Command {
+        id: "shell_next",
+        label: "shell-history-next",
+        kind: Kind::NextShellCommand,
+        default: "",
+    },
+    Command {
         id: "find",
         label: "conversation-find",
         kind: Kind::Find,
@@ -269,7 +281,7 @@ impl Command {
                 && Keystroke::parse(text)
                     .is_ok_and(|key| key == Keystroke::parse("enter").unwrap());
             let context = if plain_enter {
-                "GupiTemporary && !Input && !Command && !GupiExtension && !GupiErrorDetails && !GupiQuoteComment && !GupiQuoteAttachment"
+                "GupiTemporary && !Input && !Command && !GupiExtension && !GupiErrorDetails && !GupiQuoteComment && !GupiQuoteAttachment && !GupiShell"
             } else {
                 "GupiTemporary"
             };

@@ -1457,3 +1457,15 @@ files-open-external = Mit Standard-App öffnen
 files-open-remote-image = Bild im Browser öffnen
 image-preview-fit = Einpassen
 image-preview-actual-size = Originalgröße
+
+shell-placeholder = Befehl zum Ausführen eingeben
+shell-command = Shell-Befehl
+shell-include = ! Im Kontext
+shell-exclude = !! Ausschließen
+shell-include-help = Die Ausgabe wird in den Modellkontext aufgenommen. Der Befehl löst keine Modellantwort aus.
+shell-exclude-help = Die Ausgabe bleibt außerhalb des Modellkontexts, wird aber im Gesprächsverlauf gespeichert.
+shell-return = Zurück zur Nachricht
+shell-run = Ausführen
+shell-input-running = Befehl läuft; im Gespräch stoppen
+shell-history-previous = Vorheriger Befehl
+shell-history-next = Nächster Befehl

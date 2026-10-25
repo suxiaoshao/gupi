@@ -533,6 +533,7 @@ mod tests {
             args: None,
             result: serde_json::Value::Null,
             status,
+            nested: Default::default(),
         };
         let complete = tool("complete", ToolStatus::Complete);
         let failed = tool("failed", ToolStatus::Failed);

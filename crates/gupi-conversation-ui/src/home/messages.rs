@@ -27,6 +27,7 @@ mod images;
 pub(super) mod markdown;
 pub(super) mod metadata;
 pub(super) mod navigator;
+mod nested_calls;
 mod plugin;
 mod presentation;
 pub(super) mod resources;

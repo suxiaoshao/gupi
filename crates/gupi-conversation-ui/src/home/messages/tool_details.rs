@@ -421,6 +421,7 @@ mod tests {
             args: Some(args),
             result,
             status: ToolStatus::Complete,
+            nested: Default::default(),
         }
     }
 

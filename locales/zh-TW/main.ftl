@@ -1450,3 +1450,10 @@ shell-history-previous = 上一條命令
 shell-history-next = 下一條命令
 
 conversation-input-handled = 已交由擴充功能處理
+
+tool-nested-calls = 巢狀呼叫
+tool-nested-show-all = 顯示已記錄的全部呼叫
+tool-nested-recent = 僅顯示最近 8 筆
+tool-nested-incomplete = Pi 的記錄不完整：可能省略了呼叫或參數，或仍有未完成的呼叫。
+tool-nested-arguments-omitted = Pi 已省略這些參數。
+tool-nested-duration = { $milliseconds } 毫秒

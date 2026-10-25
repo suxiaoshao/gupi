@@ -1470,3 +1470,10 @@ shell-history-previous = Previous command
 shell-history-next = Next command
 
 conversation-input-handled = Sent to extension
+
+tool-nested-calls = Nested calls
+tool-nested-show-all = Show all recorded calls
+tool-nested-recent = Show recent 8 only
+tool-nested-incomplete = Pi’s record is incomplete: calls or arguments may be omitted, or calls may be unfinished.
+tool-nested-arguments-omitted = Pi omitted these arguments.
+tool-nested-duration = { $milliseconds } ms

@@ -47,6 +47,7 @@ Editor 使用 Bash 高亮、等宽字体、软换行，隐藏行号、折叠与�
 | 占位符与提交 | `placeholder` 显示“输入要运行的命令”，`submit_on_enter(true)`、`InputEvent::PressEnter` 处理提交；Shift+Enter 仍由 Kit 插入换行。[提交实现](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/base/src/input/base/state.rs#L2167)。 |
 | 高度 | Editor 只有公开 `.h(...)` 与 `Styled` 布局；`auto_grow` / `set_auto_grow` 属于 TextareaMode，不属于 EditorMode。[Textarea 与 Editor 分界](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/base/src/input/base/state.rs#L11900)。采用固定 `8rem` 编辑区域、内部滚动；这不是精确 2–8 行，也不按 display map 算高度。 |
 | 选择、撤销与 IME | Kit 原生 Editor 行为；公开 `selected_range` / `set_selected_range`、`EntityInputHandler::marked_text_range` 可用于模式入口判断。组合中的 marked text 不切面板。入口只消费当前用户的前缀输入；程序化恢复、撤销或普通草稿本来含有 `!`，不作为新的切换请求。[输入处理](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/base/src/input/base/state.rs#L4303)。 |
+| 键入入口 | 使用 GPUI `KeyBinding::new("!", …, Some("GupiComposer > Input && !GupiQuoteComment"))` 与对应 action handler；命中且符合进入条件时消费，不符合时 `cx.propagate()`。这是按键绑定，不是已提交文字的回调；平台 IME 直接提交不保证经过绑定，详见入口规则。 |
 | 粘贴 | Textarea 和 Editor 都有公开 `on_paste`；普通输入符合入口条件时消费本次前缀粘贴，避免先写入普通草稿再整份重建。其余粘贴交给所在输入组件。Shell 不附加图片，不在本项移植 Pi 的剪贴板图片临时文件和路径转义。[Editor on_paste](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/component/src/input/editor.rs#L124)。 |
 | 搜索与 Esc | Kit 提供 `search_session()`、`close_search()`；Kit 的 Escape 处理菜单、额外光标、补全及 IME，但 `unmark_text` 后仍可 propagate。应用不能把同一次取消 IME 的 Esc 又解释为停任务/退出。[Escape](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/base/src/input/base/state.rs#L2288)、[搜索](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/base/src/input/editor/search.rs#L136)。 |
 | 底栏 | `Toolbar` / `ToolbarGroup` 提供语义和键盘导航，`ToggleGroup` / `Button` 提供控件行为；不使用 InputGroupAddon 包裹一个假的 Input。[Toolbar](https://github.com/longbridge/gpui-kit/blob/v0.8.0/crates/component/src/toolbar.rs#L136)。 |
@@ -98,13 +99,28 @@ Zed 是编辑体验上限，不是另一套实现依赖。本机 Zed `79fe6a645f
 
 与旧 #82 的“普通输入开头键入 `!`、粘贴 `!! ls`、前缀隐藏、普通草稿原样保留”一致，采用以下具体规则，不增加“只有空草稿才允许”的限制：
 
-- 普通 Composer 聚焦、光标为第 0 位且没有选区、没有 IME 组合时，键入 `!` 进入空 Shell，选“加入上下文”。该 `!` 是 UI 入口，不写入普通草稿或 Shell 正文；之后键入的命令只进入 Shell。原普通草稿即使非空也完整保留。
+- 普通 Composer 聚焦、光标为第 0 位且没有选区、没有 IME 组合时，匹配 ASCII `!` 的 GPUI keybinding action 进入空 Shell，选“加入上下文”。绑定写作 `"!"`，不固定为美式键盘的 `shift-1`，不使用全局 keystroke interceptor。action 消费该事件，普通按键路径不再插入 `!`；之后键入的命令只进入 Shell。原普通草稿即使非空也完整保留。
 - 同一位置粘贴**本次文本**以 `!!` 或 `!` 开头时，分别选“不加入”或“加入”；仅移除本次文本的模式前缀及紧随的入口分隔空白，把余下文本放入 Shell。粘贴 `!! ls` 得到 `ls`，粘贴 `!!! ls` 得到不加入上下文的 `! ls`。中间换行和正文字符不重写，不自动运行。
 - 这里的“后续文本”指前缀之后继续键入的文字或**本次粘贴**的余文，绝不指旧普通草稿中光标右边的内容。例如原草稿是“稍后解释结果”，光标回到开头粘贴 `!! pwd`，Shell 只得到 `pwd`，返回后仍是“稍后解释结果”。
-- 键入入口 `!` 后，紧接着的第二个键入 `!` 切“不加入”，不成为正文；无需时间阈值。该机会只属于这次键入入口，正文输入、粘贴、光标/选区操作或焦点转到其他控件后结束。之后（包括提交后清空、历史召回后）所有 `!` 都是命令字符；上下文改选走底栏。前缀粘贴已一次解析完，不再等待第二个 `!`。
-- 光标不在第 0 位、存在选区、粘贴前有空白再出现 `!`，均按普通编辑处理；不扫描整份草稿、不因撤销、加载或模板填入的 `!` 自动切换。IME 的临时组成文字不触发；只在公共输入接口能区分的已确认用户输入上处理入口，不能靠原始键码猜字符或重做输入法。
+- 键入入口 `!` 后，紧接着的第二个 `!` 由 Shell 输入上下文中的同字符绑定切“不加入”，不成为正文；无需时间阈值。该机会只属于这次键入入口，正文输入、粘贴、光标/选区操作或焦点转到其他控件后结束。之后（包括提交后清空、历史召回后）该 action 放行，所有 `!` 都是命令字符；上下文改选走底栏。前缀粘贴已一次解析完，不再等待第二个 `!`。
+- action 执行时读取真实输入状态：`selected_range() == (0..0)` 且没有 `marked_text_range` 才进入。光标不在第 0 位、存在选区或 IME 组合中，直接 `cx.propagate()`，不改输入状态、不手工插入字符、不调用 `prevent_default`。事件继续走其它绑定、监听及平台输入处理；若没有其它处理者消费，按正常输入规则插入或替换选区。粘贴前有空白再出现 `!` 也交给原粘贴路径。
+- 不扫描整份草稿，不在 `InputEvent::Change` 或 InputHandler 写入后识别入口，不因撤销、加载或模板填入的 `!` 自动切换。IME 的组字和直接提交由组件与平台处理；未经过 keybinding 的提交不会事后补切 Shell。
 
 这样既允许已有草稿时进入，也不会把原草稿或被选中文字变成命令。另一种“去掉前缀后把整份普通草稿送入 Shell”的规则违反本次明确的原样保留要求，不列为待选。实现必须用真实键入和粘贴证明普通 `InputContent`、token、附件、选区和撤销历史不变；不能用一次整体 `set_value` 重建来冒充保留。
+
+#### 按键顺序、布局与 IME 边界
+
+以下依据锁定的 `gpui-pre` 及其 macOS/Windows/Linux 后端 **0.3.9** 源码核实，尚无本项三平台原生验证。公共分派在 `gpui-pre/src/window.rs:6150–6177` 先执行匹配 action；bubble action 默认消费事件（`:6561`），`App::propagate`（`src/app.rs:2653`）允许继续分派。因此消费与放行都能沿正式路径完成，无需接管 InputHandler。
+
+| 平台 | 普通字符按键路径 | IME 边界 |
+| --- | --- | --- |
+| macOS | `gpui-pre-macos/src/window.rs:2748–2777` 先调用 GPUI keydown；消费则返回，放行才交给原生 input context。 | 同文件 `:2683–2746` 在组字中或文本输入启用 IME 优先时先交 IME；`:3437` 的 `insert_text` 可直接写入 InputHandler，未必经过绑定。 |
+| Windows | `gpui-pre-windows/src/platform.rs:502–518,606–608` 先分派 GPUI keydown；消费则不执行通常产生 `WM_CHAR` 的 `TranslateMessage`。`src/events.rs:416–443,461` 分别处理按键与随后字符。 | `src/events.rs:724–732` 的 IME 结果直接提交；GPUI 对 `prefer_character_input` 事件也可优先文字而不执行绑定（`gpui-pre/src/window.rs:5990–6006,6150`）。 |
+| Linux | `gpui-pre-linux/src/linux/wayland/window.rs:1575–1599` 与 `src/linux/x11/window.rs:1197–1223` 都先分派按键，只有 propagate 才将 `key_char` 写入。 | X11 `handle_ime_commit`（`:1225`）直接提交；Wayland `src/linux/wayland/client.rs:2298–2320` 对单字节提交合成按键，其它提交走 IME 输入，不能概括为所有提交都先匹配绑定。 |
+
+布局匹配使用 `Keystroke::should_match`（`gpui-pre/src/platform/keystroke.rs:82–115`）：除按键本身，还可匹配平台提供的 `key_char`。因此普通布局事件的美式 Shift+1、AZERTY 直接产生 `!` 的按键均可匹配 `"!"`，无需应用维护布局表；`KeyBinding::new` 不启用强制美式物理键映射（`src/keymap/binding.rs:33`）。`key_char` 是按键可能产生的字符，不是 IME 最终提交文字。
+
+只注册 ASCII `!`，不注册或归一化全角 `！`；IME 直接提交全角文字时按普通文字输入。不能进一步承诺“任何中文标点模式都绝不命中”：若平台在输入法转换前先提供了 ASCII `!` 按键，keybinding 无法预知最终标点；也不能承诺经 IME 提交的 ASCII `!` 必定进入 Shell。本项采用 GPUI 的既有路由，不增加输入法识别、写入后回滚、代理 InputHandler 或备用触发机制。
 
 ### 命令召回与输入生命周期
 
@@ -137,7 +153,7 @@ Esc 的任务优先级采用 Pi；本项不移植 TUI“停止时自动取回整
 ## 实现顺序
 
 1. 在 Home 组合独立 Kit Editor + 底栏，保留原 Composer entity 和草稿；不等待输入组件研究或 InputGroup 扩展。
-2. 接入只消费本次输入的键入/粘贴入口、第二个 `!`、空 Backspace 与返回操作；先证明原草稿不变、IME 不被截断，再接入 Shell 内存历史和显式召回。运行与返回动作限定到焦点上下文，不能同时触发消息发送或临时窗口快捷动作。
+2. 用 Composer/Shell 各自上下文的 `"!"` keybinding 和现有 `on_paste` 接入入口、第二个 `!`、空 Backspace 与返回操作；先证明消费及 `cx.propagate()` 回落均保留原草稿、IME 不被截断，再接入 Shell 内存历史和显式召回。运行与返回动作限定到焦点上下文，不能同时触发消息发送或临时窗口快捷动作。
 3. 调用现有 Shell 能力，接受后清空并留在 Shell，本地拒绝保留；沿用执行输出、停止和历史刷新。会话切换与异步结果不得覆盖新会话/下一条输入。
 4. 同步九种语言的可见文案、tooltip 和无障碍名称；命令、路径及输出不翻译。完成受影响验证并记录实际结果，交付试用，不并入输出侧重构。
 
@@ -147,8 +163,8 @@ Esc 的任务优先级采用 Pi；本项不移植 TUI“停止时自动取回整
 
 实施后运行 `cargo fmt --all -- --check`，对实际受影响的 root/UI/conversation/settings 包执行锁定的全目标 Clippy（`-- -D warnings`）和相应测试；改到根集成时包含 `cargo check -p gupi --locked`。文档阶段只核实来源与文档差异，不运行 Rust 门禁。
 
-原生试用聚焦浅色/深色和一个窄窗的实际输入流程，尤其是 IME 不误触发、Shift+Enter 多行、Esc 先处理输入层，以及临时窗口按键不穿透。组件回归与原生结果分别记录；Computer Use 自身故障立即报告原始错误，不把未执行场景写成通过。测试/原生结果不是额外扩大产品范围的理由。
+原生试用聚焦浅色/深色和一个窄窗的实际输入流程，尤其是普通 `!` 消费、非起点/选区/组字状态的正常回落、Shift+Enter 多行、Esc 先处理输入层，以及临时窗口按键不穿透。记录实际键盘布局、IME 与标点模式；合成按键不能证明 IME 提交顺序，也不能把单平台结果外推为三平台验证。组件回归与原生结果分别记录；Computer Use 自身故障立即报告原始错误，不把未执行场景写成通过。测试/原生结果不是额外扩大产品范围的理由。
 
 ## 剩余待定点
 
-无产品选择待定。双输入、隐藏前缀、原草稿保留、只消费本次入口文本、提交后留在 Shell 和显式历史召回均按上述规则实施。若锁定 Kit 的公开接口不能在不破坏普通草稿/IME 的前提下接入键入入口，应报告具体 API 缺口，由用户决定入口调整或上游需求；不借机改为单缓冲、访问私有状态或重写输入组件。
+无新增产品选择。键入入口按用户指定改为正式 GPUI keybinding；它支持普通按键的消费与回落，不承诺拦截所有 IME 提交。双输入、隐藏前缀、原草稿保留、提交后留在 Shell 和显式历史召回不变。不为补齐上述平台边界增加写入后检测、私有 API 或自写输入组件。

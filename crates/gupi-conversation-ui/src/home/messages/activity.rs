@@ -73,6 +73,7 @@ pub(in crate::home) struct Tool {
     pub args: Option<Value>,
     pub result: Value,
     pub status: ToolStatus,
+    pub nested: Box<super::nested_calls::NestedCalls>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -812,6 +813,7 @@ mod tests {
                 args: None,
                 result: Value::Null,
                 status: ToolStatus::Complete,
+                nested: Default::default(),
             })
         };
         let mut content = RunContent {

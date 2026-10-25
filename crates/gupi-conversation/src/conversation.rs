@@ -138,6 +138,10 @@ pub struct ToolActivity {
     pub id: String,
     pub name: String,
     pub args: Value,
+    /// Direct caller from Pi's parentToolCallId; IDs remain opaque.
+    pub parent: Option<String>,
+    /// Only present when Pi supplied a duration.
+    pub duration_ms: Option<u64>,
     pub execution: ToolExecution,
 }
 impl ToolActivity {
@@ -146,6 +150,8 @@ impl ToolActivity {
             id,
             name,
             args,
+            parent: None,
+            duration_ms: None,
             execution,
         }
     }
@@ -2763,34 +2769,7 @@ impl ConversationState {
                     "tool_execution_start" | "tool_execution_update" | "tool_execution_end" => {
                         s.tool_revision += 1;
                         content_changed = true;
-                        let id = raw["toolCallId"].as_str().unwrap_or_default();
-                        if !s.tools.iter().any(|t| t.id == id) {
-                            s.tools.push(Arc::new(ToolActivity {
-                                id: id.into(),
-                                name: raw["toolName"].as_str().unwrap_or_default().into(),
-                                args: raw.get("args").cloned().unwrap_or(Value::Null),
-                                execution: ToolExecution::Running(Value::Null),
-                            }));
-                        }
-                        let tool = Arc::make_mut(s.tools.iter_mut().find(|t| t.id == id).unwrap());
-                        let output = raw.get("partialResult").or_else(|| raw.get("result"));
-                        let previous = match &tool.execution {
-                            ToolExecution::Running(value)
-                            | ToolExecution::Complete(value)
-                            | ToolExecution::Failed(value) => value,
-                        };
-                        let output = output.unwrap_or(previous).clone();
-                        tool.execution = match kind.as_str() {
-                            "tool_execution_end" if raw["isError"].as_bool().unwrap_or(false) => {
-                                ToolExecution::Failed(output)
-                            }
-                            "tool_execution_end" => ToolExecution::Complete(output),
-                            _ => match &tool.execution {
-                                ToolExecution::Running(_) => ToolExecution::Running(output),
-                                ToolExecution::Complete(_) => ToolExecution::Complete(output),
-                                ToolExecution::Failed(_) => ToolExecution::Failed(output),
-                            },
-                        };
+                        s.receive_tool(kind, raw);
                     }
                     _ => return,
                 }
@@ -3114,6 +3093,11 @@ impl Session {
     }
     pub fn receive_message_for_test(&mut self, kind: &str, raw: &Value) {
         self.receive_message(kind, raw);
+    }
+    pub fn receive_tool_for_test(&mut self, kind: &str, raw: &Value) {
+        self.receive_tool(kind, raw);
+        self.tool_revision += 1;
+        self.content_revision += 1;
     }
     pub fn reset_reads_for_test(&mut self) {
         self.reset_reads();

@@ -1443,3 +1443,10 @@ shell-history-previous = 이전 명령
 shell-history-next = 다음 명령
 
 conversation-input-handled = 확장 기능에 전달했습니다
+
+tool-nested-calls = 중첩 호출
+tool-nested-show-all = 기록된 모든 호출 표시
+tool-nested-recent = 최근 8개만 표시
+tool-nested-incomplete = Pi 기록이 불완전합니다. 호출이나 인수가 생략되었거나 완료되지 않은 호출이 있을 수 있습니다.
+tool-nested-arguments-omitted = Pi가 이 인수를 생략했습니다.
+tool-nested-duration = { $milliseconds }밀리초

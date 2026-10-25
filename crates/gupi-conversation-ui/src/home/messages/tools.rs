@@ -1,5 +1,5 @@
 //! Pair top-level tools across the selected branch without moving transcript messages.
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -26,6 +26,7 @@ struct Record {
     call_source: Option<MessageSource>,
     result_source: Option<MessageSource>,
     live: Option<Arc<ToolActivity>>,
+    nested_live: Vec<Arc<ToolActivity>>,
 }
 
 #[derive(Clone)]
@@ -110,7 +111,28 @@ impl ToolIndex {
             .filter(|m| m.role() == "toolResult")
             .map(|m| (result_id(m), m))
             .collect();
+        let snapshots = live;
         let live: HashMap<_, _> = live.iter().map(|tool| (tool.id.as_str(), tool)).collect();
+        let mut roots = HashSet::new();
+        for (_, messages, _) in &runs {
+            for message in *messages {
+                if message.role() == "assistant" {
+                    for part in message.value["content"].as_array().into_iter().flatten() {
+                        if part["type"] == "toolCall"
+                            && let Some(id) = part["id"].as_str()
+                        {
+                            roots.insert(id);
+                        }
+                    }
+                } else if message.role() == "toolResult"
+                    && let Some(id) = message.value["toolCallId"].as_str()
+                {
+                    roots.insert(id);
+                }
+            }
+        }
+        roots.retain(|id| live.get(id).is_none_or(|tool| tool.parent.is_none()));
+        let nested = super::nested_calls::by_parent(&roots, snapshots);
         let mut index = Self::default();
         // Calls are indexed before orphan results, so a result across a user or
         // compaction boundary cannot steal ownership from its call.
@@ -127,6 +149,12 @@ impl ToolIndex {
                         continue;
                     }
                     let id = call_id(message, part_ix);
+                    if part["id"]
+                        .as_str()
+                        .is_some_and(|id| live.get(id).is_some_and(|tool| tool.parent.is_some()))
+                    {
+                        continue;
+                    }
                     if index.ids.contains_key(&id) {
                         continue;
                     }
@@ -134,6 +162,17 @@ impl ToolIndex {
                     // The caller scopes live snapshots to the selected branch.
                     let update = part["id"].as_str().and_then(|id| live.get(id)).copied();
                     let result = results.get(&id).copied();
+                    // A persisted result replaces live descendants, including an
+                    // explicitly empty/incomplete summary. Never merge both lists.
+                    let nested_live = if result.is_none() {
+                        part["id"]
+                            .as_str()
+                            .and_then(|id| nested.get(id))
+                            .cloned()
+                            .unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
                     let status = result.map(result_status).unwrap_or_else(|| {
                         match update.map(|tool| &tool.execution) {
                             Some(ToolExecution::Running(_)) => ToolStatus::Running,
@@ -163,6 +202,12 @@ impl ToolIndex {
                             call_unchanged
                                 && result_unchanged
                                 && live_unchanged
+                                && old.nested_live.len() == nested_live.len()
+                                && old
+                                    .nested_live
+                                    .iter()
+                                    .zip(&nested_live)
+                                    .all(|(old, next)| Arc::ptr_eq(old, next))
                                 && old.tool.status == status
                         })
                         .map(|old| old.tool.clone());
@@ -212,6 +257,11 @@ impl ToolIndex {
                             .or_else(|| update.map(|t| t.name.as_str()))
                             .unwrap_or("tool")
                             .to_owned();
+                        let nested = Box::new(super::nested_calls::NestedCalls::project(
+                            &output,
+                            result.is_some(),
+                            &nested_live,
+                        ));
                         Rc::new(Tool {
                             id: id.clone(),
                             entries,
@@ -219,6 +269,7 @@ impl ToolIndex {
                             args,
                             result: output,
                             status,
+                            nested,
                         })
                     });
                     index.insert(Record {
@@ -229,6 +280,7 @@ impl ToolIndex {
                         call_source: Some(MessageSource::new(message)),
                         result_source: result.map(MessageSource::new),
                         live: update.cloned(),
+                        nested_live,
                     });
                 }
             }
@@ -239,6 +291,12 @@ impl ToolIndex {
                     continue;
                 }
                 let id = result_id(message);
+                if message.value["toolCallId"]
+                    .as_str()
+                    .is_some_and(|id| live.get(id).is_some_and(|tool| tool.parent.is_some()))
+                {
+                    continue;
+                }
                 if index.ids.contains_key(&id) {
                     continue;
                 }
@@ -265,11 +323,17 @@ impl ToolIndex {
                                 args: None,
                                 result: result.value.clone(),
                                 status: result_status(result),
+                                nested: Box::new(super::nested_calls::NestedCalls::project(
+                                    &result.value,
+                                    true,
+                                    &[],
+                                )),
                             })
                         }),
                     call_source: None,
                     result_source: Some(MessageSource::new(result)),
                     live: None,
+                    nested_live: Vec::new(),
                 });
             }
         }
@@ -454,6 +518,143 @@ mod tests {
             &format!("result-{id}"),
             json!({"role":"toolResult","toolCallId":id,"toolName":"write","content":"done"}),
         )
+    }
+
+    #[test]
+    fn nested_events_stay_with_explicit_parents_then_adopt_recorded_summary() {
+        use gupi_conversation::conversation::Session;
+        let assistant = json!({"role":"assistant", "timestamp":1,"stopReason":"toolUse","content":[
+            {"type":"toolCall","id":"alpha","name":"codemode","arguments":{}},
+            {"type":"toolCall","id":"beta","name":"another_wrapper","arguments":{}}
+        ]});
+        let mut session =
+            Session::from_rpc_messages(&[json!({"type":"message_end","message":assistant})]);
+        let mut projection = ToolProjection::default();
+        let old_alpha = projection
+            .sync(&session, None)
+            .shared_tool("tool-alpha")
+            .unwrap()
+            .clone();
+        let old_beta = projection.index().shared_tool("tool-beta").unwrap().clone();
+        for (id, parent) in [
+            ("opaque-a", "alpha"),
+            ("opaque-b", "beta"),
+            ("grandchild", "opaque-a"),
+            ("alpha/guess", "missing"),
+            ("cycle-a", "cycle-b"),
+            ("cycle-b", "cycle-a"),
+        ] {
+            session.receive_tool_for_test("tool_execution_start", &json!({
+                "toolCallId":id,"parentToolCallId":parent,"toolName":"same_mcp_tool","args":{"query":id}
+            }));
+        }
+        let index = projection.sync(&session, None);
+        assert_eq!(
+            index.records.len(),
+            2,
+            "children are not independent model tools"
+        );
+        assert_eq!(
+            index
+                .tool("tool-alpha")
+                .unwrap()
+                .nested
+                .calls
+                .iter()
+                .map(|call| call.id.as_str())
+                .collect::<Vec<_>>(),
+            ["opaque-a", "grandchild"]
+        );
+        assert_eq!(
+            index.tool("tool-beta").unwrap().nested.calls[0].id,
+            "opaque-b"
+        );
+        assert!(!Rc::ptr_eq(
+            &old_alpha,
+            index.shared_tool("tool-alpha").unwrap()
+        ));
+        // A visible boundary does not change the actual child event status.
+        let live = session
+            .tools()
+            .iter()
+            .map(|tool| tool.as_ref().clone())
+            .collect::<Vec<_>>();
+        let inactive = [message("inactive", assistant.clone())];
+        let inactive = ToolIndex::from_runs([("inactive", inactive.as_slice(), false)], &live);
+        assert_eq!(
+            inactive.tool("tool-alpha").unwrap().nested.calls[0].status,
+            ToolStatus::Running
+        );
+        let beta = projection.index().shared_tool("tool-beta").unwrap().clone();
+        assert!(!Rc::ptr_eq(&old_beta, &beta));
+        session.receive_tool_for_test("tool_execution_end", &json!({
+            "toolCallId":"grandchild","parentToolCallId":"opaque-a","toolName":"same_mcp_tool", "isError":true,"durationMs":12,"result":{"content":"not persisted as a child body"}
+        }));
+        let index = projection.sync(&session, None);
+        assert!(
+            Rc::ptr_eq(&beta, index.shared_tool("tool-beta").unwrap()),
+            "parallel parents keep independent payloads"
+        );
+        let child = &index.tool("tool-alpha").unwrap().nested.calls[1];
+        assert_eq!(child.status, ToolStatus::Failed);
+        assert_eq!(child.duration_ms, Some(12));
+        assert_eq!(child.args, Some(json!({"query":"grandchild"})));
+
+        // The final bounded record is flat; it replaces rather than merges live calls.
+        let result = json!({"role":"toolResult","toolCallId":"alpha","toolName":"codemode","timestamp":2,"isError":false,
+        "content":"parent result","details":{"calls":[{"id":"alpha/?","name":"placeholder"}]},
+        "nestedCalls":{"complete":false,"calls":[
+            {"id":"recorded-child","name":"recorded_mcp_tool","argumentsBytes":9000,"status":"error","durationMs":42,"error":"Pi error excerpt"},
+            {"id":"recorded-open","name":"unfinished_mcp_tool","arguments":{},"status":"unfinished"}
+        ]}});
+        session.receive_message_for_test("message_end", &json!({"message":result}));
+        *session.content_revision_for_test() += 1;
+        let final_tool = projection
+            .sync(&session, None)
+            .tool("tool-alpha")
+            .unwrap()
+            .clone();
+        assert_eq!(
+            final_tool.status,
+            ToolStatus::Complete,
+            "incomplete recording is not parent failure"
+        );
+        assert_eq!(final_tool.nested.complete, Some(false));
+        assert_eq!(final_tool.nested.calls.len(), 2);
+        assert_eq!(final_tool.nested.calls[0].id, "recorded-child");
+        assert!(final_tool.nested.calls[0].arguments_omitted);
+        assert_eq!(
+            final_tool.nested.calls[0].error.as_deref(),
+            Some("Pi error excerpt")
+        );
+        assert_eq!(final_tool.nested.calls[1].status, ToolStatus::Unfinished);
+        assert_eq!(final_tool.nested.calls[1].duration_ms, None);
+        let reopened = ToolIndex::local(
+            &[message("call", assistant), message("result", result)],
+            &[],
+            false,
+        );
+        assert!(final_tool.nested == reopened.tool("tool-alpha").unwrap().nested);
+        assert_eq!(reopened.records.len(), 2);
+
+        // A branch without the explicit parent cannot borrow that parent's live children.
+        let sibling = ToolIndex::local(
+            &[call("sibling", "codemode")],
+            &session
+                .tools()
+                .iter()
+                .map(|tool| tool.as_ref().clone())
+                .collect::<Vec<_>>(),
+            true,
+        );
+        assert!(
+            sibling
+                .tool("tool-sibling")
+                .unwrap()
+                .nested
+                .calls
+                .is_empty()
+        );
     }
 
     #[test]

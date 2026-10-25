@@ -41,6 +41,7 @@ struct DetailsView {
     tool_source: Option<Rc<Tool>>,
     scroll: ScrollHandle,
     follow: bool,
+    nested_expanded: bool,
     _subscription: Option<Subscription>,
 }
 
@@ -257,6 +258,7 @@ impl DetailsView {
             tool_source: None,
             scroll: ScrollHandle::new(),
             follow: false,
+            nested_expanded: false,
             _subscription: None,
         }
     }
@@ -331,6 +333,126 @@ impl DetailsView {
         self.text.retain(|id, _| keep.contains(id));
         self.diffs.retain(|id, _| keep_diffs.contains(id));
     }
+    fn render_nested(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use fluent_bundle::FluentArgs;
+        use gpui_kit::base::{SelectableText, TestSupportExt as _};
+        use gupi_settings::i18n::t_with_args;
+        let nested = &self.tool.as_ref()?.nested;
+        if nested.calls.is_empty() && nested.complete != Some(false) {
+            return None;
+        }
+        let start = if self.nested_expanded {
+            0
+        } else {
+            nested.calls.len().saturating_sub(8)
+        };
+        let mut section = v_flex().min_w_0().flex_none().gap_2().child(
+            h_flex()
+                .justify_between()
+                .gap_2()
+                .child(div().font_semibold().child(t(cx, "tool-nested-calls")))
+                .when(nested.calls.len() > 8, |header| {
+                    header.child(
+                        Button::new("nested-calls-toggle")
+                            .debug_selector(|| "nested-calls-toggle".into())
+                            .ghost()
+                            .small()
+                            .icon(if self.nested_expanded {
+                                IconName::ChevronDown
+                            } else {
+                                IconName::ChevronRight
+                            })
+                            .label(t(
+                                cx,
+                                if self.nested_expanded {
+                                    "tool-nested-recent"
+                                } else {
+                                    "tool-nested-show-all"
+                                },
+                            ))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.nested_expanded = !this.nested_expanded;
+                                cx.notify();
+                            })),
+                    )
+                }),
+        );
+        if nested.complete == Some(false) {
+            section = section.child(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(t(cx, "tool-nested-incomplete")),
+            );
+        }
+        for call in &nested.calls[start..] {
+            let mut args = FluentArgs::new();
+            args.set("name", call.name.clone());
+            args.set(
+                "state",
+                match call.status {
+                    ToolStatus::Running => "running",
+                    ToolStatus::Complete => "complete",
+                    ToolStatus::Failed => "failed",
+                    ToolStatus::Unfinished => "unfinished",
+                },
+            );
+            let selector = format!("nested-call-{}", call.id);
+            let mut row = v_flex()
+                .id(SharedString::from(selector.clone()))
+                .test_support()
+                .debug_selector(move || selector.clone())
+                .min_w_0()
+                .flex_none()
+                .gap_1()
+                .text_sm()
+                .child(
+                    h_flex()
+                        .gap_2()
+                        .flex_wrap()
+                        .child(
+                            div()
+                                .when(call.status == ToolStatus::Failed, |label| {
+                                    label.text_color(cx.theme().danger)
+                                })
+                                .child(t_with_args(cx, "conversation-tool-action-other", &args)),
+                        )
+                        .when_some(call.duration_ms, |header, duration| {
+                            let mut args = FluentArgs::new();
+                            args.set("milliseconds", duration.to_string());
+                            header.child(
+                                div()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(t_with_args(cx, "tool-nested-duration", &args)),
+                            )
+                        }),
+                );
+            if let Some(args) = &call.args {
+                row = row.child(SelectableText::new(
+                    SharedString::from(format!("nested-args-{}", call.id)),
+                    serde_json::to_string_pretty(args).unwrap_or_default(),
+                ));
+            } else if call.arguments_omitted {
+                row = row.child(
+                    div()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(t(cx, "tool-nested-arguments-omitted")),
+                );
+            }
+            if let Some(error) = &call.error {
+                row = row.child(
+                    div()
+                        .text_color(cx.theme().danger)
+                        .child(SelectableText::new(
+                            SharedString::from(format!("nested-error-{}", call.id)),
+                            error.clone(),
+                        )),
+                );
+            }
+            section = section.child(row);
+        }
+        Some(section.into_any_element())
+    }
     fn update_follow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.follow = self.tool.is_some()
             && (self.scroll.max_offset().y + self.scroll.offset().y).abs() <= px(1.)
@@ -359,6 +481,9 @@ impl Render for DetailsView {
                 _ => unreachable!(),
             };
             body = body.child(div().text_sm().child(text));
+        }
+        if let Some(nested) = self.render_nested(cx) {
+            body = body.child(nested);
         }
         for section in &self.sections {
             let mut content = v_flex().min_w_0().flex_none().gap_2();
@@ -517,6 +642,69 @@ mod tests {
             preview: None,
         }
     }
+    #[gpui_kit::test]
+    fn nested_parent_details_default_to_eight_and_expand_recorded_calls(cx: &mut TestAppContext) {
+        use gpui_kit::test::TestWindowExt as _;
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            crate::host::install_headless(cx);
+            gupi_settings::i18n::apply(Default::default(), cx);
+            gupi_pi_runtime::init(cx);
+        });
+        let state = cx.new(|cx| ConversationState::new("unused-pi".into(), cx));
+        state.update(cx, |state, _| {
+            let mut session = session("first");
+            session.receive_message_for_test(
+                "message_end",
+                &json!({"message":{
+                    "role":"toolResult", "toolCallId":"call", "toolName":"bash", "timestamp":3,
+                    "isError":false, "content":"parent result", "nestedCalls":{
+                        "complete":false, "calls":(0..10).map(|index|json!({
+                            "id":format!("recorded-{index}"),"name":format!("nested_{index}"),
+                            "status":"unfinished", "argumentsBytes":9000
+                        })).collect::<Vec<_>>()
+                    }
+                }}),
+            );
+            state.sessions_for_test().insert("source".into(), session);
+        });
+        let mut reader = None;
+        let (_, visual) = cx.add_window_view(|window, cx| {
+            let tool = find_tool(state.read(cx), &target()).unwrap();
+            let view = cx.new(|cx| DetailsView::for_tool(&state, target(), tool, window, cx));
+            reader = Some(view.clone());
+            Root::new(view, window, cx)
+        });
+        let reader = reader.unwrap();
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            window.render_frame(cx);
+            assert!(window.try_find("nested-call-recorded-0").is_none());
+            assert!(window.try_find("nested-call-recorded-1").is_none());
+            for index in 2..10 {
+                assert!(
+                    window
+                        .try_find(format!("nested-call-recorded-{index}"))
+                        .is_some()
+                );
+            }
+            window.click("nested-calls-toggle", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            window.render_frame(cx);
+            assert!(window.try_find("nested-call-recorded-0").is_some());
+            assert!(reader.read(cx).nested_expanded);
+            window.click("nested-calls-toggle", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            window.render_frame(cx);
+            assert!(window.try_find("nested-call-recorded-0").is_none());
+            assert!(!reader.read(cx).nested_expanded);
+        });
+    }
+
     #[gpui_kit::test]
     fn tool_reader_updates_only_its_source_and_survives_message_identity_changes(
         cx: &mut TestAppContext,

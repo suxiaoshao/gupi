@@ -1443,3 +1443,10 @@ shell-history-previous = 前のコマンド
 shell-history-next = 次のコマンド
 
 conversation-input-handled = 拡張機能に引き渡しました
+
+tool-nested-calls = ネストした呼び出し
+tool-nested-show-all = 記録された呼び出しをすべて表示
+tool-nested-recent = 直近 8 件のみ表示
+tool-nested-incomplete = Pi の記録は不完全です。呼び出しや引数の省略、または未完了の呼び出しがあります。
+tool-nested-arguments-omitted = Pi がこれらの引数を省略しました。
+tool-nested-duration = { $milliseconds } ミリ秒

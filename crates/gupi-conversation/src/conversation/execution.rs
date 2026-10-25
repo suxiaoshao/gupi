@@ -80,3 +80,46 @@ impl RetryProgress {
             .ceil() as u64
     }
 }
+
+impl super::Session {
+    pub(super) fn receive_tool(&mut self, kind: &str, raw: &Value) {
+        use std::sync::Arc;
+        let id = raw["toolCallId"].as_str().unwrap_or_default();
+        if !self.tools.iter().any(|tool| tool.id == id) {
+            self.tools.push(Arc::new(super::ToolActivity::new(
+                id.into(),
+                raw["toolName"].as_str().unwrap_or_default().into(),
+                raw.get("args").cloned().unwrap_or(Value::Null),
+                ToolExecution::Running(Value::Null),
+            )));
+        }
+        let tool = Arc::make_mut(self.tools.iter_mut().find(|tool| tool.id == id).unwrap());
+        if let Some(parent) = raw["parentToolCallId"].as_str() {
+            tool.parent = Some(parent.into());
+        }
+        if let Some(duration) = raw["durationMs"].as_u64() {
+            tool.duration_ms = Some(duration);
+        }
+        let previous = match &tool.execution {
+            ToolExecution::Running(value)
+            | ToolExecution::Complete(value)
+            | ToolExecution::Failed(value) => value,
+        };
+        let output = raw
+            .get("partialResult")
+            .or_else(|| raw.get("result"))
+            .unwrap_or(previous)
+            .clone();
+        tool.execution = match kind {
+            "tool_execution_end" if raw["isError"].as_bool().unwrap_or(false) => {
+                ToolExecution::Failed(output)
+            }
+            "tool_execution_end" => ToolExecution::Complete(output),
+            _ => match &tool.execution {
+                ToolExecution::Running(_) => ToolExecution::Running(output),
+                ToolExecution::Complete(_) => ToolExecution::Complete(output),
+                ToolExecution::Failed(_) => ToolExecution::Failed(output),
+            },
+        };
+    }
+}

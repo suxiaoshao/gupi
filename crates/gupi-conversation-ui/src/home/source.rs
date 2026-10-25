@@ -542,6 +542,8 @@ impl Render for Preview {
                     view.child(
                         div().flex_1().min_w_0().min_h_0().child(
                             gpui_kit::base::TextView::new(state)
+                                .px_3()
+                                .py_3()
                                 .image_source(move |uri| {
                                     resource::local_path(uri.as_ref(), &image_base)
                                         .map(ImageSource::from)

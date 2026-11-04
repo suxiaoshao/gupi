@@ -316,7 +316,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 [[package]]
 name = "app-theme"
 version = "0.1.0"
-source = "git+https://github.com/suxiaoshao/gpui?rev=3ade6e9f829dc96864a05a1c094767efdae6bb56#3ade6e9f829dc96864a05a1c094767efdae6bb56"
+source = "git+https://github.com/suxiaoshao/gpui?rev=2d14af959a72850a456876267c01faf81637bc4d#2d14af959a72850a456876267c01faf81637bc4d"
 dependencies = [
  "gpui-component",
  "gpui-pre",
@@ -3968,7 +3968,7 @@ dependencies = [
 [[package]]
 name = "gpui-form"
 version = "0.1.0"
-source = "git+https://github.com/suxiaoshao/gpui?rev=3ade6e9f829dc96864a05a1c094767efdae6bb56#3ade6e9f829dc96864a05a1c094767efdae6bb56"
+source = "git+https://github.com/suxiaoshao/gpui?rev=2d14af959a72850a456876267c01faf81637bc4d#2d14af959a72850a456876267c01faf81637bc4d"
 dependencies = [
  "garde",
  "gpui-form-macros",
@@ -3977,9 +3977,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpui-form-gpui-component"
+version = "0.1.0"
+source = "git+https://github.com/suxiaoshao/gpui?rev=2d14af959a72850a456876267c01faf81637bc4d#2d14af959a72850a456876267c01faf81637bc4d"
+dependencies = [
+ "gpui-component",
+ "gpui-form",
+ "gpui-pre",
+]
+
+[[package]]
 name = "gpui-form-macros"
 version = "0.1.0"
-source = "git+https://github.com/suxiaoshao/gpui?rev=3ade6e9f829dc96864a05a1c094767efdae6bb56#3ade6e9f829dc96864a05a1c094767efdae6bb56"
+source = "git+https://github.com/suxiaoshao/gpui?rev=2d14af959a72850a456876267c01faf81637bc4d#2d14af959a72850a456876267c01faf81637bc4d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4021,7 +4031,7 @@ dependencies = [
 [[package]]
 name = "gpui-lucide"
 version = "0.1.0"
-source = "git+https://github.com/suxiaoshao/gpui?rev=3ade6e9f829dc96864a05a1c094767efdae6bb56#3ade6e9f829dc96864a05a1c094767efdae6bb56"
+source = "git+https://github.com/suxiaoshao/gpui?rev=2d14af959a72850a456876267c01faf81637bc4d#2d14af959a72850a456876267c01faf81637bc4d"
 dependencies = [
  "gpui-component",
  "gpui-kit-assets",
@@ -4031,7 +4041,7 @@ dependencies = [
 [[package]]
 name = "gpui-operation"
 version = "0.1.0"
-source = "git+https://github.com/suxiaoshao/gpui?rev=3ade6e9f829dc96864a05a1c094767efdae6bb56#3ade6e9f829dc96864a05a1c094767efdae6bb56"
+source = "git+https://github.com/suxiaoshao/gpui?rev=2d14af959a72850a456876267c01faf81637bc4d#2d14af959a72850a456876267c01faf81637bc4d"
 
 [[package]]
 name = "gpui-pre"
@@ -4538,7 +4548,7 @@ checksum = "4b0d73e1bc02eef886a5947f41b8512708792e9e5d3053d181843311a487f96f"
 [[package]]
 name = "gpui-store"
 version = "0.1.0"
-source = "git+https://github.com/suxiaoshao/gpui?rev=3ade6e9f829dc96864a05a1c094767efdae6bb56#3ade6e9f829dc96864a05a1c094767efdae6bb56"
+source = "git+https://github.com/suxiaoshao/gpui?rev=2d14af959a72850a456876267c01faf81637bc4d#2d14af959a72850a456876267c01faf81637bc4d"
 dependencies = [
  "gpui-pre",
 ]
@@ -4546,7 +4556,7 @@ dependencies = [
 [[package]]
 name = "gpui-tokio"
 version = "0.1.0"
-source = "git+https://github.com/suxiaoshao/gpui?rev=3ade6e9f829dc96864a05a1c094767efdae6bb56#3ade6e9f829dc96864a05a1c094767efdae6bb56"
+source = "git+https://github.com/suxiaoshao/gpui?rev=2d14af959a72850a456876267c01faf81637bc4d#2d14af959a72850a456876267c01faf81637bc4d"
 dependencies = [
  "gpui-pre",
  "tokio",
@@ -4585,6 +4595,7 @@ dependencies = [
  "get-selected-text",
  "global-hotkey",
  "gpui-form",
+ "gpui-form-gpui-component",
  "gpui-kit",
  "gpui-operation",
  "gpui-tokio",
@@ -7820,7 +7831,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 [[package]]
 name = "platform-ext"
 version = "0.1.0"
-source = "git+https://github.com/suxiaoshao/gpui?rev=3ade6e9f829dc96864a05a1c094767efdae6bb56#3ade6e9f829dc96864a05a1c094767efdae6bb56"
+source = "git+https://github.com/suxiaoshao/gpui?rev=2d14af959a72850a456876267c01faf81637bc4d#2d14af959a72850a456876267c01faf81637bc4d"
 dependencies = [
  "block2 0.6.2",
  "objc2 0.6.5",

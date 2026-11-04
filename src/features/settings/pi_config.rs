@@ -21,7 +21,9 @@ pub(super) use page::request_scope;
 use fields::Field;
 use fields::Files;
 use forms::{ConversationDraft, NetworkDraft, Slot, Snapshot, ToolsDraft};
-use gpui_form::Form;
+use gpui_form::{
+    DraftPolicy, Form, FormEvent, FormSchema, FormVersion, LifecycleError, ModelChangeKind,
+};
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::searchable_list::SearchableListItem;
 use gpui_kit::component::searchable_list::SearchableVec;
@@ -112,8 +114,10 @@ pub(super) struct PiConfig {
     conversation: Entity<Form<ConversationDraft>>,
     network: Entity<Form<NetworkDraft>>,
     tools: Entity<Form<ToolsDraft>>,
-    /// Projection of the loaded file, also the baseline of all three forms.
-    baseline: Snapshot,
+    scope_loaded: bool,
+    pending_reload: Option<PendingReload>,
+    refresh_conflicts: Vec<Field>,
+    saved_receipt: Option<SaveReceipt>,
     inputs: BTreeMap<Field, inputs::Adapter>,
     custom_tool: Entity<gpui_kit::component::input::InputState>,
     custom_tool_open: bool,
@@ -134,11 +138,28 @@ pub(super) struct PiConfig {
     /// The model key last projected into `model_picker`.
     synced_model: Option<Option<(String, String)>>,
     file_task: Option<Task<()>>,
-    resource_refreshing: bool,
+    reading_files: bool,
     resource_refresh_pending: bool,
     model_task: Option<Task<()>>,
     model_instance: Option<gupi_pi_runtime::InstanceId>,
     _subscriptions: Vec<Subscription>,
+}
+
+/// A completed disk write whose submitted sessions could not accept the result.
+/// It is a single-save receipt, never an alternative editable baseline.
+struct SaveReceipt {
+    document: pi_settings::Document,
+    /// The exact prepared models and their session-bound save credentials.
+    submitted: (Snapshot, [Option<FormVersion>; 3]),
+    installed: [bool; 3],
+}
+
+struct PendingReload {
+    generation: u64,
+    initial: bool,
+    files: Files,
+    trust: Option<Trust>,
+    installed: [bool; 3],
 }
 
 impl PiConfig {
@@ -176,9 +197,19 @@ impl PiConfig {
         let conversation = cx.new(|_| Form::new(ConversationDraft::default()));
         let network = cx.new(|_| Form::new(NetworkDraft::default()));
         let tools = cx.new(|_| Form::new(ToolsDraft::default()));
-        let tools_sub = cx.observe(&tools, |_, _, cx| cx.notify());
-        let conversation_sub = cx.observe(&conversation, |_, _, cx| cx.notify());
-        let network_sub = cx.observe(&network, |_, _, cx| cx.notify());
+        let tools_sub = cx.subscribe(&tools, |this, _, event, cx| this.form_changed(event, cx));
+        let conversation_sub = cx.subscribe(&conversation, |this, _, event, cx| {
+            this.form_changed(event, cx);
+            if let FormEvent::ModelChanged(change) = event
+                && (change.affects(&ConversationDraft::RESERVE_TOKENS)
+                    || change.affects(&ConversationDraft::KEEP_RECENT_TOKENS))
+            {
+                // Token inheritance includes unsaved general values. The binding
+                // refresh updates context without replacing drafts or pending input.
+                this.refresh_map_inputs(cx);
+            }
+        });
+        let network_sub = cx.subscribe(&network, |this, _, event, cx| this.form_changed(event, cx));
         let applied_sub = cx.observe(&applied_pi, |_, _, cx| cx.notify());
         let mut map_pickers = BTreeMap::new();
         let mut map_subscriptions = Vec::new();
@@ -238,7 +269,10 @@ impl PiConfig {
             conversation,
             network,
             tools,
-            baseline: Snapshot::default(),
+            scope_loaded: false,
+            pending_reload: None,
+            refresh_conflicts: Vec::new(),
+            saved_receipt: None,
             inputs: BTreeMap::new(),
             custom_tool,
             custom_tool_open: false,
@@ -258,12 +292,22 @@ impl PiConfig {
             rows: std::collections::HashMap::new(),
             synced_model: None,
             file_task: None,
-            resource_refreshing: false,
+            reading_files: false,
             resource_refresh_pending: false,
             model_task: None,
             model_instance: None,
             _subscriptions: subscriptions,
         }
+    }
+
+    // Semantic Form events update page feedback only; bindings own native projection.
+    fn form_changed<M: FormSchema>(&mut self, event: &FormEvent<M>, cx: &mut Context<Self>) {
+        if self.saved_receipt.is_none()
+            && matches!(event,FormEvent::ModelChanged(change)|FormEvent::DraftChanged(change) if change.kind()==ModelChangeKind::Edit)
+        {
+            self.error = None;
+        }
+        cx.notify();
     }
 
     #[cfg(test)]
@@ -317,7 +361,8 @@ impl PiConfig {
     }
 
     pub(super) fn has_unsaved(&self, cx: &App) -> bool {
-        self.conversation.read(cx).is_dirty()
+        self.saved_receipt.is_some()
+            || self.conversation.read(cx).is_dirty()
             || self.network.read(cx).is_dirty()
             || self.tools.read(cx).is_dirty()
             || self.file_pages.read(cx).dirty()
@@ -364,15 +409,25 @@ impl PiConfig {
         self.file_pages
             .update(cx, |files, cx| files.set_scope(scope.clone(), cx));
         self.scope = scope;
-        self.conversation
-            .update(cx, |form, cx| form.rebase(ConversationDraft::default(), cx));
-        self.network
-            .update(cx, |form, cx| form.rebase(NetworkDraft::default(), cx));
+        self.scope_loaded = false;
+        self.conversation.update(cx, |form, cx| {
+            form.rebase(ConversationDraft::default(), DraftPolicy::Discard, cx)
+                .expect("confirmed scope switch")
+        });
+        self.network.update(cx, |form, cx| {
+            form.rebase(NetworkDraft::default(), DraftPolicy::Discard, cx)
+                .expect("confirmed scope switch")
+        });
         self.custom_tool_open = false;
         self.resource_inputs.clear();
-        self.tools
-            .update(cx, |form, cx| form.rebase(ToolsDraft::default(), cx));
-        self.baseline = Snapshot::default();
+        self.tools.update(cx, |form, cx| {
+            form.rebase(ToolsDraft::default(), DraftPolicy::Discard, cx)
+                .expect("confirmed scope switch")
+        });
+        self.pending_reload = None;
+        self.saved_receipt = None;
+        self.refresh_conflicts.clear();
+        self.inputs.clear();
         self.rows.clear();
         self.map_inputs.clear();
         self.models = Models::Idle;
@@ -383,11 +438,16 @@ impl PiConfig {
     /// Re-reads the files. Drafts are kept so the user can compare and save
     /// again after a conflict.
     pub(super) fn reload(&mut self, cx: &mut Context<Self>) {
+        if self.saved_receipt.is_some() {
+            self.error = Some(t(cx, "pi-settings-newer-edits"));
+            cx.notify();
+            return;
+        }
         self.reload_files(false, cx);
     }
 
     pub(super) fn refresh_resource_paths(&mut self, cx: &mut Context<Self>) {
-        if self.is_saving() {
+        if self.is_saving() || self.saved_receipt.is_some() {
             self.resource_refresh_pending = true;
             return;
         }
@@ -400,20 +460,19 @@ impl PiConfig {
         }
         self.generation += 1;
         self.custom_tool_open = false;
-        self.map_inputs
-            .retain(|key, _| matches!(key, map_controls::MapInputKey::Local(_, _)));
-        self.conflicts.clear();
-        self.conflict_leaves.clear();
         self.error = None;
+        self.pending_reload = None;
         let previous = match &self.files {
             Load::Ready(files) if preserve_arrays => Some(files.clone()),
             _ => None,
         };
-        self.resource_refreshing = preserve_arrays;
+        self.reading_files = true;
         if !preserve_arrays {
             self.resource_refresh_pending = false;
-            self.files = Load::Loading;
-            self.trust = None;
+            if !matches!(self.files, Load::Ready(_)) {
+                self.files = Load::Loading;
+                self.trust = None;
+            }
         }
         let generation = self.generation;
         let agent = self.agent.clone();
@@ -438,23 +497,26 @@ impl PiConfig {
                 if this.generation != generation {
                     return;
                 }
-                this.resource_refreshing = false;
+                this.reading_files = false;
                 match result {
                     Ok((mut files, trust)) => {
                         if let Some(previous) = &previous {
-                            files.preserve_dirty_resource_bases(
-                                previous,
-                                &this.snapshot(cx),
-                                &this.baseline,
-                            );
+                            let dirty = Field::RESOURCE_PATHS
+                                .into_iter()
+                                .filter(|f| this.pending(*f, cx))
+                                .collect::<Vec<_>>();
+                            files.preserve_dirty_resource_bases(previous, &dirty);
                         }
-                        let next = Snapshot::project(files.edited());
-                        let since = this.baseline.clone();
-                        this.reconcile(next, &since, cx);
-                        this.files = Load::Ready(files);
-                        this.trust = trust;
-                        this.refresh_inputs(cx);
+                        this.pending_reload = Some(PendingReload {
+                            generation: this.generation,
+                            initial: !this.scope_loaded,
+                            files,
+                            trust,
+                            installed: [false; 3],
+                        });
+                        this.apply_pending_reload(cx);
                     }
+                    Err(error) if matches!(this.files, Load::Ready(_)) => this.error = Some(error),
                     Err(error) => this.files = Load::Failed(error),
                 }
                 cx.notify();
@@ -473,16 +535,35 @@ impl PiConfig {
         }
         let mut snapshot = self.snapshot(cx);
         snapshot.set(field, values);
+        if let Err(error) = self.discard_field_drafts(field, cx).and_then(|_| {
+            snapshot
+                .install_field(field, &self.conversation, &self.network, &self.tools, cx)
+                .map_err(|e| e.to_string())
+        }) {
+            self.error = Some(error.to_string());
+            cx.notify();
+            return;
+        }
         self.retire_advanced_controls(field);
-        snapshot.install_field(field, &self.conversation, &self.network, &self.tools, cx);
         self.error = None;
         cx.notify();
     }
 
     fn clear_draft(&mut self, field: Field, cx: &mut Context<Self>) {
         self.retire_advanced_controls(field);
-        self.baseline
-            .install_field(field, &self.conversation, &self.network, &self.tools, cx);
+        let baseline = self.baseline(cx);
+        if let Err(error) = self.discard_field_drafts(field, cx).and_then(|_| {
+            baseline
+                .install_field(field, &self.conversation, &self.network, &self.tools, cx)
+                .map_err(|e| e.to_string())
+        }) {
+            self.error = Some(error.to_string());
+            cx.notify();
+            return;
+        }
+        self.error = None;
+        self.refresh_conflicts.retain(|f| *f != field);
+        self.refresh_field_input(field, cx);
         cx.notify();
     }
 
@@ -495,12 +576,11 @@ impl PiConfig {
         }
     }
 
-    fn pending(&self, field: Field, cx: &App) -> bool {
-        self.snapshot(cx).pending(field, &self.baseline)
-    }
-
     fn invalid(&self, field: Field, cx: &App) -> bool {
-        self.snapshot(cx).invalid(field, &self.baseline)
+        self.field_errors(field, cx)
+            || self
+                .snapshot(cx)
+                .business_invalid(field, &self.baseline(cx))
     }
 
     fn resolved(&self, field: Field, cx: &App) -> fields::Resolved {
@@ -525,11 +605,20 @@ impl PiConfig {
     }
 
     fn has_page_drafts(&self, page: Page, cx: &App) -> bool {
-        match page {
-            Page::Conversation => self.conversation.read(cx).is_dirty(),
-            Page::Network => self.network.read(cx).is_dirty(),
-            Page::Tools => self.tools.read(cx).is_dirty(),
-        }
+        let saved_pending = self.saved_receipt.as_ref().is_some_and(|receipt| {
+            let ix = match page {
+                Page::Conversation => 0,
+                Page::Network => 1,
+                Page::Tools => 2,
+            };
+            receipt.submitted.1[ix].is_some() && !receipt.installed[ix]
+        });
+        saved_pending
+            || match page {
+                Page::Conversation => self.conversation.read(cx).is_dirty(),
+                Page::Network => self.network.read(cx).is_dirty(),
+                Page::Tools => self.tools.read(cx).is_dirty(),
+            }
     }
 
     pub(super) fn discard(&mut self, page: Option<Page>, cx: &mut Context<Self>) {
@@ -537,53 +626,137 @@ impl PiConfig {
             return;
         }
         if page.is_none_or(|p| p == Page::Conversation) {
-            self.conversation.update(cx, |f, cx| f.reset(cx));
+            self.conversation.update(cx, |f, cx| {
+                f.reset(DraftPolicy::Discard, cx)
+                    .expect("explicit page discard")
+            });
             self.rows.clear();
             self.map_inputs.clear();
         }
         if page.is_none_or(|p| p == Page::Network) {
-            self.network.update(cx, |f, cx| f.reset(cx));
+            self.network.update(cx, |f, cx| {
+                f.reset(DraftPolicy::Discard, cx)
+                    .expect("explicit page discard")
+            });
         }
         if page.is_none_or(|p| p == Page::Tools) {
             self.custom_tool_open = false;
-            self.tools.update(cx, |f, cx| f.reset(cx));
+            self.tools.update(cx, |f, cx| {
+                f.reset(DraftPolicy::Discard, cx)
+                    .expect("explicit page discard")
+            });
         }
-        self.conflicts.clear();
-        self.conflict_leaves.clear();
+        self.refresh_conflicts
+            .retain(|f| page.is_some_and(|p| f.page() != p));
+        self.conflicts
+            .retain(|f| page.is_some_and(|p| f.page() != p));
+        self.conflict_leaves.retain(|leaf| {
+            Field::ALL.iter().any(|f| {
+                page.is_some_and(|p| f.page() != p)
+                    && f.leaves()
+                        .iter()
+                        .any(|l| leaf.iter().map(String::as_str).eq(l.iter().copied()))
+            })
+        });
         self.error = None;
+        if let Some(mut receipt) = self.saved_receipt.take() {
+            let saved = Snapshot::project(&receipt.document);
+            macro_rules! abandon_saved {
+                ($ix:expr,$page:ident,$form:ident,$value:expr) => {
+                    if page.is_none_or(|p| p == Page::$page) && receipt.submitted.1[$ix].is_some() {
+                        self.$form
+                            .update(cx, |f, cx| f.rebase($value, DraftPolicy::Discard, cx))
+                            .expect("explicit discard of the saved page");
+                        receipt.installed[$ix] = true;
+                    }
+                };
+            }
+            abandon_saved!(0, Conversation, conversation, saved.conversation);
+            abandon_saved!(1, Network, network, saved.network);
+            abandon_saved!(2, Tools, tools, saved.tools);
+            if receipt
+                .submitted
+                .1
+                .iter()
+                .zip(receipt.installed)
+                .all(|(v, installed)| v.is_none() || installed)
+            {
+                if let Load::Ready(files) = &self.files {
+                    let mut files = files.clone();
+                    match &mut files.project {
+                        Some(project) => *project = receipt.document,
+                        None => files.global = receipt.document,
+                    }
+                    self.pending_reload = Some(PendingReload {
+                        generation: self.generation,
+                        initial: false,
+                        files,
+                        trust: self.trust.clone(),
+                        installed: receipt.installed,
+                    });
+                    self.apply_pending_reload(cx);
+                }
+            } else {
+                self.saved_receipt = Some(receipt);
+                self.error = Some(t(cx, "pi-settings-newer-edits"));
+            }
+        }
+        self.refresh_inputs(cx);
         cx.notify();
     }
 
-    fn reconcile(&mut self, next: Snapshot, since: &Snapshot, cx: &mut Context<Self>) {
-        let merged = Snapshot::merge(&self.snapshot(cx), &next, since);
-        if self.baseline.conversation != next.conversation {
-            self.rows.clear();
-            self.map_inputs.clear();
-            self.conversation.update(cx, |form, cx| {
-                form.rebase(next.conversation.clone(), cx);
-                if merged.conversation != next.conversation {
-                    form.replace(merged.conversation, cx);
-                }
-            });
+    fn apply_pending_reload(&mut self, cx: &mut Context<Self>) {
+        let Some(mut pending) = self.pending_reload.take() else {
+            return;
+        };
+        if pending.generation != self.generation {
+            return;
         }
-        if self.baseline.network != next.network {
-            self.network.update(cx, |form, cx| {
-                form.rebase(next.network.clone(), cx);
-                if merged.network != next.network {
-                    form.replace(merged.network, cx);
+        let next = Snapshot::project(pending.files.edited());
+        macro_rules! install {
+            ($index:expr,$form:ident,$value:expr) => {
+                if !pending.installed[$index] {
+                    let result = self
+                        .$form
+                        .update(cx, |form, cx| if pending.initial { form.rebase($value, DraftPolicy::Discard, cx) } else { form.rebase_preserving_edits($value, cx) });
+                    match result {
+                        Ok(report) => {
+                            debug_assert!(self.$form.read(cx).is_current(report.version()));
+                            for field in self.conflict_fields(report.conflicts(), cx) {
+                                if !self.refresh_conflicts.contains(&field) {
+                                    self.refresh_conflicts.push(field);
+                                }
+                            }
+                            pending.installed[$index] = true;
+                        }
+                        Err(LifecycleError::EditsPending) => {
+                            self.pending_reload = Some(pending);
+                            let this = cx.entity().downgrade();
+                            cx.defer(move |cx| {
+                                let _ = this.update(cx, |this, cx| this.apply_pending_reload(cx));
+                            });
+                            return;
+                        }
+                        Err(error) => {
+                            tracing::warn!(%error, "Pi settings refresh rejected; edits retained");
+                            self.error = Some(t(cx,"pi-settings-refresh-rejected"));
+                            self.pending_reload = Some(pending);
+                            cx.notify();
+                            return;
+                        }
+                    }
                 }
-            });
+            };
         }
-        if self.baseline.tools != next.tools {
-            self.custom_tool_open = false;
-            self.tools.update(cx, |form, cx| {
-                form.rebase(next.tools.clone(), cx);
-                if merged.tools != next.tools {
-                    form.replace(merged.tools, cx);
-                }
-            });
-        }
-        self.baseline = next;
+        install!(0, conversation, next.conversation);
+        install!(1, network, next.network);
+        install!(2, tools, next.tools);
+        self.scope_loaded = true;
+        self.files = Load::Ready(pending.files);
+        self.trust = pending.trust;
+        self.saved_receipt = None;
+        self.refresh_inputs(cx);
+        cx.notify();
     }
 
     /// Saves one page, or every page. `then` runs after a successful save.
@@ -597,12 +770,19 @@ impl PiConfig {
         let (Load::Ready(files), Ok(agent)) = (&self.files, &self.agent) else {
             return;
         };
-        if self.is_saving() {
+        if self.saved_receipt.is_some() {
+            self.error = Some(t(cx, "pi-settings-newer-edits"));
+            cx.notify();
             return;
         }
+        if self.is_saving() || self.pending_reload.is_some() {
+            return;
+        }
+        let mut versions: [Option<FormVersion>; 3] = [None; 3];
+        let baseline = self.baseline(cx);
         let mut prepared = self.snapshot(cx);
         if Field::ALL.into_iter().any(|field| {
-            page.is_none_or(|p| field.page() == p) && prepared.invalid(field, &self.baseline)
+            page.is_none_or(|p| field.page() == p) && prepared.business_invalid(field, &baseline)
         }) {
             self.error = Some(t(cx, "pi-settings-invalid"));
             cx.notify();
@@ -615,6 +795,7 @@ impl PiConfig {
                 cx.notify();
                 return;
             };
+            versions[0] = Some(snapshot.version());
             prepared.conversation = snapshot.into_parts().1;
         }
         if page.is_none_or(|p| p == Page::Network) {
@@ -624,6 +805,7 @@ impl PiConfig {
                 cx.notify();
                 return;
             };
+            versions[1] = Some(snapshot.version());
             prepared.network = snapshot.into_parts().1;
         }
         if page.is_none_or(|p| p == Page::Tools) {
@@ -633,24 +815,20 @@ impl PiConfig {
                 cx.notify();
                 return;
             };
+            versions[2] = Some(snapshot.version());
             prepared.tools = snapshot.into_parts().1;
         }
-        let changes = files.changes(&prepared, &self.baseline, page);
+        let changes = files.changes(&prepared, &baseline, page);
         let paths_saved = changes.iter().any(|change| {
             Field::RESOURCE_PATHS
                 .iter()
                 .any(|field| change.leaf() == field.leaves()[0])
         });
-        let mut since = self.baseline.clone();
-        for field in Field::ALL {
-            if page.is_none_or(|p| field.page() == p) {
-                since.set(field, prepared.value(field));
-            }
-        }
         // A read started by a switch must not install a pre-save document afterwards.
-        if self.resource_refreshing {
+        if self.reading_files {
+            self.generation += 1;
             self.file_task = None;
-            self.resource_refreshing = false;
+            self.reading_files = false;
             self.resource_refresh_pending = true;
         }
         let scope = self.scope.clone();
@@ -677,6 +855,8 @@ impl PiConfig {
                 }
                 match result {
                     Ok(mut document) => {
+                        // Preserve the actual disk result before projecting retained resource bases.
+                        let saved_document = document.clone();
                         if page.is_some_and(|p| p != Page::Tools)
                             && let Load::Ready(previous) = &this.files
                         {
@@ -685,21 +865,71 @@ impl PiConfig {
                                 Some(project) => *project = document,
                                 None => next_files.global = document,
                             }
-                            next_files.preserve_dirty_resource_bases(
-                                previous,
-                                &this.snapshot(cx),
-                                &this.baseline,
-                            );
+                            let dirty = Field::RESOURCE_PATHS
+                                .into_iter()
+                                .filter(|f| this.pending(*f, cx))
+                                .collect::<Vec<_>>();
+                            next_files.preserve_dirty_resource_bases(previous, &dirty);
                             document = next_files.edited().clone();
                         }
                         let next = Snapshot::project(&document);
-                        this.reconcile(next, &since, cx);
-                        if let Load::Ready(files) = &mut this.files {
-                            match &mut files.project {
-                                Some(project) => *project = document,
-                                None => files.global = document,
-                            }
+                        let current = versions[0]
+                            .is_none_or(|v| this.conversation.read(cx).is_current(v))
+                            && versions[1].is_none_or(|v| this.network.read(cx).is_current(v))
+                            && versions[2].is_none_or(|v| this.tools.read(cx).is_current(v));
+                        if !current {
+                            this.saved_receipt = Some(SaveReceipt {
+                                document: saved_document,
+                                submitted: (prepared, versions),
+                                installed: [false; 3],
+                            });
+                            this.error = Some(t(cx, "pi-settings-newer-edits"));
+                            this.leave_after_save = None;
+                            return None;
                         }
+                        // No native callback can run between the checks and these installations.
+                        if let Some(version) = versions[0] {
+                            assert!(this.conversation.update(cx, |f, cx| f.rebase_if_current(
+                                version,
+                                next.conversation,
+                                cx
+                            )));
+                        }
+                        if let Some(version) = versions[1] {
+                            assert!(this.network.update(cx, |f, cx| f.rebase_if_current(
+                                version,
+                                next.network,
+                                cx
+                            )));
+                        }
+                        if let Some(version) = versions[2] {
+                            assert!(
+                                this.tools.update(cx, |f, cx| f
+                                    .rebase_if_current(version, next.tools, cx))
+                            );
+                        }
+                        let Load::Ready(files) = &this.files else {
+                            unreachable!("saved loaded files")
+                        };
+                        let mut files = files.clone();
+                        match &mut files.project {
+                            Some(project) => *project = document,
+                            None => files.global = document,
+                        }
+                        this.pending_reload = Some(PendingReload {
+                            generation: this.generation,
+                            initial: !this.scope_loaded,
+                            files,
+                            trust: this.trust.clone(),
+                            installed: versions.map(|v| v.is_some()),
+                        });
+                        this.apply_pending_reload(cx);
+                        if this.pending_reload.is_some() {
+                            this.leave_after_save = None;
+                            return None;
+                        }
+                        this.refresh_conflicts
+                            .retain(|f| page.is_some_and(|p| f.page() != p));
                         if paths_saved {
                             cx.emit(PiConfigEvent::ResourcePathsSaved(this.scope.clone()));
                         }

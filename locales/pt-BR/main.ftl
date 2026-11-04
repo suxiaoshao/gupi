@@ -1476,3 +1476,8 @@ tool-nested-recent = Mostrar apenas as últimas 8
 tool-nested-incomplete = O registro do Pi está incompleto: chamadas ou argumentos podem ter sido omitidos, ou chamadas podem não ter terminado.
 tool-nested-arguments-omitted = O Pi omitiu estes argumentos.
 tool-nested-duration = { $milliseconds } ms
+
+pi-settings-newer-edits = As configurações foram salvas, mas há edições mais recentes. Descarte as novas edições da página salva antes de salvar novamente.
+pi-settings-refresh-conflict = O arquivo foi alterado externamente. Suas edições locais foram mantidas. Salve para usá-las ou descarte-as.
+pi-map-refresh-draft = O mapa local e a entrada inválida foram mantidos. Corrija ou descarte a entrada e recarregue para mesclar as outras chaves.
+pi-settings-refresh-rejected = Não foi possível aplicar a atualização. Suas edições foram mantidas.

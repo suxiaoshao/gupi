@@ -58,7 +58,6 @@ impl ThinkingSlot {
                 })
             }
             Slot::Set(value) | Slot::Unreadable(value) => Self::Unreadable(RawValue { value }),
-            Slot::Invalid(_) => unreachable!("map root is not a text control"),
         }
     }
     pub(super) fn encode(&self) -> Slot<Value> {
@@ -124,7 +123,6 @@ impl CompactionSlot {
                 })
             }
             Slot::Set(value) | Slot::Unreadable(value) => Self::Unreadable(RawValue { value }),
-            Slot::Invalid(_) => unreachable!("map root is not a text control"),
         }
     }
     pub(super) fn encode(&self) -> Slot<Value> {
@@ -347,5 +345,52 @@ impl CompactionSlot {
         } else {
             Self::Set(CompactionRows { rows })
         }
+    }
+}
+
+fn conflicting_leaves(
+    base: &BTreeMap<Vec<String>, Slot<Value>>,
+    local: &BTreeMap<Vec<String>, Slot<Value>>,
+    remote: &BTreeMap<Vec<String>, Slot<Value>>,
+) -> bool {
+    let keys = base
+        .keys()
+        .chain(local.keys())
+        .chain(remote.keys())
+        .collect::<std::collections::BTreeSet<_>>();
+    keys.iter().any(|local_key| {
+        let l = local.get(*local_key).unwrap_or(&Slot::Unset);
+        l != base.get(*local_key).unwrap_or(&Slot::Unset)
+            && keys.iter().any(|remote_key| {
+                let r = remote.get(*remote_key).unwrap_or(&Slot::Unset);
+                // An unreadable row/map is an opaque parent of its token leaves.
+                (local_key.starts_with(remote_key) || remote_key.starts_with(local_key))
+                    && r != base.get(*remote_key).unwrap_or(&Slot::Unset)
+                    && (local_key != remote_key || l != r)
+            })
+    })
+}
+pub(super) fn merge_thinking(
+    base: &ThinkingSlot,
+    local: &ThinkingSlot,
+    remote: &ThinkingSlot,
+) -> gpui_form::FieldMerge<ThinkingSlot> {
+    let candidate = ThinkingSlot::merge(local, remote, base);
+    if conflicting_leaves(&base.leaves(), &local.leaves(), &remote.leaves()) {
+        gpui_form::FieldMerge::conflicted(candidate)
+    } else {
+        gpui_form::FieldMerge::merged(candidate)
+    }
+}
+pub(super) fn merge_compaction(
+    base: &CompactionSlot,
+    local: &CompactionSlot,
+    remote: &CompactionSlot,
+) -> gpui_form::FieldMerge<CompactionSlot> {
+    let candidate = CompactionSlot::merge(local, remote, base);
+    if conflicting_leaves(&base.leaves(), &local.leaves(), &remote.leaves()) {
+        gpui_form::FieldMerge::conflicted(candidate)
+    } else {
+        gpui_form::FieldMerge::merged(candidate)
     }
 }

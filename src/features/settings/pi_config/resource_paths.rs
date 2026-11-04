@@ -51,7 +51,7 @@ fn resource_text(
 
 impl PiConfig {
     fn resource_list(&self, field: Field, cx: &App) -> ListSlot {
-        let baseline = ListSlot::decode(self.baseline.value(field).remove(0));
+        let baseline = ListSlot::decode(self.baseline(cx).value(field).remove(0));
         if matches!(baseline, ListSlot::Unreadable(_)) {
             return baseline;
         }

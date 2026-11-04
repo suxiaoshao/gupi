@@ -362,7 +362,8 @@ impl PiConfig {
     }
 
     fn render_status(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let failed = matches!(self.files, Load::Failed(_)) || !self.conflicts.is_empty();
+        let failed = matches!(self.files, Load::Failed(_))
+            || (!self.conflicts.is_empty() || !self.refresh_conflicts.is_empty());
         let message = self.status(cx).or_else(|| self.error.clone());
         let danger = failed || self.error.is_some();
         h_flex()
@@ -656,7 +657,7 @@ impl PiConfig {
                     )),
             );
         }
-        let conflict = self.conflicts.contains(&field);
+        let conflict = self.conflicts.contains(&field) || self.refresh_conflicts.contains(&field);
         let invalid = self.invalid(field, cx);
         let top_aligned = field.is_resource_paths();
         let stacked = matches!(field.kind(), Kind::Count | Kind::Timeout);
@@ -696,7 +697,9 @@ impl PiConfig {
             .when(conflict || invalid, |this| {
                 this.child(div().text_xs().text_color(cx.theme().danger).child(t(
                     cx,
-                    if conflict {
+                    if self.refresh_conflicts.contains(&field) {
+                        "pi-settings-refresh-conflict"
+                    } else if conflict {
                         "pi-changed-on-disk"
                     } else if field.is_resource_paths() {
                         "pi-resource-unsupported"
@@ -792,7 +795,9 @@ impl PiConfig {
                             .disabled(self.is_saving()),
                     )
                     .when(
-                        self.invalid(field, cx) || self.conflicts.contains(&field),
+                        self.invalid(field, cx)
+                            || (self.conflicts.contains(&field)
+                                || self.refresh_conflicts.contains(&field)),
                         |this| {
                             this.child(
                                 div()

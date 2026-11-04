@@ -130,7 +130,8 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
                 .update(cx, |form, cx| {
                     let mut record = super::PiSettings::default();
                     record.command = Some("/custom/settings-pi".into());
-                    form.rebase(record, cx);
+                    form.rebase(record, gpui_form::DraftPolicy::Discard, cx)
+                        .expect("initial test settings");
                 });
             let draft = cx.new(|_| PiProbeController::new());
             let applied = cx.new(|_| {

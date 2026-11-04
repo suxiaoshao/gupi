@@ -1,6 +1,6 @@
 //! Typed page drafts; only scope-local values are stored in the forms.
 use super::fields::Field;
-use gpui_form::{Form, FormSchema};
+use gpui_form::{Form, FormSchema, IntoTotalPath as _};
 use gpui_kit::{App, Entity};
 use gupi_resources::pi_settings::Document;
 use serde::{Serialize, de::DeserializeOwned};
@@ -12,7 +12,6 @@ pub(super) enum Slot<T> {
     Unset,
     Set(T),
     Unreadable(Value),
-    Invalid(String),
 }
 impl<T: Serialize + DeserializeOwned> Slot<T> {
     pub(super) fn decode(value: Slot<Value>) -> Self {
@@ -23,7 +22,6 @@ impl<T: Serialize + DeserializeOwned> Slot<T> {
                 Ok(value) => Self::Set(value),
                 Err(_) => Self::Unreadable(value),
             },
-            Slot::Invalid(text) => Self::Invalid(text),
         }
     }
     pub(super) fn encode(&self) -> Slot<Value> {
@@ -33,7 +31,6 @@ impl<T: Serialize + DeserializeOwned> Slot<T> {
                 Slot::Set(serde_json::to_value(value).expect("settings value serializes"))
             }
             Self::Unreadable(value) => Slot::Unreadable(value.clone()),
-            Self::Invalid(text) => Slot::Invalid(text.clone()),
         }
     }
 }
@@ -48,9 +45,9 @@ impl Slot<Value> {
 
 #[derive(Clone, Default, PartialEq, FormSchema)]
 pub(super) struct ConversationDraft {
-    #[form(child)]
+    #[form(child, merge = super::model_maps::merge_thinking)]
     pub(super) model_thinking: super::model_maps::ThinkingSlot,
-    #[form(child)]
+    #[form(child, merge = super::model_maps::merge_compaction)]
     pub(super) model_overrides: super::model_maps::CompactionSlot,
     pub(super) budget_minimal: Slot<u64>,
     pub(super) budget_low: Slot<u64>,
@@ -382,9 +379,6 @@ impl Snapshot {
                             Err(_) => ModelScopeSlot::Unreadable(RawValue { value }),
                         }
                     }
-                    Slot::Invalid(_) => {
-                        unreachable!("model scope stores invalid patterns as strings")
-                    }
                 }
             }
         }
@@ -405,45 +399,17 @@ impl Snapshot {
         }
     }
 
-    pub(super) fn pending(&self, field: Field, baseline: &Self) -> bool {
-        self.leaf_values(field) != baseline.leaf_values(field)
-    }
-    pub(super) fn invalid(&self, field: Field, baseline: &Self) -> bool {
-        let previous = baseline.leaf_values(field);
-        self.leaf_values(field).iter().any(|(leaf, value)| {
-            previous.get(leaf).unwrap_or(&Slot::Unset) != value && matches!(value, Slot::Invalid(_))
-        }) || self.pending(field, baseline)
+    pub(super) fn business_invalid(&self, field: Field, baseline: &Self) -> bool {
+        self.value(field) != baseline.value(field)
             && (field.is_resource_paths()
                 && baseline
                     .value(field)
                     .iter()
-                    .any(|slot| matches!(slot, Slot::Unreadable(_)))
+                    .any(|s| matches!(s, Slot::Unreadable(_)))
                 || field == Field::ModelScope
                     && matches!(&self.conversation.enabled_models, ModelScopeSlot::Set(s) if s.patterns.iter().any(|p| p.text.trim().is_empty()))
                 || field == Field::NpmCommand
                     && matches!(&self.tools.npm_command, Slot::Set(s) if s.first().is_some_and(|i| i.is_empty())))
-    }
-    pub(super) fn merge(current: &Self, next: &Self, since: &Self) -> Self {
-        let mut merged = next.clone();
-        for field in Field::ALL {
-            if matches!(field, Field::ModelThinking | Field::ModelOverrides) {
-                continue;
-            }
-            if current.value(field) != since.value(field) {
-                merged.set(field, current.value(field));
-            }
-        }
-        merged.conversation.model_thinking = super::model_maps::ThinkingSlot::merge(
-            &current.conversation.model_thinking,
-            &next.conversation.model_thinking,
-            &since.conversation.model_thinking,
-        );
-        merged.conversation.model_overrides = super::model_maps::CompactionSlot::merge(
-            &current.conversation.model_overrides,
-            &next.conversation.model_overrides,
-            &since.conversation.model_overrides,
-        );
-        merged
     }
     pub(super) fn install_field(
         &self,
@@ -452,213 +418,476 @@ impl Snapshot {
         network: &Entity<Form<NetworkDraft>>,
         tools: &Entity<Form<ToolsDraft>>,
         cx: &mut App,
-    ) {
+    ) -> Result<(), gpui_form::ResolveError> {
         match field {
             Field::Model => {
                 ConversationDraft::DEFAULT_PROVIDER.set(
                     conversation,
                     self.conversation.default_provider.clone(),
                     cx,
-                );
+                )?;
                 ConversationDraft::DEFAULT_MODEL.set(
                     conversation,
                     self.conversation.default_model.clone(),
                     cx,
-                );
+                )?;
             }
             Field::Extensions => {
-                ToolsDraft::EXTENSIONS.set(tools, self.tools.extensions.clone(), cx);
+                ToolsDraft::EXTENSIONS.set(tools, self.tools.extensions.clone(), cx)?;
             }
             Field::Skills => {
-                ToolsDraft::SKILLS.set(tools, self.tools.skills.clone(), cx);
+                ToolsDraft::SKILLS.set(tools, self.tools.skills.clone(), cx)?;
             }
             Field::Prompts => {
-                ToolsDraft::PROMPTS.set(tools, self.tools.prompts.clone(), cx);
+                ToolsDraft::PROMPTS.set(tools, self.tools.prompts.clone(), cx)?;
             }
             Field::Themes => {
-                ToolsDraft::THEMES.set(tools, self.tools.themes.clone(), cx);
+                ToolsDraft::THEMES.set(tools, self.tools.themes.clone(), cx)?;
             }
             Field::DefaultTools => {
-                ToolsDraft::DEFAULT_TOOLS.set(tools, self.tools.default_tools.clone(), cx);
+                ToolsDraft::DEFAULT_TOOLS.set(tools, self.tools.default_tools.clone(), cx)?;
             }
             Field::CodemodeMode => {
-                ToolsDraft::CODEMODE_MODE.set(tools, self.tools.codemode_mode.clone(), cx);
+                ToolsDraft::CODEMODE_MODE.set(tools, self.tools.codemode_mode.clone(), cx)?;
             }
             Field::CodemodeBudget => {
-                ToolsDraft::CODEMODE_BUDGET.set(tools, self.tools.codemode_budget.clone(), cx);
+                ToolsDraft::CODEMODE_BUDGET.set(tools, self.tools.codemode_budget.clone(), cx)?;
             }
             Field::ShellPath => {
-                ToolsDraft::SHELL_PATH.set(tools, self.tools.shell_path.clone(), cx);
+                ToolsDraft::SHELL_PATH.set(tools, self.tools.shell_path.clone(), cx)?;
             }
             Field::ShellPrefix => {
-                ToolsDraft::SHELL_PREFIX.set(tools, self.tools.shell_prefix.clone(), cx);
+                ToolsDraft::SHELL_PREFIX.set(tools, self.tools.shell_prefix.clone(), cx)?;
             }
             Field::NpmCommand => {
-                ToolsDraft::NPM_COMMAND.set(tools, self.tools.npm_command.clone(), cx);
+                ToolsDraft::NPM_COMMAND.set(tools, self.tools.npm_command.clone(), cx)?;
             }
             Field::Telemetry => {
-                ToolsDraft::TELEMETRY.set(tools, self.tools.telemetry.clone(), cx);
+                ToolsDraft::TELEMETRY.set(tools, self.tools.telemetry.clone(), cx)?;
             }
             Field::ProjectTrust => {
-                ToolsDraft::PROJECT_TRUST.set(tools, self.tools.project_trust.clone(), cx);
+                ToolsDraft::PROJECT_TRUST.set(tools, self.tools.project_trust.clone(), cx)?;
             }
             Field::ModelThinking => {
                 ConversationDraft::MODEL_THINKING.set(
                     conversation,
                     self.conversation.model_thinking.clone(),
                     cx,
-                );
+                )?;
             }
             Field::ModelOverrides => {
                 ConversationDraft::MODEL_OVERRIDES.set(
                     conversation,
                     self.conversation.model_overrides.clone(),
                     cx,
-                );
+                )?;
             }
             Field::BudgetMinimal => {
                 ConversationDraft::BUDGET_MINIMAL.set(
                     conversation,
                     self.conversation.budget_minimal.clone(),
                     cx,
-                );
+                )?;
             }
             Field::BudgetLow => {
                 ConversationDraft::BUDGET_LOW.set(
                     conversation,
                     self.conversation.budget_low.clone(),
                     cx,
-                );
+                )?;
             }
             Field::BudgetMedium => {
                 ConversationDraft::BUDGET_MEDIUM.set(
                     conversation,
                     self.conversation.budget_medium.clone(),
                     cx,
-                );
+                )?;
             }
             Field::BudgetHigh => {
                 ConversationDraft::BUDGET_HIGH.set(
                     conversation,
                     self.conversation.budget_high.clone(),
                     cx,
-                );
+                )?;
             }
             Field::CacheWarming => {
                 ConversationDraft::CACHE_WARMING.set(
                     conversation,
                     self.conversation.cache_warming.clone(),
                     cx,
-                );
+                )?;
             }
             Field::Transport => {
-                NetworkDraft::TRANSPORT.set(network, self.network.transport.clone(), cx);
+                NetworkDraft::TRANSPORT.set(network, self.network.transport.clone(), cx)?;
             }
             Field::HttpTimeout => {
-                NetworkDraft::HTTP_TIMEOUT.set(network, self.network.http_timeout.clone(), cx);
+                NetworkDraft::HTTP_TIMEOUT.set(network, self.network.http_timeout.clone(), cx)?;
             }
             Field::WebsocketTimeout => {
                 NetworkDraft::WEBSOCKET_TIMEOUT.set(
                     network,
                     self.network.websocket_timeout.clone(),
                     cx,
-                );
+                )?;
             }
             Field::ProviderTimeout => {
                 NetworkDraft::PROVIDER_TIMEOUT.set(
                     network,
                     self.network.provider_timeout.clone(),
                     cx,
-                );
+                )?;
             }
             Field::ProviderRetries => {
                 NetworkDraft::PROVIDER_RETRIES.set(
                     network,
                     self.network.provider_retries.clone(),
                     cx,
-                );
+                )?;
             }
             Field::ProviderDelay => {
-                NetworkDraft::PROVIDER_DELAY.set(network, self.network.provider_delay.clone(), cx);
+                NetworkDraft::PROVIDER_DELAY.set(
+                    network,
+                    self.network.provider_delay.clone(),
+                    cx,
+                )?;
             }
             Field::Thinking => {
                 ConversationDraft::THINKING.set(
                     conversation,
                     self.conversation.thinking.clone(),
                     cx,
-                );
+                )?;
             }
             Field::Compaction => {
                 ConversationDraft::COMPACTION.set(
                     conversation,
                     self.conversation.compaction.clone(),
                     cx,
-                );
+                )?;
             }
             Field::ReserveTokens => {
                 ConversationDraft::RESERVE_TOKENS.set(
                     conversation,
                     self.conversation.reserve_tokens.clone(),
                     cx,
-                );
+                )?;
             }
             Field::KeepRecentTokens => {
                 ConversationDraft::KEEP_RECENT_TOKENS.set(
                     conversation,
                     self.conversation.keep_recent_tokens.clone(),
                     cx,
-                );
+                )?;
             }
             Field::Steering => {
                 ConversationDraft::STEERING.set(
                     conversation,
                     self.conversation.steering.clone(),
                     cx,
-                );
+                )?;
             }
             Field::FollowUp => {
                 ConversationDraft::FOLLOW_UP.set(
                     conversation,
                     self.conversation.follow_up.clone(),
                     cx,
-                );
+                )?;
             }
             Field::AutoResize => {
                 ConversationDraft::AUTO_RESIZE.set(
                     conversation,
                     self.conversation.auto_resize.clone(),
                     cx,
-                );
+                )?;
             }
             Field::BlockImages => {
                 ConversationDraft::BLOCK_IMAGES.set(
                     conversation,
                     self.conversation.block_images.clone(),
                     cx,
-                );
+                )?;
             }
             Field::Proxy => {
-                NetworkDraft::HTTP_PROXY.set(network, self.network.http_proxy.clone(), cx);
+                NetworkDraft::HTTP_PROXY.set(network, self.network.http_proxy.clone(), cx)?;
             }
             Field::Retry => {
-                NetworkDraft::RETRY.set(network, self.network.retry.clone(), cx);
+                NetworkDraft::RETRY.set(network, self.network.retry.clone(), cx)?;
             }
             Field::MaxRetries => {
-                NetworkDraft::MAX_RETRIES.set(network, self.network.max_retries.clone(), cx);
+                NetworkDraft::MAX_RETRIES.set(network, self.network.max_retries.clone(), cx)?;
             }
             Field::BaseDelay => {
-                NetworkDraft::BASE_DELAY.set(network, self.network.base_delay.clone(), cx);
+                NetworkDraft::BASE_DELAY.set(network, self.network.base_delay.clone(), cx)?;
             }
             Field::MaxDelay => {
-                NetworkDraft::MAX_DELAY.set(network, self.network.max_delay.clone(), cx);
+                NetworkDraft::MAX_DELAY.set(network, self.network.max_delay.clone(), cx)?;
             }
             Field::ModelScope => {
                 ConversationDraft::ENABLED_MODELS.set(
                     conversation,
                     self.conversation.enabled_models.clone(),
                     cx,
-                );
+                )?;
             }
         }
+        Ok(())
+    }
+}
+
+// One typed location table for field status, explicit discard and report mapping.
+// The provider/model pair deliberately visits both formal paths.
+macro_rules! visit_field_paths {
+    ($config:expr, $field:expr, $path:ident, $form:ident => $visit:block) => {
+        match $field {
+            Field::Model => {
+                {
+                    let $path = ConversationDraft::DEFAULT_PROVIDER;
+                    let $form = &$config.conversation;
+                    $visit
+                }
+                {
+                    let $path = ConversationDraft::DEFAULT_MODEL;
+                    let $form = &$config.conversation;
+                    $visit
+                }
+            }
+            Field::Extensions => {
+                let $path = ToolsDraft::EXTENSIONS;
+                let $form = &$config.tools;
+                $visit
+            }
+            Field::Skills => {
+                let $path = ToolsDraft::SKILLS;
+                let $form = &$config.tools;
+                $visit
+            }
+            Field::Prompts => {
+                let $path = ToolsDraft::PROMPTS;
+                let $form = &$config.tools;
+                $visit
+            }
+            Field::Themes => {
+                let $path = ToolsDraft::THEMES;
+                let $form = &$config.tools;
+                $visit
+            }
+            Field::DefaultTools => {
+                let $path = ToolsDraft::DEFAULT_TOOLS;
+                let $form = &$config.tools;
+                $visit
+            }
+            Field::CodemodeMode => {
+                let $path = ToolsDraft::CODEMODE_MODE;
+                let $form = &$config.tools;
+                $visit
+            }
+            Field::CodemodeBudget => {
+                let $path = ToolsDraft::CODEMODE_BUDGET;
+                let $form = &$config.tools;
+                $visit
+            }
+            Field::ShellPath => {
+                let $path = ToolsDraft::SHELL_PATH;
+                let $form = &$config.tools;
+                $visit
+            }
+            Field::ShellPrefix => {
+                let $path = ToolsDraft::SHELL_PREFIX;
+                let $form = &$config.tools;
+                $visit
+            }
+            Field::NpmCommand => {
+                let $path = ToolsDraft::NPM_COMMAND;
+                let $form = &$config.tools;
+                $visit
+            }
+            Field::Telemetry => {
+                let $path = ToolsDraft::TELEMETRY;
+                let $form = &$config.tools;
+                $visit
+            }
+            Field::ProjectTrust => {
+                let $path = ToolsDraft::PROJECT_TRUST;
+                let $form = &$config.tools;
+                $visit
+            }
+            Field::ModelThinking => {
+                let $path = ConversationDraft::MODEL_THINKING;
+                let $form = &$config.conversation;
+                $visit
+            }
+            Field::ModelOverrides => {
+                let $path = ConversationDraft::MODEL_OVERRIDES;
+                let $form = &$config.conversation;
+                $visit
+            }
+            Field::BudgetMinimal => {
+                let $path = ConversationDraft::BUDGET_MINIMAL;
+                let $form = &$config.conversation;
+                $visit
+            }
+            Field::BudgetLow => {
+                let $path = ConversationDraft::BUDGET_LOW;
+                let $form = &$config.conversation;
+                $visit
+            }
+            Field::BudgetMedium => {
+                let $path = ConversationDraft::BUDGET_MEDIUM;
+                let $form = &$config.conversation;
+                $visit
+            }
+            Field::BudgetHigh => {
+                let $path = ConversationDraft::BUDGET_HIGH;
+                let $form = &$config.conversation;
+                $visit
+            }
+            Field::CacheWarming => {
+                let $path = ConversationDraft::CACHE_WARMING;
+                let $form = &$config.conversation;
+                $visit
+            }
+            Field::Transport => {
+                let $path = NetworkDraft::TRANSPORT;
+                let $form = &$config.network;
+                $visit
+            }
+            Field::HttpTimeout => {
+                let $path = NetworkDraft::HTTP_TIMEOUT;
+                let $form = &$config.network;
+                $visit
+            }
+            Field::WebsocketTimeout => {
+                let $path = NetworkDraft::WEBSOCKET_TIMEOUT;
+                let $form = &$config.network;
+                $visit
+            }
+            Field::ProviderTimeout => {
+                let $path = NetworkDraft::PROVIDER_TIMEOUT;
+                let $form = &$config.network;
+                $visit
+            }
+            Field::ProviderRetries => {
+                let $path = NetworkDraft::PROVIDER_RETRIES;
+                let $form = &$config.network;
+                $visit
+            }
+            Field::ProviderDelay => {
+                let $path = NetworkDraft::PROVIDER_DELAY;
+                let $form = &$config.network;
+                $visit
+            }
+            Field::Thinking => {
+                let $path = ConversationDraft::THINKING;
+                let $form = &$config.conversation;
+                $visit
+            }
+            Field::Compaction => {
+                let $path = ConversationDraft::COMPACTION;
+                let $form = &$config.conversation;
+                $visit
+            }
+            Field::ReserveTokens => {
+                let $path = ConversationDraft::RESERVE_TOKENS;
+                let $form = &$config.conversation;
+                $visit
+            }
+            Field::KeepRecentTokens => {
+                let $path = ConversationDraft::KEEP_RECENT_TOKENS;
+                let $form = &$config.conversation;
+                $visit
+            }
+            Field::Steering => {
+                let $path = ConversationDraft::STEERING;
+                let $form = &$config.conversation;
+                $visit
+            }
+            Field::FollowUp => {
+                let $path = ConversationDraft::FOLLOW_UP;
+                let $form = &$config.conversation;
+                $visit
+            }
+            Field::AutoResize => {
+                let $path = ConversationDraft::AUTO_RESIZE;
+                let $form = &$config.conversation;
+                $visit
+            }
+            Field::BlockImages => {
+                let $path = ConversationDraft::BLOCK_IMAGES;
+                let $form = &$config.conversation;
+                $visit
+            }
+            Field::Proxy => {
+                let $path = NetworkDraft::HTTP_PROXY;
+                let $form = &$config.network;
+                $visit
+            }
+            Field::Retry => {
+                let $path = NetworkDraft::RETRY;
+                let $form = &$config.network;
+                $visit
+            }
+            Field::MaxRetries => {
+                let $path = NetworkDraft::MAX_RETRIES;
+                let $form = &$config.network;
+                $visit
+            }
+            Field::BaseDelay => {
+                let $path = NetworkDraft::BASE_DELAY;
+                let $form = &$config.network;
+                $visit
+            }
+            Field::MaxDelay => {
+                let $path = NetworkDraft::MAX_DELAY;
+                let $form = &$config.network;
+                $visit
+            }
+            Field::ModelScope => {
+                let $path = ConversationDraft::ENABLED_MODELS;
+                let $form = &$config.conversation;
+                $visit
+            }
+        }
+    };
+}
+
+impl super::PiConfig {
+    pub(super) fn baseline(&self, cx: &App) -> Snapshot {
+        Snapshot {
+            conversation: ConversationDraft::ROOT.baseline(&self.conversation, cx),
+            network: NetworkDraft::ROOT.baseline(&self.network, cx),
+            tools: ToolsDraft::ROOT.baseline(&self.tools, cx),
+        }
+    }
+    pub(super) fn pending(&self, field: Field, cx: &App) -> bool {
+        let mut dirty = false;
+        visit_field_paths!(self, field, path, form => {
+            dirty |= path.is_dirty(form, cx);
+        });
+        dirty
+    }
+    pub(super) fn field_errors(&self, field: Field, cx: &App) -> bool {
+        let mut errors = false;
+        visit_field_paths!(self, field, path, form => {
+            errors |= !path.errors(form, cx).is_empty();
+        });
+        errors
+    }
+    pub(super) fn discard_field_drafts(&self, field: Field, cx: &mut App) -> Result<(), String> {
+        visit_field_paths!(self, field, path, form => {
+            form.update(cx, |form,cx| form.discard_drafts(path,cx)).map_err(|e| e.to_string())?;
+        });
+        Ok(())
+    }
+    pub(super) fn conflict_fields(&self, keys: &[gpui_form::PathKey], cx: &App) -> Vec<Field> {
+        Field::ALL
+            .into_iter()
+            .filter(|field| {
+                let mut found = false;
+                visit_field_paths!(self, *field, path, form => {
+                    found |= keys.contains(&path.into_total_path().key(form.read(cx)));
+                });
+                found
+            })
+            .collect()
     }
 }

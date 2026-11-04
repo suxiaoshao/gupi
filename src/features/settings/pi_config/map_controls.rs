@@ -2,9 +2,10 @@
 use super::model_maps::*;
 use super::*;
 use fields::{Source, display, supported_levels};
-use gpui_form::{ControlBinding, ControlProjection, DynamicItemsPath, ItemPath, PathKey};
+use gpui_form::{ControlMapping, DynamicItemsPath, EditProblem, EditResult, ItemPath};
+use gpui_form_gpui_component::FormMappedInput;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::select::Select;
 use gpui_kit::component::{ActiveTheme as _, Disableable as _, Sizable as _, h_flex, v_flex};
@@ -13,15 +14,155 @@ use gupi_settings::assets::IconName;
 use std::collections::BTreeSet;
 
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub(super) enum MapInputKey {
-    Local(PathKey, bool),
-    Inherited(u64, String, bool),
-}
+pub(super) struct MapInputKey(pub(super) String, pub(super) bool);
 pub(super) struct MapAdapter {
-    pub(super) input: Entity<InputState>,
-    window: AnyWindowHandle,
-    _binding: Option<ControlBinding>,
-    _subscription: Subscription,
+    pub(super) input: FormMappedInput<TokenContext>,
+}
+#[derive(Clone)]
+pub(super) struct TokenContext {
+    inherited: String,
+}
+struct TokenMapping {
+    key: String,
+    keep: bool,
+}
+fn token_editor_key(key: &str, keep: bool) -> gpui_form::EditorKey {
+    gpui_form::EditorKey::new(format!("model-token-{key}-{keep}"))
+}
+fn token_slot(stored: &CompactionSlot, key: &str, keep: bool) -> Slot<u64> {
+    match stored {
+        CompactionSlot::Set(rows) => rows
+            .rows
+            .iter()
+            .find(|r| r.key == key)
+            .map(|r| {
+                if keep {
+                    r.keep.clone()
+                } else {
+                    r.reserve.clone()
+                }
+            })
+            .unwrap_or(Slot::Unset),
+        _ => Slot::Unset,
+    }
+}
+impl ControlMapping<CompactionSlot, String> for TokenMapping {
+    type Context = TokenContext;
+    fn format(&self, stored: &CompactionSlot, context: &TokenContext) -> String {
+        token_slot(stored, &self.key, self.keep)
+            .encode()
+            .raw()
+            .as_ref()
+            .map(|v| display(Some(v)))
+            .unwrap_or_else(|| context.inherited.clone())
+    }
+    fn parse(
+        &self,
+        text: String,
+        current: &CompactionSlot,
+        baseline: Option<&CompactionSlot>,
+        context: &TokenContext,
+    ) -> EditResult<CompactionSlot, String> {
+        let parsed = if text.is_empty() {
+            Some(Slot::Unset)
+        } else {
+            fields::parse_count(&text)
+                .and_then(|n| n.as_u64())
+                .map(Slot::Set)
+        };
+        let Some(base) = baseline else {
+            return EditResult::draft(
+                text,
+                "baseline-unavailable",
+                gpui_form::ValidationMessage::key("pi-settings-refresh-rejected"),
+            );
+        };
+        let base_slot = token_slot(base, &self.key, self.keep);
+        let normalized = parsed
+            .as_ref()
+            .and_then(|target| target.encode().raw().as_ref().map(|v| display(Some(v))));
+        let base_shown = self.format(base, context);
+        let target = if text == base_shown || normalized.as_ref() == Some(&base_shown) {
+            base_slot
+        } else if text == self.format(current, context) {
+            token_slot(current, &self.key, self.keep)
+        } else if let Some(parsed) = parsed {
+            parsed
+        } else {
+            return EditResult::draft(
+                text,
+                "pi-invalid-count",
+                gpui_form::ValidationMessage::key("pi-invalid-count"),
+            );
+        };
+        let base_has_row =
+            matches!(base,CompactionSlot::Set(rows) if rows.rows.iter().any(|r|r.key==self.key));
+        let (key, keep) = (self.key.clone(), self.keep);
+        EditResult::update(move |latest: &CompactionSlot| {
+            update_token(latest, &key, keep, target, !base_has_row)
+        })
+    }
+}
+fn update_token(
+    latest: &CompactionSlot,
+    key: &str,
+    keep: bool,
+    value: Slot<u64>,
+    remove_empty: bool,
+) -> Result<CompactionSlot, EditProblem> {
+    let mut next = latest.clone();
+    if matches!(next, CompactionSlot::Unreadable(_)) {
+        return Err(EditProblem::new(
+            "unreadable-map",
+            gpui_form::ValidationMessage::key("pi-resource-unsupported"),
+        ));
+    }
+    if matches!(next, CompactionSlot::Unset) && value == Slot::Unset {
+        return Ok(next);
+    }
+    if matches!(next, CompactionSlot::Unset) {
+        next = CompactionSlot::Set(CompactionRows::default());
+    }
+    let CompactionSlot::Set(rows) = &mut next else {
+        unreachable!()
+    };
+    if !rows.rows.iter().any(|r| r.key == key) {
+        if value == Slot::Unset {
+            return Ok(next);
+        }
+        rows.rows.push(CompactionRow {
+            key: key.into(),
+            reserve: Slot::Unset,
+            keep: Slot::Unset,
+            extra: Default::default(),
+            unreadable: None,
+        });
+    }
+    let row = rows
+        .rows
+        .iter_mut()
+        .find(|r| r.key == key)
+        .expect("inserted row");
+    if row.unreadable.is_some() {
+        return Err(EditProblem::new(
+            "unreadable-row",
+            gpui_form::ValidationMessage::key("pi-resource-unsupported"),
+        ));
+    }
+    if keep {
+        row.keep = value;
+    } else {
+        row.reserve = value;
+    }
+    if remove_empty {
+        rows.rows.retain(|r| {
+            r.key != key || r.reserve != Slot::Unset || r.keep != Slot::Unset || !r.extra.is_empty()
+        });
+    }
+    if rows.rows.is_empty() {
+        next = CompactionSlot::Unset;
+    }
+    Ok(next)
 }
 impl PiConfig {
     fn thinking_rows(&self, cx: &App) -> Option<DynamicItemsPath<ConversationDraft, ThinkingRow>> {
@@ -128,12 +269,16 @@ impl PiConfig {
         ) {
             return None;
         }
-        if self.thinking_rows(cx).is_none() {
-            ConversationDraft::MODEL_THINKING.set(
+        if self.thinking_rows(cx).is_none()
+            && let Err(error) = ConversationDraft::MODEL_THINKING.set(
                 &self.conversation,
                 ThinkingSlot::Set(ThinkingRows::default()),
                 cx,
-            );
+            )
+        {
+            self.error = Some(error.to_string());
+            cx.notify();
+            return None;
         }
         self.thinking_rows(cx)?
             .append(
@@ -146,50 +291,40 @@ impl PiConfig {
             )
             .ok()
     }
-    pub(super) fn ensure_override(
-        &mut self,
-        key: &str,
-        cx: &mut Context<Self>,
-    ) -> Option<ItemPath<ConversationDraft, CompactionRow>> {
-        if self.is_saving() {
-            return None;
-        }
-        if let Some(path) = self.override_path(key, cx) {
-            return Some(path);
-        }
-        if matches!(
-            ConversationDraft::MODEL_OVERRIDES.get(&self.conversation, cx),
-            CompactionSlot::Unreadable(_)
-        ) {
-            return None;
-        }
-        if self.override_rows(cx).is_none() {
-            ConversationDraft::MODEL_OVERRIDES.set(
-                &self.conversation,
-                CompactionSlot::Set(CompactionRows::default()),
-                cx,
-            );
-        }
-        self.override_rows(cx)?
-            .append(
-                &self.conversation,
-                CompactionRow {
-                    key: key.into(),
-                    reserve: Slot::Unset,
-                    keep: Slot::Unset,
-                    extra: Default::default(),
-                    unreadable: None,
-                },
-                cx,
-            )
-            .ok()
-    }
     pub(super) fn token_slot(&self, key: &str, keep: bool, cx: &App) -> Slot<u64> {
         let Some(path) = self.override_path(key, cx) else {
             return Slot::Unset;
         };
         let row = path.try_get(&self.conversation, cx).expect("active row");
         if keep { row.keep } else { row.reserve }
+    }
+    pub(super) fn token_status(&self, key: &str, keep: bool, cx: &App) -> gpui_form::EditorStatus {
+        self.conversation
+            .read(cx)
+            .editor_status(
+                ConversationDraft::MODEL_OVERRIDES,
+                token_editor_key(key, keep),
+            )
+            .expect("total map editor belongs to this session")
+    }
+    fn discard_token_draft(
+        &self,
+        key: &str,
+        keep: bool,
+        cx: &mut App,
+    ) -> Result<(), gpui_form::LifecycleError> {
+        if let Some(adapter) = self.map_inputs.get(&MapInputKey(key.into(), keep)) {
+            adapter.input.discard_draft(cx)?;
+        } else {
+            self.conversation.update(cx, |form, cx| {
+                form.discard_editor_draft(
+                    ConversationDraft::MODEL_OVERRIDES,
+                    token_editor_key(key, keep),
+                    cx,
+                )
+            })?;
+        }
+        Ok(())
     }
     pub(super) fn set_token(
         &mut self,
@@ -198,30 +333,39 @@ impl PiConfig {
         value: Slot<u64>,
         cx: &mut Context<Self>,
     ) {
-        if let Some(path) = self.ensure_override(key, cx) {
-            if keep {
-                let _ = path
-                    .then(CompactionRow::KEEP)
-                    .try_set(&self.conversation, value, cx);
-            } else {
-                let _ = path
-                    .then(CompactionRow::RESERVE)
-                    .try_set(&self.conversation, value, cx);
+        if self.is_saving() {
+            return;
+        }
+        if let Err(error) = self.discard_token_draft(key, keep, cx) {
+            tracing::warn!(%error,"Pi token discard rejected");
+            self.error = Some(t(cx, "pi-settings-refresh-rejected"));
+            cx.notify();
+            return;
+        }
+        let current = ConversationDraft::MODEL_OVERRIDES.get(&self.conversation, cx);
+        let baseline = ConversationDraft::MODEL_OVERRIDES.baseline(&self.conversation, cx);
+        let remove_empty =
+            !matches!(&baseline,CompactionSlot::Set(rows) if rows.rows.iter().any(|r|r.key==key));
+        let result = update_token(&current, key, keep, value, remove_empty)
+            .map_err(|error| error.code().to_owned())
+            .and_then(|next| {
+                ConversationDraft::MODEL_OVERRIDES
+                    .set(&self.conversation, next, cx)
+                    .map_err(|error| error.to_string())
+            });
+        if let Err(error) = result {
+            tracing::warn!(%error,"Pi token update rejected");
+            self.error = Some(t(cx, "pi-settings-refresh-rejected"));
+        } else {
+            self.error = None;
+            if !self.pending(Field::ModelOverrides, cx) {
+                self.refresh_conflicts
+                    .retain(|f| *f != Field::ModelOverrides);
             }
         }
         cx.notify();
     }
     pub(super) fn token_value(&self, key: &str, keep: bool, cx: &App) -> (String, Source) {
-        if let Slot::Invalid(text) = self.token_slot(key, keep, cx) {
-            return (
-                text,
-                if matches!(self.scope, Scope::Global) {
-                    Source::Global
-                } else {
-                    Source::Project
-                },
-            );
-        }
         let token = if keep {
             "keepRecentTokens"
         } else {
@@ -258,57 +402,30 @@ impl PiConfig {
         );
         (display(resolved.values[0].as_ref()), resolved.source)
     }
-    fn bind_token(
-        &self,
-        input: Entity<InputState>,
-        path: ItemPath<ConversationDraft, CompactionRow>,
-        key: String,
-        keep: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> MapAdapter {
-        let path = if keep {
-            path.then(CompactionRow::KEEP)
-        } else {
-            path.then(CompactionRow::RESERVE)
+    fn token_context(&self, key: &str, keep: bool, cx: &App) -> TokenContext {
+        let Load::Ready(files) = &self.files else {
+            unreachable!()
         };
-        let owner = cx.entity().downgrade();
-        let shown_key = key.clone();
-        let (binding, writer) = path
-            .try_bind_control_in(
-                &self.conversation,
-                &input,
-                move |input, projection, window, cx| {
-                    if matches!(projection, ControlProjection::Value(_))
-                        && let Some(owner) = owner.upgrade()
-                    {
-                        let text = owner.read(cx).token_value(&shown_key, keep, cx).0;
-                        if input.value().as_ref() != text {
-                            input.set_value(text, window, cx);
-                        }
-                    }
-                },
-                window,
-                cx,
-            )
-            .expect("active token leaf");
-        let subscription =
-            cx.subscribe_in(&input, window, move |this, input, event, window, cx| {
-                if matches!(event, InputEvent::Change) && !this.is_saving() {
-                    let text = input.read(cx).value().to_string();
-                    let value = if text == this.token_value(&key, keep, cx).0 {
-                        this.token_slot(&key, keep, cx)
-                    } else {
-                        parse_token(text)
-                    };
-                    writer.defer_set(value, window, cx);
-                }
-            });
-        MapAdapter {
-            input,
-            window: window.window_handle(),
-            _binding: Some(binding),
-            _subscription: subscription,
+        let token = if keep {
+            "keepRecentTokens"
+        } else {
+            "reserveTokens"
+        };
+        let global = files.project.as_ref().and_then(|_| {
+            files
+                .global
+                .get(&["compaction", "modelOverrides", key, token])
+        });
+        let fallback = self.resolved(
+            if keep {
+                Field::KeepRecentTokens
+            } else {
+                Field::ReserveTokens
+            },
+            cx,
+        );
+        TokenContext {
+            inherited: display(global.or(fallback.values[0].as_ref())),
         }
     }
     pub(super) fn token_input(
@@ -318,109 +435,80 @@ impl PiConfig {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Entity<InputState> {
-        let path = self.override_path(key, cx);
-        let id = path
-            .as_ref()
-            .map(|p| MapInputKey::Local(p.key(), keep))
-            .unwrap_or_else(|| MapInputKey::Inherited(self.generation, key.into(), keep));
+        let id = MapInputKey(key.into(), keep);
         if let Some(adapter) = self.map_inputs.get(&id) {
-            return adapter.input.clone();
+            return (*adapter.input).clone();
         }
-        let text = self.token_value(key, keep, cx).0;
-        let input = cx.new(|cx| InputState::new(window, cx).default_value(text));
-        let adapter = if let Some(path) = path {
-            self.bind_token(input.clone(), path, key.into(), keep, window, cx)
-        } else {
-            let id = id.clone();
-            let key = key.to_owned();
-            let generation = self.generation;
-            let subscription =
-                cx.subscribe_in(&input, window, move |_, input, event, window, cx| {
-                    if !matches!(event, InputEvent::Change) {
-                        return;
-                    }
-                    let (input, id, key) = (input.clone(), id.clone(), key.clone());
-                    cx.defer_in(window, move |this, window, cx| {
-                        if this.generation != generation
-                            || this.is_saving()
-                            || this.map_inputs.get(&id).is_none_or(|a| a.input != input)
-                        {
-                            return;
-                        }
-                        let text = input.read(cx).value().to_string();
-                        if text == this.token_value(&key, keep, cx).0 {
-                            return;
-                        }
-                        if let Some(path) = this.ensure_override(&key, cx) {
-                            this.map_inputs.remove(&id);
-                            this.set_token(&key, keep, parse_token(text), cx);
-                            let adapter =
-                                this.bind_token(input, path.clone(), key, keep, window, cx);
-                            this.map_inputs
-                                .insert(MapInputKey::Local(path.key(), keep), adapter);
-                        }
-                    });
-                });
-            MapAdapter {
-                input: input.clone(),
-                window: window.window_handle(),
-                _binding: None,
-                _subscription: subscription,
-            }
-        };
-        self.map_inputs.insert(id, adapter);
-        input
+        let input = FormMappedInput::new(
+            &self.conversation,
+            ConversationDraft::MODEL_OVERRIDES,
+            token_editor_key(key, keep),
+            TokenMapping {
+                key: key.into(),
+                keep,
+            },
+            self.token_context(key, keep, cx),
+            InputState::new,
+            window,
+            cx,
+        )
+        .expect("stable token mapping type");
+        let state = (*input).clone();
+        self.map_inputs.insert(id, MapAdapter { input });
+        state
     }
     pub(super) fn remove_map_row(&mut self, field: Field, key: &str, cx: &mut Context<Self>) {
         if self.is_saving() {
             return;
         }
-        if field == Field::ModelThinking {
+        if field == Field::ModelOverrides {
+            for keep in [false, true] {
+                if let Err(error) = self.discard_token_draft(key, keep, cx) {
+                    tracing::warn!(%error,"Pi row discard rejected");
+                    self.error = Some(t(cx, "pi-settings-refresh-rejected"));
+                    cx.notify();
+                    return;
+                }
+            }
+        }
+        let result = if field == Field::ModelThinking {
             if let (Some(rows), Some(path)) = (self.thinking_rows(cx), self.thinking_path(key, cx))
             {
-                let _ = rows.remove(&self.conversation, path, cx);
+                rows.remove(&self.conversation, path, cx).map(|_| ())
+            } else {
+                Ok(())
             }
         } else if let (Some(rows), Some(path)) =
             (self.override_rows(cx), self.override_path(key, cx))
         {
-            let _ = rows.remove(&self.conversation, path, cx);
+            rows.remove(&self.conversation, path, cx).map(|_| ())
+        } else {
+            Ok(())
+        };
+        match result {
+            Ok(()) => {
+                for keep in [false, true] {
+                    self.map_inputs.remove(&MapInputKey(key.into(), keep));
+                }
+                if !self.pending(field, cx) {
+                    self.refresh_conflicts.retain(|f| *f != field);
+                }
+                self.error = None;
+            }
+            Err(error) => {
+                tracing::warn!(%error,"Pi map row removal rejected");
+                self.error = Some(t(cx, "pi-settings-refresh-rejected"));
+            }
         }
         cx.notify();
     }
     pub(super) fn refresh_map_inputs(&self, cx: &mut Context<Self>) {
-        let paths = self
-            .override_rows(cx)
-            .and_then(|p| p.try_items(&self.conversation, cx).ok())
-            .unwrap_or_default();
-        for (id, adapter) in &self.map_inputs {
-            let (key, keep) = match id {
-                MapInputKey::Inherited(_, key, keep) => (key.clone(), *keep),
-                MapInputKey::Local(id, keep) => {
-                    let Some(key) = paths.iter().find(|p| p.key() == *id).and_then(|p| {
-                        p.clone()
-                            .then(CompactionRow::KEY)
-                            .try_get(&self.conversation, cx)
-                            .ok()
-                    }) else {
-                        continue;
-                    };
-                    (key, *keep)
-                }
-            };
-            let shown = self.token_value(&key, keep, cx).0;
-            let (input, window) = (adapter.input.clone(), adapter.window);
-            cx.defer(move |cx| {
-                let _ = window.update(cx, |_, window, cx| {
-                    input.update(cx, |input, cx| {
-                        if input.value().as_ref() != shown {
-                            input.set_value(shown, window, cx);
-                        }
-                    })
-                });
-            });
+        for (MapInputKey(key, keep), adapter) in &self.map_inputs {
+            adapter
+                .input
+                .refresh(self.token_context(key, *keep, cx), cx);
         }
     }
-
     fn thinking_levels_for_key(&self, key: &str) -> Vec<&'static str> {
         match &self.models {
             Models::Ready(models) => models
@@ -526,11 +614,12 @@ impl PiConfig {
                 ];
                 let current = self.token_slot(&key, keep, cx);
                 let old = self
-                    .baseline
+                    .baseline(cx)
                     .leaf_values(field)
                     .remove(&leaf)
                     .unwrap_or(Slot::Unset);
-                if current.encode() != old {
+                let status = self.token_status(&key, keep, cx);
+                if current.encode() != old || status.has_draft() || !status.issues().is_empty() {
                     token_actions.push((keep, "pi-menu-revert", Slot::<u64>::decode(old)));
                 }
                 if matches!(current, Slot::Unset) {
@@ -640,7 +729,19 @@ impl PiConfig {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let saving = self.is_saving();
-        let values = self.map_values(field, cx);
+        let mut values = self.map_values(field, cx);
+        // Keep Form-owned drafts reachable if an inherited key disappears externally.
+        if field == Field::ModelOverrides
+            && let Some(values) = &mut values
+        {
+            for MapInputKey(key, keep) in self.map_inputs.keys() {
+                if self.token_status(key, *keep, cx).has_draft() {
+                    values
+                        .entry(key.clone())
+                        .or_insert_with(|| Value::Object(Default::default()));
+                }
+            }
+        }
         let keys = values
             .as_ref()
             .map(|v| v.keys().cloned().collect::<BTreeSet<_>>())
@@ -698,6 +799,16 @@ impl PiConfig {
                         },
                     )),
             );
+        if self.refresh_conflicts.contains(&field) {
+            body = body.child(div().text_xs().text_color(cx.theme().danger).child(t(
+                cx,
+                if field == Field::ModelOverrides && self.field_errors(field, cx) {
+                    "pi-map-refresh-draft"
+                } else {
+                    "pi-settings-refresh-conflict"
+                },
+            )));
+        }
         if field == Field::ModelThinking {
             body = body.child(self.render_catalog_status(cx));
         }
@@ -720,7 +831,7 @@ impl PiConfig {
                 .into_any_element();
         };
         let current_leaves = self.snapshot(cx).leaf_values(field);
-        let baseline_leaves = self.baseline.leaf_values(field);
+        let baseline_leaves = self.baseline(cx).leaf_values(field);
         if field == Field::ModelOverrides {
             table = table.child(
                 h_flex()
@@ -895,7 +1006,24 @@ impl PiConfig {
                             "reserveTokens".into()
                         },
                     ];
-                    let invalid = matches!(self.token_slot(&key, keep, cx), Slot::Invalid(_));
+                    let status = self.token_status(&key, keep, cx);
+                    let invalid = status.has_draft() || !status.issues().is_empty();
+                    let problem = status
+                        .issues()
+                        .first()
+                        .map(|issue| {
+                            t(
+                                cx,
+                                match issue.code() {
+                                    "pi-invalid-count" => "pi-invalid-count",
+                                    "unreadable-map" | "unreadable-row" => {
+                                        "pi-resource-unsupported"
+                                    }
+                                    _ => "pi-settings-refresh-rejected",
+                                },
+                            )
+                        })
+                        .unwrap_or_else(|| t(cx, "pi-invalid-count"));
                     let conflict = self.conflict_leaves.contains(&leaf);
                     row = row.child(
                         v_flex()
@@ -935,14 +1063,13 @@ impl PiConfig {
                                     ),
                             )
                             .when(invalid || conflict, |this| {
-                                this.child(div().text_xs().text_color(cx.theme().danger).child(t(
-                                    cx,
+                                this.child(div().text_xs().text_color(cx.theme().danger).child(
                                     if conflict {
-                                        "pi-changed-on-disk"
+                                        t(cx, "pi-changed-on-disk")
                                     } else {
-                                        "pi-invalid-count"
+                                        problem
                                     },
-                                )))
+                                ))
                             }),
                     );
                 }
@@ -984,15 +1111,4 @@ fn origin_label(source: Source, pending: bool, cx: &App) -> String {
         label = format!("{label} · {}", t(cx, "pi-unsaved"));
     }
     label
-}
-
-fn parse_token(text: String) -> Slot<u64> {
-    if text.is_empty() {
-        Slot::Unset
-    } else {
-        match fields::parse_count(&text).and_then(|n| n.as_u64()) {
-            Some(n) => Slot::Set(n),
-            None => Slot::Invalid(text),
-        }
-    }
 }

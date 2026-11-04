@@ -350,7 +350,7 @@ impl Files {
                         (Some(value.clone()), self.scope_source())
                     }
                     Some(Slot::Unset) => self.inherited(field, leaf),
-                    Some(Slot::Invalid(_)) | None => match edited.get(leaf) {
+                    None => match edited.get(leaf) {
                         Some(value) => (Some(value.clone()), self.scope_source()),
                         None => self.inherited(field, leaf),
                     },
@@ -370,15 +370,10 @@ impl Files {
     }
 
     /// A resource switch must not advance the conflict base of a dirty raw array.
-    pub(super) fn preserve_dirty_resource_bases(
-        &mut self,
-        previous: &Self,
-        current: &Snapshot,
-        baseline: &Snapshot,
-    ) {
+    pub(super) fn preserve_dirty_resource_bases(&mut self, previous: &Self, dirty: &[Field]) {
         let mut root = self.edited().root().clone();
         for field in Field::RESOURCE_PATHS {
-            if current.pending(field, baseline) {
+            if dirty.contains(&field) {
                 let key = field.leaves()[0][0];
                 match previous.edited().get(&[key]) {
                     Some(value) => {
@@ -407,7 +402,9 @@ impl Files {
         let edited = self.edited();
         let mut changes = Vec::new();
         for field in Field::ALL {
-            if page.is_some_and(|page| field.page() != page) || !current.pending(field, baseline) {
+            if page.is_some_and(|page| field.page() != page)
+                || current.value(field) == baseline.value(field)
+            {
                 continue;
             }
             if field.is_global_only() && self.project.is_some() {
@@ -421,9 +418,7 @@ impl Files {
                 .collect::<std::collections::BTreeSet<_>>()
             {
                 let value = values.get(leaf).unwrap_or(&Slot::Unset);
-                if previous.get(leaf).unwrap_or(&Slot::Unset) == value
-                    || matches!(value, Slot::Invalid(_))
-                {
+                if previous.get(leaf).unwrap_or(&Slot::Unset) == value {
                     continue;
                 }
                 let base = edited.get(leaf).cloned();

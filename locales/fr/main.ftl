@@ -1477,3 +1477,8 @@ tool-nested-recent = Afficher uniquement les 8 derniers
 tool-nested-incomplete = L’enregistrement de Pi est incomplet : des appels ou arguments peuvent être omis, ou des appels rester inachevés.
 tool-nested-arguments-omitted = Pi a omis ces arguments.
 tool-nested-duration = { $milliseconds } ms
+
+pi-settings-newer-edits = Les réglages ont été enregistrés, mais des modifications plus récentes subsistent. Abandonnez les nouvelles modifications de la page enregistrée avant de réenregistrer.
+pi-settings-refresh-conflict = Le fichier a été modifié ailleurs. Vos modifications locales sont conservées. Enregistrez-les pour les utiliser, ou abandonnez-les.
+pi-map-refresh-draft = La table locale et la saisie non valide ont été conservées. Corrigez ou abandonnez la saisie, puis rechargez pour fusionner les autres clés.
+pi-settings-refresh-rejected = L’actualisation n’a pas pu être appliquée. Vos modifications ont été conservées.

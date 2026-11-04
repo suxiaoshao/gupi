@@ -1457,3 +1457,8 @@ tool-nested-recent = 僅顯示最近 8 筆
 tool-nested-incomplete = Pi 的記錄不完整：可能省略了呼叫或參數，或仍有未完成的呼叫。
 tool-nested-arguments-omitted = Pi 已省略這些參數。
 tool-nested-duration = { $milliseconds } 毫秒
+
+pi-settings-newer-edits = 設定已寫入檔案，但仍有較新的編輯。請先放棄已儲存頁面的新編輯，再次儲存。
+pi-settings-refresh-conflict = 檔案在外部發生了變更，本機編輯已保留。可儲存以採用本機值，或放棄這些編輯。
+pi-map-refresh-draft = 本機對應表和無效輸入已保留。請修正或放棄無效輸入，再重新讀取以合併其他鍵。
+pi-settings-refresh-rejected = 無法套用此次重新整理，編輯已保留。

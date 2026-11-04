@@ -1489,6 +1489,44 @@ fn preserving_reload_keeps_local_conflict_visible_until_explicit_save(cx: &mut T
     assert!(config.read_with(visual, |this, _| this.refresh_conflicts.is_empty()));
 }
 
+// A mounted token must continue inheriting when the general value is edited
+// before the user types that same effective value into the token input.
+#[gpui_kit::test]
+fn mounted_tokens_follow_unsaved_general_values_without_pinning_overrides(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let path = agent.path().join("settings.json");
+    fs::write(
+        &path,
+        json!({"compaction":{"reserveTokens":100,"keepRecentTokens":100,"modelOverrides":{"p/m":{}}}}).to_string(),
+    )
+    .unwrap();
+    let (config, visual) = setup(cx, agent.path());
+    let inputs = visual.update(|window, cx| {
+        [false, true]
+            .map(|keep| config.update(cx, |this, cx| this.token_input("p/m", keep, window, cx)))
+    });
+    for (field, input) in [Field::ReserveTokens, Field::KeepRecentTokens]
+        .into_iter()
+        .zip(inputs)
+    {
+        input_text(&config, field, "200", visual);
+        assert_eq!(input.read_with(visual, |input, _| input.value()), "200");
+        visual.update(|window, cx| {
+            input.update(cx, |input, cx| {
+                input.set_value("200", window, cx);
+                cx.emit(gpui_kit::component::input::InputEvent::Change);
+            });
+        });
+        visual.run_until_parked();
+    }
+    save(&config, Page::Conversation, visual);
+    assert_eq!(
+        read(&path),
+        json!({"compaction":{"reserveTokens":200,"keepRecentTokens":200,"modelOverrides":{"p/m":{}}}})
+    );
+    config.read_with(visual, |this, cx| assert!(!this.has_unsaved(cx)));
+}
+
 // Product guarantee: editing inherited tokens from separate rows in one native batch
 // must preserve both overrides and the untouched inherited leaves, without materializing them.
 #[gpui_kit::test]

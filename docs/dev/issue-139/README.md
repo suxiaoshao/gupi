@@ -29,7 +29,7 @@ Gupi 实施分支从 `ff638fcb986e67381c8df1ddaeff5a660260346b` 创建，统一�
 
 映射上下文是应用计算的继承值、来源、领域限制和格式文本的只读快照；不得捕获 PiConfig 再从投影回调反读模型。`format` 保持 Unset 的有效继承展示和 Unreadable 的原始展示；`parse` 先判断回到有效基线/当前展示是否应恢复原 Slot，再执行计数、timeout、shell words 等现有领域解析。返回 Draft 时不改最后成功解析的存储值。
 
-上下文更新调用 `refresh(context, cx)`，保留无效草稿；业务有效性变化另请求 External 校验。不能直接 `set_value` 覆盖草稿，也不能把继承变化写成显式覆盖。现有计数上限、timeout 的 off 表达、shell path 空白与 npm 参数语义不改。
+上下文更新调用 `refresh(context, cx)`，保留无效草稿。一般 reserve/keep 的有效值包含尚未保存的 Form 编辑；既有 Conversation Form 订阅在这两个路径的 `ModelChanged` 事件中刷新 token 绑定上下文，覆盖本地编辑、恢复/放弃与重读，不增加输入监听器。业务有效性变化另请求 External 校验。不能直接 `set_value` 覆盖草稿，也不能把继承变化写成显式覆盖。现有计数上限、timeout 的 off 表达、shell path 空白与 npm 参数语义不改。
 
 EditorKey 在同一 Form 会话和同一编辑器重挂时稳定，同路径不同编辑器使用不同 key；动态身份仍由 Form 提供。恢复整个字段、设为继承等明确替换整个字段的动作先对 typed subtree 弃稿，再执行结构操作并处理 Result。map 行/叶操作则只弃掉对应稳定 EditorKey 的草稿与排队输入，不能扩展到整个 map。普通重绘、搜索、控件卸载均不清稿。
 
@@ -85,7 +85,7 @@ token 反馈来自 `Form::editor_status(typed_path, editor_key)`，读取已接�
 
 已删除 `Slot::Invalid`、常驻 `PiConfig.baseline`、`Snapshot::pending/merge`、旧 `reconcile`、手工 Input 同步和继承 token 的延迟转绑。普通输入与 token 都通过正式 mapped binding 接纳输入；部分 map 编辑只在 latest storage 上应用目标叶。两个 map 的领域函数接入字段 hook，未知内容、文件锁与叶冲突仍由文件服务负责。
 
-首次加载和确认作用域切换显式 Discard；页面放弃只作用于选中页。外部刷新保存读取结果并逐页安装，`EditsPending` 在已有接纳回调之后重试，并检查读取代次；全部对应安装成功后才推进 Files 和继承上下文。模型/草稿事件只更新页面反馈，不手工重设输入。刷新冲突和写盘冲突分开存放；刷新冲突直到用户明确放弃相关字段或成功保存选中页才解除。
+首次加载和确认作用域切换显式 Discard；页面放弃只作用于选中页。外部刷新保存读取结果并逐页安装，`EditsPending` 在已有接纳回调之后重试，并检查读取代次；全部对应安装成功后才推进 Files 和继承上下文。模型/草稿事件更新页面反馈；一般 token 值的模型变更还通过正式 binding refresh 更新继承上下文，不手工重设输入。刷新冲突和写盘冲突分开存放；刷新冲突直到用户明确放弃相关字段或成功保存选中页才解除。
 
 每次保存保留实际提交快照与各页 FormVersion，按版本条件安装。迟到成功保留当前编辑、阻止自动离开，并保留真实已写盘 Document 与提交凭据作为单次 receipt；该 receipt 在资源差量基线投影之前记录。显式放弃相关已保存页后，从已写盘结果恢复；其余页仍按保留编辑刷新处理，不用旧 Form 基线模拟保存期间合并。
 
@@ -94,11 +94,11 @@ token 反馈来自 `Form::editor_status(typed_path, editor_key)`，读取已接�
 - `cargo fmt --all -- --check`：通过。
 - `cargo check -p gupi --locked`：通过。
 - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`：通过，包含根包及受影响成员。
-- `cargo test --workspace --locked`：整个 workspace 及 doc tests 通过，其中根包 133 项、资源 crate 95 项、设置 crate 21 项。保留原有两个需要 installed Pi CLI 的 ignored 集成测试，未修改 ignore。
-- `cargo build -p gupi --locked`：通过，用于下述原生试用。
+- `cargo test --workspace --locked`：整个 workspace 及 doc tests 通过，其中根包 134 项、资源 crate 95 项、设置 crate 21 项。保留原有两个需要 installed Pi CLI 的 ignored 集成测试，未修改 ignore。
+- `cargo build --workspace --locked`：通过。下述原生试用使用先前 `cargo build -p gupi --locked` 构建的应用。
 - `git diff --check`：通过。
 
-新增产品级保障覆盖：同批原生输入编辑两个继承键后保存，文件只出现目标 override；两个 map 的实际 reload hook 合并独立业务键/叶并保留未知原值；外部刷新冲突持续可见；迟到保存不会清除新编辑或自动离开，即使回到旧基线仍保留已写盘 receipt，显式放弃后恢复真实保存结果；已接纳、排队或控件卸载后的目标 token 恢复不会清掉邻行草稿；恢复 Unreadable token 的原始展示会清稿而不改原值；新本地 token 与远端不可读 map/row 相交也显示刷新冲突。迁移旧测试通过 native Change 入口提交无效文本并断言 Form 状态，不再把坏文本写入 typed model，也不重复共享库票据/更新回归矩阵。九种语言的 Fluent 解析和 key/参数一致性通过；未新增 trybuild 快照。
+新增产品级保障覆盖：同批原生输入编辑两个继承键后保存，文件只出现目标 override；已挂载的 token 在一般值从 100 编辑到 200 后输入相同有效值并保存，仍保持继承；两个 map 的实际 reload hook 合并独立业务键/叶并保留未知原值；外部刷新冲突持续可见；迟到保存不会清除新编辑或自动离开，即使回到旧基线仍保留已写盘 receipt，显式放弃后恢复真实保存结果；已接纳、排队或控件卸载后的目标 token 恢复不会清掉邻行草稿；恢复 Unreadable token 的原始展示会清稿而不改原值；新本地 token 与远端不可读 map/row 相交也显示刷新冲突。迁移旧测试通过 native Change 入口提交无效文本并断言 Form 状态，不再把坏文本写入 typed model，也不重复共享库票据/更新回归矩阵。九种语言的 Fluent 解析和 key/参数一致性通过；未新增 trybuild 快照。
 
 ### 一次隔离原生试用
 

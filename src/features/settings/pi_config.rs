@@ -199,7 +199,15 @@ impl PiConfig {
         let tools = cx.new(|_| Form::new(ToolsDraft::default()));
         let tools_sub = cx.subscribe(&tools, |this, _, event, cx| this.form_changed(event, cx));
         let conversation_sub = cx.subscribe(&conversation, |this, _, event, cx| {
-            this.form_changed(event, cx)
+            this.form_changed(event, cx);
+            if let FormEvent::ModelChanged(change) = event
+                && (change.affects(&ConversationDraft::RESERVE_TOKENS)
+                    || change.affects(&ConversationDraft::KEEP_RECENT_TOKENS))
+            {
+                // Token inheritance includes unsaved general values. The binding
+                // refresh updates context without replacing drafts or pending input.
+                this.refresh_map_inputs(cx);
+            }
         });
         let network_sub = cx.subscribe(&network, |this, _, event, cx| this.form_changed(event, cx));
         let applied_sub = cx.observe(&applied_pi, |_, _, cx| cx.notify());

@@ -1457,3 +1457,8 @@ tool-nested-recent = 仅显示最近 8 条
 tool-nested-incomplete = Pi 的记录不完整：可能省略了调用或参数，或仍有未完成的调用。
 tool-nested-arguments-omitted = Pi 已省略这些参数。
 tool-nested-duration = { $milliseconds } 毫秒
+
+pi-settings-newer-edits = 设置已写入文件，但仍有较新的编辑。请先放弃已保存页面的新编辑，再次保存。
+pi-settings-refresh-conflict = 文件在外部发生了变化，本地编辑已保留。可保存以采用本地值，或放弃这些编辑。
+pi-map-refresh-draft = 本地映射和无效输入已保留。请修正或放弃无效输入，再重新读取以合并其他键。
+pi-settings-refresh-rejected = 无法应用本次刷新，编辑已保留。

@@ -1450,3 +1450,8 @@ tool-nested-recent = 直近 8 件のみ表示
 tool-nested-incomplete = Pi の記録は不完全です。呼び出しや引数の省略、または未完了の呼び出しがあります。
 tool-nested-arguments-omitted = Pi がこれらの引数を省略しました。
 tool-nested-duration = { $milliseconds } ミリ秒
+
+pi-settings-newer-edits = 設定は保存されましたが、その後の編集が残っています。再保存する前に、保存済みページの新しい編集を破棄してください。
+pi-settings-refresh-conflict = ファイルが外部で変更されました。ローカルの編集は保持されています。保存して採用するか、編集を破棄してください。
+pi-map-refresh-draft = ローカルのマップと無効な入力を保持しました。入力を修正または破棄してから、再読み込みしてほかのキーを統合してください。
+pi-settings-refresh-rejected = 更新を適用できませんでした。編集は保持されています。

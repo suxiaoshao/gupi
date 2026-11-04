@@ -29,11 +29,9 @@ use std::path::Path;
 impl crate::features::settings::SettingsView {
     pub(crate) fn seed_quit_draft_for_test(&self, saving: bool, cx: &mut gpui_kit::App) {
         self.pi_config.update(cx, |config, cx| {
-            super::forms::ConversationDraft::STEERING.set(
-                &config.conversation,
-                Slot::Set("all".into()),
-                cx,
-            );
+            super::forms::ConversationDraft::STEERING
+                .set(&config.conversation, Slot::Set("all".into()), cx)
+                .expect("scalar steering path");
             if saving {
                 config.saving = Some(gpui_kit::Task::ready(()));
             }
@@ -189,10 +187,11 @@ fn invalid_drafts_block_saving_and_writing_back_the_stored_value_clears_a_draft(
     let (config, window) = setup(cx, agent.path());
     input_text(&config, Field::MaxRetries, "-1", window);
     config.update(window, |this, cx| {
-        assert!(matches!(
-            this.snapshot(cx).value(Field::MaxRetries).first(),
-            Some(Slot::Invalid(_))
-        ));
+        assert_eq!(
+            this.snapshot(cx).value(Field::MaxRetries),
+            vec![Slot::Set(json!(2))]
+        );
+        assert!(this.invalid(Field::MaxRetries, cx));
     });
     save(&config, Page::Network, window);
     config.update(window, |this, _| {
@@ -206,6 +205,10 @@ fn invalid_drafts_block_saving_and_writing_back_the_stored_value_clears_a_draft(
         assert!(
             !this.has_unsaved(cx),
             "typing the stored value is no change"
+        );
+        assert!(
+            this.error.is_none(),
+            "correcting the input clears the old save error"
         );
     });
     assert_eq!(read(&global), json!({"retry":{"maxRetries":2}}));
@@ -852,8 +855,9 @@ fn correcting_a_bound_number_restores_its_baseline_slot(cx: &mut TestAppContext)
             });
             visual.run_until_parked();
         }
-        let baseline =
-            config.read_with(visual, |this, _| this.baseline.value(Field::ReserveTokens));
+        let baseline = config.read_with(visual, |this, cx| {
+            this.baseline(cx).value(Field::ReserveTokens)
+        });
         input_text(&config, Field::ReserveTokens, &format!("{text}x"), visual);
         assert!(config.read_with(visual, |this, cx| this.invalid(Field::ReserveTokens, cx)));
         // This correction occurs AFTER the invalid edit has drained.
@@ -904,9 +908,9 @@ fn tools_save_preserves_invalid_conversation_and_network_drafts(cx: &mut TestApp
     )
     .unwrap();
     let (config, window) = setup(cx, agent.path());
+    input_text(&config, Field::ReserveTokens, "-", window);
+    input_text(&config, Field::MaxRetries, "bad", window);
     config.update(window, |this, cx| {
-        this.set_values(Field::ReserveTokens, vec![Slot::Invalid("-".into())], cx);
-        this.set_values(Field::MaxRetries, vec![Slot::Invalid("bad".into())], cx);
         this.set_values(
             Field::ShellPrefix,
             vec![Slot::Set(json!(" export TEST=1; "))],
@@ -1077,7 +1081,8 @@ fn inherited_model_input_keeps_invalid_text_across_other_page_save(cx: &mut Test
     });
     save(&config, Page::Tools, window);
     config.read_with(window, |this, cx| {
-        assert_eq!(this.token_slot("p/m", false, cx), Slot::Invalid("-".into()));
+        assert_eq!(this.token_slot("p/m", false, cx), Slot::Unset);
+        assert!(this.invalid(Field::ModelOverrides, cx));
         assert_eq!(this.token_value("p/m", true, cx).0, "200");
     });
     assert_eq!(
@@ -1136,7 +1141,7 @@ fn saving_model_maps_keeps_disk_order_and_clears_dirty(cx: &mut TestAppContext) 
     config.read_with(window, |this, cx| {
         assert!(!this.has_unsaved(cx));
         assert!(!this.needs_leave_guard(cx));
-        assert!(this.snapshot(cx) == this.baseline);
+        assert!(this.snapshot(cx) == this.baseline(cx));
     });
     assert_eq!(read(&path)["modelThinkingLevels"]["b/model"], "off");
 }
@@ -1354,7 +1359,7 @@ fn switch_reread_preserves_dirty_array_conflict_but_updates_clean_arrays(cx: &mu
                 this.snapshot(cx).value(Field::Extensions),
                 vec![Slot::Set(json!(["old", "-extensions/a.ts"]))]
             );
-            assert_eq!(this.baseline.value(Field::Prompts), vec![Slot::Unset]);
+            assert_eq!(this.baseline(cx).value(Field::Prompts), vec![Slot::Unset]);
         });
         // An unrelated page save must not adopt the new resource base either.
         config.update(visual, |this, cx| {
@@ -1380,5 +1385,356 @@ impl PiConfig {
         cx: &mut Context<Self>,
     ) {
         self.append_resource_path(Field::Prompts, text, cx);
+    }
+}
+
+// Prevent a late successful write from cleaning or discarding input entered after prepare.
+#[gpui_kit::test]
+fn late_save_keeps_newer_native_edit_and_requires_explicit_page_discard(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let path = agent.path().join("settings.json");
+    fs::write(
+        &path,
+        r#"{"compaction":{"reserveTokens":100},"unknown":true}"#,
+    )
+    .unwrap();
+    let (config, visual) = setup(cx, agent.path());
+    input_text(&config, Field::ReserveTokens, "200", visual);
+    let left = std::rc::Rc::new(std::cell::Cell::new(false));
+    visual.update(|window, cx| {
+        let input = config.update(cx, |this, cx| this.input(Field::ReserveTokens, window, cx));
+        let left = left.clone();
+        config.update(cx, |this, cx| {
+            this.save(
+                Some(Page::Conversation),
+                Some(Box::new(move |_, _| left.set(true))),
+                window,
+                cx,
+            )
+        });
+        // Commit at the native entry while the save result is still outstanding.
+        input.update(cx, |input, cx| {
+            input.set_value("100", window, cx);
+            cx.emit(gpui_kit::component::input::InputEvent::Change);
+        });
+    });
+    visual.run_until_parked();
+    assert_eq!(read(&path)["compaction"]["reserveTokens"], 200);
+    config.read_with(visual, |this, cx| {
+        assert_eq!(
+            this.snapshot(cx).value(Field::ReserveTokens),
+            vec![Slot::Set(json!(100))]
+        );
+        assert!(this.saved_receipt.is_some());
+        assert!(
+            this.needs_leave_guard(cx),
+            "a revert to the old baseline still differs from the completed disk write"
+        );
+        assert!(this.has_page_drafts(Page::Conversation, cx));
+    });
+    assert!(
+        !left.get(),
+        "a rejected save installation cannot leave the settings session"
+    );
+    save(&config, Page::Conversation, visual);
+    assert_eq!(read(&path)["compaction"]["reserveTokens"], 200);
+    config.update(visual, |this, cx| {
+        this.discard(Some(Page::Conversation), cx)
+    });
+    visual.run_until_parked();
+    config.read_with(visual, |this, cx| {
+        assert!(this.saved_receipt.is_none());
+        assert_eq!(
+            this.snapshot(cx).value(Field::ReserveTokens),
+            vec![Slot::Set(json!(200))]
+        );
+        assert!(!this.needs_leave_guard(cx));
+    });
+}
+
+// Prevent an external refresh or subsequent edit from silently acknowledging a conflict.
+#[gpui_kit::test]
+fn preserving_reload_keeps_local_conflict_visible_until_explicit_save(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let path = agent.path().join("settings.json");
+    fs::write(&path, r#"{"retry":{"maxRetries":1,"baseDelayMs":2}}"#).unwrap();
+    let (config, visual) = setup(cx, agent.path());
+    input_text(&config, Field::MaxRetries, "3", visual);
+    fs::write(&path, r#"{"retry":{"maxRetries":4,"baseDelayMs":6}}"#).unwrap();
+    config.update(visual, |this, cx| this.reload(cx));
+    visual.run_until_parked();
+    config.read_with(visual, |this, cx| {
+        assert!(this.refresh_conflicts.contains(&Field::MaxRetries));
+        assert!(
+            this.conflicts.is_empty(),
+            "a refresh conflict is separate from a failed disk write"
+        );
+        assert_eq!(
+            this.snapshot(cx).value(Field::MaxRetries),
+            vec![Slot::Set(json!(3))]
+        );
+        assert_eq!(
+            this.snapshot(cx).value(Field::BaseDelay),
+            vec![Slot::Set(json!(6))]
+        );
+    });
+    input_text(&config, Field::MaxRetries, "5", visual);
+    config.update(visual, |this, cx| this.reload(cx));
+    visual.run_until_parked();
+    assert!(config.read_with(visual, |this, _| {
+        this.refresh_conflicts.contains(&Field::MaxRetries)
+    }));
+    save(&config, Page::Network, visual);
+    assert_eq!(read(&path)["retry"]["maxRetries"], 5);
+    assert!(config.read_with(visual, |this, _| this.refresh_conflicts.is_empty()));
+}
+
+// Product guarantee: editing inherited tokens from separate rows in one native batch
+// must preserve both overrides and the untouched inherited leaves, without materializing them.
+#[gpui_kit::test]
+fn inherited_token_editors_save_two_keys_without_pinning_other_inherited_leaves(
+    cx: &mut TestAppContext,
+) {
+    let agent = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    fs::write(agent.path().join("settings.json"),r#"{"compaction":{"modelOverrides":{"p/a":{"reserveTokens":100,"keepRecentTokens":200},"p/b":{"reserveTokens":300,"keepRecentTokens":400}}}}"#).unwrap();
+    let (config, visual) = setup(cx, agent.path());
+    config.update(visual, |this, cx| {
+        this.set_scope(Scope::Project(project.path().to_owned()), cx)
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        let a = config.update(cx, |this, cx| this.token_input("p/a", false, window, cx));
+        let b = config.update(cx, |this, cx| this.token_input("p/b", true, window, cx));
+        for (input, text) in [(a, "150"), (b, "450")] {
+            input.update(cx, |input, cx| {
+                input.set_value(text, window, cx);
+                cx.emit(gpui_kit::component::input::InputEvent::Change);
+            });
+        }
+    });
+    visual.run_until_parked();
+    save(&config, Page::Conversation, visual);
+    let path = project.path().join(".pi/settings.json");
+    assert_eq!(
+        read(&path),
+        json!({"compaction":{"modelOverrides":{"p/a":{"reserveTokens":150},"p/b":{"keepRecentTokens":450}}}})
+    );
+    config.read_with(visual, |this, cx| assert!(!this.has_unsaved(cx)));
+}
+
+// Exercise the actual reload hook: preserve conflicting local map leaves while
+// adopting independent remote keys/leaves and retaining unreadable/unknown values.
+#[gpui_kit::test]
+fn map_reload_merges_domain_keys_and_independent_token_leaves(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let path = agent.path().join("settings.json");
+    fs::write(&path,json!({"compaction":{"modelOverrides":{"p/m":{"reserveTokens":100,"keepRecentTokens":200,"unknown":true}}},"modelThinkingLevels":{"p/m":"high","missing/model":false}}).to_string()).unwrap();
+    let (config, visual) = setup(cx, agent.path());
+    visual.update(|window, cx| {
+        let input = config.update(cx, |this, cx| this.token_input("p/m", false, window, cx));
+        input.update(cx, |input, cx| {
+            input.set_value("300", window, cx);
+            cx.emit(gpui_kit::component::input::InputEvent::Change);
+        });
+    });
+    visual.run_until_parked();
+    config.update(visual, |this, cx| {
+        this.set_values(
+            Field::ModelThinking,
+            vec![Slot::Set(json!({"p/m":"low","missing/model":false}))],
+            cx,
+        )
+    });
+    fs::write(&path,json!({"compaction":{"modelOverrides":{"p/m":{"reserveTokens":150,"keepRecentTokens":250,"unknown":true},"p/new":{"reserveTokens":50}}},"modelThinkingLevels":{"p/m":"medium","missing/model":false,"p/new":"off"}}).to_string()).unwrap();
+    config.update(visual, |this, cx| this.reload(cx));
+    visual.run_until_parked();
+    config.read_with(visual,|this,cx| {
+        assert_eq!(this.snapshot(cx).value(Field::ModelOverrides),vec![Slot::Set(json!({"p/m":{"reserveTokens":300,"keepRecentTokens":250,"unknown":true},"p/new":{"reserveTokens":50}}))]);
+        assert_eq!(this.snapshot(cx).value(Field::ModelThinking),vec![Slot::Set(json!({"p/m":"low","missing/model":false,"p/new":"off"}))]);
+        assert!(this.refresh_conflicts.contains(&Field::ModelOverrides));
+        assert!(this.refresh_conflicts.contains(&Field::ModelThinking));
+    });
+    save(&config, Page::Conversation, visual);
+    assert_eq!(
+        read(&path)["compaction"]["modelOverrides"]["p/m"],
+        json!({"reserveTokens":300,"keepRecentTokens":250,"unknown":true})
+    );
+    config.read_with(visual, |this, cx| assert!(!this.has_unsaved(cx)));
+}
+
+// Restoring one business leaf must clear its accepted/unmounted draft without
+// clearing another editor at the same map root or losing its source issue.
+#[gpui_kit::test]
+fn token_restore_and_row_delete_discard_only_the_named_editors(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    let path = agent.path().join("settings.json");
+    fs::write(&path,r#"{"compaction":{"modelOverrides":{"p/a":{"reserveTokens":100},"p/b":{"reserveTokens":200}}}}"#).unwrap();
+    let (config, visual) = setup(cx, agent.path());
+    let (a, b) = visual.update(|window, cx| {
+        let a = config.update(cx, |this, cx| this.token_input("p/a", false, window, cx));
+        let b = config.update(cx, |this, cx| this.token_input("p/b", false, window, cx));
+        for input in [&a, &b] {
+            input.update(cx, |input, cx| {
+                input.set_value("-", window, cx);
+                cx.emit(gpui_kit::component::input::InputEvent::Change);
+            });
+        }
+        (a, b)
+    });
+    visual.run_until_parked();
+    config.update(visual, |this, cx| {
+        assert!(this.token_status("p/a", false, cx).has_draft());
+        let other = this.token_status("p/b", false, cx);
+        assert!(other.has_draft());
+        assert_eq!(other.issues().len(), 1);
+        assert!(!this.token_status("p/b", true, cx).has_draft());
+        this.map_inputs
+            .remove(&super::map_controls::MapInputKey("p/a".into(), false));
+        assert!(
+            this.token_status("p/a", false, cx).has_draft(),
+            "Form owns an unmounted editor's draft"
+        );
+        this.set_token("p/a", false, Slot::Unset, cx);
+    });
+    visual.run_until_parked();
+    config.read_with(visual, |this, cx| {
+        assert!(!this.token_status("p/a", false, cx).has_draft());
+        assert!(this.token_status("p/b", false, cx).has_draft());
+        assert_eq!(this.token_status("p/b", false, cx).issues().len(), 1);
+    });
+    assert_eq!(b.read_with(visual, |input, _| input.value()), "-");
+    save(&config, Page::Conversation, visual);
+    assert_eq!(
+        read(&path)["compaction"]["modelOverrides"]["p/a"]["reserveTokens"],
+        100
+    );
+    config.update(visual, |this, cx| {
+        this.remove_map_row(Field::ModelOverrides, "p/b", cx)
+    });
+    visual.run_until_parked();
+    save(&config, Page::Conversation, visual);
+    config.read_with(visual, |this, cx| assert!(!this.has_unsaved(cx)));
+    assert!(
+        read(&path)["compaction"]["modelOverrides"]["p/a"]
+            .get("reserveTokens")
+            .is_none()
+    );
+    assert!(
+        read(&path)["compaction"]["modelOverrides"]["p/b"]
+            .get("reserveTokens")
+            .is_none()
+    );
+    drop(a);
+}
+
+// A leaf restore must cancel its not-yet-admitted input while letting the
+// neighboring key's native input proceed through the production adapter.
+#[gpui_kit::test]
+fn token_restore_cancels_its_pending_input_without_cancelling_another_key(cx: &mut TestAppContext) {
+    let agent = tempfile::tempdir().unwrap();
+    fs::write(agent.path().join("settings.json"),r#"{"compaction":{"modelOverrides":{"p/a":{"reserveTokens":100},"p/b":{"reserveTokens":200}}}}"#).unwrap();
+    let (config, visual) = setup(cx, agent.path());
+    visual.update(|window, cx| {
+        let a = config.update(cx, |this, cx| this.token_input("p/a", false, window, cx));
+        let b = config.update(cx, |this, cx| this.token_input("p/b", false, window, cx));
+        for (input, text) in [(a, "999"), (b, "333")] {
+            input.update(cx, |input, cx| {
+                input.set_value(text, window, cx);
+                cx.emit(gpui_kit::component::input::InputEvent::Change);
+            });
+        }
+        // InputEvent delivery reserves the tickets before the explicit action,
+        // while mapped storage writes remain deferred until after this callback.
+        let config = config.clone();
+        cx.defer(move |cx| {
+            config.update(cx, |this, cx| {
+                assert!(matches!(
+                    this.conversation.update(cx, |form, cx| form.prepare(cx)),
+                    Err(gpui_form::PrepareError::EditsPending)
+                ));
+                this.set_token("p/a", false, Slot::Set(100), cx);
+            })
+        });
+    });
+    visual.run_until_parked();
+    config.read_with(visual, |this, cx| {
+        assert_eq!(this.token_slot("p/a", false, cx), Slot::Set(100));
+        assert_eq!(this.token_slot("p/b", false, cx), Slot::Set(333));
+        assert!(!this.token_status("p/a", false, cx).has_draft());
+    });
+}
+
+// Returning to the file's unreadable token must clear an editing draft and
+// leave the raw value intact when another token on the page is saved.
+#[gpui_kit::test]
+fn token_correction_restores_unreadable_baseline_without_losing_other_edits(
+    cx: &mut TestAppContext,
+) {
+    let agent = tempfile::tempdir().unwrap();
+    let path = agent.path().join("settings.json");
+    fs::write(&path, r#"{"compaction":{"modelOverrides":{"p/a":{"reserveTokens":"raw","custom":true},"p/b":{"reserveTokens":200}}}}"#).unwrap();
+    let (config, visual) = setup(cx, agent.path());
+    let (a, b) = visual.update(|window, cx| {
+        let a = config.update(cx, |this, cx| this.token_input("p/a", false, window, cx));
+        let b = config.update(cx, |this, cx| this.token_input("p/b", false, window, cx));
+        for (input, text) in [(&a, "-"), (&b, "300")] {
+            input.update(cx, |input, cx| {
+                input.set_value(text, window, cx);
+                cx.emit(gpui_kit::component::input::InputEvent::Change);
+            });
+        }
+        (a, b)
+    });
+    visual.run_until_parked();
+    assert!(config.read_with(visual, |this, cx| {
+        this.token_status("p/a", false, cx).has_draft()
+    }));
+    visual.update(|window, cx| {
+        a.update(cx, |input, cx| {
+            input.set_value("raw", window, cx);
+            cx.emit(gpui_kit::component::input::InputEvent::Change);
+        })
+    });
+    visual.run_until_parked();
+    config.read_with(visual, |this, cx| {
+        assert!(!this.token_status("p/a", false, cx).has_draft());
+        assert_eq!(
+            this.token_slot("p/a", false, cx),
+            Slot::Unreadable(json!("raw"))
+        );
+    });
+    save(&config, Page::Conversation, visual);
+    assert_eq!(
+        read(&path)["compaction"]["modelOverrides"],
+        json!({"p/a":{"reserveTokens":"raw","custom":true},"p/b":{"reserveTokens":300}})
+    );
+    config.read_with(visual, |this, cx| assert!(!this.has_unsaved(cx)));
+    drop(b);
+}
+
+// A remote opaque map/row overlaps newly added local tokens. Keeping the local
+// choice must still surface a refresh conflict, even without a shared leaf key.
+#[gpui_kit::test]
+fn map_reload_surfaces_opaque_parent_conflicts(cx: &mut TestAppContext) {
+    for remote in [json!(false), json!({"p/m":false})] {
+        let agent = tempfile::tempdir().unwrap();
+        let path = agent.path().join("settings.json");
+        fs::write(&path, "{}").unwrap();
+        let (config, visual) = setup(cx, agent.path());
+        config.update(visual, |this, cx| {
+            this.set_token("p/m", false, Slot::Set(100), cx)
+        });
+        fs::write(
+            &path,
+            json!({"compaction":{"modelOverrides":remote}}).to_string(),
+        )
+        .unwrap();
+        config.update(visual, |this, cx| this.reload(cx));
+        visual.run_until_parked();
+        config.read_with(visual, |this, cx| {
+            assert_eq!(this.token_slot("p/m", false, cx), Slot::Set(100));
+            assert!(this.refresh_conflicts.contains(&Field::ModelOverrides));
+        });
     }
 }

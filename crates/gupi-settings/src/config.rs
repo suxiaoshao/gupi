@@ -485,7 +485,9 @@ impl ConfigController {
             if let Some(form) = self.form.upgrade() {
                 let mut draft = AppConfig::ROOT.get(&form, cx);
                 change.apply(&mut draft);
-                AppConfig::ROOT.set(&form, draft, cx);
+                AppConfig::ROOT
+                    .set(&form, draft, cx)
+                    .expect("preferences contain no dynamic draft paths");
             }
             return;
         }
@@ -603,6 +605,8 @@ impl ConfigController {
         {
             return;
         }
+        let discard_forms = matches!(action, ConfigRepair::BackupAndReset)
+            || self.store.read(cx, |op| op.data().is_none());
         let version = pending.as_ref().and_then(|p| p.version);
         let rebase_setup = matches!(
             action,
@@ -659,25 +663,18 @@ impl ConfigController {
                 owner.store.update(cx, |op| op.transition(Complete(result)));
                 if let Some(value) = value {
                     if rebase_pi {
-                        owner.pi_form.update(cx, |form, cx| {
-                            let draft = PiSettings {
+                        install_form(
+                            owner.pi_form.clone(),
+                            pi_version,
+                            PiSettings {
                                 command: value.pi_command.clone(),
-                            };
-                            if let Some(version) = pi_version {
-                                form.rebase_if_current(version, draft, cx);
-                            } else {
-                                form.rebase(draft, cx);
-                            }
-                        });
+                            },
+                            discard_forms,
+                            cx,
+                        );
                     }
-                    if rebase_setup {
-                        let _ = owner.form.update(cx, |form, cx| {
-                            if let Some(version) = version {
-                                form.rebase_if_current(version, value, cx);
-                            } else {
-                                form.rebase(value, cx);
-                            }
-                        });
+                    if rebase_setup && let Some(form) = owner.form.upgrade() {
+                        install_form(form, version, value, discard_forms, cx);
                     }
                 }
                 cx.notify();
@@ -692,6 +689,38 @@ impl ConfigController {
             }),
         });
         cx.notify();
+    }
+}
+
+/// Retry a pending lifecycle only after native admission, never by discarding drafts.
+fn install_form<M: gpui_form::FormSchema>(
+    form: Entity<Form<M>>,
+    version: Option<FormVersion>,
+    value: M,
+    discard: bool,
+    cx: &mut App,
+) {
+    if let Some(version) = version {
+        if !form.update(cx, |f, cx| f.rebase_if_current(version, value, cx)) {
+            tracing::warn!("Saved configuration retained newer form edits");
+        }
+        return;
+    }
+    let result = form.update(cx, |f, cx| {
+        if discard {
+            f.rebase(value.clone(), gpui_form::DraftPolicy::Discard, cx)
+        } else {
+            f.rebase_preserving_edits(value.clone(), cx)
+        }
+    });
+    match result {
+        Ok(_) => {}
+        Err(gpui_form::LifecycleError::EditsPending) => {
+            cx.defer(move |cx| install_form(form, None, value, discard, cx))
+        }
+        Err(error) => {
+            tracing::warn!(%error,"Configuration form installation rejected; drafts retained")
+        }
     }
 }
 
@@ -739,6 +768,74 @@ mod update_preference_tests {
         assert_eq!(value.auto_check_updates, Some(false));
         assert!(!value.checks_updates_automatically());
         assert!(value.prewarm_temporary);
+    }
+
+    // Reload must preserve unsaved Pi-command edits; a late successful save
+    // must not replace newer edits through the controller's normal I/O entry.
+    #[gpui_kit::test]
+    async fn reload_and_late_pi_save_preserve_the_editing_session(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        use super::*;
+        cx.executor().allow_parking();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("config.toml");
+        std::fs::write(&path, "language = 'english'\npi_command = 'first'\n").unwrap();
+        let (form, config) = cx.update(|cx| {
+            gpui_kit::init(cx);
+            cx.set_global(crate::host::Host::headless());
+            let form = cx.new(|_| Form::new(AppConfig::default()));
+            let config = cx.new(|cx| ConfigController::at_path(&form, Ok(path.clone()), cx));
+            config.update(cx, |owner, cx| owner.reload(cx));
+            (form, config)
+        });
+        cx.condition(&config, |owner, cx| !owner.is_running(cx))
+            .await;
+        let pi = config.read_with(cx, |owner, _| owner.pi_form().clone());
+        cx.update(|cx| {
+            PiSettings::COMMAND
+                .set(&pi, Some("local".into()), cx)
+                .unwrap()
+        });
+        std::fs::write(&path, "language = 'chinese'\npi_command = 'remote'\n").unwrap();
+        config.update(cx, |owner, cx| owner.reload(cx));
+        cx.condition(&config, |owner, cx| !owner.is_running(cx))
+            .await;
+        assert_eq!(
+            cx.update(|cx| PiSettings::COMMAND.get(&pi, cx)).as_deref(),
+            Some("local")
+        );
+        assert_eq!(
+            cx.update(|cx| PiSettings::COMMAND.baseline(&pi, cx))
+                .as_deref(),
+            Some("remote")
+        );
+        assert_eq!(
+            cx.update(|cx| AppConfig::ROOT.get(&form, cx)).language,
+            AppLanguage::Chinese
+        );
+        config.update(cx, |owner, cx| owner.submit_pi(cx).unwrap());
+        cx.update(|cx| {
+            PiSettings::COMMAND
+                .set(&pi, Some("newer".into()), cx)
+                .unwrap()
+        });
+        cx.condition(&config, |owner, cx| !owner.is_running(cx))
+            .await;
+        assert_eq!(
+            read_config(path, false)
+                .unwrap()
+                .configured()
+                .unwrap()
+                .pi_command
+                .as_deref(),
+            Some("local")
+        );
+        assert_eq!(
+            cx.update(|cx| PiSettings::COMMAND.get(&pi, cx)).as_deref(),
+            Some("newer")
+        );
+        assert!(pi.read_with(cx, |form, _| form.is_dirty()));
     }
 
     #[gpui_kit::test]

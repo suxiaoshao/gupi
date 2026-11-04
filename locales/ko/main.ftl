@@ -1450,3 +1450,8 @@ tool-nested-recent = 최근 8개만 표시
 tool-nested-incomplete = Pi 기록이 불완전합니다. 호출이나 인수가 생략되었거나 완료되지 않은 호출이 있을 수 있습니다.
 tool-nested-arguments-omitted = Pi가 이 인수를 생략했습니다.
 tool-nested-duration = { $milliseconds }밀리초
+
+pi-settings-newer-edits = 설정은 저장되었지만 이후 편집 내용이 남아 있습니다. 다시 저장하기 전에 저장된 페이지의 새 편집 내용을 버리세요.
+pi-settings-refresh-conflict = 파일이 외부에서 변경되었습니다. 로컬 편집 내용은 유지됩니다. 저장하여 적용하거나 편집 내용을 버리세요.
+pi-map-refresh-draft = 로컬 맵과 잘못된 입력이 유지되었습니다. 입력을 수정하거나 버린 다음 다시 불러와 다른 키를 병합하세요.
+pi-settings-refresh-rejected = 새로 고침을 적용할 수 없습니다. 편집 내용은 유지됩니다.

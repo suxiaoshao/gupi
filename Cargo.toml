@@ -34,11 +34,12 @@ gpui = { package = "gpui-pre", version = "=0.3.9" }
 gpui-kit = "=0.8.0"
 
 # These services and their transitive workspace crates share one Git source.
-app-theme = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "3ade6e9f829dc96864a05a1c094767efdae6bb56", default-features = false }
-gpui-form = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "3ade6e9f829dc96864a05a1c094767efdae6bb56", features = ["garde-adapter"] }
-gpui-operation = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "3ade6e9f829dc96864a05a1c094767efdae6bb56" }
-gpui-store = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "3ade6e9f829dc96864a05a1c094767efdae6bb56" }
-platform-ext = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "3ade6e9f829dc96864a05a1c094767efdae6bb56" }
+app-theme = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "2d14af959a72850a456876267c01faf81637bc4d", default-features = false }
+gpui-form = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "2d14af959a72850a456876267c01faf81637bc4d", features = ["garde-adapter"] }
+gpui-form-gpui-component = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "2d14af959a72850a456876267c01faf81637bc4d" }
+gpui-operation = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "2d14af959a72850a456876267c01faf81637bc4d" }
+gpui-store = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "2d14af959a72850a456876267c01faf81637bc4d" }
+platform-ext = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "2d14af959a72850a456876267c01faf81637bc4d" }
 
 # Internal crates are released with Gupi.
 gupi-conversation-ui = { version = "0.1.12", path = "crates/gupi-conversation-ui" }
@@ -48,8 +49,8 @@ gupi-settings = { version = "0.1.12", path = "crates/gupi-settings" }
 gupi-updates = { version = "0.1.12", path = "crates/gupi-updates" }
 gupi-resources = { version = "0.1.12", path = "crates/gupi-resources" }
 gupi-pi-runtime = { version = "0.1.0", path = "crates/gupi-pi-runtime" }
-gpui-lucide = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "3ade6e9f829dc96864a05a1c094767efdae6bb56" }
-gpui-tokio = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "3ade6e9f829dc96864a05a1c094767efdae6bb56" }
+gpui-lucide = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "2d14af959a72850a456876267c01faf81637bc4d" }
+gpui-tokio = { version = "0.1.0", git = "https://github.com/suxiaoshao/gpui", rev = "2d14af959a72850a456876267c01faf81637bc4d" }
 pi-rpc = { version = "0.1.0", path = "crates/pi-rpc" }
 window-ext = { version = "0.1.0", path = "crates/window-ext" }
 
@@ -86,6 +87,7 @@ gupi-resources.workspace = true
 gupi-pi-runtime.workspace = true
 app-theme = { workspace = true, features = ["system-accent"] }
 gpui-form.workspace = true
+gpui-form-gpui-component.workspace = true
 gpui-kit = { workspace = true, features = ["syntect"] }
 gpui-operation.workspace = true
 gpui-tokio.workspace = true

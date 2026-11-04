@@ -187,13 +187,17 @@ impl PiConfig {
         }
         if self.patterns(cx).is_none() {
             let rows = self.model_scope_rows(cx)?;
-            ConversationDraft::ENABLED_MODELS.set(
+            if let Err(error) = ConversationDraft::ENABLED_MODELS.set(
                 &self.conversation,
                 ModelScopeSlot::Set(ModelScope {
                     patterns: rows.into_iter().map(|text| Pattern { text }).collect(),
                 }),
                 cx,
-            );
+            ) {
+                self.error = Some(error.to_string());
+                cx.notify();
+                return None;
+            }
             let paths = self
                 .patterns(cx)?
                 .try_items(&self.conversation, cx)
@@ -300,8 +304,12 @@ impl PiConfig {
             .expect("active collection")
             .is_empty()
             && matches!(self.scope, Scope::Global)
+            && let Err(error) =
+                ConversationDraft::ENABLED_MODELS.set(&self.conversation, ModelScopeSlot::Unset, cx)
         {
-            ConversationDraft::ENABLED_MODELS.set(&self.conversation, ModelScopeSlot::Unset, cx);
+            self.error = Some(error.to_string());
+            cx.notify();
+            return;
         }
         cx.notify();
     }

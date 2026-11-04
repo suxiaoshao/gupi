@@ -67,8 +67,6 @@ fn drafts_show_the_pending_value_or_the_inherited_one() {
         (removed.values, removed.source),
         (vec![Some(json!(5))], Source::Global)
     );
-    let invalid = files.resolve(Field::MaxRetries, Some(&[Slot::Invalid("x".into())]));
-    assert_eq!(invalid.values, vec![Some(json!(1))]);
 }
 
 #[test]
@@ -102,7 +100,7 @@ fn a_partial_model_override_is_kept_as_read() {
 }
 
 #[test]
-fn changes_carry_their_base_and_skip_no_ops_and_invalid_text() {
+fn changes_carry_their_base_and_skip_no_ops() {
     let files = project(
         json!({}),
         json!({"steeringMode":"all","compaction":{"enabled":true}}),
@@ -111,7 +109,6 @@ fn changes_carry_their_base_and_skip_no_ops_and_invalid_text() {
     current.set(Field::Steering, vec![Slot::Set(json!("all"))]);
     current.set(Field::Compaction, vec![Slot::Set(json!(false))]);
     current.set(Field::Retry, vec![Slot::Set(json!(true))]);
-    current.set(Field::MaxRetries, vec![Slot::Invalid("-1".into())]);
     current.set(Field::FollowUp, vec![Slot::Unset]);
     let changes = files.changes(&current, &Snapshot::project(files.edited()), None);
     assert_eq!(
@@ -188,42 +185,18 @@ fn typed_projection_preserves_unreadable_and_only_validates_pending_fields() {
         vec![Slot::Unreadable(json!("bad"))]
     );
     assert!(files.changes(&baseline, &baseline, None).is_empty());
-    assert!(!baseline.invalid(Field::ModelScope, &baseline));
+    assert!(!baseline.business_invalid(Field::ModelScope, &baseline));
     let mut current = baseline.clone();
     current.set(Field::Compaction, vec![Slot::Set(json!(false))]);
-    assert!(!current.invalid(Field::ModelScope, &baseline));
+    assert!(!current.business_invalid(Field::ModelScope, &baseline));
     assert_eq!(
         files
             .changes(&current, &Snapshot::project(files.edited()), None)
             .len(),
         1
     );
-    current.set(Field::MaxRetries, vec![Slot::Invalid("-".into())]);
-    assert!(current.invalid(Field::MaxRetries, &baseline));
     current.set(Field::ModelScope, vec![Slot::Set(json!(["a", " "]))]);
-    assert!(current.invalid(Field::ModelScope, &baseline));
-}
-
-#[test]
-fn snapshot_merge_preserves_newer_edits_and_adopts_unedited_disk_values() {
-    let old = Snapshot::project(&document(json!({"retry":{"maxRetries":1,"baseDelayMs":2}})));
-    let next = Snapshot::project(&document(json!({"retry":{"maxRetries":4,"baseDelayMs":6}})));
-    let mut current = old.clone();
-    current.set(Field::MaxRetries, vec![Slot::Invalid("-".into())]);
-    let merged = Snapshot::merge(&current, &next, &old);
-    assert_eq!(
-        merged.value(Field::MaxRetries),
-        vec![Slot::Invalid("-".into())]
-    );
-    assert_eq!(merged.value(Field::BaseDelay), vec![Slot::Set(json!(6))]);
-    // A save reply uses the prepared value, preserving even a newer revert to the original value.
-    let mut prepared = old.clone();
-    prepared.set(Field::MaxRetries, vec![Slot::Set(json!(3))]);
-    let merged = Snapshot::merge(&old, &prepared, &prepared);
-    assert_eq!(
-        merged.value(Field::MaxRetries),
-        old.value(Field::MaxRetries)
-    );
+    assert!(current.business_invalid(Field::ModelScope, &baseline));
 }
 
 #[test]
@@ -261,12 +234,12 @@ fn safe_counts_raw_timeouts_and_argv_are_preserved() {
     );
     let mut current = baseline.clone();
     current.set(Field::NpmCommand, vec![Slot::Set(json!(["", "arg"]))]);
-    assert!(current.invalid(Field::NpmCommand, &baseline));
-    assert!(!baseline.invalid(Field::NpmCommand, &baseline));
+    assert!(current.business_invalid(Field::NpmCommand, &baseline));
+    assert!(!baseline.business_invalid(Field::NpmCommand, &baseline));
 }
 
 #[test]
-fn mapped_changes_are_token_leaves_and_reconcile_independently() {
+fn mapped_changes_are_token_leaves() {
     let doc = document(
         json!({"compaction":{"modelOverrides":{"p/m":{"reserveTokens":100,"keepRecentTokens":200,"unknown":true}}},"modelThinkingLevels":{"p/m":"high","missing/model":false}}),
     );
@@ -297,22 +270,6 @@ fn mapped_changes_are_token_leaves_and_reconcile_independently() {
         changes
             .iter()
             .any(|c| c.leaf() == ["modelThinkingLevels", "p/m"])
-    );
-    let next = Snapshot::project(&document(
-        json!({"compaction":{"modelOverrides":{"p/m":{"reserveTokens":150,"keepRecentTokens":250,"unknown":true},"p/new":{"reserveTokens":50}}},"modelThinkingLevels":{"p/m":"medium","missing/model":false,"p/new":"off"}}),
-    ));
-    let merged = Snapshot::merge(&current, &next, &baseline);
-    assert_eq!(
-        merged.value(Field::ModelOverrides),
-        vec![Slot::Set(
-            json!({"p/m":{"reserveTokens":300,"keepRecentTokens":250,"unknown":true},"p/new":{"reserveTokens":50}})
-        )]
-    );
-    assert_eq!(
-        merged.value(Field::ModelThinking),
-        vec![Slot::Set(
-            json!({"p/m":"low","missing/model":false,"p/new":"off"})
-        )]
     );
 }
 

@@ -31,7 +31,6 @@ impl ListSlot {
                     Err(_) => Self::Unreadable(RawValue { value }),
                 }
             }
-            Slot::Invalid(_) => unreachable!("list rows hold verbatim text"),
         }
     }
     pub(super) fn encode(&self) -> Slot<Value> {
@@ -87,7 +86,13 @@ impl PiConfig {
                 .into_iter()
                 .map(|text| ListItem { text })
                 .collect();
-            ToolsDraft::DEFAULT_TOOLS.set(&self.tools, ListSlot::Set(ListRows { items }), cx);
+            if let Err(error) =
+                ToolsDraft::DEFAULT_TOOLS.set(&self.tools, ListSlot::Set(ListRows { items }), cx)
+            {
+                self.error = Some(error.to_string());
+                cx.notify();
+                return None;
+            }
         }
         self.list_paths(Field::DefaultTools, cx)
     }

@@ -1,5 +1,7 @@
 # Gupi 开发文档
 
+**[GPUI Kit 0.9 全量升级](gpui-kit-0.9-upgrade/README.md)**：版本与 API 迁移、89 条 release 审阅、全量依赖和原生验证，以及 #105/#106 的能力边界。
+
 **[自有设置页组合（Gupi #138 / #134）](issue-138/README.md)**：自有导航与可调分栏、SettingsRow 响应布局、T1 预览、快捷键胶囊、Pi 来源与草稿保存、零结果空态及验证。
 
 **[共享 Form 编辑会话契约（Gupi #139）](issue-139/README.md)**：Form 草稿与映射绑定、字段级 map 合并、编辑器范围弃稿、刷新/保存凭据，以及迁移验证。
@@ -20,7 +22,7 @@
 
 **[Pi 设置与项目级覆盖（Gupi #2）](issue-2/README.md)**：Pi 配置格式与接入研究、首批实施方案，以及 Gupi / Pi 分区下的 Pi 设置页面设计。
 
-**[Pi 配置页迁移到 gpui-form（Gupi #54）](issue-54/README.md)**：Pi 设置页草稿改由按页 Form 持有、作用域叶值（未设置/已设置/无法读取/无效输入）、模型范围行身份与保存/重读生命周期（开发方案）。
+**[Pi 配置页迁移到 gpui-form（Gupi #54）](issue-54/README.md)**：Pi 设置页按页 Form 与领域边界；编辑会话、草稿和保存凭据按 #139 的当前契约。
 
 **[退出收尾、原生窗口句柄与 Windows 显示器标识（Gupi #58）](issue-58/README.md)**：退出时等待资源变更完成、原生窗口操作绑定 GPUI 窗口存活期、按 `HMONITOR` 解析屏幕缩放比例（开发方案）。
 

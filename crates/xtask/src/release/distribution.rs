@@ -129,11 +129,10 @@ fn quoted(value: &str) -> String {
 }
 
 fn language_code(culture: &str) -> u16 {
-    // msi 0.10 omits Taiwan and maps es-ES to traditional sort. These values
-    // match our WiX localizations (Taiwan and modern Spanish sort).
+    // Match the explicit WiX localizations (Taiwan and modern Spanish sort).
     match culture {
         "zh-TW" => 1028,
         "es-ES" => 3082,
-        _ => msi::Language::from_tag(culture).code(),
+        _ => msi::LanguageId::from_tag(culture).id(),
     }
 }

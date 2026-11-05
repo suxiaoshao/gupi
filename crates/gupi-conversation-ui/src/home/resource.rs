@@ -487,7 +487,8 @@ mod tests {
                 );
                 window.render_frame(cx);
                 window.dispatch_event(
-                    ScrollWheelEvent {
+                    ScrollEvent {
+                        source: ScrollSource::Pointer,
                         position,
                         delta: ScrollDelta::Pixels(point(px(0.), px(20.))),
                         modifiers,
@@ -567,7 +568,8 @@ mod tests {
                     assert_eq!(after.origin - prior.origin, point(px(55.), px(44.)), "{button:?} drag pans through the final release position");
                 }
                 let prior = window.find("image-preview-bitmap").bounds();
-                window.dispatch_event(ScrollWheelEvent {
+                window.dispatch_event(ScrollEvent {
+                    source: ScrollSource::Pointer,
                     position, delta: ScrollDelta::Pixels(point(px(37.), px(0.))), modifiers: Modifiers::default(), touch_phase: TouchPhase::Moved,
                 }.to_platform_input(), cx);
                 window.render_frame(cx);

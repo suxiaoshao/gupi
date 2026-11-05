@@ -291,7 +291,7 @@ fn static_refresh_keeps_geometry_scroll_selection_and_pending_body(cx: &mut Test
             .filter_map(|e| e.label().map(|label| (label.to_owned(), e.bounds())))
             .collect::<Vec<_>>()
     });
-    visual.simulate_event(ScrollWheelEvent {
+    visual.simulate_event(ScrollEvent {
         position: body.center(),
         delta: ScrollDelta::Pixels(point(px(0.), px(-180.))),
         ..Default::default()

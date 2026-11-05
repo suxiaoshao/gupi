@@ -78,7 +78,9 @@ pub(crate) fn run() {
         .unwrap_or_default();
     #[cfg(target_os = "macos")]
     platform_ext::app::set_application_language_override(i18n::native_locale(initial_language));
-    let app = gpui_kit::application().with_assets(Assets::default());
+    let app = gpui_kit::application()
+        .with_assets(Assets::default())
+        .with_http_client(std::sync::Arc::new(reqwest_client::ReqwestClient::new()));
     app.on_reopen(|cx| cx.defer(|cx| show(None, cx)));
     app.run(move |cx| {
         #[cfg(feature = "performance")]

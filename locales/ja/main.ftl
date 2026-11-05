@@ -1424,7 +1424,6 @@ quote-clear = 引用をすべて削除
 quote-edit-label = コメント { $number } を編集：{ $source }
 files-unavailable = プレビューできません
 files-open-external = デフォルトのアプリで開く
-files-open-remote-image = ブラウザーで画像を開く
 image-preview-fit = 全体を表示
 image-preview-actual-size = 実際のサイズ
 

@@ -1431,7 +1431,6 @@ quote-clear = 清空引用
 quote-edit-label = 編輯評論 { $number }：{ $source }
 files-unavailable = 無法預覽
 files-open-external = 用預設應用程式開啟
-files-open-remote-image = 在瀏覽器中開啟圖片
 image-preview-fit = 符合視窗
 image-preview-actual-size = 原始尺寸
 

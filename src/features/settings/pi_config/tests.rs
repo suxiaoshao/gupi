@@ -11,10 +11,12 @@ use super::supports;
 use gpui_kit::AppContext as _;
 use gpui_kit::Context;
 use gpui_kit::Entity;
+use gpui_kit::EntityInputHandler as _;
 use gpui_kit::IntoElement;
 use gpui_kit::Render;
 use gpui_kit::TestAppContext;
 use gpui_kit::Window;
+use gpui_kit::component::input::InputState;
 use gpui_kit::div;
 use gpui_operation::Settle;
 use gpui_operation::Transition as _;
@@ -109,6 +111,17 @@ fn save(config: &Entity<PiConfig>, page: Page, window: &mut gpui_kit::VisualTest
     window.run_until_parked();
 }
 
+// Drive the same edit entry as native typing; set_value is silent projection.
+fn native_input(
+    input: &mut InputState,
+    text: &str,
+    window: &mut Window,
+    cx: &mut Context<InputState>,
+) {
+    let range = 0..input.value().encode_utf16().count();
+    input.replace_text_in_range(Some(range), text, window, cx);
+}
+
 fn input_text(
     config: &Entity<PiConfig>,
     field: Field,
@@ -118,8 +131,7 @@ fn input_text(
     visual.update(|window, cx| {
         let input = config.update(cx, |this, cx| this.input(field, window, cx));
         input.update(cx, |input, cx| {
-            input.set_value(text.to_owned(), window, cx);
-            cx.emit(gpui_kit::component::input::InputEvent::Change);
+            native_input(input, text, window, cx);
         });
     });
     visual.run_until_parked();
@@ -633,8 +645,7 @@ fn model_scope_row_actions_follow_the_row(cx: &mut TestAppContext) {
         cx.update(|window, cx| config.update(cx, |this, cx| this.row_input(&a, "p/a", window, cx)));
     cx.update(|window, cx| {
         input.update(cx, |input, cx| {
-            input.set_value("p/x", window, cx);
-            cx.emit(gpui_kit::component::input::InputEvent::Change);
+            native_input(input, "p/x", window, cx);
         })
     });
     cx.run_until_parked();
@@ -709,10 +720,8 @@ fn bound_invalid_input_survives_reload_and_other_page_save_and_reverts(cx: &mut 
     });
     window.update(|window, cx| {
         input.update(cx, |input, cx| {
-            input.set_value("-", window, cx);
-            cx.emit(gpui_kit::component::input::InputEvent::Change);
-            input.set_value("1", window, cx);
-            cx.emit(gpui_kit::component::input::InputEvent::Change);
+            native_input(input, "-", window, cx);
+            native_input(input, "1", window, cx);
         });
     });
     window.run_until_parked();
@@ -722,8 +731,7 @@ fn bound_invalid_input_survives_reload_and_other_page_save_and_reverts(cx: &mut 
     );
     window.update(|window, cx| {
         input.update(cx, |input, cx| {
-            input.set_value("-", window, cx);
-            cx.emit(gpui_kit::component::input::InputEvent::Change);
+            native_input(input, "-", window, cx);
         })
     });
     window.run_until_parked();
@@ -774,8 +782,7 @@ fn inherited_rows_transfer_inputs_and_reject_old_callbacks_after_reload(cx: &mut
     // A queued callback from the old native entity must not target its replacement.
     window.update(|window, cx| {
         input.update(cx, |input, cx| {
-            input.set_value("abandoned", window, cx);
-            cx.emit(gpui_kit::component::input::InputEvent::Change);
+            native_input(input, "abandoned", window, cx);
         });
         config.update(cx, |this, cx| {
             this.discard(Some(Page::Conversation), cx);
@@ -788,11 +795,9 @@ fn inherited_rows_transfer_inputs_and_reject_old_callbacks_after_reload(cx: &mut
     assert!(!config.read_with(window, |this, cx| this.has_unsaved(cx)));
     window.update(|window, cx| {
         input.update(cx, |input, cx| {
-            input.set_value("p/b'", window, cx);
-            cx.emit(gpui_kit::component::input::InputEvent::Change);
+            native_input(input, "p/b'", window, cx);
             // Consecutive native input before the deferred handoff must keep the newest text.
-            input.set_value("p/b''", window, cx);
-            cx.emit(gpui_kit::component::input::InputEvent::Change);
+            native_input(input, "p/b''", window, cx);
         })
     });
     window.run_until_parked();
@@ -824,8 +829,7 @@ fn inherited_rows_transfer_inputs_and_reject_old_callbacks_after_reload(cx: &mut
         .update(|window, cx| config.update(cx, |this, cx| this.row_input(&key, "p/b", window, cx)));
     window.update(|window, cx| {
         input.update(cx, |input, cx| {
-            input.set_value("stale", window, cx);
-            cx.emit(gpui_kit::component::input::InputEvent::Change);
+            native_input(input, "stale", window, cx);
         });
         config.update(cx, |this, cx| this.reload(cx));
     });
@@ -975,8 +979,7 @@ fn tool_last_row_and_argv_use_distinct_empty_rules(cx: &mut TestAppContext) {
             this.set_values(Field::NpmCommand, vec![Slot::Set(json!(["npm"]))], cx);
             let input = this.input(Field::NpmCommand, window, cx);
             input.update(cx, |input, cx| {
-                input.set_value("", window, cx);
-                cx.emit(gpui_kit::component::input::InputEvent::Change);
+                native_input(input, "", window, cx);
             });
         })
     });
@@ -1073,8 +1076,7 @@ fn inherited_model_input_keeps_invalid_text_across_other_page_save(cx: &mut Test
     });
     window.update(|window, cx| {
         input.update(cx, |input, cx| {
-            input.set_value("-", window, cx);
-            cx.emit(gpui_kit::component::input::InputEvent::Change);
+            native_input(input, "-", window, cx);
         })
     });
     window.run_until_parked();
@@ -1178,8 +1180,7 @@ fn compact_tools_append_remove_and_npm_invalid_input(cx: &mut TestAppContext) {
             );
             let input = this.input(Field::NpmCommand, window, cx);
             input.update(cx, |input, cx| {
-                input.set_value("npm 'unfinished", window, cx);
-                cx.emit(gpui_kit::component::input::InputEvent::Change);
+                native_input(input, "npm 'unfinished", window, cx);
             });
         })
     });
@@ -1197,8 +1198,7 @@ fn compact_tools_append_remove_and_npm_invalid_input(cx: &mut TestAppContext) {
     });
     visual.update(|window, cx| {
         input.update(cx, |input, cx| {
-            input.set_value("npm '' ' run '", window, cx);
-            cx.emit(gpui_kit::component::input::InputEvent::Change);
+            native_input(input, "npm '' ' run '", window, cx);
         })
     });
     visual.run_until_parked();
@@ -1222,8 +1222,7 @@ fn grouped_budget_inputs_reconcile_independently(cx: &mut TestAppContext) {
             for (field, text) in [(Field::BudgetMinimal, "10"), (Field::BudgetHigh, "40")] {
                 let input = this.input(field, window, cx);
                 input.update(cx, |input, cx| {
-                    input.set_value(text, window, cx);
-                    cx.emit(gpui_kit::component::input::InputEvent::Change);
+                    native_input(input, text, window, cx);
                 });
             }
             this.set_values(Field::Transport, vec![Slot::Set(json!("sse"))], cx);
@@ -1419,8 +1418,7 @@ fn late_save_keeps_newer_native_edit_and_requires_explicit_page_discard(cx: &mut
         });
         // Commit at the native entry while the save result is still outstanding.
         input.update(cx, |input, cx| {
-            input.set_value("100", window, cx);
-            cx.emit(gpui_kit::component::input::InputEvent::Change);
+            native_input(input, "100", window, cx);
         });
     });
     visual.run_until_parked();
@@ -1518,8 +1516,7 @@ fn mounted_tokens_follow_unsaved_general_values_without_pinning_overrides(cx: &m
         assert_eq!(input.read_with(visual, |input, _| input.value()), "200");
         visual.update(|window, cx| {
             input.update(cx, |input, cx| {
-                input.set_value("200", window, cx);
-                cx.emit(gpui_kit::component::input::InputEvent::Change);
+                native_input(input, "200", window, cx);
             });
         });
         visual.run_until_parked();
@@ -1551,8 +1548,7 @@ fn inherited_token_editors_save_two_keys_without_pinning_other_inherited_leaves(
         let b = config.update(cx, |this, cx| this.token_input("p/b", true, window, cx));
         for (input, text) in [(a, "150"), (b, "450")] {
             input.update(cx, |input, cx| {
-                input.set_value(text, window, cx);
-                cx.emit(gpui_kit::component::input::InputEvent::Change);
+                native_input(input, text, window, cx);
             });
         }
     });
@@ -1577,8 +1573,7 @@ fn map_reload_merges_domain_keys_and_independent_token_leaves(cx: &mut TestAppCo
     visual.update(|window, cx| {
         let input = config.update(cx, |this, cx| this.token_input("p/m", false, window, cx));
         input.update(cx, |input, cx| {
-            input.set_value("300", window, cx);
-            cx.emit(gpui_kit::component::input::InputEvent::Change);
+            native_input(input, "300", window, cx);
         });
     });
     visual.run_until_parked();
@@ -1619,8 +1614,7 @@ fn token_restore_and_row_delete_discard_only_the_named_editors(cx: &mut TestAppC
         let b = config.update(cx, |this, cx| this.token_input("p/b", false, window, cx));
         for input in [&a, &b] {
             input.update(cx, |input, cx| {
-                input.set_value("-", window, cx);
-                cx.emit(gpui_kit::component::input::InputEvent::Change);
+                native_input(input, "-", window, cx);
             });
         }
         (a, b)
@@ -1683,11 +1677,10 @@ fn token_restore_cancels_its_pending_input_without_cancelling_another_key(cx: &m
         let b = config.update(cx, |this, cx| this.token_input("p/b", false, window, cx));
         for (input, text) in [(a, "999"), (b, "333")] {
             input.update(cx, |input, cx| {
-                input.set_value(text, window, cx);
-                cx.emit(gpui_kit::component::input::InputEvent::Change);
+                native_input(input, text, window, cx);
             });
         }
-        // InputEvent delivery reserves the tickets before the explicit action,
+        // InputEditsEvent delivery reserves the tickets before the explicit action,
         // while mapped storage writes remain deferred until after this callback.
         let config = config.clone();
         cx.defer(move |cx| {
@@ -1723,8 +1716,7 @@ fn token_correction_restores_unreadable_baseline_without_losing_other_edits(
         let b = config.update(cx, |this, cx| this.token_input("p/b", false, window, cx));
         for (input, text) in [(&a, "-"), (&b, "300")] {
             input.update(cx, |input, cx| {
-                input.set_value(text, window, cx);
-                cx.emit(gpui_kit::component::input::InputEvent::Change);
+                native_input(input, text, window, cx);
             });
         }
         (a, b)
@@ -1735,8 +1727,7 @@ fn token_correction_restores_unreadable_baseline_without_losing_other_edits(
     }));
     visual.update(|window, cx| {
         a.update(cx, |input, cx| {
-            input.set_value("raw", window, cx);
-            cx.emit(gpui_kit::component::input::InputEvent::Change);
+            native_input(input, "raw", window, cx);
         })
     });
     visual.run_until_parked();

@@ -219,7 +219,9 @@ impl EntryEditor {
                 )
             })
             .child(
-                gpui_kit::base::Button::new(SharedString::from(format!("add-{}", path_id(path))))
+                Button::new(SharedString::from(format!("add-{}", path_id(path))))
+                    .small()
+                    .ghost()
                     .track_focus(&add_focus)
                     .accessibility_label(t(
                         cx,
@@ -229,19 +231,6 @@ impl EntryEditor {
                             "pi-resource-add"
                         },
                     ))
-                    .h_6()
-                    .px_2()
-                    .rounded_md()
-                    .text_sm()
-                    .border_1()
-                    .border_color(if add_focus.is_focused(window) {
-                        cx.theme().ring
-                    } else {
-                        gpui_kit::transparent_black()
-                    })
-                    .cursor_pointer()
-                    .hover(|style| style.bg(cx.theme().accent))
-                    .active(|style| style.bg(cx.theme().accent))
                     .child(
                         h_flex()
                             .gap_1()

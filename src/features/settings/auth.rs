@@ -197,12 +197,12 @@ impl AuthPage {
         }
         let busy = self.loading.is_some() || self.saving.is_some();
         let add_focus = window
-            .use_keyed_state("auth-add-anchor", cx, |_, cx| {
-                cx.focus_handle().tab_stop(false)
+            .use_keyed_state("auth-add-focus", cx, |_, cx| {
+                cx.focus_handle().tab_stop(true)
             })
             .read(cx)
             .clone();
-        let add_anchor = add_focus.clone();
+        let add_trigger = add_focus.clone();
         let add = cx.entity();
         let mut body =
             v_flex()
@@ -216,22 +216,15 @@ impl AuthPage {
                     h_flex()
                         .gap_2()
                         .child(
-                            div().id("auth-add-focus").track_focus(&add_focus).child(
-                                Button::new("auth-add")
-                                    .small()
-                                    .label(t(cx, "pi-auth-add"))
-                                    .disabled(busy || self.file.is_none())
-                                    .on_click(move |_, w, cx| {
-                                        Self::focus_trigger(&add_anchor, &add_anchor, w, cx);
-                                        editor::Editor::open(
-                                            &add,
-                                            None,
-                                            add_anchor.downgrade(),
-                                            w,
-                                            cx,
-                                        )
-                                    }),
-                            ),
+                            Button::new("auth-add")
+                                .track_focus(&add_focus)
+                                .small()
+                                .label(t(cx, "pi-auth-add"))
+                                .disabled(busy || self.file.is_none())
+                                .on_click(move |_, w, cx| {
+                                    add_trigger.focus(w, cx);
+                                    editor::Editor::open(&add, None, add_trigger.downgrade(), w, cx)
+                                }),
                         )
                         .into_any_element(),
                 ));
@@ -293,17 +286,17 @@ impl AuthPage {
         for name in &self.names {
             let row_focus = window
                 .use_keyed_state(
-                    SharedString::from(format!("auth-row-anchor-{name}")),
+                    SharedString::from(format!("auth-row-focus-{name}")),
                     cx,
-                    |_, cx| cx.focus_handle().tab_stop(false),
+                    |_, cx| cx.focus_handle().tab_stop(true),
                 )
                 .read(cx)
                 .clone();
             let menu_focus = window
                 .use_keyed_state(
-                    SharedString::from(format!("auth-menu-anchor-{name}")),
+                    SharedString::from(format!("auth-menu-focus-{name}")),
                     cx,
-                    |_, cx| cx.focus_handle().tab_stop(false),
+                    |_, cx| cx.focus_handle().tab_stop(true),
                 )
                 .read(cx)
                 .clone();
@@ -350,117 +343,100 @@ impl AuthPage {
                 add_focus.clone(),
             );
             let check = (cx.entity(), name.clone());
-            let menu = (
-                cx.entity(),
-                entry.clone(),
-                menu_focus.clone(),
-                add_focus.clone(),
-            );
+            let menu = (cx.entity(), entry.clone(), menu_focus.clone());
             let checkable = pi_auth::checkable_provider(name);
-            let actions = h_flex()
-                .flex_wrap()
-                .gap_2()
-                .child(
-                    div()
-                        .id(SharedString::from(format!("auth-row-focus-{name}")))
-                        .track_focus(&row_focus)
-                        .child(
-                            Button::new(SharedString::from(format!("auth-row-{name}")))
-                                .small()
-                                .outline()
-                                .label(t(cx, Self::primary_label(entry.kind())))
-                                .accessibility_label(Self::row_label(&entry, cx))
-                                .disabled(busy)
-                                .on_click(move |_, window, cx| {
-                                    Self::focus_trigger(&primary.2, &primary.3, window, cx);
-                                    Self::activate_primary(
-                                        &primary.0,
-                                        primary.1.clone(),
-                                        primary.3.downgrade(),
-                                        window,
-                                        cx,
-                                    );
-                                }),
-                        ),
-                )
-                .child(
-                    Button::new(SharedString::from(format!("auth-check-{name}")))
-                        .small()
-                        .ghost()
-                        .label(t(cx, "pi-auth-check"))
-                        .loading(self.checking.contains_key(name))
-                        .disabled(busy || !checkable || self.checking.contains_key(name))
-                        .when(!checkable, |button| {
-                            button.tooltip(t(cx, "pi-auth-check-unavailable"))
-                        })
-                        .on_click(move |_, _, cx| {
-                            check
-                                .0
-                                .update(cx, |this, cx| this.check(check.1.clone(), cx))
-                        }),
-                )
-                .child(
-                    div()
-                        .id(SharedString::from(format!("auth-menu-focus-{name}")))
-                        .track_focus(&menu_focus)
-                        .child(
-                            Button::new(SharedString::from(format!("auth-menu-{name}")))
-                                .small()
-                                .ghost()
-                                .icon(IconName::Ellipsis)
-                                .tooltip(format!("{}: {}", t(cx, "pi-field-actions"), name))
-                                .accessibility_label(t(cx, "pi-field-actions"))
-                                .disabled(busy)
-                                .dropdown_menu(move |popup, _, cx| {
-                                    let navigate = menu.0.clone();
-                                    let remove = menu.clone();
-                                    popup
-                                        .when(
-                                            menu.0
-                                                .read(cx)
-                                                .model_names
-                                                .iter()
-                                                .any(|name| name == menu.1.provider()),
-                                            |popup| {
-                                                popup.item(
-                                                    PopupMenuItem::new(t(
-                                                        cx,
-                                                        "pi-auth-edit-models",
-                                                    ))
+            let actions =
+                h_flex()
+                    .flex_wrap()
+                    .gap_2()
+                    .child(
+                        Button::new(SharedString::from(format!("auth-row-{name}")))
+                            .track_focus(&row_focus)
+                            .small()
+                            .outline()
+                            .label(t(cx, Self::primary_label(entry.kind())))
+                            .accessibility_label(Self::row_label(&entry, cx))
+                            .disabled(busy)
+                            .on_click(move |_, window, cx| {
+                                primary.2.focus(window, cx);
+                                Self::activate_primary(
+                                    &primary.0,
+                                    primary.1.clone(),
+                                    primary.3.downgrade(),
+                                    window,
+                                    cx,
+                                );
+                            }),
+                    )
+                    .child(
+                        Button::new(SharedString::from(format!("auth-check-{name}")))
+                            .small()
+                            .ghost()
+                            .label(t(cx, "pi-auth-check"))
+                            .loading(self.checking.contains_key(name))
+                            .disabled(busy || !checkable || self.checking.contains_key(name))
+                            .when(!checkable, |button| {
+                                button.tooltip(t(cx, "pi-auth-check-unavailable"))
+                            })
+                            .on_click(move |_, _, cx| {
+                                check
+                                    .0
+                                    .update(cx, |this, cx| this.check(check.1.clone(), cx))
+                            }),
+                    )
+                    .child(
+                        Button::new(SharedString::from(format!("auth-menu-{name}")))
+                            .track_focus(&menu_focus)
+                            .small()
+                            .ghost()
+                            .icon(IconName::Ellipsis)
+                            .tooltip(format!("{}: {}", t(cx, "pi-field-actions"), name))
+                            .accessibility_label(t(cx, "pi-field-actions"))
+                            .disabled(busy)
+                            .dropdown_menu(move |popup, _, cx| {
+                                let navigate = menu.0.clone();
+                                let remove = menu.clone();
+                                popup
+                                    .when(
+                                        menu.0
+                                            .read(cx)
+                                            .model_names
+                                            .iter()
+                                            .any(|name| name == menu.1.provider()),
+                                        |popup| {
+                                            popup.item(
+                                                PopupMenuItem::new(t(cx, "pi-auth-edit-models"))
                                                     .on_click(move |_, _, cx| {
                                                         navigate.update(cx, |_, cx| {
                                                             cx.emit(super::CredentialPage::Models)
                                                         })
                                                     }),
-                                                )
-                                            },
-                                        )
-                                        .when(menu.1.kind() != Kind::Missing, |popup| {
-                                            popup.item(
-                                                PopupMenuItem::new(t(
-                                                    cx,
-                                                    if menu.1.kind() == Kind::OAuth {
-                                                        "pi-auth-logout"
-                                                    } else {
-                                                        "pi-auth-remove"
-                                                    },
-                                                ))
-                                                .on_click(move |_, window, cx| {
-                                                    let remove = remove.clone();
-                                                    window.defer(cx, move |window, cx| {
-                                                        Self::focus_trigger(
-                                                            &remove.2, &remove.3, window, cx,
-                                                        );
-                                                        Self::confirm_remove(
-                                                            &remove.0, remove.1, window, cx,
-                                                        );
-                                                    });
-                                                }),
                                             )
-                                        })
-                                }),
-                        ),
-                );
+                                        },
+                                    )
+                                    .when(menu.1.kind() != Kind::Missing, |popup| {
+                                        popup.item(
+                                            PopupMenuItem::new(t(
+                                                cx,
+                                                if menu.1.kind() == Kind::OAuth {
+                                                    "pi-auth-logout"
+                                                } else {
+                                                    "pi-auth-remove"
+                                                },
+                                            ))
+                                            .on_click(move |_, window, cx| {
+                                                let remove = remove.clone();
+                                                window.defer(cx, move |window, cx| {
+                                                    remove.2.focus(window, cx);
+                                                    Self::confirm_remove(
+                                                        &remove.0, remove.1, window, cx,
+                                                    );
+                                                });
+                                            }),
+                                        )
+                                    })
+                            }),
+                    );
             let title = super::provider_name(name, cx);
             body = body.child(
                 v_flex()
@@ -481,32 +457,6 @@ impl AuthPage {
         }
         body.into_any_element()
     }
-    // The anchor is not a tab stop. Public traversal reaches the real Button,
-    // whose private focus handle is then captured by the dialog for restoration.
-    fn focus_trigger(
-        anchor: &FocusHandle,
-        fallback: &FocusHandle,
-        window: &mut Window,
-        cx: &mut App,
-    ) {
-        if !Self::focus_anchor(anchor, window, cx) {
-            Self::focus_anchor(fallback, window, cx);
-        }
-    }
-    fn focus_anchor(anchor: &FocusHandle, window: &mut Window, cx: &mut App) -> bool {
-        let previous = window.focused(cx);
-        anchor.focus(window, cx);
-        window.focus_next(cx);
-        if anchor.contains_focused(window, cx) {
-            return true;
-        }
-        if let Some(previous) = previous {
-            previous.focus(window, cx);
-        } else {
-            window.blur(cx);
-        }
-        false
-    }
     fn restore_focus_if_lost(
         origin: Option<WeakFocusHandle>,
         fallback: WeakFocusHandle,
@@ -525,8 +475,7 @@ impl AuthPage {
             }
             if let Some(fallback) = fallback.upgrade() {
                 // Add is the stable logical fallback when the original row vanished.
-                // If it is no longer rendered/enabled, preserve the current focus.
-                Self::focus_anchor(&fallback, window, cx);
+                fallback.focus(window, cx);
             }
         });
     }

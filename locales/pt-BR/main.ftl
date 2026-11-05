@@ -1450,7 +1450,6 @@ quote-clear = Limpar citações
 quote-edit-label = Editar comentário { $number }: { $source }
 files-unavailable = Prévia indisponível
 files-open-external = Abrir com o aplicativo padrão
-files-open-remote-image = Abrir imagem no navegador
 image-preview-fit = Ajustar
 image-preview-actual-size = Tamanho real
 

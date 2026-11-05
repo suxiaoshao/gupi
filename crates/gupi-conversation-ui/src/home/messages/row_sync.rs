@@ -66,7 +66,7 @@ mod tests {
             state.update(cx, |state, cx| state.scroll_to_item(5, cx));
             window.draw(cx).clear(cx);
         });
-        visual.simulate_event(ScrollWheelEvent {
+        visual.simulate_event(ScrollEvent {
             position: point(px(200.), px(200.)),
             delta: ScrollDelta::Pixels(point(px(0.), px(-17.))),
             ..Default::default()

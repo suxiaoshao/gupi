@@ -67,7 +67,7 @@
 
 实现取舍：
 
-- `Settings` 0.7.1 不提供程序化选页；站内跳转以导航序号重建该组件的 keyed state 并设置 `default_selected_index`，因此跳转会清空侧栏搜索。
+- 当前站内导航由自有 SettingsView 持有稳定页面身份，搜索与选页行为见 [#138](../issue-138/README.md)。
 - 目录 HTTP 使用 `reqwest` 默认环境代理，读取 Gupi 进程环境中的 `HTTP(S)_PROXY`/`NO_PROXY`，与 Pi 子进程继承的环境一致；本机直连 npm 可用，因此未新增代理设置（C-6）。
 - 主题列宽未改，以免改变现有网格的多列布局约束。
 
@@ -94,26 +94,15 @@
 
 | 反馈 | 处理 | 状态 |
 | --- | --- | --- |
-| 整个页面滚动，应只有包列表滚动 | 包页面主体改为可挂载在“有界槽位”中：列表、详情、已安装列表各自持有滚动；上方搜索与下方列表页脚固定。`Settings` 0.7.1 把页面内容放进组列表 `list()`，每项按内容高度测量（`gpui-pre` `list.rs` 以 `AvailableSpace::MinContent` 布局），应用层无法得到有界高度；当前分支以内容高度挂载（`packages::Mount::Content`），页面仍整体滚动 | 需上游 API，见下 |
 | 未选择时右侧显示空白详情 | 未选择时列表占满宽度；选择后才出现详情，详情可关闭；主体宽度 < 640px 时详情替换列表并提供返回 | 已完成 |
 | 中间分隔线不能拖动 | 选择后使用 `h_resizable` + `ResizableState`（会话内保持） | 已完成 |
 | 已安装/浏览切换、来源说明、分页各占一行 | 已安装/浏览移入页面标题行；来源（npm · pi-package + Pi 包目录外链）与紧凑分页合并为列表的一个固定页脚；主体宽度 < 420px 时省略页码只保留翻页按钮。标题行沿用 `title_suffix`（固有宽度，不能伸缩），因此搜索保留为主体第一行 | 已完成 |
 
 宽窄判断以包页面主体自身宽度（`container_query`）为准，不再使用窗口宽度。选择、查询和分页的既有行为未改变。
 
-### 有界页面主体所需的上游改动
+### 包页有界滚动
 
-最小改动在 `gpui-component` 的 `setting/page.rs`（与锁定的 0.7.1 及本地 `suxiaoshao/gpui-kit` 当前源码一致）：
-
-- `SettingPage` 新增 `content: Option<Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>>` 与构建方法 `content(F)`。
-- 设置了 `content` 的页面在标题区下方渲染 `div().p_4().flex_1().min_h_0().w_full().child(content(window, cx))`，不再渲染组列表；页面的组仍提供搜索关键字与侧栏入口，因此搜索过滤无需改动。
-- 约 30 行，不改变现有页面行为。
-
-应用侧随之只需：包页面调用 `.content(...)` 渲染 `render_page(Kind::Extension, Section::Packages)`，并把挂载方式改为 `Mount::Bounded`。
-
-验证：在临时副本中以 `[patch.crates-io]` 指向打过补丁的 0.7.1 源码构建并运行（未改动本分支依赖），确认页面不再整体滚动、只有列表滚动、页脚与搜索固定、选择后可拖动分隔线、窄宽度下返回保留列表位置。本分支未升级、未打补丁、未发布任何依赖；是否提交上游、发布并升级 `gpui-kit = "=0.7.1"` 需用户决定。
-
-本轮检查：`cargo fmt --all -- --check`、`cargo clippy -p gupi --all-targets --locked -- -D warnings`、`cargo test -p gupi --locked features::settings`（10 项）通过；9 个语言文件键数一致（723）。macOS 原生检查覆盖分支构建（无空详情、拖动分隔线、标题行切换与列表页脚）与上述临时副本（仅列表滚动、窄宽度返回）。
+自有设置页已具备有界布局能力。包页列表/详情的独立滚动按 P1 留待升级后单独实施，不再等待 SettingPage 插槽；本次升级不改变滚动归属。见 [当前范围](../gpui-kit-0.9-upgrade/compromise-audit.md#p--包浏览的滚动归属)。
 
 ## 包目录错误恢复
 

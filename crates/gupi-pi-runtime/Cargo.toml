@@ -18,7 +18,7 @@ gpui-kit.workspace = true
 gpui-operation.workspace = true
 gpui-tokio.workspace = true
 pi-rpc.workspace = true
-tokio = { version = "1.54.0", features = ["process", "io-util", "time", "macros", "sync"] }
+tokio = { version = "1.54.1", features = ["process", "io-util", "time", "macros", "sync"] }
 tracing = "0.1.44"
 tempfile = "3.27.0"
 

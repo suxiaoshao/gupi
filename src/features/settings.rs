@@ -1,4 +1,5 @@
 mod auth;
+mod composition;
 mod config_files;
 mod global_keys;
 mod keys;
@@ -54,7 +55,6 @@ pub(crate) struct SettingsView {
     controller: Entity<ConfigController>,
     input: Entity<InputState>,
     pi_input: Entity<InputState>,
-    config_path: Entity<InputState>,
     _binding: ControlBinding,
     _pi_binding: ControlBinding,
     _subscriptions: Vec<Subscription>,
@@ -70,8 +70,12 @@ pub(crate) struct SettingsView {
     transition: Option<onboarding::PageTransition>,
     transition_serial: u64,
     page_scroll: [ScrollHandle; 4],
-    /// Settings navigation serial and requested page index in `domain`.
-    navigation: (usize, usize),
+    navigation: layout::PageId,
+    search: Entity<InputState>,
+    query: String,
+    settings_scroll: ScrollHandle,
+    settings_nav_scroll: ScrollHandle,
+    settings_split: Entity<gpui_kit::component::resizable::ResizableState>,
     domain: layout::Domain,
     pi_config: Entity<pi_config::PiConfig>,
     auth: Entity<auth::AuthPage>,
@@ -93,26 +97,22 @@ impl SettingsView {
         });
         let global_keys = cx.new(|_| global_keys::GlobalKeys::new(controller.clone()));
         let keys = cx.new(|cx| keys::KeysView::new(controller.clone(), window, cx));
-        let config_path = cx.new(|cx| {
-            InputState::new(window, cx).default_value(
-                controller
-                    .read(cx)
-                    .path()
-                    .map(|path| path.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-            )
-        });
         let resources_sub = cx.observe(&resources, |_, _, cx| cx.notify());
-        let package_sub = cx.subscribe(&resources, |this, _, event: &resources::Navigate, cx| {
-            this.open_page(
-                layout::Domain::Pi,
-                match event {
-                    resources::Navigate::Package => layout::PACKAGES_PAGE,
-                    resources::Navigate::Pi => layout::PI_PAGE,
-                },
-                cx,
-            )
-        });
+        let package_sub = cx.subscribe_in(
+            &resources,
+            window,
+            |this, _, event: &resources::Navigate, window, cx| {
+                this.open_page(
+                    layout::Domain::Pi,
+                    match event {
+                        resources::Navigate::Package => layout::PACKAGES_PAGE,
+                        resources::Navigate::Pi => layout::PI_PAGE,
+                    },
+                    window,
+                    cx,
+                )
+            },
+        );
         let pi_config = cx.new(|cx| pi_config::PiConfig::new(applied_pi.clone(), window, cx));
         resources.update(cx, |resources, cx| {
             resources.follow_scope(pi_config.clone(), window, cx)
@@ -212,6 +212,10 @@ impl SettingsView {
                     control.set_items(items, window, cx);
                     control.set_selected_value(&selected, window, cx);
                 });
+                let placeholder = t(cx, "settings-search");
+                this.search.update(cx, |input, cx| {
+                    input.set_placeholder(placeholder, window, cx)
+                });
                 cx.notify();
             });
         let temporary_sub =
@@ -243,18 +247,28 @@ impl SettingsView {
                 this.navigate_credentials(*page, window, cx);
             },
         );
+        let search = cx.new(|cx| InputState::new(window, cx).placeholder(t(cx, "settings-search")));
+        let search_sub = cx.subscribe(&search, |this, input, event, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.search_changed(input.read(cx).value().to_string(), cx);
+            }
+        });
+        let settings_split = cx.new(|_| gpui_kit::component::resizable::ResizableState::default());
+        let split_sub = cx.observe(&settings_split, |_, _, cx| cx.notify());
         Self {
             auth,
-            updates: cx.new(|cx| super::updates::UpdatesView::new(controller.clone(), cx)),
+            updates: cx
+                .new(|cx| super::updates::UpdatesView::new(controller.clone(), cx).in_settings()),
             focus_handle,
             form,
             controller,
             input,
             pi_input,
-            config_path,
             _binding: binding,
             _pi_binding: pi_binding,
             _subscriptions: vec![
+                split_sub,
+                search_sub,
                 auth_sub,
                 auth_navigation,
                 files_navigation,
@@ -284,7 +298,12 @@ impl SettingsView {
             transition: None,
             transition_serial: 0,
             page_scroll: std::array::from_fn(|_| ScrollHandle::new()),
-            navigation: (0, 0),
+            navigation: layout::PageId::General,
+            search,
+            query: String::new(),
+            settings_scroll: ScrollHandle::new(),
+            settings_nav_scroll: ScrollHandle::new(),
+            settings_split,
             domain: layout::Domain::Gupi,
             pi_config,
             language,
@@ -365,7 +384,7 @@ impl Render for SettingsView {
         if onboarding {
             return self.render_onboarding(window, cx).into_any_element();
         }
-        self.render_settings(cx)
+        self.render_settings(window, cx)
     }
 }
 impl SettingsView {
@@ -378,7 +397,7 @@ impl SettingsView {
     }
     fn render_config_actions(
         &self,
-        options: &gpui_kit::component::setting::RenderOptions,
+        _options: &composition::PageLayout,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let store = self.controller.read(cx).configuration();
@@ -398,45 +417,37 @@ impl SettingsView {
             .read(cx)
             .path()
             .map(std::path::Path::to_path_buf);
-        let mut view =
-            v_flex()
+        let mut view = v_flex().w_full().items_start().gap_2().child(
+            h_flex()
+                .w_full()
+                .min_w_0()
+                .flex_wrap()
                 .gap_2()
                 .child(
-                    div()
-                        .debug_selector(|| "settings-config-path".into())
-                        .child(Input::new(&self.config_path).readonly(true)),
+                    Button::new("reload-config")
+                        .debug_selector(|| "settings-config-reload".into())
+                        .small()
+                        .icon(IconName::RotateCw)
+                        .label(t(cx, "settings-reload"))
+                        .disabled(busy)
+                        .on_click(
+                            cx.listener(|this, _, _, cx| this.request(ConfigRepair::Reload, cx)),
+                        ),
                 )
                 .child(
-                    h_flex()
-                        .w_full()
-                        .min_w_0()
-                        .flex_wrap()
-                        .gap_2()
-                        .child(
-                            Button::new("reload-config")
-                                .debug_selector(|| "settings-config-reload".into())
-                                .small()
-                                .icon(IconName::RotateCw)
-                                .label(t(cx, "settings-reload"))
-                                .disabled(busy)
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.request(ConfigRepair::Reload, cx)
-                                })),
-                        )
-                        .child(
-                            Button::new("open-config")
-                                .debug_selector(|| "settings-config-open".into())
-                                .small()
-                                .icon(IconName::FileText)
-                                .label(t(cx, "settings-config-open"))
-                                .disabled(path.is_none())
-                                .on_click(move |_, _, cx| {
-                                    if let Some(path) = &path {
-                                        cx.open_with_system(path);
-                                    }
-                                }),
-                        ),
-                );
+                    Button::new("open-config")
+                        .debug_selector(|| "settings-config-open".into())
+                        .small()
+                        .icon(IconName::FileText)
+                        .label(t(cx, "settings-config-open"))
+                        .disabled(path.is_none())
+                        .on_click(move |_, _, cx| {
+                            if let Some(path) = &path {
+                                cx.open_with_system(path);
+                            }
+                        }),
+                ),
+        );
         if can_write {
             view = view.child(
                 Button::new("write-current")
@@ -496,11 +507,7 @@ impl SettingsView {
                 ),
             );
         }
-        if options.layout() == Axis::Horizontal {
-            view.w(px(360.)).into_any_element()
-        } else {
-            view.w_full().into_any_element()
-        }
+        view.into_any_element()
     }
 }
 
@@ -573,9 +580,10 @@ fn management_header(
                 .w_full()
                 .min_w_0()
                 .items_start()
+                .flex_wrap()
                 .gap_2()
-                .child(div().flex_1().min_w_0().child(heading))
-                .child(div().flex_shrink_0().child(actions)),
+                .child(div().flex_1().min_w(rems(14.)).child(heading))
+                .child(div().max_w_full().child(actions)),
         )
         .children(description)
 }

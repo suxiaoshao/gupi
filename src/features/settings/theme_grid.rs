@@ -1,7 +1,7 @@
 use super::*;
 use gpui_kit::component::ThemeMode;
 
-// Settings groups need an intrinsic height. Measure it during layout, then
+// Onboarding needs an intrinsic height. Measure it during layout, then
 // render the equal-width grid at the assigned width in the same frame.
 pub(super) struct ThemeGrid {
     pub group: (&'static str, ThemeMode, Vec<app_theme::ThemeChoice>),
@@ -35,7 +35,7 @@ impl Element for ThemeGrid {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, ()) {
-        // All tiles have a fixed preview and a single-line caption. Measure one
+        // Tiles share the fixed preview and an intrinsic caption. Measure one
         // real tile to retain font, border and padding metrics without hardcoding height.
         let mut sample = preferences::theme_grid_content(
             (

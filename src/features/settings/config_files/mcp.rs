@@ -122,13 +122,17 @@ impl FilePages {
         } else {
             ServerScope::Project
         };
-        status(
-            self.mcp_actions
-                .report
-                .as_ref()
-                .and_then(|(report, _)| report.server(scope, name)),
-            cx,
-        )
+        let server = self
+            .mcp_actions
+            .report
+            .as_ref()
+            .and_then(|(report, _)| report.server(scope, name));
+        let status = status(server, cx);
+        if server.is_some_and(Server::has_resources) {
+            format!("{status} · {}", t(cx, "pi-mcp-resources"))
+        } else {
+            status
+        }
     }
     pub(super) fn mcp_disabled_in_report(&self, name: &str) -> bool {
         let scope = if matches!(self.scope, Scope::Global) {
@@ -142,6 +146,18 @@ impl FilePages {
             .and_then(|(report, _)| report.server(scope, name))
             .is_some_and(|server| server.state() == State::Disabled)
     }
+    pub(super) fn mcp_needs_auth(&self, name: &str) -> bool {
+        let scope = if matches!(self.scope, Scope::Global) {
+            ServerScope::Global
+        } else {
+            ServerScope::Project
+        };
+        self.mcp_actions
+            .report
+            .as_ref()
+            .and_then(|(report, _)| report.server(scope, name))
+            .is_some_and(|server| server.state() == State::NeedsAuth)
+    }
     pub(super) fn render_mcp_controls(
         &self,
         command: Option<OsString>,
@@ -150,22 +166,17 @@ impl FilePages {
     ) -> AnyElement {
         let busy = self.busy();
         let owner = cx.entity();
-        let mut body = v_flex()
-            .min_w_0()
+        let heading = h_flex()
             .w_full()
+            .min_w_0()
+            .flex_wrap()
+            .justify_between()
             .gap_2()
-            .text_sm()
-            .child(text("mcp-help", t(cx, "pi-mcp-help")).text_color(cx.theme().muted_foreground))
             .child(
-                text("mcp-reconnect", t(cx, "pi-mcp-reconnect"))
-                    .text_color(cx.theme().muted_foreground),
+                div()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(t(cx, "pi-files-servers")),
             )
-            .when(matches!(self.scope, Scope::Global), |body| {
-                body.child(text("mcp-global-cwd", t(cx, "pi-mcp-global-cwd")))
-            })
-            .when(self.dirty(), |body| {
-                body.child(text("mcp-save-first", t(cx, "pi-mcp-save-first")))
-            })
             .child(
                 h_flex()
                     .flex_wrap()
@@ -173,6 +184,8 @@ impl FilePages {
                     .child(
                         Button::new("mcp-check")
                             .small()
+                            .outline()
+                            .icon(IconName::RotateCw)
                             .label(t(cx, "pi-mcp-check"))
                             .disabled(
                                 busy || self.dirty()
@@ -207,6 +220,26 @@ impl FilePages {
                             )
                     }),
             );
+        let mut body = v_flex()
+            .min_w_0()
+            .w_full()
+            .gap_2()
+            .text_sm()
+            .child(heading)
+            .child(text("mcp-help", t(cx, "pi-mcp-help")).text_color(cx.theme().muted_foreground))
+            .child(
+                text("mcp-reconnect", t(cx, "pi-mcp-reconnect"))
+                    .text_color(cx.theme().muted_foreground),
+            )
+            .when(matches!(self.scope, Scope::Global), |body| {
+                body.child(
+                    text("mcp-global-cwd", t(cx, "pi-mcp-global-cwd"))
+                        .text_color(cx.theme().muted_foreground),
+                )
+            })
+            .when(self.dirty(), |body| {
+                body.child(text("mcp-save-first", t(cx, "pi-mcp-save-first")))
+            });
         if let Some(message) = self.mcp_actions.message {
             body = body.child(text("mcp-outcome", t(cx, message)));
         }
@@ -232,6 +265,15 @@ impl FilePages {
                     body.child(text("mcp-untrusted", t(cx, "pi-mcp-untrusted")))
                 });
             for scope in [ServerScope::Global, ServerScope::Project] {
+                // The current scope is already represented in the editable table.
+                let current = if matches!(self.scope, Scope::Global) {
+                    ServerScope::Global
+                } else {
+                    ServerScope::Project
+                };
+                if scope == current {
+                    continue;
+                }
                 let servers: Vec<_> = report
                     .servers()
                     .iter()
@@ -317,6 +359,9 @@ impl FilePages {
             };
         }
         for login in [true, false] {
+            if login && entity.read(cx).mcp_needs_auth(name) {
+                continue;
+            }
             let owner = entity.clone();
             let name = name.to_owned();
             let command = command.clone();
@@ -415,7 +460,7 @@ impl FilePages {
         cx.notify();
         Some(generation)
     }
-    fn mcp_dialog(
+    pub(super) fn mcp_dialog(
         entity: &Entity<Self>,
         name: String,
         login: bool,

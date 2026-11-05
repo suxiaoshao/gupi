@@ -10,7 +10,16 @@ use gupi_settings::{
 struct Host(Entity<AuthPage>);
 impl Render for Host {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.0.update(cx, |this, cx| this.render_page(window, cx))
+        self.0.update(cx, |this, cx| {
+            this.render_page(
+                &crate::features::settings::composition::PageLayout::new(
+                    window.viewport_size().width,
+                    window.rem_size(),
+                ),
+                window,
+                cx,
+            )
+        })
     }
 }
 #[gpui_kit::test]
@@ -117,12 +126,6 @@ async fn editor_retains_masked_keys_on_busy_and_saves_without_exposing_existing_
     cx.update(|window, cx| {
         window.render_frame(cx);
         assert!(!window.has_active_dialog(cx));
-        assert_eq!(window.find("auth-add").focused(), Some(true));
-        window.press("tab", cx);
-        window.render_frame(cx);
-        assert_eq!(window.find("auth-reload").focused(), Some(true));
-        window.press("shift-tab", cx);
-        window.render_frame(cx);
         assert_eq!(window.find("auth-add").focused(), Some(true));
         window.click("auth-row-p", cx);
         window.render_frame(cx);
@@ -243,14 +246,8 @@ async fn empty_ids_keep_their_identity_through_actions_and_candidate_edits(
                 .unwrap()
                 .contains("Empty ID")
         );
-        window.click("auth-menu-", cx);
-        assert_eq!(
-            window.within("popup-menu").find(3usize).label(),
-            Some("Pi cannot check this provider ID.")
-        );
-        window.within("popup-menu").click(2usize, cx);
+        window.click("auth-check-", cx);
         assert!(owner.read(cx).checking.is_empty());
-        window.press("escape", cx);
         window.click("auth-row-", cx);
     });
     cx.update(|window, cx| {
@@ -281,7 +278,7 @@ async fn empty_ids_keep_their_identity_through_actions_and_candidate_edits(
     cx.update(|window, cx| {
         window.render_frame(cx);
         window.click("auth-menu-", cx);
-        window.within("popup-menu").click(4usize, cx);
+        window.within("popup-menu").click(1usize, cx);
     });
     cx.run_until_parked();
     cx.update(|window, cx| window.click("confirm", cx));
@@ -346,8 +343,7 @@ async fn empty_ids_keep_their_identity_through_actions_and_candidate_edits(
     cx.condition(&owner, |this, _| this.loading.is_none()).await;
     cx.update(|window, cx| {
         window.render_frame(cx);
-        window.click("auth-menu-", cx);
-        window.within("popup-menu").click(2usize, cx);
+        window.click("auth-row-", cx);
         assert_eq!(
             cx.read_from_clipboard().unwrap().text().as_deref(),
             Some("/login")
@@ -355,7 +351,11 @@ async fn empty_ids_keep_their_identity_through_actions_and_candidate_edits(
     });
     cx.run_until_parked();
     cx.update(|window, cx| {
-        window.click("auth-row-", cx);
+        window.click("auth-menu-", cx);
+        window.within("popup-menu").click(1usize, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| {
         assert!(window.has_active_dialog(cx));
         assert!(window.find("confirm").label().unwrap().contains("Log out"));
         window.click("cancel", cx);

@@ -25,6 +25,7 @@ impl Render for Host {
                             this.render_page_with_mcp(
                                 Kind::Mcp,
                                 (Some("fake-pi".into()), true),
+                                gpui_kit::px(800.),
                                 window,
                                 cx,
                             )
@@ -76,6 +77,7 @@ fn mcp_saved_actions_dirty_guard_logout_and_mount_cancellation(cx: &mut TestAppC
         Root::new(host, window, cx)
     });
     let owner = owner.unwrap();
+    cx.simulate_resize(gpui_kit::size(gpui_kit::px(1100.), gpui_kit::px(1100.)));
     cx.update(|window, cx| {
         window.render_frame(cx);
         assert_eq!(window.find("mcp-check").label(), Some("Check connection"));
@@ -128,7 +130,10 @@ fn mcp_saved_actions_dirty_guard_logout_and_mount_cancellation(cx: &mut TestAppC
         cx.notify();
     });
     cx.run_until_parked();
-    cx.update(|window, cx| window.click("file-menu---help", cx));
+    cx.update(|window, cx| {
+        window.render_frame(cx);
+        window.click("file-menu---help", cx);
+    });
     cx.run_until_parked();
     cx.update(|window, cx| {
         window.render_frame(cx);
@@ -209,6 +214,7 @@ printf '%s' '{"servers":[{"name":"oauth","scope":"global","enabled":true,"state"
         Root::new(host, window, cx)
     });
     let owner = owner.unwrap();
+    cx.simulate_resize(gpui_kit::size(gpui_kit::px(1100.), gpui_kit::px(1100.)));
     let mount = Cancellation::new();
     let command = executable.into_os_string();
     cx.update(|window, cx| {
@@ -250,9 +256,10 @@ printf '%s' '{"servers":[{"name":"oauth","scope":"global","enabled":true,"state"
     });
     cx.update(|window, cx| {
         window.render_frame(cx);
+        assert_eq!(window.find("file-row-oauth").label(), Some("Edit…: oauth"));
         assert_eq!(
-            window.find("file-row-oauth").label(),
-            Some("oauth · Connected (\u{2068}1\u{2069} tool)")
+            owner.read(cx).mcp_row_status("oauth", cx),
+            "Connected (\u{2068}1\u{2069} tool)"
         );
     });
     // A fresh operation invalidates the previous report immediately. Scope change
@@ -331,6 +338,7 @@ async fn login_dialog_updates_result_and_close_button_without_reopening(cx: &mut
         Root::new(host, window, cx)
     });
     let owner = owner.unwrap();
+    cx.simulate_resize(gpui_kit::size(gpui_kit::px(1100.), gpui_kit::px(1100.)));
     cx.executor().allow_parking();
     for (code, result) in [
         (0, "Command completed"),

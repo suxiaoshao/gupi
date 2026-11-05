@@ -11,7 +11,6 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use gupi_resources::pi_config_files::Credential;
 use gupi_settings::{assets::IconName, i18n::t};
-pub(super) use layout::field_label;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 

@@ -5,7 +5,6 @@ use gpui_kit::component::form::field;
 use gpui_kit::component::form::v_form;
 use gpui_kit::component::searchable_list::SearchableListItem;
 use gpui_kit::component::select::Select;
-use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::prelude::FluentBuilder;
 use gupi_settings::i18n::ProbeFailureKey;
 use gupi_settings::theme;
@@ -163,56 +162,86 @@ impl SettingsView {
                 },
             )
         });
-        let mut view = v_flex().gap_4().child(
-            v_form().child(
-                field()
-                    .label_fn(move |_, _| {
-                        h_flex()
-                            .gap_2()
-                            .items_center()
-                            .child(label.clone())
-                            .children(state.clone().map(|state| {
-                                gpui_kit::component::tag::Tag::secondary()
-                                    .outline()
-                                    .small()
-                                    .child(state)
-                            }))
-                    })
-                    .description(t(cx, "settings-path-help"))
-                    .child(
-                        Input::new(self.pi_input(cx))
-                            .when(self.controller.read(cx).is_onboarding(cx), |input| {
-                                input.large()
+        let input = if onboarding {
+            v_flex()
+                .child(
+                    v_form().child(
+                        field()
+                            .label_fn(move |_, _| {
+                                h_flex()
+                                    .gap_2()
+                                    .items_center()
+                                    .child(label.clone())
+                                    .children(state.clone().map(|state| {
+                                        gpui_kit::component::tag::Tag::secondary()
+                                            .outline()
+                                            .small()
+                                            .child(state)
+                                    }))
                             })
-                            .disabled(busy),
+                            .description(t(cx, "settings-path-help"))
+                            .child(
+                                Input::new(self.pi_input(cx))
+                                    .when(self.controller.read(cx).is_onboarding(cx), |input| {
+                                        input.large()
+                                    })
+                                    .disabled(busy),
+                            ),
                     ),
-            ),
-        );
-        let actions = h_flex().gap_2().child(
-            Button::new("check-draft-pi")
-                .icon(IconName::RotateCw)
-                .loading(pi.is_running())
-                .label(t(
-                    cx,
-                    if pi.is_running() {
-                        "startup-checking"
-                    } else {
-                        "setup-check-pi"
-                    },
-                ))
-                .disabled(busy || pi.is_running())
-                .on_click(cx.listener(|this, _, _, cx| {
-                    match PiSettings::new(this.pi_command(cx)).normalized() {
-                        Ok(config) => {
-                            this.error = None;
-                            this.draft_pi
-                                .update(cx, |pi, cx| pi.request(config.command, true, cx));
+                )
+                .into_any_element()
+        } else {
+            v_flex()
+                .w_full()
+                .min_w_0()
+                .gap_2()
+                .child(div().text_sm().font_weight(FontWeight::MEDIUM).child(label))
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(t(cx, "settings-path-help")),
+                )
+                .child(Input::new(self.pi_input(cx)).disabled(busy))
+                .children(state.map(|state| {
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(state)
+                }))
+                .into_any_element()
+        };
+        let mut view = v_flex().gap_4().child(input);
+        let actions = h_flex()
+            .w_full()
+            .gap_2()
+            .flex_wrap()
+            .when(!onboarding, |actions| actions.justify_end())
+            .child(
+                Button::new("check-draft-pi")
+                    .icon(IconName::RotateCw)
+                    .loading(pi.is_running())
+                    .label(t(
+                        cx,
+                        if pi.is_running() {
+                            "startup-checking"
+                        } else {
+                            "setup-check-pi"
+                        },
+                    ))
+                    .disabled(busy || pi.is_running())
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        match PiSettings::new(this.pi_command(cx)).normalized() {
+                            Ok(config) => {
+                                this.error = None;
+                                this.draft_pi
+                                    .update(cx, |pi, cx| pi.request(config.command, true, cx));
+                            }
+                            Err(error) => this.error = Some(error),
                         }
-                        Err(error) => this.error = Some(error),
-                    }
-                    cx.notify();
-                })),
-        );
+                        cx.notify();
+                    })),
+            );
         view = view.child(actions.when(!onboarding, |actions| {
             actions.child(
                 Button::new("save-pi")
@@ -274,19 +303,21 @@ impl SettingsView {
 
 impl SettingsView {
     /// Settings Pi page: the saved path's latest check first, then the editable path.
-    pub(super) fn render_pi_settings(&self, cx: &Context<Self>) -> AnyElement {
+    pub(super) fn render_pi_settings(
+        &self,
+        layout: &crate::features::settings::composition::PageLayout,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         let applied = self.applied_pi.read(cx);
+        use gpui_kit::component::group_box::{GroupBox, GroupBoxVariants as _};
         let (color, status) = if applied.is_running() {
             (cx.theme().muted_foreground, t(cx, "startup-checking"))
         } else if let Some(problem) = applied.problem() {
             (cx.theme().danger, t(cx, problem.key()))
         } else if let Some(data) = applied.data() {
-            let mut args = fluent_bundle::FluentArgs::new();
-            args.set("version", data.version.clone());
-            args.set("path", data.command.display().to_string());
             (
                 cx.theme().success,
-                gupi_settings::i18n::t_with_args(cx, "settings-pi-status-ready", &args),
+                format!("{} · {}", t(cx, "home-ready"), data.version),
             )
         } else {
             (
@@ -294,18 +325,55 @@ impl SettingsView {
                 t(cx, "settings-about-unavailable"),
             )
         };
+        let path = applied
+            .data()
+            .map(|data| data.command.display().to_string())
+            .unwrap_or_default();
         v_flex()
-            .gap_4()
+            .w_full()
+            .gap_6()
             .child(
-                h_flex()
-                    .id("settings-pi-status")
-                    .gap_2()
-                    .items_center()
-                    .min_w_0()
-                    .child(div().size_2().flex_shrink_0().rounded_full().bg(color))
-                    .child(div().text_sm().min_w_0().truncate().child(status)),
+                v_flex()
+                    .gap_3()
+                    .child(
+                        div()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(t(cx, "settings-pi-current")),
+                    )
+                    .child(
+                        GroupBox::new()
+                            .fill()
+                            .content_style(StyleRefinement::default().px_5().py_0().gap_0())
+                            .child(crate::features::settings::composition::settings_row(
+                                layout,
+                                t(cx, "settings-pi-saved-connection"),
+                                Some(path.into()),
+                                h_flex()
+                                    .id("settings-pi-status")
+                                    .gap_2()
+                                    .min_w_0()
+                                    .child(div().size_2().rounded_full().bg(color))
+                                    .child(div().text_sm().child(status)),
+                                false,
+                                cx,
+                            )),
+                    ),
             )
-            .child(self.render_pi(cx))
+            .child(
+                v_flex()
+                    .gap_3()
+                    .child(
+                        div()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(t(cx, "settings-pi-command")),
+                    )
+                    .child(
+                        GroupBox::new()
+                            .fill()
+                            .content_style(StyleRefinement::default().px_5().py_4())
+                            .child(self.render_pi(cx)),
+                    ),
+            )
             .into_any_element()
     }
 }
@@ -349,174 +417,182 @@ pub(super) fn theme_grid_content(
     busy: bool,
     cx: &App,
 ) -> AnyElement {
+    use gpui_kit::component::Selectable as _;
     let (id, mode, choices) = group;
     let selected_id = theme::selected_id(draft, mode);
-    let selected_border = cx.theme().primary;
-    let mut grid = gpui_kit::base::RadioGroup::new(id)
-        .aria_label(t(cx, id))
-        .axis(Axis::Horizontal)
+    div()
+        .id(id)
         .w_full()
         .grid()
         .grid_cols(columns)
-        .gap_3();
-    let count = choices.len();
-    for (index, choice) in choices.into_iter().enumerate() {
-        let selected = choice.id == selected_id;
-        let colors = app_theme::preview_theme(&choice.config).colors;
-        let name = if app_theme::is_system_accent_material_you_theme_id(&choice.id) {
-            SharedString::from(t(cx, "setup-system-accent"))
-        } else {
-            choice.name
-        };
-        let theme_id = choice.id.clone();
-        let key_controller = controller.clone();
-        let change_controller = controller.clone();
-        let key_id = theme_id.clone();
-        let tooltip_name = name.clone();
-        grid = grid.child(
-            gpui_kit::base::Radio::new(SharedString::from(format!("{id}-{}", choice.id)))
-                .checked(selected)
-                .disabled(busy)
-                .accessibility_label(name.clone())
-                .tooltip(move |window, cx| Tooltip::new(tooltip_name.clone()).build(window, cx))
-                .set_position(index + 1, count)
-                .w_full()
-                .debug_selector(move || format!("{id}-tile-{index}"))
+        .gap_3()
+        .children(choices.into_iter().enumerate().map(|(index, choice)| {
+            let selected = choice.id == selected_id;
+            // These colors are the preview's data, not an application palette.
+            let colors = app_theme::preview_theme(&choice.config).colors;
+            let name = if app_theme::is_system_accent_material_you_theme_id(&choice.id) {
+                SharedString::from(t(cx, "setup-system-accent"))
+            } else {
+                choice.name
+            };
+            let controller = controller.clone();
+            let theme_id = choice.id;
+            let hover_group: SharedString = format!("preview-{id}-{theme_id}").into();
+            div()
+                .id(hover_group.clone())
+                .group(hover_group.clone())
                 .min_w_0()
-                .rounded_lg()
-                .border_2()
-                .border_color(if selected {
-                    selected_border
-                } else {
-                    colors.border
-                })
-                .bg(colors.background)
-                .text_color(colors.foreground)
-                .overflow_hidden()
-                .focus(|style| style.border_color(selected_border))
-                .on_key_down(move |event, _, cx| {
-                    if !key_controller.read(cx).busy(cx)
-                        && matches!(event.keystroke.key.as_str(), "space" | "enter")
-                    {
-                        key_controller.update(cx, |owner, cx| {
-                            owner.set_preference(
-                                match mode {
-                                    Mode::Light => {
-                                        PreferenceChange::LightTheme(Some(key_id.clone()))
-                                    }
-                                    Mode::Dark => PreferenceChange::DarkTheme(Some(key_id.clone())),
-                                },
-                                cx,
-                            )
-                        });
-                        cx.stop_propagation();
-                    }
-                })
-                .on_change(move |_, _, _, cx| {
-                    if change_controller.read(cx).busy(cx) {
-                        return;
-                    }
-                    change_controller.update(cx, |owner, cx| {
-                        owner.set_preference(
-                            match mode {
-                                Mode::Light => PreferenceChange::LightTheme(Some(theme_id.clone())),
-                                Mode::Dark => PreferenceChange::DarkTheme(Some(theme_id.clone())),
-                            },
-                            cx,
-                        )
-                    });
-                })
                 .child(
-                    v_flex()
+                    Button::new(SharedString::from(format!("{id}-{theme_id}")))
+                        .custom(gpui_kit::component::button::ButtonCustomVariant::new(cx))
                         .w_full()
+                        .h_auto()
+                        .p_1()
+                        .whitespace_normal()
+                        .selected(selected)
+                        .toggled(selected)
+                        .disabled(busy)
+                        .accessibility_label(name.clone())
+                        .debug_selector(move || format!("{id}-tile-{index}"))
                         .child(
-                            h_flex()
-                                .h(px(64.))
-                                .w_full()
-                                .child(
-                                    v_flex()
-                                        .w(px(48.))
-                                        .h_full()
-                                        .p_2()
-                                        .gap_1p5()
-                                        .bg(colors.sidebar)
-                                        .child(
-                                            div()
-                                                .h(px(5.))
-                                                .w_full()
-                                                .rounded_sm()
-                                                .bg(colors.primary),
-                                        )
-                                        .child(
-                                            div()
-                                                .h(px(4.))
-                                                .w_full()
-                                                .rounded_sm()
-                                                .bg(colors.muted_foreground),
-                                        )
-                                        .child(
-                                            div()
-                                                .h(px(4.))
-                                                .w(px(20.))
-                                                .rounded_sm()
-                                                .bg(colors.border),
-                                        ),
-                                )
-                                .child(
-                                    v_flex()
-                                        .flex_1()
-                                        .min_w_0()
-                                        .p_2()
-                                        .gap_1p5()
-                                        .child(
-                                            div()
-                                                .h(px(6.))
-                                                .w(px(65.))
-                                                .rounded_sm()
-                                                .bg(colors.foreground),
-                                        )
-                                        .child(
-                                            div()
-                                                .h(px(4.))
-                                                .w_full()
-                                                .rounded_sm()
-                                                .bg(colors.muted_foreground),
-                                        )
-                                        .child(
-                                            div()
-                                                .h(px(4.))
-                                                .w(px(65.))
-                                                .rounded_sm()
-                                                .bg(colors.border),
-                                        )
-                                        .child(
-                                            div()
-                                                .h(px(10.))
-                                                .w(px(30.))
-                                                .rounded_sm()
-                                                .bg(colors.primary),
-                                        ),
-                                ),
-                        )
-                        .child(
-                            h_flex()
+                            v_flex()
                                 .w_full()
                                 .min_w_0()
-                                .px_3()
-                                .py_2()
                                 .gap_2()
-                                .justify_between()
-                                .child(div().text_sm().truncate().child(name))
-                                .child(div().size_4().flex_shrink_0().when(selected, |view| {
-                                    view.child(
-                                        gpui_kit::component::Icon::new(IconName::Check)
-                                            .small()
-                                            .text_color(colors.foreground),
-                                    )
-                                })),
-                        ),
-                ),
-        );
-    }
-    grid.into_any_element()
+                                .child(
+                                    div()
+                                        .w_full()
+                                        .p_0p5()
+                                        .border_1()
+                                        .rounded_lg()
+                                        .border_color(if selected {
+                                            cx.theme().primary
+                                        } else {
+                                            cx.theme().border
+                                        })
+                                        .when(!selected, |preview| {
+                                            preview.group_hover(hover_group, |style| {
+                                                style.border_color(cx.theme().muted_foreground)
+                                            })
+                                        })
+                                        .child(
+                                            h_flex()
+                                                .w_full()
+                                                .h(rems(6.))
+                                                .rounded_md()
+                                                .overflow_hidden()
+                                                .bg(colors.background)
+                                                .text_color(colors.foreground)
+                                                .items_stretch()
+                                                .child(
+                                                    v_flex()
+                                                        .w(relative(0.25))
+                                                        .flex_shrink_0()
+                                                        .p_2()
+                                                        .py_4()
+                                                        .gap_2()
+                                                        .bg(colors.sidebar)
+                                                        .child(
+                                                            div().h_1().w_full().rounded_sm().bg(
+                                                                colors.foreground.opacity(0.16),
+                                                            ),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .h_1()
+                                                                .w_full()
+                                                                .rounded_sm()
+                                                                .bg(colors.primary.opacity(0.7)),
+                                                        )
+                                                        .child(
+                                                            div().h_1().w_full().rounded_sm().bg(
+                                                                colors.foreground.opacity(0.16),
+                                                            ),
+                                                        ),
+                                                )
+                                                .child(
+                                                    v_flex()
+                                                        .flex_1()
+                                                        .min_w_0()
+                                                        .justify_center()
+                                                        .items_start()
+                                                        .p_2()
+                                                        .gap_1()
+                                                        .child(
+                                                            div()
+                                                                .text_sm()
+                                                                .font_weight(FontWeight::MEDIUM)
+                                                                .child("Aa 中文"),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .text_xs()
+                                                                .text_color(
+                                                                    colors.foreground.opacity(0.7),
+                                                                )
+                                                                .child(t(
+                                                                    cx,
+                                                                    "settings-theme-preview",
+                                                                )),
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .h_1p5()
+                                                                .w_8()
+                                                                .rounded_sm()
+                                                                .bg(colors.primary),
+                                                        ),
+                                                ),
+                                        ),
+                                )
+                                .child(preview_caption(name, selected, cx)),
+                        )
+                        .on_click(move |_, _, cx| {
+                            controller.update(cx, |owner, cx| {
+                                owner.set_preference(
+                                    match mode {
+                                        Mode::Light => {
+                                            PreferenceChange::LightTheme(Some(theme_id.clone()))
+                                        }
+                                        Mode::Dark => {
+                                            PreferenceChange::DarkTheme(Some(theme_id.clone()))
+                                        }
+                                    },
+                                    cx,
+                                )
+                            })
+                        }),
+                )
+        }))
+        .into_any_element()
+}
+
+/// A full caption is part of the selection surface, outside the preview image.
+pub(super) fn preview_caption(name: SharedString, selected: bool, cx: &App) -> AnyElement {
+    h_flex()
+        .w_full()
+        .min_w_0()
+        .justify_center()
+        .items_start()
+        .gap_1()
+        .text_xs()
+        .when(selected, |caption| {
+            caption.font_weight(FontWeight::SEMIBOLD)
+        })
+        .when(selected, |caption| {
+            caption.child(
+                gpui_kit::component::Icon::new(IconName::Check)
+                    .size_3()
+                    .flex_shrink_0()
+                    .text_color(cx.theme().primary),
+            )
+        })
+        .child(
+            div()
+                .min_w_0()
+                .whitespace_normal()
+                .text_center()
+                .child(name),
+        )
+        .into_any_element()
 }

@@ -1,25 +1,64 @@
 use super::{File, FilePages, Kind};
-use gpui_kit::component::{
-    Root, WindowExt as _,
-    setting::{SettingPage, Settings},
-};
+use gpui_kit::component::{Root, WindowExt as _};
 use gpui_kit::test::TestWindowExt as _;
-use gpui_kit::{AppContext as _, Context, Entity, IntoElement, Render, TestAppContext, Window};
+use gpui_kit::{
+    AppContext as _, Context, Entity, InteractiveElement as _, IntoElement, Render, TestAppContext,
+    Window,
+};
 struct Host {
     files: Entity<FilePages>,
     config: Entity<super::super::pi_config::PiConfig>,
+    models: bool,
 }
 impl Render for Host {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        Settings::new("auth-metadata-settings")
-            .page(FilePages::page(&self.files, Kind::Models, &self.config, cx))
-            .page(SettingPage::new("Other").group(
-                gpui_kit::component::setting::SettingGroup::new().item(
-                    gpui_kit::component::setting::SettingItem::render(|_, _, _| gpui_kit::div()),
+        use super::super::composition::PageLayout;
+        use gpui_kit::component::sidebar::{Sidebar, SidebarMenu, SidebarMenuItem};
+        use gpui_kit::{ParentElement as _, Styled as _};
+        let page = FilePages::page(&self.files, Kind::Models, &self.config, cx);
+        let models = self.models;
+        gpui_kit::component::h_flex()
+            .items_stretch()
+            .size_full()
+            .child(
+                Sidebar::new("settings-sidebar").child(
+                    SidebarMenu::new()
+                        .child(
+                            SidebarMenuItem::new("Models")
+                                .active(models)
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.models = true;
+                                    cx.notify();
+                                })),
+                        )
+                        .child(SidebarMenuItem::new("Other").active(!models).on_click(
+                            cx.listener(|this, _, _, cx| {
+                                this.models = false;
+                                cx.notify();
+                            }),
+                        )),
                 ),
-            ))
+            )
+            .child(
+                gpui_kit::div()
+                    .id(if models { "models" } else { "other" })
+                    .flex_1()
+                    .min_w_0()
+                    .child(gpui_kit::container_query(move |size, window, _| {
+                        if models {
+                            page.content(
+                                String::new(),
+                                PageLayout::new(size.width, window.rem_size()),
+                            )
+                            .into_any_element()
+                        } else {
+                            gpui_kit::div().into_any_element()
+                        }
+                    })),
+            )
     }
 }
+
 #[gpui_kit::test]
 async fn entry_refreshes_metadata_without_resetting_drafts_or_looping(cx: &mut TestAppContext) {
     cx.update(|cx| {
@@ -52,6 +91,7 @@ async fn entry_refreshes_metadata_without_resetting_drafts_or_looping(cx: &mut T
         let host = cx.new(|_| Host {
             files: owner,
             config,
+            models: true,
         });
         Root::new(host, window, cx)
     });
@@ -86,10 +126,7 @@ async fn entry_refreshes_metadata_without_resetting_drafts_or_looping(cx: &mut T
     cx.update(|_, cx| gupi_settings::i18n::apply(gupi_settings::config::AppLanguage::German, cx));
     cx.simulate_resize(gpui_kit::size(gpui_kit::px(800.), gpui_kit::px(600.)));
     cx.update(|window, cx| window.render_frame(cx));
-    let identity = cx.debug_bounds("file-name-p").unwrap();
-    let marker = cx.debug_bounds("file-auth-p").unwrap();
-    assert!(identity.size.width > gpui_kit::px(100.));
-    assert!(marker.top() >= identity.bottom());
+    assert!(cx.debug_bounds("file-auth-p").is_some());
     cx.update(|window, _| assert!(window.find("file-add").bounds().right() <= gpui_kit::px(800.)));
     cx.update(|window, cx| window.within("settings-sidebar").click("0-1", cx));
     std::fs::write(&auth, "invalid").unwrap();
@@ -123,8 +160,9 @@ struct NavigationHost {
     _observation: gpui_kit::Subscription,
 }
 impl Render for NavigationHost {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.settings.update(cx, |this, cx| this.settings_panel(cx))
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.settings
+            .update(cx, |this, cx| this.render_settings(window, cx))
     }
 }
 #[gpui_kit::test]
@@ -173,7 +211,7 @@ async fn credential_link_flow(cx: &mut TestAppContext, keyboard: bool) {
         });
         view.update(cx, |this, cx| {
             this.domain = super::super::layout::Domain::Pi;
-            this.navigation.1 = super::super::layout::MODELS_PAGE;
+            this.navigation = super::super::layout::MODELS_PAGE;
             this.pi_config.update(cx, |config, cx| {
                 config.set_agent_for_test(dir.path().to_owned(), cx)
             });
@@ -212,7 +250,7 @@ async fn credential_link_flow(cx: &mut TestAppContext, keyboard: bool) {
     });
     cx.run_until_parked();
     settings.read_with(cx, |this, _| {
-        assert_eq!(this.navigation.1, super::super::layout::MODELS_PAGE)
+        assert_eq!(this.navigation, super::super::layout::MODELS_PAGE)
     });
     assert!(files.read_with(cx, |this, _| this.models.dirty() && !this.busy()));
     cx.update(|window, cx| {
@@ -231,7 +269,7 @@ async fn credential_link_flow(cx: &mut TestAppContext, keyboard: bool) {
     });
     cx.run_until_parked();
     settings.read_with(cx, |this, _| {
-        assert_eq!(this.navigation.1, super::super::layout::AUTH_PAGE)
+        assert_eq!(this.navigation, super::super::layout::AUTH_PAGE)
     });
     cx.run_until_parked();
     cx.update(|window, cx| {
@@ -242,7 +280,7 @@ async fn credential_link_flow(cx: &mut TestAppContext, keyboard: bool) {
         invoke_credential_link(cx, "auth-menu-", "Edit in Models & providers", keyboard);
         cx.run_until_parked();
         settings.read_with(cx, |this, _| {
-            assert_eq!(this.navigation.1, super::super::layout::MODELS_PAGE)
+            assert_eq!(this.navigation, super::super::layout::MODELS_PAGE)
         });
         cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
     }

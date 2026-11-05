@@ -1,5 +1,3 @@
-use super::packages::Mount;
-use super::packages::region;
 use super::*;
 use gpui_kit::component::Selectable;
 use gpui_kit::component::link::Link;
@@ -50,8 +48,6 @@ pub(super) struct Browse {
     showing_detail: bool,
     /// Divider position between the result list and the package details.
     split: Entity<ResizableState>,
-    list_scroll: ScrollHandle,
-    detail_scroll: ScrollHandle,
 }
 impl Browse {
     pub(super) fn refresh_language(&self, window: &mut Window, cx: &mut Context<ResourcesView>) {
@@ -80,8 +76,6 @@ impl Browse {
                 details: Default::default(),
                 showing_detail: false,
                 split: cx.new(|_| ResizableState::default()),
-                list_scroll: ScrollHandle::new(),
-                detail_scroll: ScrollHandle::new(),
             },
             subscription,
         )
@@ -146,9 +140,6 @@ impl ResourcesView {
     }
 
     fn select_package(&mut self, name: String, cx: &mut Context<Self>) {
-        if self.browse.selected.as_ref() != Some(&name) {
-            self.browse.detail_scroll = ScrollHandle::new();
-        }
         self.browse.selected = Some(name.clone());
         self.browse.showing_detail = true;
         if !matches!(
@@ -194,12 +185,7 @@ impl ResourcesView {
 
     /// Search row above either the full-width result list or, once a package
     /// is selected, a draggable split (narrow bodies show one side at a time).
-    pub(super) fn render_browse(
-        &mut self,
-        width: Pixels,
-        mount: Mount,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    pub(super) fn render_browse(&mut self, width: Pixels, cx: &mut Context<Self>) -> AnyElement {
         if self.browse.page.is_none()
             && self.browse.problem.is_none()
             && self.browse.searching.is_none()
@@ -234,35 +220,31 @@ impl ResourcesView {
                     resizable_panel()
                         .size(px((width * 0.45).max(280.)))
                         .size_range(px(260.)..px((width - 320.).max(260.)))
-                        .child(self.render_list_pane(compact, mount, cx)),
+                        .child(self.render_list_pane(compact, cx)),
                 )
-                .child(resizable_panel().child(self.render_detail_pane(&name, false, mount, cx)))
+                .child(resizable_panel().child(self.render_detail_pane(&name, false, cx)))
                 .into_any_element(),
-            Some(name) if self.browse.showing_detail => {
-                self.render_detail_pane(&name, true, mount, cx)
-            }
-            _ => self.render_list_pane(compact, mount, cx),
+            Some(name) if self.browse.showing_detail => self.render_detail_pane(&name, true, cx),
+            _ => self.render_list_pane(compact, cx),
         };
         v_flex()
             .size_full()
             .min_h_0()
             .gap_3()
             .child(search)
-            .child(
-                div()
-                    .when(mount == Mount::Bounded, |body| body.flex_1().min_h_0())
-                    .child(body),
-            )
+            .child(body)
             .into_any_element()
     }
 
-    /// The result list owns its scrolling; source and paging share one footer.
-    fn render_list_pane(&self, compact: bool, mount: Mount, cx: &mut Context<Self>) -> AnyElement {
+    /// Results and paging share the page scroller.
+    fn render_list_pane(&self, compact: bool, cx: &mut Context<Self>) -> AnyElement {
         v_flex()
             .size_full()
             .min_h_0()
             .child(
-                region("packages-results", &self.browse.list_scroll, mount)
+                div()
+                    .id("packages-results")
+                    .min_w_0()
                     .pr_2()
                     .child(self.render_results(cx)),
             )
@@ -346,14 +328,8 @@ impl ResourcesView {
             .into_any_element()
     }
 
-    /// Package details with their own scrolling; Close (split) or Back (narrow).
-    fn render_detail_pane(
-        &self,
-        name: &str,
-        narrow: bool,
-        mount: Mount,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    /// Package details in the page scroller; Close (split) or Back (narrow).
+    fn render_detail_pane(&self, name: &str, narrow: bool, cx: &mut Context<Self>) -> AnyElement {
         let refreshing = matches!(self.browse.details.get(name), Some(DetailState::Loading(_)));
         let target = name.to_owned();
         let refresh = Button::new("package-details-refresh")
@@ -412,7 +388,9 @@ impl ResourcesView {
             .gap_3()
             .child(header)
             .child(
-                region("packages-detail", &self.browse.detail_scroll, mount)
+                div()
+                    .id("packages-detail")
+                    .min_w_0()
                     .child(self.render_package_detail(name, narrow, cx)),
             )
             .into_any_element()

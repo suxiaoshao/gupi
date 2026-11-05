@@ -19,14 +19,15 @@ impl PiConfig {
         h_flex()
             .gap_2()
             .items_center()
-            .w_full()
+            .flex_wrap()
             .child(
-                gpui_kit::component::input::Input::new(&self.input(field, window, cx))
-                    .small()
-                    .flex_1()
-                    .min_w_0()
-                    .aria_label(t(cx, field.label()))
-                    .disabled(disabled || self.is_saving()),
+                div().w(rems(8.)).max_w_full().flex_none().child(
+                    gpui_kit::component::input::Input::new(&self.input(field, window, cx))
+                        .small()
+                        .min_w_0()
+                        .aria_label(t(cx, field.label()))
+                        .disabled(disabled || self.is_saving()),
+                ),
             )
             .child(
                 Checkbox::new(SharedString::from(format!("pi-disable-{}", field.id())))

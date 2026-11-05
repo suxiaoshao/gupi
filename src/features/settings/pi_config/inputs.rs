@@ -26,14 +26,6 @@ impl PiConfig {
             off: t(cx, "pi-timeout-off"),
         }
     }
-    pub(super) fn refresh_field_input(&self, field: Field, cx: &mut Context<Self>) {
-        if let Some(adapter) = self.inputs.get(&field) {
-            adapter.input.refresh(self.mapping_context(field, cx), cx);
-        }
-        if field == Field::ModelOverrides {
-            self.refresh_map_inputs(cx);
-        }
-    }
     pub(super) fn refresh_inputs(&self, cx: &mut Context<Self>) {
         for (field, adapter) in &self.inputs {
             adapter.input.refresh(self.mapping_context(*field, cx), cx);

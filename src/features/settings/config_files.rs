@@ -1,10 +1,11 @@
 //! Independent, scope-local drafts for models.json and mcp.json.
+use crate::features::settings::composition::{SettingsPage, SettingsRow, SettingsSection};
 mod editor;
 mod mcp;
 use editor::EntryEditor;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::group_box::GroupBoxVariants as _;
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
-use gpui_kit::component::setting::{SettingGroup, SettingItem, SettingPage};
 use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, Sizable as _, WindowExt as _, h_flex, v_flex,
 };
@@ -83,7 +84,134 @@ pub(super) struct FilePages {
     auth_loading: Option<Task<()>>,
     auth_generation: u64,
     mcp_actions: mcp::Actions,
+    enabled_inputs: std::collections::BTreeMap<String, EnabledInput>,
 }
+#[derive(Clone, PartialEq)]
+struct EnabledChoice {
+    value: Option<bool>,
+    title: SharedString,
+}
+impl gpui_kit::component::searchable_list::SearchableListItem for EnabledChoice {
+    type Value = Option<bool>;
+    fn title(&self) -> SharedString {
+        self.title.clone()
+    }
+    fn value(&self) -> &Self::Value {
+        &self.value
+    }
+}
+struct EnabledInput {
+    state: Entity<
+        gpui_kit::component::select::SelectState<
+            gpui_kit::component::searchable_list::SearchableVec<EnabledChoice>,
+        >,
+    >,
+    choices: Vec<EnabledChoice>,
+    _subscription: Subscription,
+}
+impl FilePages {
+    fn render_enabled(
+        &mut self,
+        name: Option<&str>,
+        value: Option<Value>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        use gpui_kit::component::searchable_list::SearchableVec;
+        use gpui_kit::component::select::{Select, SelectEvent, SelectState};
+        let key = name
+            .map(|name| format!("server:{name}"))
+            .unwrap_or_else(|| "auto".into());
+        let choices = [
+            (None, "pi-value-unset"),
+            (Some(true), "pi-files-on"),
+            (Some(false), "pi-files-off"),
+        ]
+        .into_iter()
+        .map(|(value, key)| EnabledChoice {
+            value,
+            title: t(cx, key).into(),
+        })
+        .collect::<Vec<_>>();
+        if !self.enabled_inputs.contains_key(&key) {
+            let state = cx
+                .new(|cx| SelectState::new(SearchableVec::new(choices.clone()), None, window, cx));
+            let name = name.map(str::to_owned);
+            let generation = self.generation;
+            let subscription = cx.subscribe(&state, move |this, _, event, cx| {
+                let SelectEvent::<SearchableVec<EnabledChoice>>::Confirm(Some(value)) = event
+                else {
+                    return;
+                };
+                if this.generation != generation || this.busy() {
+                    return;
+                }
+                let value = value.map(Value::Bool);
+                if let Some(name) = &name {
+                    if let Some(mut entry) = this.mcp.entry(name) {
+                        if let Err(error) = entry.set(&["enabled".into()], value) {
+                            this.mcp.error = Some(error);
+                        } else {
+                            this.mcp.edit(name.clone(), Some(entry));
+                        }
+                        cx.notify();
+                    }
+                } else {
+                    this.set_auto(value, cx);
+                }
+            });
+            self.enabled_inputs.insert(
+                key.clone(),
+                EnabledInput {
+                    state,
+                    choices: choices.clone(),
+                    _subscription: subscription,
+                },
+            );
+        }
+        let input = self
+            .enabled_inputs
+            .get_mut(&key)
+            .expect("retained enabled input");
+        if input.choices != choices {
+            input.choices = choices.clone();
+            input.state.update(cx, |state, cx| {
+                state.set_items(SearchableVec::new(choices), window, cx)
+            });
+        }
+        let current = match value {
+            None => Some(None),
+            Some(Value::Bool(value)) => Some(Some(value)),
+            _ => None,
+        };
+        if input.state.read(cx).selected_value() != current.as_ref() {
+            input.state.update(cx, |state, cx| {
+                if let Some(value) = &current {
+                    state.set_selected_value(value, window, cx);
+                } else {
+                    state.set_selected_index(None, window, cx);
+                }
+            });
+        }
+        let state = input.state.clone();
+        let label = name
+            .map(|name| format!("{name}: {}", t(cx, "pi-files-label-enabled")))
+            .unwrap_or_else(|| t(cx, "pi-files-label-autoEnableCodemode"));
+        div()
+            .w(rems(7.5))
+            .flex_none()
+            .child(
+                Select::new(&state)
+                    .small()
+                    .w_full()
+                    .accessibility_label(label)
+                    .placeholder(t(cx, "pi-resource-unsupported"))
+                    .disabled(self.busy() || self.loading.is_some() || self.mcp.file.is_none()),
+            )
+            .into_any_element()
+    }
+}
+
 impl FilePages {
     pub(super) fn new(_: &mut Context<Self>) -> Self {
         Self {
@@ -100,6 +228,7 @@ impl FilePages {
             auth_loading: None,
             auth_generation: 0,
             mcp_actions: mcp::Actions::default(),
+            enabled_inputs: Default::default(),
         }
     }
     #[cfg(test)]
@@ -129,6 +258,7 @@ impl FilePages {
     }
     pub(super) fn set_scope(&mut self, scope: Scope, cx: &mut Context<Self>) {
         self.mcp_actions.invalidate();
+        self.enabled_inputs.clear();
         self.scope = scope;
         self.models = Draft::default();
         self.mcp = Draft::default();
@@ -187,6 +317,7 @@ impl FilePages {
             return;
         }
         self.mcp_actions.invalidate();
+        self.enabled_inputs.clear();
         self.refresh_auth(cx);
         self.generation += 1;
         let generation = self.generation;
@@ -244,6 +375,7 @@ impl FilePages {
             return;
         };
         self.mcp_actions.invalidate();
+        self.enabled_inputs.clear();
         let scope = self.scope.clone();
         let mut requests = vec![];
         for k in [Kind::Models, Kind::Mcp] {
@@ -369,12 +501,13 @@ impl FilePages {
         kind: Kind,
         config: &Entity<super::pi_config::PiConfig>,
         cx: &App,
-    ) -> SettingPage {
+    ) -> SettingsPage {
         let e = entity.clone();
         let h = entity.clone();
+        let actions = entity.clone();
         let config = config.clone();
         let mcp_config = config.clone();
-        let page = SettingPage::new(t(
+        let page = SettingsPage::new(t(
             cx,
             if kind == Kind::Models {
                 "pi-files-models"
@@ -387,24 +520,15 @@ impl FilePages {
         } else {
             IconName::Server
         })
-        .resettable(false)
-        .group(
-            SettingGroup::new()
-                .border_0()
-                .p_0()
-                .item(SettingItem::render(move |_, window, cx| {
-                    if kind == Kind::Models {
-                        let owner = h.downgrade();
-                        window.use_keyed_state(
-                            "models-page-auth-metadata-entry",
-                            cx,
-                            |window, cx| {
-                                window.defer(cx, move |_, cx| {
-                                    let _ = owner.update(cx, |this, cx| this.refresh_auth(cx));
-                                });
-                            },
-                        );
-                    }
+        .scope(move |_, window, cx| {
+            config.update(cx, |this, cx| {
+                this.render_scope(kind == Kind::Models, window, cx)
+            })
+        })
+        .actions(move |_, _, cx| actions.update(cx, |this, cx| this.render_file_actions(kind, cx)));
+        let page =
+            if entity.read(cx).draft(kind).dirty() {
+                page.header(move |_, _, cx| {
                     let e = h.clone();
                     let dirty = h.read(cx).draft(kind).dirty();
                     let busy = h.read(cx).busy();
@@ -412,83 +536,139 @@ impl FilePages {
                         .w_full()
                         .min_w_0()
                         .gap_2()
-                        .child(config.update(cx, |this, cx| this.render_scope(cx)))
-                        .child(
-                            h_flex()
-                                .gap_2()
-                                .flex_wrap()
-                                .when(dirty, |row| {
-                                    row.child(
-                                        Button::new("file-reset")
-                                            .small()
-                                            .label(t(cx, "pi-settings-discard"))
-                                            .disabled(busy)
-                                            .on_click({
-                                                let e = e.clone();
-                                                move |_, _, cx| {
-                                                    e.update(cx, |this, cx| {
-                                                        let draft = this.draft_mut(kind);
-                                                        draft.edits.clear();
-                                                        draft.auto = None;
-                                                        cx.notify()
-                                                    })
-                                                }
-                                            }),
-                                    )
-                                    .child(
-                                        Button::new("file-save-page")
-                                            .small()
-                                            .primary()
-                                            .label(t(cx, "pi-settings-save"))
-                                            .disabled(busy)
-                                            .on_click({
-                                                let e = e.clone();
-                                                move |_, w, cx| {
-                                                    e.update(cx, |this, cx| {
-                                                        this.save(Some(kind), None, w, cx)
-                                                    })
-                                                }
-                                            }),
-                                    )
-                                })
+                        .child(h_flex().w_full().justify_end().gap_2().flex_wrap().when(
+                            dirty,
+                            |row| {
+                                row.child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(t(cx, "settings-key-unsaved")),
+                                )
                                 .child(
-                                    Button::new("file-reload")
+                                    Button::new("file-reset")
                                         .small()
-                                        .ghost()
-                                        .icon(IconName::RotateCw)
-                                        .accessibility_label(t(cx, "pi-settings-reload"))
-                                        .disabled(busy || dirty)
-                                        .on_click(move |_, _, cx| {
-                                            e.update(cx, |this, cx| this.reload(cx))
+                                        .label(t(cx, "pi-settings-discard"))
+                                        .disabled(busy)
+                                        .on_click({
+                                            let e = e.clone();
+                                            move |_, _, cx| {
+                                                e.update(cx, |this, cx| {
+                                                    let draft = this.draft_mut(kind);
+                                                    draft.edits.clear();
+                                                    draft.auto = None;
+                                                    cx.notify()
+                                                })
+                                            }
                                         }),
-                                ),
-                        )
+                                )
+                                .child(
+                                    Button::new("file-save-page")
+                                        .small()
+                                        .primary()
+                                        .label(t(cx, "pi-settings-save"))
+                                        .disabled(busy)
+                                        .on_click({
+                                            let e = e.clone();
+                                            move |_, w, cx| {
+                                                e.update(cx, |this, cx| {
+                                                    this.save(Some(kind), None, w, cx)
+                                                })
+                                            }
+                                        }),
+                                )
+                            },
+                        ))
                         .into_any_element()
-                })),
-        )
-        .group(
-            SettingGroup::new().item(SettingItem::render(move |_, window, cx| {
+                })
+            } else {
+                page
+            };
+        let metadata = entity.clone();
+        let page = page.group(SettingsSection::new().item(SettingsRow::content(
+            move |layout, window, cx| {
+                if kind == Kind::Models {
+                    let owner = metadata.downgrade();
+                    window.use_keyed_state("models-page-auth-metadata-entry", cx, |window, cx| {
+                        window.defer(cx, move |_, cx| {
+                            let _ = owner.update(cx, |this, cx| this.refresh_auth(cx));
+                        });
+                    });
+                }
                 let context = (
                     mcp_config.read(cx).mcp_command(cx),
                     mcp_config.read(cx).trusted() == Some(true),
                 );
                 e.update(cx, |this, cx| {
-                    this.render_page_with_mcp(kind, context, window, cx)
+                    this.render_page_with_mcp(kind, context, layout.width, window, cx)
                 })
-            })),
-        );
+            },
+        )));
         if kind == Kind::Mcp {
             let e = entity.clone();
             page.group(
-                SettingGroup::new()
+                SettingsSection::new()
                     .title(t(cx, "pi-files-automation"))
-                    .item(SettingItem::render(move |_, _, cx| {
-                        e.update(cx, |this, cx| this.render_auto(cx))
-                    })),
+                    .item(
+                        SettingsRow::content(move |layout, window, cx| {
+                            e.update(cx, |this, cx| this.render_auto(layout, window, cx))
+                        })
+                        .framed(true),
+                    ),
             )
         } else {
             page
         }
+    }
+
+    fn render_file_actions(&self, kind: Kind, cx: &mut Context<Self>) -> AnyElement {
+        let path = self.agent.as_ref().ok().map(|agent| {
+            kind.file(
+                agent,
+                if kind == Kind::Models {
+                    &Scope::Global
+                } else {
+                    &self.scope
+                },
+            )
+        });
+        let mut args = fluent_bundle::FluentArgs::new();
+        args.set(
+            "filename",
+            if kind == Kind::Models {
+                "models.json"
+            } else {
+                "mcp.json"
+            },
+        );
+        let open_label = t_with_args(cx, "pi-files-open-file", &args);
+        h_flex()
+            .gap_1()
+            .child(
+                Button::new("file-open")
+                    .small()
+                    .ghost()
+                    .icon(IconName::FolderOpen)
+                    .tooltip(open_label.clone())
+                    .accessibility_label(open_label)
+                    .disabled(self.busy() || path.as_ref().is_none_or(|p| !p.exists()))
+                    .on_click(move |_, _, cx| {
+                        if let Some(path) = &path {
+                            cx.open_with_system(path);
+                        }
+                    }),
+            )
+            .child(
+                Button::new("file-reload")
+                    .small()
+                    .ghost()
+                    .icon(IconName::RotateCw)
+                    .tooltip(t(cx, "pi-settings-reload"))
+                    .accessibility_label(t(cx, "pi-settings-reload"))
+                    .disabled(self.busy() || self.draft(kind).dirty())
+                    .on_click(cx.listener(|this, _, _, cx| this.reload(cx))),
+            )
+            .into_any_element()
     }
 
     #[cfg(test)]
@@ -498,15 +678,24 @@ impl FilePages {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        self.render_page_with_mcp(kind, (None, false), window, cx)
+        self.render_page_with_mcp(
+            kind,
+            (None, false),
+            window.viewport_size().width,
+            window,
+            cx,
+        )
     }
     fn render_page_with_mcp(
         &mut self,
         kind: Kind,
         context: (Option<std::ffi::OsString>, bool),
+        width: Pixels,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let narrow = width < window.rem_size() * 41.25;
+        let action_width = if narrow { rems(12.) } else { rems(15.) };
         let mount = (kind == Kind::Mcp).then(|| {
             window
                 .use_keyed_state("mcp-cli-page-mount", cx, |_, _| mcp::Mount::default())
@@ -514,12 +703,6 @@ impl FilePages {
                 .0
                 .clone()
         });
-        if kind == Kind::Models && matches!(self.scope, Scope::Project(_)) {
-            return div()
-                .text_sm()
-                .child(t(cx, "pi-files-global-only"))
-                .into_any_element();
-        }
         if self.draft(kind).file.is_none()
             && self.draft(kind).error.is_none()
             && self.loading.is_none()
@@ -537,35 +720,19 @@ impl FilePages {
             .as_ref()
             .map(|mount| self.render_mcp_controls(context.0.clone(), mount.clone(), cx));
         let draft = self.draft(kind);
-        let mut body = v_flex().w_full().min_w_0().max_w(rems(56.)).gap_2();
+        let mut body = v_flex().w_full().min_w_0().gap_4();
         let add = cx.entity();
-        body = body.child(super::management_header(
-            div()
-                .text_sm()
-                .font_weight(FontWeight::SEMIBOLD)
-                .child(t(
-                    cx,
-                    if kind == Kind::Models {
-                        "pi-files-providers"
-                    } else {
-                        "pi-files-servers"
-                    },
-                ))
-                .into_any_element(),
-            (kind == Kind::Models).then(|| {
-                div()
-                    .text_sm()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(t(cx, "pi-files-startup-only"))
-                    .into_any_element()
-            }),
-            Button::new("file-add")
-                .small()
-                .label(t(cx, "pi-files-add"))
-                .disabled(self.busy() || self.loading.is_some() || draft.names().is_err())
-                .on_click(move |_, window, cx| Self::open_editor(&add, kind, None, window, cx))
-                .into_any_element(),
-        ));
+        body = body.child(
+            h_flex().w_full().justify_end().child(
+                Button::new("file-add")
+                    .small()
+                    .outline()
+                    .icon(IconName::Plus)
+                    .label(t(cx, "pi-files-add"))
+                    .disabled(self.busy() || self.loading.is_some() || draft.names().is_err())
+                    .on_click(move |_, window, cx| Self::open_editor(&add, kind, None, window, cx)),
+            ),
+        );
         if let Some(controls) = controls {
             body = body.child(controls);
         }
@@ -602,8 +769,9 @@ impl FilePages {
                     .child(t(cx, "pi-files-empty")),
             );
         }
+        let mut mcp_rows = Vec::new();
         for name in names {
-            let Some(entry) = draft.entry(&name) else {
+            let Some(entry) = self.draft(kind).entry(&name) else {
                 continue;
             };
             let label = if kind == Kind::Mcp {
@@ -646,8 +814,6 @@ impl FilePages {
                 };
             let has_auth = kind == Kind::Models && self.has_stored_credentials(&name);
             let e = cx.entity();
-            let open = (e.clone(), name.clone());
-            let row_name = name.clone();
             let oauth = if kind == Kind::Mcp {
                 self.mcp.file.as_ref().map(|file| {
                     file.mcp_oauth_eligibility(
@@ -663,142 +829,282 @@ impl FilePages {
             let command = context.0.clone();
             let mount = mount.clone();
             let cli_disabled = self.dirty() || busy || command.is_none();
-            body = body.child(
-                h_flex()
-                    .gap_2()
-                    .items_center()
-                    .child(
-                        Button::new(SharedString::from(format!("file-row-{name}")))
-                            .ghost()
-                            .small()
-                            .flex_1()
-                            .min_w_0()
-                            .accessibility_label(if kind == Kind::Models {
-                                super::provider_label(&name, cx)
-                            } else {
-                                format!("{name} · {}", self.mcp_row_status(&name, cx))
+            let edit = (e.clone(), name.clone());
+            let delete = (e.clone(), name.clone());
+            let menu_owner = e.clone();
+            let menu_name = name.clone();
+            let mut actions = h_flex().min_w_0().flex_wrap().gap_1();
+            if kind == Kind::Mcp {
+                actions = actions.child(self.render_enabled(
+                    Some(&name),
+                    entry.visible(&["enabled".into()]),
+                    window,
+                    cx,
+                ));
+            }
+            if kind == Kind::Mcp
+                && self.mcp_needs_auth(&name)
+                && oauth == Some(gupi_resources::pi_mcp::Eligibility::Eligible)
+                && let Some(login_mount) = mount.clone()
+            {
+                let (owner, login_name, login_command) = (e.clone(), name.clone(), command.clone());
+                actions = actions.child(
+                    Button::new(SharedString::from(format!("mcp-login-{name}")))
+                        .small()
+                        .outline()
+                        .label(t(cx, "pi-mcp-login"))
+                        .disabled(cli_disabled)
+                        .on_click(move |_, window, cx| {
+                            if let Some(command) = login_command.clone() {
+                                FilePages::mcp_dialog(
+                                    &owner,
+                                    login_name.clone(),
+                                    true,
+                                    command,
+                                    login_mount.clone(),
+                                    window,
+                                    cx,
+                                );
+                            }
+                        }),
+                );
+            }
+            actions = actions
+                .child(
+                    Button::new(SharedString::from(format!("file-row-{name}")))
+                        .ghost()
+                        .small()
+                        .icon(IconName::SquarePen)
+                        .tooltip(format!("{}: {name}", t(cx, "pi-files-edit")))
+                        .accessibility_label(format!("{}: {name}", t(cx, "pi-files-edit")))
+                        .disabled(busy)
+                        .on_click(move |_, window, cx| {
+                            Self::open_editor(&edit.0, kind, Some(edit.1.clone()), window, cx)
+                        }),
+                )
+                .child(
+                    Button::new(SharedString::from(format!("file-delete-{name}")))
+                        .ghost()
+                        .small()
+                        .icon(IconName::Trash)
+                        .tooltip(format!("{}: {name}", t(cx, "pi-files-delete")))
+                        .accessibility_label(format!("{}: {name}", t(cx, "pi-files-delete")))
+                        .disabled(busy)
+                        .on_click(move |_, _, cx| {
+                            delete.0.update(cx, |this, cx| {
+                                this.draft_mut(kind).edit(delete.1.clone(), None);
+                                cx.notify();
                             })
-                            .disabled(busy)
-                            .when(kind == Kind::Models, |row| row.h_auto().py_1())
-                            .child({
-                                let identity = div()
-                                    .debug_selector({
-                                        let name = name.clone();
-                                        move || format!("file-name-{name}")
-                                    })
-                                    .min_w_0()
-                                    .w_full()
-                                    .text_left()
-                                    .truncate()
-                                    .child(if kind == Kind::Models {
-                                        super::provider_name(&name, cx).into_any_element()
-                                    } else {
-                                        div().child(name.clone()).into_any_element()
-                                    });
-                                let metadata = h_flex()
-                                    .min_w_0()
-                                    .flex_wrap()
-                                    .gap_x_2()
-                                    .gap_y_1()
-                                    .text_sm()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(div().min_w_0().max_w_full().truncate().child(label))
-                                    .when(has_auth, |row| {
-                                        row.child(
-                                            div()
-                                                .min_w_0()
-                                                .max_w_full()
-                                                .truncate()
-                                                .debug_selector({
-                                                    let name = name.clone();
-                                                    move || format!("file-auth-{name}")
-                                                })
-                                                .child(t(cx, "pi-files-auth-stored")),
-                                        )
-                                    });
-                                if kind == Kind::Models {
-                                    v_flex()
-                                        .w_full()
-                                        .min_w_0()
-                                        .gap_1()
-                                        .child(identity)
-                                        .child(metadata)
-                                        .into_any_element()
-                                } else {
-                                    h_flex()
-                                        .w_full()
-                                        .min_w_0()
-                                        .gap_2()
-                                        .child(identity.flex_1())
-                                        .child(metadata)
-                                        .into_any_element()
-                                }
-                            })
-                            .on_click(move |_, window, cx| {
-                                Self::open_editor(&open.0, kind, Some(open.1.clone()), window, cx)
-                            }),
-                    )
-                    .child(
-                        Button::new(SharedString::from(format!("file-menu-{name}")))
-                            .ghost()
-                            .xsmall()
-                            .icon(IconName::Ellipsis)
-                            .accessibility_label(t(cx, "pi-field-actions"))
-                            .disabled(busy)
-                            .dropdown_menu(move |menu, _, cx| {
-                                let edit = (e.clone(), row_name.clone());
-                                let delete = (e.clone(), row_name.clone());
-                                let navigate = e.clone();
-                                let menu = menu.when(kind == Kind::Models, |menu| {
-                                    menu.item(
-                                        PopupMenuItem::new(t(cx, "pi-files-manage-auth")).on_click(
-                                            move |_, _, cx| {
-                                                navigate.update(cx, |_, cx| {
-                                                    cx.emit(super::CredentialPage::Auth)
-                                                })
-                                            },
-                                        ),
-                                    )
-                                });
-                                let menu = if let (Some(eligibility), Some(mount)) =
-                                    (oauth, mount.as_ref())
-                                {
-                                    Self::mcp_menu(
-                                        menu,
-                                        &e,
-                                        &row_name,
-                                        eligibility,
-                                        command.clone(),
-                                        mount.clone(),
-                                        cli_disabled,
-                                        cx,
-                                    )
-                                } else {
-                                    menu
-                                };
-                                menu.item(PopupMenuItem::new(t(cx, "pi-files-edit")).on_click(
-                                    move |_, w, cx| {
-                                        Self::open_editor(
-                                            &edit.0,
-                                            kind,
-                                            Some(edit.1.clone()),
-                                            w,
-                                            cx,
-                                        )
-                                    },
-                                ))
-                                .item(
-                                    PopupMenuItem::new(t(cx, "pi-files-delete")).on_click(
+                        }),
+                )
+                .child(
+                    Button::new(SharedString::from(format!("file-menu-{name}")))
+                        .ghost()
+                        .small()
+                        .icon(IconName::Ellipsis)
+                        .tooltip(format!("{}: {name}", t(cx, "pi-field-actions")))
+                        .accessibility_label(format!("{}: {name}", t(cx, "pi-field-actions")))
+                        .disabled(busy)
+                        .dropdown_menu(move |menu, _, cx| {
+                            if kind == Kind::Models {
+                                let owner = menu_owner.clone();
+                                menu.item(
+                                    PopupMenuItem::new(t(cx, "pi-files-manage-auth")).on_click(
                                         move |_, _, cx| {
-                                            delete.0.update(cx, |this, cx| {
-                                                this.draft_mut(kind).edit(delete.1.clone(), None);
-                                                cx.notify()
+                                            owner.update(cx, |_, cx| {
+                                                cx.emit(super::CredentialPage::Auth)
                                             })
                                         },
                                     ),
                                 )
-                            }),
-                    ),
+                            } else if let (Some(eligibility), Some(mount)) = (oauth, mount.as_ref())
+                            {
+                                Self::mcp_menu(
+                                    menu,
+                                    &menu_owner,
+                                    &menu_name,
+                                    eligibility,
+                                    command.clone(),
+                                    mount.clone(),
+                                    cli_disabled,
+                                    cx,
+                                )
+                            } else {
+                                menu
+                            }
+                        }),
+                );
+            if kind == Kind::Models {
+                let models = entry
+                    .visible(&["models".into()])
+                    .and_then(|models| models.as_array().cloned())
+                    .unwrap_or_default();
+                let model_names = models
+                    .iter()
+                    .filter_map(|model| {
+                        model
+                            .get("name")
+                            .or_else(|| model.get("id"))
+                            .and_then(Value::as_str)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("、");
+                let mut metadata = vec![label];
+                for key in ["baseUrl", "api"] {
+                    if let Some(Value::String(value)) = entry.visible(&[key.into()]) {
+                        metadata.push(value);
+                    }
+                }
+                let info = v_flex()
+                    .min_w_0()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_sm()
+                            .debug_selector({
+                                let name = name.clone();
+                                move || format!("file-name-{name}")
+                            })
+                            .child(model_names),
+                    )
+                    .when(has_auth, |info| {
+                        info.child(
+                            div()
+                                .text_sm()
+                                .text_color(cx.theme().muted_foreground)
+                                .debug_selector({
+                                    let name = name.clone();
+                                    move || format!("file-auth-{name}")
+                                })
+                                .child(t(cx, "pi-files-auth-stored")),
+                        )
+                    })
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(metadata.join(" · ")),
+                    );
+                let title = super::provider_name(&name, cx);
+                body = body.child(
+                    v_flex()
+                        .w_full()
+                        .min_w_0()
+                        .gap_3()
+                        .mt_4()
+                        .child(div().font_weight(FontWeight::SEMIBOLD).child(title))
+                        .child(
+                            gpui_kit::component::group_box::GroupBox::new()
+                                .fill()
+                                .content_style(
+                                    StyleRefinement::default()
+                                        .w_full()
+                                        .min_w_0()
+                                        .px_5()
+                                        .py_0()
+                                        .gap_0(),
+                                )
+                                .child(crate::features::settings::composition::settings_row(
+                                    &crate::features::settings::composition::PageLayout::new(
+                                        width - window.rem_size() * 2.5,
+                                        window.rem_size(),
+                                    ),
+                                    info,
+                                    None,
+                                    actions,
+                                    false,
+                                    cx,
+                                )),
+                        ),
+                );
+            } else {
+                let connection = entry
+                    .visible(&["url".into()])
+                    .or_else(|| entry.visible(&["command".into()]))
+                    .and_then(|value| value.as_str().map(str::to_owned))
+                    .unwrap_or_default();
+                mcp_rows.push(
+                    gpui_kit::component::table::TableRow::new()
+                        .child(
+                            gpui_kit::component::table::TableCell::new()
+                                .flex_1()
+                                .min_w_0()
+                                .whitespace_normal()
+                                .py_4()
+                                .child(
+                                    v_flex()
+                                        .min_w_0()
+                                        .gap_1()
+                                        .child(name)
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(cx.theme().muted_foreground)
+                                                .child(connection),
+                                        )
+                                        .when(narrow, |info| {
+                                            info.child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(cx.theme().muted_foreground)
+                                                    .child(label.clone()),
+                                            )
+                                        }),
+                                ),
+                        )
+                        .when(!narrow, |row| {
+                            row.child(
+                                gpui_kit::component::table::TableCell::new()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .whitespace_normal()
+                                    .child(label),
+                            )
+                        })
+                        .child(
+                            gpui_kit::component::table::TableCell::new()
+                                .w(action_width)
+                                .min_w_0()
+                                .flex_none()
+                                .child(actions),
+                        ),
+                );
+            }
+        }
+        if kind == Kind::Models {
+            body = body.child(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(t(cx, "pi-files-startup-only")),
+            );
+        }
+        if !mcp_rows.is_empty() {
+            use gpui_kit::component::table::{Table, TableBody, TableHead, TableHeader, TableRow};
+            body = body.child(
+                Table::new()
+                    .accessibility_label(t(cx, "pi-files-servers"))
+                    .child(
+                        TableHeader::new().child(
+                            TableRow::new()
+                                .child(
+                                    TableHead::new()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .child(t(cx, "pi-files-servers")),
+                                )
+                                .when(!narrow, |row| {
+                                    row.child(
+                                        TableHead::new()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .child(t(cx, "settings-about-status")),
+                                    )
+                                })
+                                .child(TableHead::new().w(action_width).min_w_0().flex_none()),
+                        ),
+                    )
+                    .child(TableBody::new().children(mcp_rows)),
             );
         }
         if kind == Kind::Mcp {
@@ -815,120 +1121,39 @@ impl FilePages {
         };
         cx.notify();
     }
-    fn render_auto(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn render_auto(
+        &mut self,
+        layout: &crate::features::settings::composition::PageLayout,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let current = self
             .mcp
             .auto
             .clone()
             .unwrap_or_else(|| self.mcp.file.as_ref().and_then(File::auto_enable));
-        let label = match current.as_ref() {
-            None => t(cx, "pi-value-unset"),
-            Some(Value::Bool(true)) => t(cx, "pi-files-on"),
-            Some(Value::Bool(false)) => t(cx, "pi-files-off"),
-            _ => t(cx, "pi-resource-unsupported"),
-        };
-        let e = cx.entity();
-        let menu_e = e.clone();
-        let pending = self.mcp.auto.is_some();
-        let busy = self.busy() || self.mcp.file.is_none();
-        v_flex()
-            .w_full()
-            .min_w_0()
-            .max_w(rems(56.))
-            .gap_2()
-            .child(
-                v_flex()
-                    .w_full()
-                    .min_w_0()
-                    .gap_1()
-                    .child(editor::field_label("autoEnableCodemode", cx))
-                    .when(pending, |label| {
-                        label.child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(t(cx, "pi-unsaved")),
-                        )
-                    }),
-            )
-            .child(
-                h_flex()
-                    .w_full()
-                    .min_w_0()
-                    .gap_2()
-                    .child(
-                        Button::new("file-auto")
-                            .small()
-                            .outline()
-                            .flex_1()
-                            .min_w_0()
-                            .label(label)
-                            .dropdown_caret(true)
-                            .disabled(busy)
-                            .accessibility_label(t(cx, "pi-files-label-autoEnableCodemode"))
-                            .dropdown_menu(move |menu, _, cx| {
-                                let unknown =
-                                    current.as_ref().is_some_and(|value| !value.is_boolean());
-                                [
-                                    ("pi-value-unset", None),
-                                    ("pi-files-on", Some(Value::Bool(true))),
-                                    ("pi-files-off", Some(Value::Bool(false))),
-                                ]
-                                .into_iter()
-                                .fold(menu, |menu, (label, value)| {
-                                    let e = e.clone();
-                                    menu.item(
-                                        PopupMenuItem::new(t(cx, label))
-                                            .checked(value == current)
-                                            .on_click(move |_, _, cx| {
-                                                e.update(cx, |this, cx| {
-                                                    this.set_auto(value.clone(), cx)
-                                                })
-                                            }),
-                                    )
-                                })
-                                .when(unknown, |menu| {
-                                    menu.item(
-                                        PopupMenuItem::new(t(cx, "pi-resource-unsupported"))
-                                            .checked(true)
-                                            .disabled(true),
-                                    )
-                                })
-                            }),
+        let control = self.render_enabled(None, current, window, cx);
+        let value =
+            v_flex()
+                .gap_1()
+                .items_end()
+                .child(control)
+                .when(self.mcp.auto.is_some(), |value| {
+                    value.child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(t(cx, "pi-unsaved")),
                     )
-                    .child(
-                        Button::new("file-auto-menu")
-                            .w_6()
-                            .flex_shrink_0()
-                            .ghost()
-                            .xsmall()
-                            .icon(IconName::Ellipsis)
-                            .accessibility_label(t(cx, "pi-field-actions"))
-                            .disabled(busy)
-                            .dropdown_menu(move |menu, _, cx| {
-                                let e = menu_e.clone();
-                                let clear = menu_e.clone();
-                                menu.when(pending, |menu| {
-                                    menu.item(PopupMenuItem::new(t(cx, "pi-menu-revert")).on_click(
-                                        move |_, _, cx| {
-                                            e.update(cx, |this, cx| {
-                                                this.mcp.auto = None;
-                                                cx.notify()
-                                            })
-                                        },
-                                    ))
-                                })
-                                .item(
-                                    PopupMenuItem::new(t(cx, "pi-value-unset")).on_click(
-                                        move |_, _, cx| {
-                                            clear.update(cx, |this, cx| this.set_auto(None, cx))
-                                        },
-                                    ),
-                                )
-                            }),
-                    ),
-            )
-            .into_any_element()
+                });
+        crate::features::settings::composition::settings_row(
+            layout,
+            t(cx, "pi-files-label-autoEnableCodemode"),
+            None,
+            value,
+            false,
+            cx,
+        )
     }
     fn open_editor(
         entity: &Entity<Self>,
@@ -942,7 +1167,7 @@ impl FilePages {
             .as_deref()
             .and_then(|n| this.draft(kind).entry(n))
             .unwrap_or_else(|| Entry::new(kind));
-        let project = matches!(this.scope, Scope::Project(_));
+        let project = kind == Kind::Mcp && matches!(this.scope, Scope::Project(_));
         let editing = name.is_some();
         let editor = cx.new(|cx| {
             EntryEditor::new(
@@ -1084,17 +1309,26 @@ mod tests {
     impl gpui_kit::Render for AutoMounted {
         fn render(
             &mut self,
-            _: &mut gpui_kit::Window,
+            window: &mut gpui_kit::Window,
             cx: &mut gpui_kit::Context<Self>,
         ) -> impl gpui_kit::IntoElement {
             use gpui_kit::{ParentElement as _, Styled as _};
             gpui_kit::div()
                 .w_full()
-                .child(self.0.update(cx, |files, cx| files.render_auto(cx)))
+                .child(self.0.update(cx, |files, cx| {
+                    files.render_auto(
+                        &crate::features::settings::composition::PageLayout::new(
+                            gpui_kit::px(800.),
+                            window.rem_size(),
+                        ),
+                        window,
+                        cx,
+                    )
+                }))
         }
     }
     #[gpui_kit::test]
-    fn codemode_choice_fits_and_preserves_unknown_until_explicit_selection(
+    fn codemode_select_preserves_unknown_and_stages_explicit_choices(
         cx: &mut gpui_kit::TestAppContext,
     ) {
         use gpui_kit::AppContext as _;
@@ -1121,37 +1355,22 @@ mod tests {
         });
         let owner = owner.unwrap();
         cx.simulate_resize(gpui_kit::size(gpui_kit::px(800.), gpui_kit::px(600.)));
-        cx.update(|window, cx| {
-            window.render_frame(cx);
-            assert!(window.find("file-auto-menu").bounds().right() <= gpui_kit::px(800.));
-            window.click("file-auto", cx);
+        cx.update(|window, cx| window.render_frame(cx));
+        let picker = owner.read_with(cx, |files, _| files.enabled_inputs["auto"].state.clone());
+        owner.read_with(cx, |files, cx| {
+            assert_eq!(files.mcp.auto, None);
+            assert_eq!(picker.read(cx).selected_value(), None);
         });
-        cx.run_until_parked();
-        cx.update(|window, cx| {
-            window.render_frame(cx);
-            assert_eq!(
-                window.within("popup-menu").find(3usize).label(),
-                Some("Nicht unterstütztes Format · schreibgeschützt")
-            );
-            window.within("popup-menu").click(3usize, cx);
-            assert_eq!(owner.read(cx).mcp.auto, None);
-            window.within("popup-menu").click(0usize, cx);
-        });
-        cx.run_until_parked();
-        owner.read_with(cx, |files, _| assert_eq!(files.mcp.auto, Some(None)));
-        for (index, expected) in [
-            (1usize, Some(json!(true))),
-            (2, Some(json!(false))),
-            (0, None),
-        ] {
-            cx.update(|window, cx| window.click("file-auto", cx));
-            cx.run_until_parked();
-            cx.update(|window, cx| {
-                window.render_frame(cx);
-                window.within("popup-menu").click(index, cx);
+        for expected in [None, Some(true), Some(false), None] {
+            picker.update(cx, |_, cx| {
+                cx.emit(gpui_kit::component::select::SelectEvent::<
+                    gpui_kit::component::searchable_list::SearchableVec<super::EnabledChoice>,
+                >::Confirm(Some(expected)));
             });
             cx.run_until_parked();
-            owner.read_with(cx, |files, _| assert_eq!(files.mcp.auto, Some(expected)));
+            owner.read_with(cx, |files, _| {
+                assert_eq!(files.mcp.auto, Some(expected.map(serde_json::Value::Bool)))
+            });
         }
         assert_eq!(std::fs::read_to_string(path).unwrap(), original);
     }

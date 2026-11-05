@@ -1,6 +1,5 @@
 use super::*;
 use gpui_form::FormSchema;
-use gpui_kit::component::ElementExt as _;
 use gpui_kit::component::Sizable;
 use gpui_kit::component::WindowExt;
 use gpui_kit::component::input::Editor as CodeEditor;
@@ -138,9 +137,6 @@ pub(super) struct ResourcesView {
     /// Packages page view: the catalog when true, installed packages otherwise.
     browsing: bool,
     browse: browse::Browse,
-    installed_scroll: ScrollHandle,
-    /// The Packages body's width from the last layout; drives its layout choices.
-    packages_width: Option<Pixels>,
     /// The latest Pi operation result per registry package name, shown in details.
     package_results: std::collections::BTreeMap<String, Result<(), io::Error>>,
     error: Option<(Kind, String)>,
@@ -167,34 +163,9 @@ impl ResourcesView {
         cx: &Context<Self>,
     ) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
         let owner = cx.entity().downgrade();
-        let busy = self.busy(cx);
-        let opening = self.open.is_running();
         let resource = resource.clone();
-        let files = self.owner_of(row);
-        let pi_config = self.pi_config.clone();
-        let writable = resource.editable && row != Row::Inherited;
         move |menu, _, cx| {
             let mut menu = menu;
-            if writable {
-                let owner = owner.clone();
-                let open = Open {
-                    path: resource.path.clone(),
-                    kind: resource.kind,
-                    editable: true,
-                    create: false,
-                    owner: files.clone(),
-                };
-                menu = menu.item(
-                    PopupMenuItem::new(t(cx, "settings-resource-edit"))
-                        .icon(IconName::SquarePen)
-                        .disabled(busy || opening)
-                        .on_click(move |_, window, cx| {
-                            owner
-                                .update(cx, |this, cx| this.request_open(open.clone(), window, cx))
-                                .ok();
-                        }),
-                );
-            }
             let reveal = resource.path.clone();
             menu = menu.item(
                 PopupMenuItem::new(t(cx, "settings-resource-location"))
@@ -223,40 +194,93 @@ impl ResourcesView {
                         }),
                 );
             }
-            if row == Row::Inherited
-                && let Some(pi_config) = pi_config.clone()
-            {
-                menu = menu.item(
-                    PopupMenuItem::new(t(cx, "settings-resource-edit-global"))
-                        .icon(IconName::SquarePen)
-                        .on_click(move |_, window, cx| {
-                            super::pi_config::request_scope(&pi_config, Scope::Global, window, cx)
-                        }),
-                );
-            }
-            if writable {
-                let owner = owner.clone();
-                let remove = resource.clone();
-                menu = menu.separator().item(
-                    PopupMenuItem::new(t(cx, "settings-resource-delete-ellipsis"))
-                        .icon(IconName::Trash)
-                        .disabled(busy)
-                        .on_click(move |_, window, cx| {
-                            owner
-                                .update(cx, |this, cx| {
-                                    this.confirm_remove(
-                                        Some(remove.clone()),
-                                        remove.name.clone(),
-                                        window,
-                                        cx,
-                                    )
-                                })
-                                .ok();
-                        }),
-                );
-            }
             menu
         }
+    }
+
+    fn render_resource_actions(
+        &self,
+        resource: &Resource,
+        row: Row,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let busy = self.busy(cx);
+        let open = Open {
+            path: resource.path.clone(),
+            kind: resource.kind,
+            editable: true,
+            create: false,
+            owner: self.owner_of(row),
+        };
+        let remove = resource.clone();
+        let id: SharedString =
+            format!("{}:{:?}:{:?}", resource.path.display(), resource.kind, row).into();
+        let config = self.pi_config.clone();
+        h_flex()
+            .flex_wrap()
+            .gap_1()
+            .when(resource.editable && row != Row::Inherited, |actions| {
+                actions
+                    .child(
+                        Button::new(SharedString::from(format!("{id}:edit")))
+                            .ghost()
+                            .small()
+                            .icon(IconName::SquarePen)
+                            .tooltip(format!(
+                                "{}: {}",
+                                t(cx, "settings-resource-edit"),
+                                resource.name
+                            ))
+                            .accessibility_label(format!(
+                                "{}: {}",
+                                t(cx, "settings-resource-edit"),
+                                resource.name
+                            ))
+                            .disabled(busy || self.open.is_running())
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.request_open(open.clone(), window, cx)
+                            })),
+                    )
+                    .child(
+                        Button::new(SharedString::from(format!("{id}:delete")))
+                            .ghost()
+                            .small()
+                            .icon(IconName::Trash)
+                            .tooltip(format!(
+                                "{}: {}",
+                                t(cx, "settings-resource-delete-ellipsis"),
+                                resource.name
+                            ))
+                            .accessibility_label(format!(
+                                "{}: {}",
+                                t(cx, "settings-resource-delete-ellipsis"),
+                                resource.name
+                            ))
+                            .disabled(busy)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.confirm_remove(
+                                    Some(remove.clone()),
+                                    remove.name.clone(),
+                                    window,
+                                    cx,
+                                )
+                            })),
+                    )
+            })
+            .when(row == Row::Inherited && config.is_some(), |actions| {
+                actions.child(
+                    Button::new(SharedString::from(format!("{id}:edit-global")))
+                        .ghost()
+                        .small()
+                        .label(t(cx, "settings-resource-edit-global"))
+                        .on_click(move |_, window, cx| {
+                            if let Some(config) = &config {
+                                super::pi_config::request_scope(config, Scope::Global, window, cx);
+                            }
+                        }),
+                )
+            })
+            .into_any_element()
     }
 
     /// The source label: a button to the owning package, otherwise a plain tag.
@@ -441,8 +465,6 @@ impl ResourcesView {
             expanded_packages: Default::default(),
             browsing: false,
             browse,
-            installed_scroll: ScrollHandle::new(),
-            packages_width: None,
             package_results: Default::default(),
             error: None,
             _subscriptions: subscriptions,
@@ -1095,21 +1117,10 @@ impl ResourcesView {
                 })
         });
     }
-    pub fn render_header(&self, kind: Kind, cx: &Context<Self>) -> AnyElement {
+    pub fn render_header(&self, _kind: Kind, cx: &Context<Self>) -> AnyElement {
         let controller = self.controller.read(cx);
         h_flex()
             .gap_1()
-            .when(kind == Kind::Extension, |header| {
-                header.child(div().mr_2().child(self.render_packages_tabs(cx)))
-            })
-            .child(
-                Button::new("resources-help")
-                    .ghost()
-                    .small()
-                    .icon(IconName::Info)
-                    .tooltip(t(cx, "settings-resource-reload-help"))
-                    .accessibility_label(t(cx, "settings-resource-reload-help")),
-            )
             .child(
                 Button::new("resources-refresh")
                     .ghost()
@@ -1161,6 +1172,7 @@ impl ResourcesView {
         &mut self,
         kind: Kind,
         section: Section,
+        width: Pixels,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         if matches!(
@@ -1227,30 +1239,7 @@ impl ResourcesView {
             return view.into_any_element();
         }
         if section == Section::Packages {
-            // Settings 0.7.1 mounts pages in its group list, which measures each
-            // item at its content height, so the body must keep its natural
-            // height for the page list to scroll. A container query cannot be
-            // used here: its contents never contribute to its size. Layout
-            // decisions follow the body's own width, measured after layout.
-            // Until the first layout reports a width, assume a typical page.
-            let width = self.packages_width.unwrap_or(px(640.));
-            let owner = cx.entity().downgrade();
-            let measured = self.packages_width;
-            return div()
-                .relative()
-                .w_full()
-                .min_w_0()
-                .child(self.render_packages(width, packages::Mount::Content, cx))
-                .on_prepaint(move |bounds, _, cx| {
-                    let width = bounds.size.width;
-                    if measured.is_none_or(|last| (last - width).abs() >= px(0.5)) {
-                        let _ = owner.update(cx, |this, cx| {
-                            this.packages_width = Some(width);
-                            cx.notify();
-                        });
-                    }
-                })
-                .into_any_element();
+            return self.render_packages(width, cx);
         }
         if catalog.is_none() {
             return view.into_any_element();

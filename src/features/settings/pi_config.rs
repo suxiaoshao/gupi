@@ -93,6 +93,21 @@ impl SearchableListItem for ModelItem {
     }
 }
 
+#[derive(Clone, PartialEq)]
+struct ScopeItem {
+    value: Option<Scope>,
+    title: SharedString,
+}
+impl SearchableListItem for ScopeItem {
+    type Value = Option<Scope>;
+    fn title(&self) -> SharedString {
+        self.title.clone()
+    }
+    fn value(&self) -> &Self::Value {
+        &self.value
+    }
+}
+
 pub(super) enum PiConfigEvent {
     ResourcePathsSaved(Scope),
 }
@@ -103,6 +118,9 @@ pub(super) struct PiConfig {
     pub(super) file_pages: Entity<super::config_files::FilePages>,
     agent: Result<PathBuf, String>,
     scope: Scope,
+    scope_select: Entity<SelectState<SearchableVec<ScopeItem>>>,
+    global_select: Entity<SelectState<SearchableVec<ScopeItem>>>,
+    scope_items: Vec<ScopeItem>,
     /// Projects opened or chosen in this session, offered by the scope menu.
     projects: Vec<PathBuf>,
     /// The project of the conversation shown when settings opened, listed first.
@@ -168,6 +186,44 @@ impl PiConfig {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let initial_scope = ScopeItem {
+            value: Some(Scope::Global),
+            title: t(cx, "pi-scope-global").into(),
+        };
+        let scope_select = cx.new(|cx| {
+            SelectState::new(
+                SearchableVec::new(vec![initial_scope.clone()]),
+                Some(gpui_kit::component::IndexPath::default()),
+                window,
+                cx,
+            )
+        });
+        let global_select = cx.new(|cx| {
+            SelectState::new(
+                SearchableVec::new(vec![initial_scope]),
+                Some(gpui_kit::component::IndexPath::default()),
+                window,
+                cx,
+            )
+        });
+        let scope_select_sub =
+            cx.subscribe_in(&scope_select, window, |this, picker, event, window, cx| {
+                if let SelectEvent::<SearchableVec<ScopeItem>>::Confirm(Some(scope)) = event {
+                    // A selection is a request. The leave guard can keep the current scope.
+                    picker.update(cx, |picker, cx| {
+                        picker.set_selected_value(&Some(this.scope.clone()), window, cx)
+                    });
+                    let entity = cx.entity();
+                    let next = scope.clone();
+                    window.defer(cx, move |window, cx| {
+                        if let Some(next) = next {
+                            request_scope(&entity, next, window, cx);
+                        } else {
+                            page::choose_project_folder(&entity, window, cx);
+                        }
+                    });
+                }
+            });
         let model_picker = cx.new(|cx| {
             SelectState::new(SearchableVec::new(vec![]), None, window, cx).searchable(true)
         });
@@ -244,6 +300,7 @@ impl PiConfig {
         let file_pages = cx.new(super::config_files::FilePages::new);
         let file_pages_sub = cx.observe(&file_pages, |_, _, cx| cx.notify());
         let mut subscriptions = vec![
+            scope_select_sub,
             file_pages_sub,
             custom_tool_sub,
             picker_sub,
@@ -261,6 +318,9 @@ impl PiConfig {
             applied_pi,
             agent: pi_resources::agent_dir().map_err(|e| e.to_string()),
             scope: Scope::Global,
+            scope_select,
+            global_select,
+            scope_items: Vec::new(),
             projects: Vec::new(),
             active_project: None,
             generation: 0,
@@ -549,24 +609,6 @@ impl PiConfig {
         cx.notify();
     }
 
-    fn clear_draft(&mut self, field: Field, cx: &mut Context<Self>) {
-        self.retire_advanced_controls(field);
-        let baseline = self.baseline(cx);
-        if let Err(error) = self.discard_field_drafts(field, cx).and_then(|_| {
-            baseline
-                .install_field(field, &self.conversation, &self.network, &self.tools, cx)
-                .map_err(|e| e.to_string())
-        }) {
-            self.error = Some(error.to_string());
-            cx.notify();
-            return;
-        }
-        self.error = None;
-        self.refresh_conflicts.retain(|f| *f != field);
-        self.refresh_field_input(field, cx);
-        cx.notify();
-    }
-
     fn retire_advanced_controls(&mut self, field: Field) {
         if matches!(field, Field::DefaultTools | Field::NpmCommand) {
             self.custom_tool_open = false;
@@ -588,20 +630,6 @@ impl PiConfig {
             unreachable!("resolve loaded settings")
         };
         files.resolve(field, Some(&self.snapshot(cx).value(field)))
-    }
-
-    /// Fixes the current effective value in the edited scope.
-    fn pin(&mut self, field: Field, cx: &mut Context<Self>) {
-        if !matches!(self.files, Load::Ready(_)) {
-            return;
-        }
-        let mut values = self.resolved(field, cx).values;
-        if field == Field::ModelScope && values == vec![None] {
-            values = vec![Some(serde_json::json!([]))];
-        }
-        if let Some(values) = values.into_iter().collect::<Option<Vec<_>>>() {
-            self.set_values(field, values.into_iter().map(Slot::Set).collect(), cx);
-        }
     }
 
     fn has_page_drafts(&self, page: Page, cx: &App) -> bool {

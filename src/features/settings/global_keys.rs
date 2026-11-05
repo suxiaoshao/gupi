@@ -1,11 +1,7 @@
 use super::*;
+use crate::features::settings::composition::{SettingsRow, SettingsSection, control};
 use gpui_kit::component::Sizable;
 use gpui_kit::component::WindowExt;
-use gpui_kit::component::menu::DropdownMenu;
-use gpui_kit::component::menu::PopupMenuItem;
-use gpui_kit::component::setting::SettingField;
-use gpui_kit::component::setting::SettingGroup;
-use gpui_kit::component::setting::SettingItem;
 use gpui_kit::prelude::FluentBuilder;
 use gupi_settings::shortcuts::InputSource;
 use gupi_settings::shortcuts::ShortcutTask;
@@ -24,21 +20,55 @@ impl GlobalKeys {
         }
     }
     /// The system-wide section: the temporary window launcher and template tasks.
-    pub fn groups(owner: &Entity<Self>, filter: &keys::KeysView, cx: &App) -> Vec<SettingGroup> {
+    pub fn groups(owner: &Entity<Self>, filter: &keys::KeysView, cx: &App) -> Vec<SettingsSection> {
         let config = owner.read(cx).controller.read(cx).preferences(cx).shortcuts;
         let row = |id: String, label: String, description: String| {
             let owner = owner.clone();
-            SettingItem::new(
+            let remove = owner.clone();
+            let delete_id = id.clone();
+            let delete_label = label.clone();
+            let row = SettingsRow::new(
+                id.clone(),
                 label.clone(),
-                SettingField::render(move |_, window, cx| {
+                control(move |_, window, cx| {
                     owner.update(cx, |this, cx| this.render_binding(&id, window, cx))
                 }),
             )
+            .framed(false)
             .description(description)
             .keywords(vec![
                 label,
                 "global system-wide shortcut 全局 系统级 快捷键".into(),
-            ])
+            ]);
+            if delete_id.is_empty() {
+                return row;
+            }
+            row.leading(control(move |_, _, cx| {
+                let remove = remove.clone();
+                let target = delete_id.clone();
+                div().flex_shrink_0().child(
+                    Button::new(format!("delete-task-{delete_id}"))
+                        .ghost()
+                        .small()
+                        .icon(IconName::Trash)
+                        .tooltip(format!(
+                            "{}: {}",
+                            t(cx, "shortcut-delete-ellipsis"),
+                            delete_label
+                        ))
+                        .accessibility_label(format!(
+                            "{}: {}",
+                            t(cx, "shortcut-delete-ellipsis"),
+                            delete_label
+                        ))
+                        .disabled(remove.read(cx).controller.read(cx).busy(cx))
+                        .on_click(move |_, window, cx| {
+                            remove.update(cx, |this, cx| {
+                                this.confirm_delete(target.clone(), window, cx)
+                            })
+                        }),
+                )
+            }))
         };
         let matches = |label: &str, id: &str, binding: &str| {
             filter.matches_binding(
@@ -54,8 +84,13 @@ impl GlobalKeys {
             )
         };
         let launcher_label = t(cx, "shortcut-launcher");
-        let launcher = matches(&launcher_label, "launcher", &config.launcher)
-            .then(|| row(String::new(), launcher_label, String::new()));
+        let launcher = matches(&launcher_label, "launcher", &config.launcher).then(|| {
+            row(
+                String::new(),
+                launcher_label,
+                t(cx, "settings-key-launcher-help"),
+            )
+        });
         let tasks = config
             .tasks
             .iter()
@@ -81,10 +116,13 @@ impl GlobalKeys {
         if items.is_empty() {
             return vec![];
         }
+        let add = owner.clone();
         vec![
-            SettingGroup::new()
+            SettingsSection::new()
+                .bindings()
                 .title(t(cx, "settings-key-group-system"))
                 .description(t(cx, "settings-key-system-help"))
+                .tools(move |_, _, cx| Self::add_button(&add, cx).into_any_element())
                 .items(items),
         ]
     }
@@ -100,6 +138,8 @@ impl GlobalKeys {
         let owner = owner.clone();
         Button::new("add-shortcut-task")
             .small()
+            .outline()
+            .flex_shrink_0()
             .icon(IconName::Plus)
             .label(t(cx, "shortcut-add"))
             .disabled(disabled)
@@ -124,7 +164,7 @@ impl GlobalKeys {
             .flex_wrap()
             .gap_2()
             .items_center()
-            .child(div().flex_1().min_w_0().child(input));
+            .child(input);
         if id.is_empty() {
             return row.into_any_element();
         }
@@ -158,41 +198,17 @@ impl GlobalKeys {
                 })),
         )
         .child(
-            Button::new(format!("task-actions-{id}"))
+            Button::new(format!("edit-task-{id}"))
                 .ghost()
                 .small()
-                .icon(IconName::Ellipsis)
-                .tooltip(t(cx, "settings-key-task-actions"))
-                .accessibility_label(t(cx, "settings-key-task-actions"))
-                .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, cx| {
-                    let edit = owner.clone();
-                    let remove = owner.clone();
-                    let edit_id = task.clone();
-                    let remove_id = task.clone();
-                    menu.item(
-                        PopupMenuItem::new(t(cx, "shortcut-edit"))
-                            .icon(IconName::SquarePen)
-                            .disabled(busy)
-                            .on_click(move |_, window, cx| {
-                                edit.update(cx, |this, cx| {
-                                    this.edit(Some(edit_id.clone()), window, cx)
-                                })
-                                .ok();
-                            }),
-                    )
-                    .separator()
-                    .item(
-                        PopupMenuItem::new(t(cx, "shortcut-delete-ellipsis"))
-                            .icon(IconName::Trash)
-                            .disabled(busy)
-                            .on_click(move |_, window, cx| {
-                                remove
-                                    .update(cx, |this, cx| {
-                                        this.confirm_delete(remove_id.clone(), window, cx)
-                                    })
-                                    .ok();
-                            }),
-                    )
+                .icon(IconName::SquarePen)
+                .tooltip(t(cx, "shortcut-edit"))
+                .accessibility_label(t(cx, "shortcut-edit"))
+                .disabled(busy)
+                .on_click(move |_, window, cx| {
+                    owner
+                        .update(cx, |this, cx| this.edit(Some(task.clone()), window, cx))
+                        .ok();
                 }),
         )
         .into_any_element()
@@ -266,11 +282,12 @@ fn source_key(source: InputSource) -> &'static str {
 }
 
 /// One system-wide binding. Recording and clearing change only the draft;
-/// Save validates registration before writing preferences.
+/// confirmation validates registration before writing preferences.
 struct BindingInput {
     id: String,
     controller: Entity<ConfigController>,
     focus: FocusHandle,
+    region: FocusHandle,
     draft: String,
     saved: String,
     error: Option<String>,
@@ -303,6 +320,9 @@ impl BindingInput {
             this.capture = None;
             cx.notify();
         });
+        let region = cx.focus_handle();
+        let focus_in = cx.on_focus_in(&region, window, |_, _, cx| cx.notify());
+        let focus_out = cx.on_focus_out(&region, window, |_, _, _, cx| cx.notify());
         let store = controller.read(cx).configuration();
         let config = store.observe_in(cx, window, |this, op, _, cx| {
             if !op.is_running()
@@ -320,12 +340,13 @@ impl BindingInput {
             id,
             controller,
             focus,
+            region,
             draft: saved.clone(),
             saved,
             error: None,
             capture: None,
             editing: false,
-            _subscriptions: vec![blur, config],
+            _subscriptions: vec![blur, config, focus_in, focus_out],
         }
     }
     fn save(&mut self, cx: &mut Context<Self>) {
@@ -367,7 +388,7 @@ impl BindingInput {
         self.draft = self.saved.clone();
         cx.notify();
     }
-    fn clear(&mut self, cx: &mut Context<Self>) {
+    fn clear(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.controller.read(cx).busy(cx) {
             return;
         }
@@ -375,6 +396,7 @@ impl BindingInput {
         self.capture = None;
         self.error = None;
         self.draft.clear();
+        self.focus.focus(window, cx);
         cx.notify();
     }
     fn record(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -398,7 +420,7 @@ impl BindingInput {
     }
 }
 impl Render for BindingInput {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let busy = self.controller.read(cx).busy(cx);
         let recording = self.capture.is_some();
         let dirty = self.draft != self.saved;
@@ -424,27 +446,48 @@ impl Render for BindingInput {
             recording,
             cx,
         )
-        .on_click(cx.listener(|this, _, window, cx| {
-            if this.capture.is_none() {
-                this.record(window, cx);
-            }
-        }))
-        .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+        .disabled(busy)
+        .on_click(cx.listener(|this, event, window, cx| {
             if this.capture.is_some() {
                 return;
             }
-            let dirty = this.draft != this.saved;
-            match event.keystroke.key.as_str() {
-                "enter" if dirty => this.save(cx),
-                "enter" | "space" => this.record(window, cx),
-                "escape" if this.editing => this.cancel(cx),
-                _ => return,
+            if matches!(event, ClickEvent::Keyboard(event) if event.button == KeyboardButton::Enter)
+                && this.draft != this.saved
+            {
+                this.save(cx);
+            } else {
+                this.record(window, cx);
             }
-            cx.stop_propagation();
+        }))
+        .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+            if event.keystroke.key == "escape" && this.capture.is_none() && this.editing {
+                this.cancel(cx);
+                cx.stop_propagation();
+            }
         }));
+        let clear = (has_value && !recording).then(|| {
+            Button::new("binding-clear")
+                .small()
+                .ghost()
+                .icon(IconName::X)
+                .tooltip(format!("{}: {}", t(cx, "settings-key-clear"), command))
+                .accessibility_label(format!("{}: {}", t(cx, "settings-key-clear"), command))
+                .disabled(busy)
+                .on_click(cx.listener(|this, _, window, cx| this.clear(window, cx)))
+        });
+        let area = keys::binding_capsule(
+            "binding-region",
+            "binding-region".into(),
+            &self.region,
+            area,
+            clear,
+            window,
+            cx,
+        );
         v_flex()
+            .max_w_full()
             .gap_1()
-            .items_end()
+            .items_start()
             .child(
                 h_flex()
                     .w_full()
@@ -461,16 +504,6 @@ impl Render for BindingInput {
                         )
                     })
                     .child(area)
-                    .child(
-                        Button::new("binding-clear")
-                            .small()
-                            .ghost()
-                            .icon(IconName::Eraser)
-                            .tooltip(t(cx, "settings-key-clear"))
-                            .accessibility_label(t(cx, "settings-key-clear"))
-                            .disabled(busy || !has_value)
-                            .on_click(cx.listener(|this, _, _, cx| this.clear(cx))),
-                    )
                     .when(self.editing || dirty, |row| {
                         row.child(
                             Button::new("cancel")

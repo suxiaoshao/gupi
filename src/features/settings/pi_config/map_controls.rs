@@ -593,132 +593,23 @@ impl PiConfig {
         own: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let entity = cx.entity();
         let key = key.to_owned();
-        let project = matches!(self.scope, Scope::Project(_));
-        let value = self
-            .map_values(field, cx)
-            .and_then(|v| v.get(&key).cloned());
-        let mut token_actions = Vec::new();
-        if field == Field::ModelOverrides {
-            for keep in [false, true] {
-                let leaf = vec![
-                    "compaction".into(),
-                    "modelOverrides".into(),
-                    key.clone(),
-                    if keep {
-                        "keepRecentTokens".into()
-                    } else {
-                        "reserveTokens".into()
-                    },
-                ];
-                let current = self.token_slot(&key, keep, cx);
-                let old = self
-                    .baseline(cx)
-                    .leaf_values(field)
-                    .remove(&leaf)
-                    .unwrap_or(Slot::Unset);
-                let status = self.token_status(&key, keep, cx);
-                if current.encode() != old || status.has_draft() || !status.issues().is_empty() {
-                    token_actions.push((keep, "pi-menu-revert", Slot::<u64>::decode(old)));
-                }
-                if matches!(current, Slot::Unset) {
-                    if let Some(n) = fields::parse_count(&self.token_value(&key, keep, cx).0)
-                        .and_then(|v| v.as_u64())
-                    {
-                        token_actions.push((
-                            keep,
-                            if project {
-                                "pi-menu-pin-project"
-                            } else {
-                                "pi-menu-pin-global"
-                            },
-                            Slot::Set(n),
-                        ));
-                    }
-                } else {
-                    token_actions.push((
-                        keep,
-                        if project {
-                            "pi-menu-inherit"
-                        } else {
-                            "pi-menu-default"
-                        },
-                        Slot::Unset,
-                    ));
-                }
-            }
-        }
-        Button::new(SharedString::from(format!("map-menu-{field:?}-{key}")))
-            .ghost()
-            .small()
+        div()
             .w_6()
             .flex_shrink_0()
-            .icon(IconName::Ellipsis)
-            .accessibility_label(t(cx, "pi-field-actions"))
-            .disabled(self.is_saving())
-            .dropdown_menu(move |mut menu, _, cx| {
-                if !own && project {
-                    let (entity, key, value) = (entity.clone(), key.clone(), value.clone());
-                    menu = menu.item(PopupMenuItem::new(t(cx, "pi-menu-pin-project")).on_click(
-                        move |_, _, cx| {
-                            entity.update(cx, |this, cx| {
-                                if field == Field::ModelThinking {
-                                    if let (Some(path), Some(value)) =
-                                        (this.ensure_thinking(&key, cx), value.clone())
-                                    {
-                                        let _ = path.then(ThinkingRow::LEVEL).try_set(
-                                            &this.conversation,
-                                            Slot::decode(Slot::Set(value)),
-                                            cx,
-                                        );
-                                    }
-                                } else if let Some(value) = &value {
-                                    for (keep, name) in
-                                        [(false, "reserveTokens"), (true, "keepRecentTokens")]
-                                    {
-                                        if let Some(n) = value.get(name).and_then(Value::as_u64) {
-                                            this.set_token(&key, keep, Slot::Set(n), cx);
-                                        }
-                                    }
-                                }
-                                cx.notify();
-                            })
-                        },
-                    ));
-                }
-                for (keep, action, value) in &token_actions {
-                    let mut args = fluent_bundle::FluentArgs::new();
-                    args.set(
-                        "field",
-                        t(
-                            cx,
-                            if *keep {
-                                "pi-map-keep"
-                            } else {
-                                "pi-map-reserve"
-                            },
+            .when(own, |slot| {
+                slot.child(
+                    Button::new(SharedString::from(format!("map-remove-{field:?}-{key}")))
+                        .ghost()
+                        .small()
+                        .icon(IconName::Trash)
+                        .tooltip(format!("{}: {key}", t(cx, "pi-map-remove-local")))
+                        .accessibility_label(format!("{}: {key}", t(cx, "pi-map-remove-local")))
+                        .disabled(self.is_saving())
+                        .on_click(
+                            cx.listener(move |this, _, _, cx| this.remove_map_row(field, &key, cx)),
                         ),
-                    );
-                    args.set("action", t(cx, action));
-                    let label = gupi_settings::i18n::t_with_args(cx, "pi-map-token-action", &args);
-                    let (entity, key, value, keep) =
-                        (entity.clone(), key.clone(), value.clone(), *keep);
-                    menu = menu.item(PopupMenuItem::new(label).on_click(move |_, _, cx| {
-                        entity.update(cx, |this, cx| this.set_token(&key, keep, value.clone(), cx))
-                    }));
-                }
-                if own {
-                    let (entity, key) = (entity.clone(), key.clone());
-                    menu = menu.separator().item(
-                        PopupMenuItem::new(t(cx, "pi-map-remove-local"))
-                            .icon(IconName::Trash)
-                            .on_click(move |_, _, cx| {
-                                entity.update(cx, |this, cx| this.remove_map_row(field, &key, cx))
-                            }),
-                    );
-                }
-                menu
+                )
             })
             .into_any_element()
     }
@@ -765,9 +656,23 @@ impl PiConfig {
             self.map_picker_items.insert(field, items);
         }
         let header = h_flex()
+            .flex_wrap()
             .gap_2()
             .w_full()
-            .child(div().flex_1().min_w_0().child(self.field_label(field, cx)))
+            .child(
+                h_flex()
+                    .flex_1()
+                    .min_w_0()
+                    .flex_wrap()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(t(cx, field.label())),
+                    )
+                    .child(self.render_field_source(field, cx)),
+            )
             .child(
                 div().w_40().h_6().flex_shrink_0().child(
                     Select::new(&picker)
@@ -778,11 +683,11 @@ impl PiConfig {
                         .accessibility_label(t(cx, "pi-map-add-model"))
                         .disabled(saving || !matches!(self.models, Models::Ready(_))),
                 ),
-            )
-            .child(self.render_field_menu(field, self.pending(field, cx), saving, cx));
+            );
         let mut body = v_flex()
             .w_full()
-            .max_w(rems(56.))
+            .min_w_0()
+            .text_sm()
             .gap_2()
             .mb_2()
             .child(header)
@@ -812,12 +717,7 @@ impl PiConfig {
         if field == Field::ModelThinking {
             body = body.child(self.render_catalog_status(cx));
         }
-        let mut table = v_flex()
-            .w_full()
-            .border_1()
-            .border_color(cx.theme().border)
-            .rounded_md()
-            .bg(cx.theme().group_box);
+        let mut table = v_flex().w_full().min_w_0();
         let Some(values) = values else {
             return body
                 .child(
@@ -1098,7 +998,7 @@ impl PiConfig {
         body.child(table).into_any_element()
     }
 }
-fn origin_label(source: Source, pending: bool, cx: &App) -> String {
+pub(super) fn origin_label(source: Source, pending: bool, cx: &App) -> String {
     let mut label = t(
         cx,
         match source {

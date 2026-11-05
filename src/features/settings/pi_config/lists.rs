@@ -170,16 +170,7 @@ impl PiConfig {
                 .map(|i| RowKey::Inherited(self.generation, i))
                 .collect()
         };
-        let mut chips = h_flex()
-            .w_full()
-            .min_w_0()
-            .gap_1()
-            .p_1()
-            .flex_wrap()
-            .border_1()
-            .border_color(cx.theme().border)
-            .rounded_md()
-            .bg(cx.theme().group_box);
+        let mut chips = h_flex().w_full().min_w_0().gap_1().flex_wrap();
         let count = values.len();
         for (index, (key, text)) in keys.into_iter().zip(values).enumerate() {
             let to_add = count - index;

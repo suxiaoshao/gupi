@@ -269,8 +269,8 @@ fn project_scope_writes_the_project_file_and_reports_trust(cx: &mut TestAppConte
         };
         let inherited = files.resolve(Field::Compaction, None);
         assert_eq!(inherited.source, fields::Source::Global);
-        // Pinning an inherited value writes it explicitly for the project.
-        this.pin(Field::Compaction, cx);
+        // Editing a value writes it to this project without granting trust.
+        this.set_values(Field::Compaction, vec![Slot::Set(json!(false))], cx);
     });
     save(&config, Page::Conversation, window);
     assert_eq!(
@@ -328,9 +328,14 @@ impl Render for Outer {
     }
 }
 impl Render for PageHost {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        gpui_kit::component::setting::Settings::new("pi-test")
-            .page(PiConfig::page(&self.0, self.1, cx))
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        PiConfig::page(&self.0, self.1, cx).content(
+            String::new(),
+            crate::features::settings::composition::PageLayout::new(
+                window.viewport_size().width,
+                window.rem_size(),
+            ),
+        )
     }
 }
 
@@ -742,7 +747,7 @@ fn bound_invalid_input_survives_reload_and_other_page_save_and_reverts(cx: &mut 
     assert_eq!(input.read_with(window, |input, _| input.value()), "-");
     save(&config, Page::Network, window);
     assert_eq!(read(&path)["retry"]["maxRetries"], 4);
-    config.update(window, |this, cx| this.clear_draft(Field::MaxRetries, cx));
+    config.update(window, |this, cx| this.discard(Some(Page::Network), cx));
     window.run_until_parked();
     assert_eq!(input.read_with(window, |input, _| input.value()), "4");
     assert!(!config.read_with(window, |this, cx| this.needs_leave_guard(cx)));
@@ -1774,5 +1779,126 @@ fn map_reload_surfaces_opaque_parent_conflicts(cx: &mut TestAppContext) {
             assert_eq!(this.token_slot("p/m", false, cx), Slot::Set(100));
             assert!(this.refresh_conflicts.contains(&Field::ModelOverrides));
         });
+    }
+}
+
+// Hiding and remounting a settings page must retain the real mapped input and
+// its invalid draft; presentation changes must never become discard or reload.
+#[gpui_kit::test]
+fn settings_filter_navigation_and_narrow_layout_keep_invalid_pi_input(cx: &mut TestAppContext) {
+    use crate::features::settings::{
+        layout::{Domain, PageId},
+        tests::{search_settings, settings_shell},
+    };
+    let agent = tempfile::tempdir().unwrap();
+    fs::write(
+        agent.path().join("settings.json"),
+        r#"{"retry":{"maxRetries":3}}"#,
+    )
+    .unwrap();
+    let (owner, visual) = settings_shell(cx, agent.path());
+    visual.update(|window, cx| {
+        owner.update(cx, |view, cx| {
+            view.open_page(Domain::Pi, PageId::Network, window, cx)
+        })
+    });
+    visual.run_until_parked();
+    let config = owner.read_with(visual, |view, _| view.pi_config.clone());
+    let input = visual.update(|window, cx| {
+        config.update(cx, |config, cx| config.input(Field::MaxRetries, window, cx))
+    });
+    input_text(&config, Field::MaxRetries, "invalid", visual);
+    let generation = config.read_with(visual, |config, _| config.generation);
+    search_settings(&owner, "nothing-matches-this", visual);
+    visual.update(|window, cx| {
+        owner.update(cx, |view, cx| {
+            view.open_page(Domain::Pi, PageId::Tools, window, cx)
+        })
+    });
+    visual.simulate_resize(gpui_kit::size(gpui_kit::px(800.), gpui_kit::px(600.)));
+    visual.update(|window, cx| {
+        let split = owner.read(cx).settings_split.clone();
+        split.update(cx, |split, cx| {
+            split.resize_panel(0, window.rem_size() * 20., window, cx)
+        });
+    });
+    visual.update(|window, cx| {
+        owner.update(cx, |view, cx| {
+            view.open_page(Domain::Pi, PageId::Network, window, cx)
+        })
+    });
+    visual.run_until_parked();
+    let remounted = visual.update(|window, cx| {
+        config.update(cx, |config, cx| config.input(Field::MaxRetries, window, cx))
+    });
+    assert_eq!(input, remounted);
+    assert_eq!(input.read_with(visual, |input, _| input.value()), "invalid");
+    config.read_with(visual, |config, cx| {
+        assert!(config.invalid(Field::MaxRetries, cx));
+        assert!(config.needs_leave_guard(cx));
+        assert_eq!(config.generation, generation);
+    });
+    assert_eq!(
+        read(&agent.path().join("settings.json")),
+        json!({"retry":{"maxRetries":3}})
+    );
+}
+
+// Restoring a scope override must stay in the page draft, even when its value
+// is identical to inheritance. Discard restores presence; save removes the key.
+#[gpui_kit::test]
+fn restoring_defaults_stages_unset_and_page_discard_restores_presence(cx: &mut TestAppContext) {
+    for project_scope in [false, true] {
+        let agent = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let global = agent.path().join("settings.json");
+        fs::write(&global, r#"{"compaction":{"reserveTokens":16384}}"#).unwrap();
+        let target = if project_scope {
+            fs::create_dir(project.path().join(".pi")).unwrap();
+            let path = project.path().join(".pi/settings.json");
+            fs::write(&path, r#"{"compaction":{"reserveTokens":16384}}"#).unwrap();
+            path
+        } else {
+            global.clone()
+        };
+        let original = read(&target);
+        let (config, window) = setup(cx, agent.path());
+        if project_scope {
+            config.update(window, |this, cx| {
+                this.set_scope(Scope::Project(project.path().into()), cx)
+            });
+            window.run_until_parked();
+        }
+        config.update(window, |this, cx| {
+            this.restore_default(Field::ReserveTokens, cx);
+            assert_eq!(
+                this.snapshot(cx).value(Field::ReserveTokens),
+                vec![Slot::Unset]
+            );
+            assert_eq!(
+                this.resolved(Field::ReserveTokens, cx).values,
+                vec![Some(json!(16384))]
+            );
+            assert!(this.has_page_drafts(Page::Conversation, cx));
+        });
+        assert_eq!(
+            read(&target),
+            original,
+            "restoring is not an immediate disk write"
+        );
+        config.update(window, |this, cx| {
+            this.discard(Some(Page::Conversation), cx);
+            assert_eq!(
+                this.snapshot(cx).value(Field::ReserveTokens),
+                vec![Slot::Set(json!(16384))]
+            );
+            assert!(!this.has_page_drafts(Page::Conversation, cx));
+            this.restore_default(Field::ReserveTokens, cx);
+        });
+        save(&config, Page::Conversation, window);
+        assert!(read(&target).pointer("/compaction/reserveTokens").is_none());
+        if project_scope {
+            assert_eq!(read(&global), original);
+        }
     }
 }

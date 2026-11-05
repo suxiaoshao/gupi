@@ -1,12 +1,10 @@
 use super::*;
+use crate::features::settings::composition::SettingsRow;
 use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::component::collapsible::Collapsible;
-use gpui_kit::component::group_box::GroupBox;
-use gpui_kit::component::group_box::GroupBoxVariants;
 use gpui_kit::component::menu::ContextMenuExt;
 use gpui_kit::component::menu::DropdownMenu;
 use gpui_kit::component::scroll::ScrollableElement;
-use gpui_kit::component::setting::SettingItem;
 use gpui_kit::component::tag::Tag;
 use gpui_kit::component::text::TextView;
 use gpui_kit::component::tooltip::Tooltip;
@@ -72,7 +70,11 @@ impl ResourcesView {
 
     /// Rows for the current scope, or with `inherited`, the global rows shown
     /// read-only beneath a project's own.
-    pub(crate) fn skill_items(owner: &Entity<Self>, inherited: bool, cx: &App) -> Vec<SettingItem> {
+    pub(in crate::features::settings) fn skill_items(
+        owner: &Entity<Self>,
+        inherited: bool,
+        cx: &App,
+    ) -> Vec<SettingsRow> {
         let view = owner.read(cx);
         let row = view.row(inherited);
         let resources = if inherited {
@@ -90,7 +92,7 @@ impl ResourcesView {
                     resource.path.display().to_string(),
                     "Skill 技能".into(),
                 ];
-                SettingItem::render(move |_, _, cx| {
+                SettingsRow::content(move |_, _, cx| {
                     owner
                         .update(cx, |this, cx| this.render_skill(&resource, row, cx))
                         .unwrap_or_else(|_| div().into_any_element())
@@ -140,6 +142,7 @@ impl ResourcesView {
                     })),
             )
             .child(div().flex_1())
+            .child(self.render_resource_actions(resource, row, cx))
             .child(
                 Button::new(ElementId::NamedChild(id.clone(), "actions".into()))
                     .ghost()
@@ -288,12 +291,10 @@ impl ResourcesView {
         }
         div()
             .id(ElementId::NamedChild(id.clone(), "card".into()))
-            .child(
-                GroupBox::new()
-                    .outline()
-                    .content_style(StyleRefinement::default().p_3().bg(cx.theme().background))
-                    .child(card),
-            )
+            .py_4()
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .child(card)
             .context_menu(self.resource_menu(resource, row, cx))
             .into_any_element()
     }

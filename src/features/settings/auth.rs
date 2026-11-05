@@ -1,8 +1,9 @@
 //! Global Pi credentials, committed independently of settings drafts.
+use crate::features::settings::composition::{SettingsPage, SettingsRow, SettingsSection};
 mod editor;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::group_box::GroupBoxVariants as _;
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
-use gpui_kit::component::setting::{SettingGroup, SettingItem, SettingPage};
 use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, Sizable as _, WindowExt as _, h_flex, v_flex,
 };
@@ -170,13 +171,24 @@ impl AuthPage {
         self.checking.insert(provider, task);
         cx.notify();
     }
-    pub(super) fn page(entity: &Entity<Self>, cx: &App) -> SettingPage {
+    pub(super) fn page(entity: &Entity<Self>, cx: &App) -> SettingsPage {
         let e = entity.clone();
-        SettingPage::new(t(cx,"pi-auth-title")).icon(IconName::KeyRound).resettable(false).group(
-            SettingGroup::new().item(SettingItem::render(move |_,window,cx|e.update(cx,|this,cx|this.render_page(window,cx))).keywords(["auth credentials API key OAuth login logout provider 认证 凭据 密钥 登录 注销"]))
+        let actions = entity.clone();
+        SettingsPage::new(t(cx,"pi-auth-title")).icon(IconName::KeyRound)
+            .actions(move |_, _, cx| actions.update(cx, |this, cx| Button::new("auth-reload").ghost().small().icon(IconName::RotateCw)
+                .tooltip(t(cx, "pi-settings-reload")).accessibility_label(t(cx, "pi-settings-reload"))
+                .disabled(this.loading.is_some() || this.saving.is_some())
+                .on_click(cx.listener(|this, _, _, cx| this.reload(cx)))))
+            .group(
+            SettingsSection::new().item(SettingsRow::content(move |layout,window,cx|e.update(cx,|this,cx|this.render_page(layout,window,cx))).keywords(["auth credentials API key OAuth login logout provider 认证 凭据 密钥 登录 注销"]))
         )
     }
-    fn render_page(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn render_page(
+        &mut self,
+        layout: &crate::features::settings::composition::PageLayout,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         if self.file.is_none() && self.error.is_none() && self.loading.is_none() {
             let e = cx.entity().downgrade();
             cx.defer(move |cx| {
@@ -192,7 +204,6 @@ impl AuthPage {
             .clone();
         let add_anchor = add_focus.clone();
         let add = cx.entity();
-        let reload = add.clone();
         let mut body =
             v_flex()
                 .w_full()
@@ -200,11 +211,7 @@ impl AuthPage {
                 .max_w(rems(56.))
                 .gap_2()
                 .child(super::management_header(
-                    div()
-                        .text_sm()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .child(t(cx, "pi-files-providers"))
-                        .into_any_element(),
+                    div().into_any_element(),
                     None,
                     h_flex()
                         .gap_2()
@@ -225,17 +232,6 @@ impl AuthPage {
                                         )
                                     }),
                             ),
-                        )
-                        .child(
-                            Button::new("auth-reload")
-                                .small()
-                                .ghost()
-                                .icon(IconName::RotateCw)
-                                .accessibility_label(t(cx, "pi-settings-reload"))
-                                .disabled(busy)
-                                .on_click(move |_, _, cx| {
-                                    reload.update(cx, |this, cx| this.reload(cx))
-                                }),
                         )
                         .into_any_element(),
                 ));
@@ -311,92 +307,115 @@ impl AuthPage {
                 )
                 .read(cx)
                 .clone();
-            let row_anchor = row_focus.clone();
-            let menu_anchor = menu_focus.clone();
-            let fallback = add_focus.clone();
-            let row_fallback = fallback.clone();
             let entry = file.entry(name);
-            let owner = cx.entity();
-            let open = (owner.clone(), entry.clone());
-            let menu = (owner.clone(), entry.clone());
             let mut description = t(cx, kind_key(entry.kind()));
             if entry.kind() != Kind::Missing {
                 description = format!("{description} · {}", t(cx, "pi-auth-set"));
             }
-            let mut content = v_flex().w_full().gap_1().child(
-                h_flex()
-                    .w_full()
-                    .gap_2()
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("auth-row-focus-{name}")))
-                            .flex_1()
-                            .min_w_0()
-                            .track_focus(&row_focus)
-                            .child(
-                                Button::new(SharedString::from(format!("auth-row-{name}")))
-                                    .small()
-                                    .ghost()
-                                    .w_full()
-                                    .min_w_0()
-                                    .accessibility_label(Self::row_label(&entry, cx))
-                                    .disabled(busy)
-                                    .child(
-                                        h_flex()
-                                            .w_full()
-                                            .gap_2()
-                                            .child(
-                                                div()
-                                                    .flex_1()
-                                                    .min_w_0()
-                                                    .text_left()
-                                                    .truncate()
-                                                    .font_family(
-                                                        cx.theme().mono_font_family.clone(),
-                                                    )
-                                                    .child(super::provider_name(name, cx)),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_sm()
-                                                    .text_color(cx.theme().muted_foreground)
-                                                    .child(description),
-                                            ),
-                                    )
-                                    .on_click(move |_, w, cx| {
-                                        Self::focus_trigger(&row_anchor, &row_fallback, w, cx);
-                                        Self::activate_primary(
-                                            &open.0,
-                                            open.1.clone(),
-                                            row_fallback.downgrade(),
-                                            w,
-                                            cx,
-                                        )
-                                    }),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("auth-menu-focus-{name}")))
-                            .track_focus(&menu_focus)
-                            .child(
-                                Button::new(SharedString::from(format!("auth-menu-{name}")))
-                                    .xsmall()
-                                    .ghost()
-                                    .icon(IconName::Ellipsis)
-                                    .accessibility_label(t(cx, "pi-field-actions"))
-                                    .disabled(busy)
-                                    .dropdown_menu(move |popup, _, cx| {
-                                        let edit = menu.clone();
-                                        let edit_focus = menu_anchor.clone();
-                                        let edit_fallback = fallback.clone();
-                                        let remove_focus = menu_anchor.clone();
-                                        let remove_fallback = fallback.clone();
-                                        let check = menu.clone();
-                                        let remove = menu.clone();
-                                        let login = menu.clone();
-                                        let navigate = menu.0.clone();
-                                        let popup = popup.when(
+            let mut info = v_flex()
+                .min_w_0()
+                .gap_1()
+                .text_sm()
+                .text_color(cx.theme().muted_foreground)
+                .child(description);
+            if let Some(expires) = entry
+                .expires()
+                .and_then(|v| chrono::DateTime::from_timestamp_millis(v as i64))
+            {
+                let text = if expires < chrono::Utc::now() {
+                    t(cx, "pi-auth-expired")
+                } else {
+                    let mut args = fluent_bundle::FluentArgs::new();
+                    args.set(
+                        "time",
+                        expires
+                            .with_timezone(&chrono::Local)
+                            .format("%Y-%m-%d %H:%M")
+                            .to_string(),
+                    );
+                    t_with_args(cx, "pi-auth-expires", &args)
+                };
+                info = info.child(text);
+            }
+            if self.checking.contains_key(name) {
+                info = info.child(t(cx, "pi-auth-checking"));
+            }
+            if let Some(result) = self.checks.get(name) {
+                info = info.child(Self::check_text(*result, cx));
+            }
+            let primary = (
+                cx.entity(),
+                entry.clone(),
+                row_focus.clone(),
+                add_focus.clone(),
+            );
+            let check = (cx.entity(), name.clone());
+            let menu = (
+                cx.entity(),
+                entry.clone(),
+                menu_focus.clone(),
+                add_focus.clone(),
+            );
+            let checkable = pi_auth::checkable_provider(name);
+            let actions = h_flex()
+                .flex_wrap()
+                .gap_2()
+                .child(
+                    div()
+                        .id(SharedString::from(format!("auth-row-focus-{name}")))
+                        .track_focus(&row_focus)
+                        .child(
+                            Button::new(SharedString::from(format!("auth-row-{name}")))
+                                .small()
+                                .outline()
+                                .label(t(cx, Self::primary_label(entry.kind())))
+                                .accessibility_label(Self::row_label(&entry, cx))
+                                .disabled(busy)
+                                .on_click(move |_, window, cx| {
+                                    Self::focus_trigger(&primary.2, &primary.3, window, cx);
+                                    Self::activate_primary(
+                                        &primary.0,
+                                        primary.1.clone(),
+                                        primary.3.downgrade(),
+                                        window,
+                                        cx,
+                                    );
+                                }),
+                        ),
+                )
+                .child(
+                    Button::new(SharedString::from(format!("auth-check-{name}")))
+                        .small()
+                        .ghost()
+                        .label(t(cx, "pi-auth-check"))
+                        .loading(self.checking.contains_key(name))
+                        .disabled(busy || !checkable || self.checking.contains_key(name))
+                        .when(!checkable, |button| {
+                            button.tooltip(t(cx, "pi-auth-check-unavailable"))
+                        })
+                        .on_click(move |_, _, cx| {
+                            check
+                                .0
+                                .update(cx, |this, cx| this.check(check.1.clone(), cx))
+                        }),
+                )
+                .child(
+                    div()
+                        .id(SharedString::from(format!("auth-menu-focus-{name}")))
+                        .track_focus(&menu_focus)
+                        .child(
+                            Button::new(SharedString::from(format!("auth-menu-{name}")))
+                                .small()
+                                .ghost()
+                                .icon(IconName::Ellipsis)
+                                .tooltip(format!("{}: {}", t(cx, "pi-field-actions"), name))
+                                .accessibility_label(t(cx, "pi-field-actions"))
+                                .disabled(busy)
+                                .dropdown_menu(move |popup, _, cx| {
+                                    let navigate = menu.0.clone();
+                                    let remove = menu.clone();
+                                    popup
+                                        .when(
                                             menu.0
                                                 .read(cx)
                                                 .model_names
@@ -415,63 +434,8 @@ impl AuthPage {
                                                     }),
                                                 )
                                             },
-                                        );
-                                        let popup = popup.item(
-                                            PopupMenuItem::new(t(
-                                                cx,
-                                                Self::primary_label(menu.1.kind()),
-                                            ))
-                                            .on_click(move |_, w, cx| {
-                                                let edit = edit.clone();
-                                                let focus = edit_focus.clone();
-                                                let fallback = edit_fallback.clone();
-                                                w.defer(cx, move |w, cx| {
-                                                    Self::focus_trigger(&focus, &fallback, w, cx);
-                                                    Self::activate_primary(
-                                                        &edit.0,
-                                                        edit.1,
-                                                        fallback.downgrade(),
-                                                        w,
-                                                        cx,
-                                                    );
-                                                });
-                                            }),
-                                        );
-                                        let popup =
-                                            popup.when(menu.1.kind() == Kind::OAuth, |popup| {
-                                                popup.item(
-                                                    PopupMenuItem::new(t(cx, "pi-auth-copy-login"))
-                                                        .on_click(move |_, w, cx| {
-                                                            Self::copy_login(&login.1, w, cx)
-                                                        }),
-                                                )
-                                            });
-                                        let popup = popup.item(
-                                            PopupMenuItem::new(t(cx, "pi-auth-check"))
-                                                .disabled(
-                                                    !pi_auth::checkable_provider(menu.1.provider())
-                                                        || menu
-                                                            .0
-                                                            .read(cx)
-                                                            .checking
-                                                            .contains_key(menu.1.provider()),
-                                                )
-                                                .on_click(move |_, _, cx| {
-                                                    check.0.update(cx, |this, cx| {
-                                                        this.check(check.1.provider().into(), cx)
-                                                    })
-                                                }),
-                                        );
-                                        let popup = popup.when(
-                                            !pi_auth::checkable_provider(menu.1.provider()),
-                                            |popup| {
-                                                popup.item(PopupMenuItem::label(t(
-                                                    cx,
-                                                    "pi-auth-check-unavailable",
-                                                )))
-                                            },
-                                        );
-                                        if matches!(menu.1.kind(), Kind::ApiKey | Kind::Unknown) {
+                                        )
+                                        .when(menu.1.kind() != Kind::Missing, |popup| {
                                             popup.item(
                                                 PopupMenuItem::new(t(
                                                     cx,
@@ -481,58 +445,39 @@ impl AuthPage {
                                                         "pi-auth-remove"
                                                     },
                                                 ))
-                                                .on_click(move |_, w, cx| {
+                                                .on_click(move |_, window, cx| {
                                                     let remove = remove.clone();
-                                                    let focus = remove_focus.clone();
-                                                    let fallback = remove_fallback.clone();
-                                                    w.defer(cx, move |w, cx| {
+                                                    window.defer(cx, move |window, cx| {
                                                         Self::focus_trigger(
-                                                            &focus, &fallback, w, cx,
+                                                            &remove.2, &remove.3, window, cx,
                                                         );
                                                         Self::confirm_remove(
-                                                            &remove.0, remove.1, w, cx,
-                                                        )
+                                                            &remove.0, remove.1, window, cx,
+                                                        );
                                                     });
                                                 }),
                                             )
-                                        } else {
-                                            popup
-                                        }
-                                    }),
-                            ),
+                                        })
+                                }),
+                        ),
+                );
+            let title = super::provider_name(name, cx);
+            body = body.child(
+                v_flex()
+                    .w_full()
+                    .min_w_0()
+                    .gap_3()
+                    .mt_4()
+                    .child(div().font_weight(FontWeight::SEMIBOLD).child(title))
+                    .child(
+                        gpui_kit::component::group_box::GroupBox::new()
+                            .fill()
+                            .content_style(StyleRefinement::default().px_5().py_0().gap_0())
+                            .child(crate::features::settings::composition::settings_row(
+                                layout, info, None, actions, false, cx,
+                            )),
                     ),
             );
-            if let Some(expires) = entry
-                .expires()
-                .and_then(|v| chrono::DateTime::from_timestamp_millis(v as i64))
-            {
-                let text = if expires < chrono::Utc::now() {
-                    t(cx, "pi-auth-expired")
-                } else {
-                    let mut args = fluent_bundle::FluentArgs::new();
-                    args.set(
-                        "time",
-                        expires
-                            .with_timezone(&chrono::Local)
-                            .format("%Y-%m-%d %H:%M")
-                            .to_string(),
-                    );
-                    t_with_args(cx, "pi-auth-expires", &args)
-                };
-                content = content.child(
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(text),
-                );
-            }
-            if self.checking.contains_key(name) {
-                content = content.child(t(cx, "pi-auth-checking"));
-            }
-            if let Some(result) = self.checks.get(name) {
-                content = content.child(Self::check_text(*result, cx));
-            }
-            body = body.child(content);
         }
         body.into_any_element()
     }
@@ -615,7 +560,7 @@ impl AuthPage {
     fn primary_label(kind: Kind) -> &'static str {
         match kind {
             Kind::Missing => "pi-auth-add",
-            Kind::OAuth => "pi-auth-logout",
+            Kind::OAuth => "pi-auth-copy-login",
             Kind::ApiKey | Kind::Unknown => "pi-auth-replace",
         }
     }
@@ -633,7 +578,7 @@ impl AuthPage {
         cx: &mut App,
     ) {
         if entry.kind() == Kind::OAuth {
-            Self::confirm_remove(owner, entry, window, cx);
+            Self::copy_login(&entry, window, cx);
         } else {
             editor::Editor::open(owner, Some(entry), fallback, window, cx);
         }

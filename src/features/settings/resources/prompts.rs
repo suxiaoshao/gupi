@@ -1,12 +1,10 @@
 use super::*;
+use crate::features::settings::composition::SettingsRow;
 use gpui_kit::component::Icon;
 use gpui_kit::component::Selectable;
 use gpui_kit::component::collapsible::Collapsible;
-use gpui_kit::component::group_box::GroupBox;
-use gpui_kit::component::group_box::GroupBoxVariants;
 use gpui_kit::component::menu::ContextMenuExt;
 use gpui_kit::component::menu::DropdownMenu;
-use gpui_kit::component::setting::SettingItem;
 use gpui_kit::component::tag::Tag;
 use gpui_kit::component::text::TextView;
 use gpui_kit::component::tooltip::Tooltip;
@@ -42,11 +40,11 @@ impl ResourcesView {
 
     /// Rows for the current scope, or with `inherited`, the global rows shown
     /// read-only beneath a project's own.
-    pub(crate) fn prompt_items(
+    pub(in crate::features::settings) fn prompt_items(
         owner: &Entity<Self>,
         inherited: bool,
         cx: &App,
-    ) -> Vec<SettingItem> {
+    ) -> Vec<SettingsRow> {
         let view = owner.read(cx);
         let row = view.row(inherited);
         let resources = if inherited {
@@ -63,7 +61,7 @@ impl ResourcesView {
                     resource.description.clone(),
                     "prompt template 模板 提示词".into(),
                 ];
-                SettingItem::render(move |_, _, cx| {
+                SettingsRow::content(move |_, _, cx| {
                     owner
                         .update(cx, |this, cx| this.render_prompt(&resource, row, cx))
                         .unwrap_or_else(|_| div().into_any_element())
@@ -73,7 +71,10 @@ impl ResourcesView {
             .collect()
     }
 
-    pub(crate) fn system_prompt_items(owner: &Entity<Self>, cx: &App) -> Vec<SettingItem> {
+    pub(in crate::features::settings) fn system_prompt_items(
+        owner: &Entity<Self>,
+        cx: &App,
+    ) -> Vec<SettingsRow> {
         [
             (
                 "SYSTEM.md",
@@ -89,13 +90,14 @@ impl ResourcesView {
         .into_iter()
         .map(|(file, title, help)| {
             let owner = owner.downgrade();
-            SettingItem::render(move |_, _, cx| {
+            SettingsRow::content(move |layout, _, cx| {
                 owner
                     .update(cx, |this, cx| {
-                        this.render_system_prompt(file, title, help, cx)
+                        this.render_system_prompt(file, title, help, layout, cx)
                     })
                     .unwrap_or_else(|_| div().into_any_element())
             })
+            .framed(true)
             .keywords(vec![
                 t(cx, title),
                 t(cx, help),
@@ -111,6 +113,7 @@ impl ResourcesView {
         file: &'static str,
         title: &str,
         help: &str,
+        layout: &crate::features::settings::composition::PageLayout,
         cx: &Context<Self>,
     ) -> AnyElement {
         let owner = self.active().clone();
@@ -135,74 +138,80 @@ impl ResourcesView {
             owner: owner.clone(),
         };
         let fallback = (project.clone(), path.clone(), owner.clone());
-        GroupBox::new()
-            .outline()
-            .content_style(StyleRefinement::default().p_3().bg(cx.theme().background))
+        let label = h_flex()
+            .min_w_0()
+            .flex_wrap()
+            .gap_2()
+            .child(t(cx, title))
             .child(
-                h_flex()
-                    .gap_3()
-                    .child(
-                        v_flex()
-                            .flex_1()
-                            .min_w_0()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .id(file)
-                                    .child(t(cx, title))
-                                    .tooltip(move |window, cx| {
-                                        Tooltip::new(tooltip.clone()).build(window, cx)
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(t(cx, help)),
-                            ),
-                    )
-                    .when(project.is_some(), |row| {
-                        row.child(Tag::secondary().small().outline().child(t(
+                div()
+                    .text_xs()
+                    .font_weight(FontWeight::NORMAL)
+                    .text_color(cx.theme().muted_foreground)
+                    .child(file),
+            );
+        let actions = h_flex()
+            .flex_wrap()
+            .gap_2()
+            .map(|row| {
+                row.child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(t(
                             cx,
-                            if present {
+                            if project.is_none() {
+                                "pi-scope-global"
+                            } else if present {
                                 "settings-system-project-file"
                             } else {
                                 "settings-system-uses-global"
                             },
-                        )))
-                    })
-                    .when(present, |row| {
-                        row.child(
-                            Button::new(SharedString::from(format!("{file}-use-global")))
-                                .small()
-                                .ghost()
-                                .label(t(cx, "settings-system-use-global"))
-                                .disabled(busy)
-                                .on_click(cx.listener(move |this, _, window, cx| {
-                                    let (Some(cwd), path, owner) = fallback.clone() else {
-                                        return;
-                                    };
-                                    this.confirm_use_global(cwd, path, owner, window, cx)
-                                })),
-                        )
-                    })
-                    .child(
-                        Button::new(SharedString::from(format!("{file}-edit")))
-                            .small()
-                            .icon(IconName::SquarePen)
-                            .tooltip(t(cx, "settings-resource-edit"))
-                            .accessibility_label(t(cx, "settings-resource-edit"))
-                            .disabled(busy)
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                let mut open = open.clone();
-                                // A link out of the project's `.pi` opens read-only.
-                                if let Some(cwd) = &project {
-                                    open.editable = io::project_owns(cwd, &open.path);
-                                }
-                                this.request_open(open, window, cx)
-                            })),
-                    ),
-            )
+                        )),
+                )
+            })
+            .when(present, |row| {
+                row.child(
+                    Button::new(SharedString::from(format!("{file}-use-global")))
+                        .small()
+                        .ghost()
+                        .label(t(cx, "settings-system-use-global"))
+                        .disabled(busy)
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            let (Some(cwd), path, owner) = fallback.clone() else {
+                                return;
+                            };
+                            this.confirm_use_global(cwd, path, owner, window, cx)
+                        })),
+                )
+            })
+            .child(
+                Button::new(SharedString::from(format!("{file}-edit")))
+                    .small()
+                    .ghost()
+                    .icon(IconName::SquarePen)
+                    .tooltip(format!("{}: {file}", t(cx, "settings-resource-edit")))
+                    .accessibility_label(format!("{}: {file}", t(cx, "settings-resource-edit")))
+                    .disabled(busy)
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        let mut open = open.clone();
+                        if let Some(cwd) = &project {
+                            open.editable = io::project_owns(cwd, &open.path);
+                        }
+                        this.request_open(open, window, cx)
+                    })),
+            );
+        div()
+            .id(file)
+            .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
+            .child(crate::features::settings::composition::settings_row(
+                layout,
+                label,
+                Some(t(cx, help).into()),
+                actions,
+                false,
+                cx,
+            ))
             .into_any_element()
     }
 
@@ -313,6 +322,7 @@ impl ResourcesView {
                         })),
                 )
             })
+            .child(self.render_resource_actions(resource, row, cx))
             .child(
                 Button::new(id("actions"))
                     .ghost()
@@ -436,12 +446,10 @@ impl ResourcesView {
         }
         div()
             .id(id("card"))
-            .child(
-                GroupBox::new()
-                    .outline()
-                    .content_style(StyleRefinement::default().p_3().bg(cx.theme().background))
-                    .child(card),
-            )
+            .py_4()
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .child(card)
             .context_menu(self.resource_menu(resource, row, cx))
             .into_any_element()
     }

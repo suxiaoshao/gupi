@@ -29,46 +29,20 @@ const RESOURCE_KINDS: [(Kind, &str, IconName); 4] = [
     ),
 ];
 
-/// Where the Packages body is mounted. A page-filling slot bounds its height,
-/// so the lists scroll inside it; a settings group-list item sizes to its
-/// content and leaves scrolling to the settings page.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum Mount {
-    #[allow(dead_code)]
-    Bounded,
-    Content,
-}
-
-/// A region that owns its scrolling in a bounded body and keeps its natural
-/// height otherwise.
-pub(super) fn region(id: &'static str, scroll: &ScrollHandle, mount: Mount) -> Stateful<Div> {
-    let region = div().id(id).min_w_0();
-    match mount {
-        Mount::Bounded => region
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
-            .track_scroll(scroll),
-        Mount::Content => region,
-    }
-}
-
 impl ResourcesView {
     /// The Packages body; `width` is its own measured width.
-    pub(super) fn render_packages(
-        &mut self,
-        width: Pixels,
-        mount: Mount,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    pub(super) fn render_packages(&mut self, width: Pixels, cx: &mut Context<Self>) -> AnyElement {
         if self.browsing {
-            self.render_browse(width, mount, cx)
+            self.render_browse(width, cx)
         } else {
-            self.render_installed(mount, cx)
+            self.render_installed(cx)
         }
     }
 
-    pub(super) fn render_packages_tabs(&self, cx: &Context<Self>) -> AnyElement {
+    pub(in crate::features::settings) fn render_packages_tabs(
+        &self,
+        cx: &Context<Self>,
+    ) -> AnyElement {
         use gpui_kit::component::tab::Tab;
         use gpui_kit::component::tab::TabBar;
         TabBar::new("packages-view")
@@ -101,7 +75,7 @@ impl ResourcesView {
         t(cx, "packages-install")
     }
 
-    fn render_installed(&self, mount: Mount, cx: &Context<Self>) -> AnyElement {
+    fn render_installed(&self, cx: &Context<Self>) -> AnyElement {
         let controller = self.active().read(cx);
         let Some(catalog) = controller.catalog().data() else {
             return div().into_any_element();
@@ -237,13 +211,13 @@ impl ResourcesView {
             view = view.child(self.render_independent_resources(global, Row::Inherited, busy, cx));
         }
 
-        // Content mounts use the Settings page scroller; bounded mounts own scrolling.
+        // The page owns vertical scrolling; the body keeps its natural height.
         v_flex()
             .size_full()
             .min_h_0()
             .gap_3()
             .child(toolbar)
-            .child(region("packages-installed", &self.installed_scroll, mount).child(view))
+            .child(div().id("packages-installed").min_w_0().child(view))
             .into_any_element()
     }
 
@@ -408,7 +382,6 @@ impl ResourcesView {
             .read(cx)
             .mutation()
             .package_running(&source, "update");
-        let owner = cx.entity().downgrade();
         let copy = source.clone();
         let menu =
             move |menu: gpui_kit::component::menu::PopupMenu,
@@ -416,8 +389,6 @@ impl ResourcesView {
                   cx: &mut Context<gpui_kit::component::menu::PopupMenu>| {
                 let reveal = reveal.clone();
                 let copy = copy.clone();
-                let owner = owner.clone();
-                let remove = remove.clone();
                 menu.item(
                     PopupMenuItem::new(t(cx, "settings-resource-location"))
                         .icon(IconName::FolderOpen)
@@ -430,20 +401,6 @@ impl ResourcesView {
                             cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()))
                         }),
                 )
-                .when(mutable, |menu| {
-                    menu.separator().item(
-                        PopupMenuItem::new(t(cx, "settings-package-remove-ellipsis"))
-                            .icon(IconName::Trash)
-                            .disabled(package_disabled)
-                            .on_click(move |_, window, cx| {
-                                owner
-                                    .update(cx, |this, cx| {
-                                        this.confirm_remove(None, remove.clone(), window, cx)
-                                    })
-                                    .ok();
-                            }),
-                    )
-                })
                 .when(inherited, |menu| {
                     let pi_config = pi_config.clone();
                     menu.item(
@@ -471,11 +428,28 @@ impl ResourcesView {
                         row.child(
                             Button::new(id("update"))
                                 .small()
-                                .label(t(cx, "settings-package-update"))
+                                .ghost()
+                                .icon(IconName::RotateCw)
+                                .tooltip(t(cx, "settings-package-update"))
+                                .accessibility_label(t(cx, "settings-package-update"))
                                 .loading(pending)
                                 .disabled(!self.package_available(cx))
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.package("update", update.clone(), cx);
+                                })),
+                        )
+                    })
+                    .when(mutable, |row| {
+                        row.child(
+                            Button::new(id("remove"))
+                                .ghost()
+                                .small()
+                                .icon(IconName::Trash)
+                                .tooltip(t(cx, "settings-package-remove-ellipsis"))
+                                .accessibility_label(t(cx, "settings-package-remove-ellipsis"))
+                                .disabled(package_disabled)
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.confirm_remove(None, remove.clone(), window, cx)
                                 })),
                         )
                     })
@@ -539,9 +513,10 @@ impl ResourcesView {
             }
             card = card.content(contents);
         }
-        GroupBox::new()
-            .outline()
-            .content_style(StyleRefinement::default().p_3().bg(cx.theme().background))
+        div()
+            .py_4()
+            .border_b_1()
+            .border_color(cx.theme().border)
             .child(card)
             .into_any_element()
     }

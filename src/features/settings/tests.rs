@@ -5,11 +5,12 @@ use super::PiProbeController;
 use super::SettingsView;
 use gpui_form::Form;
 use gpui_kit::AppContext;
+use gpui_kit::Focusable as _;
 use gpui_kit::TestAppContext;
 use gpui_kit::component::Root;
 
 #[gpui_kit::test]
-fn theme_grid_contributes_height_and_wraps_in_settings(cx: &mut TestAppContext) {
+fn theme_grid_contributes_height_and_wraps_in_onboarding(cx: &mut TestAppContext) {
     cx.update(|cx| {
         gpui_kit::init(cx);
         crate::app::init_capability_hosts(cx);
@@ -59,7 +60,7 @@ fn theme_grid_contributes_height_and_wraps_in_settings(cx: &mut TestAppContext) 
     );
     assert!(
         narrow > wide,
-        "narrow settings must wrap and grow vertically: {wide:?}, {narrow:?}"
+        "narrow onboarding must wrap and grow vertically: {wide:?}, {narrow:?}"
     );
 }
 struct ThemeGridFixture {
@@ -205,29 +206,12 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
         });
         window_cx.simulate_resize(gpui_kit::size(gpui_kit::px(760.), gpui_kit::px(640.)));
         window_cx.update(|window, cx| window.draw(cx).clear(cx));
-        if (domain, page) == (super::layout::Domain::Gupi, 0) {
-            for width in [640., 1600.] {
-                window_cx.simulate_resize(gpui_kit::size(gpui_kit::px(width), gpui_kit::px(640.)));
-                window_cx.update(|window, cx| window.draw(cx).clear(cx));
-                let path = window_cx.debug_bounds("settings-config-path").unwrap();
-                let reload = window_cx.debug_bounds("settings-config-reload").unwrap();
-                let open = window_cx.debug_bounds("settings-config-open").unwrap();
-                assert_eq!(reload.center().y, open.center().y);
-                assert!(
-                    reload.top() >= path.bottom(),
-                    "labeled actions follow the path"
-                );
-                assert!(reload.right() <= open.left());
-                assert!(open.right() <= gpui_kit::px(width));
-                if width == 1600. {
-                    assert!(
-                        path.left() > gpui_kit::px(width / 2.),
-                        "configuration controls belong to the right-hand setting field"
-                    );
-                }
-            }
-        }
-        if (domain, page) == (super::layout::Domain::Gupi, super::layout::KEYBOARD_PAGE) {
+        if (domain, page)
+            == (
+                super::layout::Domain::Gupi,
+                super::layout::KEYBOARD_PAGE.index(),
+            )
+        {
             for width in [760., 1600.] {
                 window_cx.simulate_resize(gpui_kit::size(gpui_kit::px(width), gpui_kit::px(1200.)));
                 window_cx.update(|window, cx| window.draw(cx).clear(cx));
@@ -238,7 +222,7 @@ fn every_settings_page_renders_with_resources_at_narrow_width(cx: &mut TestAppCo
                     "native setting field remains inside the window"
                 );
                 if width == 1600. {
-                    assert_eq!(bound.right(), unbound.right());
+                    assert_eq!(bound.left(), unbound.left());
                 }
             }
         }
@@ -317,6 +301,7 @@ fn native_update_disables_settings_controls_until_closed(cx: &mut TestAppContext
         });
         Root::new(view, window, cx)
     });
+    visual.simulate_resize(gpui_kit::size(gpui_kit::px(1000.), gpui_kit::px(1200.)));
     let (form, controller) = fixture.unwrap();
     let updates = visual.update(|_, cx| updates::get(cx));
     visual.update(|window, cx| {
@@ -348,18 +333,13 @@ fn native_update_disables_settings_controls_until_closed(cx: &mut TestAppContext
 impl gpui_kit::Render for SettingsPageFixture {
     fn render(
         &mut self,
-        _: &mut gpui_kit::Window,
+        window: &mut gpui_kit::Window,
         cx: &mut gpui_kit::Context<Self>,
     ) -> impl gpui_kit::IntoElement {
-        let domain = self.domain;
         self.settings.update(cx, |view, cx| {
-            view.domain = domain;
-            view.settings_panel(cx).default_selected_index(
-                gpui_kit::component::setting::SelectIndex {
-                    page_ix: self.page,
-                    group_ix: None,
-                },
-            )
+            view.domain = self.domain;
+            view.navigation = super::layout::PageId::pages(self.domain)[self.page];
+            view.render_settings(window, cx)
         })
     }
 }
@@ -401,7 +381,7 @@ fn empty_project_entry_keeps_the_current_settings_page(cx: &mut TestAppContext) 
     cx.update(|_, cx| {
         let view = settings.read(cx);
         assert_eq!(view.domain, super::layout::Domain::Gupi);
-        assert_eq!(view.navigation.0, 0);
+        assert_eq!(view.navigation, super::layout::PageId::General);
         assert_eq!(
             view.pi_config.read(cx).scope(),
             &gupi_resources::pi_settings::Scope::Global
@@ -531,4 +511,130 @@ fn language_selection_keeps_its_raw_value_and_accessible_name_across_locales(
             });
         });
     }
+}
+
+/// Real settings shell with isolated paths; no configuration is loaded from the user.
+pub(super) fn settings_shell<'a>(
+    cx: &'a mut TestAppContext,
+    agent: &std::path::Path,
+) -> (
+    gpui_kit::Entity<SettingsView>,
+    &'a mut gpui_kit::VisualTestContext,
+) {
+    cx.update(|cx| {
+        gpui_kit::init(cx);
+        crate::app::init_capability_hosts(cx);
+        app_theme::init(cx);
+        gupi_settings::theme::init(cx);
+        gupi_settings::i18n::apply(AppLanguage::English, cx);
+    });
+    let mut settings = None;
+    let (_, visual) = cx.add_window_view(|window, cx| {
+        let form = cx.new(|_| Form::new(AppConfig::default()));
+        let controller =
+            cx.new(|cx| ConfigController::at_path(&form, Ok(agent.join("gupi.toml")), cx));
+        let draft = cx.new(|_| PiProbeController::new());
+        let applied = cx.new(|_| {
+            use gpui_operation::Transition as _;
+            let mut probe = PiProbeController::new();
+            probe
+                .operation_mut_for_test()
+                .transition(gpui_operation::Settle(Ok(pi_rpc::probe::PiProbeData {
+                    command: "/missing/pi".into(),
+                    version: "1.5.0".into(),
+                })));
+            probe
+        });
+        let view = cx.new(|cx| {
+            SettingsView::new(
+                form,
+                controller,
+                draft,
+                applied,
+                cx.focus_handle(),
+                window,
+                cx,
+            )
+        });
+        view.update(cx, |view, cx| {
+            view.pi_config.update(cx, |config, cx| {
+                config.set_agent_for_test(agent.to_owned(), cx)
+            })
+        });
+        settings = Some(view.clone());
+        Root::new(view, window, cx)
+    });
+    visual.run_until_parked();
+    (settings.unwrap(), visual)
+}
+
+pub(super) fn search_settings(
+    owner: &gpui_kit::Entity<SettingsView>,
+    query: &str,
+    visual: &mut gpui_kit::VisualTestContext,
+) {
+    visual.update(|window, cx| {
+        let input = owner.read(cx).search.clone();
+        input.update(cx, |input, cx| {
+            input.set_value(query, window, cx);
+            cx.emit(gpui_kit::component::input::InputEvent::Change);
+        });
+    });
+    visual.run_until_parked();
+}
+
+// Search must expose a recoverable empty state, and sidebar navigation must
+// clear that state without saving, reloading or abandoning the current session.
+#[gpui_kit::test]
+fn settings_search_empty_clear_and_page_navigation_restore_content(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestWindowExt as _;
+    let agent = tempfile::tempdir().unwrap();
+    let (owner, visual) = settings_shell(cx, agent.path());
+    search_settings(&owner, "PREWARM", visual);
+    visual.update(|window, cx| {
+        window.render_frame(cx);
+        assert!(window.try_find("temporary-prewarm").is_some());
+        assert!(window.try_find("reload-config").is_none());
+    });
+    search_settings(&owner, "no-setting-for-this-query", visual);
+    visual.update(|window, cx| {
+        window.render_frame(cx);
+        assert!(window.try_find("settings-clear-search").is_some());
+        window.click("settings-clear-search", cx);
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        window.render_frame(cx);
+        let view = owner.read(cx);
+        assert!(view.query.is_empty());
+        assert!(view.search.focus_handle(cx).is_focused(window));
+        assert!(window.try_find("reload-config").is_some());
+    });
+    search_settings(&owner, "no-setting-for-this-query", visual);
+    visual.update(|window, cx| {
+        window
+            .within("settings-sidebar")
+            .click("settings-nav-settings-appearance", cx)
+    });
+    visual.run_until_parked();
+    owner.read_with(visual, |view, _| {
+        assert!(view.query.is_empty());
+        assert_eq!(view.navigation, super::layout::PageId::Appearance);
+    });
+    visual.update(|window, cx| {
+        window.render_frame(cx);
+        assert!(window.try_find("theme-light").is_some());
+        assert!(window.try_find("settings-clear-search").is_none());
+    });
+    visual.update(|window, cx| {
+        window
+            .within("settings-sidebar")
+            .click("settings-nav-settings-keyboard", cx)
+    });
+    visual.run_until_parked();
+    search_settings(&owner, "palette", visual);
+    visual.update(|window, cx| window.render_frame(cx));
+    assert!(visual.debug_bounds("key-binding-palette").is_some());
+    assert!(visual.debug_bounds("key-binding-quick_open").is_none());
+    assert!(!agent.path().join("gupi.toml").exists());
 }

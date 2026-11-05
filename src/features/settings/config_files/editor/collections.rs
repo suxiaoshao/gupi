@@ -1,5 +1,6 @@
 //! Compact ordered-list and map boxes; all new input is explicit and temporary.
 use super::*;
+use gpui_kit::component::Disableable as _;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Collection {
@@ -317,7 +318,7 @@ impl EntryEditor {
             })
             .into_any_element()
     }
-    fn item_menu(
+    fn item_actions(
         &self,
         path: &[String],
         ix: usize,
@@ -325,40 +326,66 @@ impl EntryEditor {
         array: bool,
         cx: &Context<Self>,
     ) -> AnyElement {
-        let p = path.to_vec();
-        let e = cx.entity();
-        Button::new(SharedString::from(format!(
-            "item-menu-{}-{ix}",
-            path_id(path)
-        )))
-        .ghost()
-        .xsmall()
-        .icon(IconName::Ellipsis)
-        .accessibility_label(t(cx, "pi-resource-entry-actions"))
-        .dropdown_menu(move |menu, _, cx| {
-            let mut menu = menu;
-            for (valid, to, label) in [
-                (ix > 0, ix.saturating_sub(1), "pi-resource-move-up"),
-                (ix + 1 < count, ix + 1, "pi-resource-move-down"),
-            ] {
-                if valid {
-                    let (e, p) = (e.clone(), p.clone());
-                    menu = menu.item(PopupMenuItem::new(t(cx, label)).on_click(move |_, _, cx| {
-                        e.update(cx, |this, cx| {
-                            if array {
-                                this.change_array(&p, ix, Some(to));
-                            } else {
-                                let _ = this.entry.move_item(&p, ix, to);
-                                let _ = this.original.move_item(&p, ix, to);
-                            }
-                            cx.notify()
-                        })
-                    }));
-                }
-            }
-            let (e, p) = (e.clone(), p.clone());
-            menu.item(PopupMenuItem::new(t(cx, "pi-files-delete")).on_click(
-                move |_, window, cx| {
+        let mut actions = h_flex().gap_1().flex_shrink_0();
+        for (valid, to, label, icon) in [
+            (
+                ix > 0,
+                ix.saturating_sub(1),
+                "pi-resource-up",
+                IconName::ArrowUp,
+            ),
+            (
+                ix + 1 < count,
+                ix + 1,
+                "pi-resource-down",
+                IconName::ArrowDown,
+            ),
+        ] {
+            let (e, p) = (cx.entity(), path.to_vec());
+            let label = format!("{}: {} #{}", t(cx, label), path.join("."), ix + 1);
+            actions = actions.child(
+                Button::new(SharedString::from(format!(
+                    "item-move-{}-{ix}-{to}",
+                    path_id(path)
+                )))
+                .ghost()
+                .xsmall()
+                .icon(icon)
+                .disabled(!valid)
+                .tooltip(label.clone())
+                .accessibility_label(label)
+                .on_click(move |_, _, cx| {
+                    e.update(cx, |this, cx| {
+                        if array {
+                            this.change_array(&p, ix, Some(to));
+                        } else {
+                            let _ = this.entry.move_item(&p, ix, to);
+                            let _ = this.original.move_item(&p, ix, to);
+                        }
+                        cx.notify();
+                    });
+                }),
+            );
+        }
+        let (e, p) = (cx.entity(), path.to_vec());
+        let label = format!(
+            "{}: {} #{}",
+            t(cx, "pi-files-delete"),
+            path.join("."),
+            ix + 1
+        );
+        actions
+            .child(
+                Button::new(SharedString::from(format!(
+                    "item-delete-{}-{ix}",
+                    path_id(path)
+                )))
+                .ghost()
+                .xsmall()
+                .icon(IconName::Trash)
+                .tooltip(label.clone())
+                .accessibility_label(label)
+                .on_click(move |_, window, cx| {
                     e.update(cx, |this, cx| {
                         if array {
                             this.change_array(&p, ix, None);
@@ -373,11 +400,10 @@ impl EntryEditor {
                         }
                         window.focus(&this.focus, cx);
                         cx.notify();
-                    })
-                },
-            ))
-        })
-        .into_any_element()
+                    });
+                }),
+            )
+            .into_any_element()
     }
     pub(super) fn model_title(&self, path: &[String], overrides: bool) -> String {
         if overrides {
@@ -439,7 +465,7 @@ impl EntryEditor {
                         this.open_model(p.clone(), overrides, w, cx)
                     })),
             )
-            .child(self.item_menu(&parent, ix, count, !overrides, cx))
+            .child(self.item_actions(&parent, ix, count, !overrides, cx))
             .into_any_element()
     }
     pub(super) fn collection(
@@ -525,7 +551,7 @@ impl EntryEditor {
                                     .flex_1()
                                     .child(label),
                                 )
-                                .child(self.item_menu(&path, ix, count, true, cx))
+                                .child(self.item_actions(&path, ix, count, true, cx))
                                 .into_any_element()
                         }
                         Collection::Secrets => {
@@ -566,7 +592,7 @@ impl EntryEditor {
                                 Field::Choice(EXPOSURE),
                                 cx,
                             )))
-                            .child(self.item_menu(&path, ix, count, false, cx))
+                            .child(self.item_actions(&path, ix, count, false, cx))
                             .into_any_element(),
                     };
                     content = content.child(child);

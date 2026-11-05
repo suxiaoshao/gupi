@@ -1,16 +1,12 @@
 use super::*;
+use crate::features::settings::composition::{
+    PageLayout, SettingsPage, SettingsRow, SettingsSection, control,
+};
 use gpui_kit::component::Selectable;
 use gpui_kit::component::Sizable;
 use gpui_kit::component::ThemeMode as Mode;
 use gpui_kit::component::ThemeRegistry;
 use gpui_kit::component::WindowExt;
-use gpui_kit::component::group_box::GroupBoxVariant;
-use gpui_kit::component::setting::SelectIndex;
-use gpui_kit::component::setting::SettingField;
-use gpui_kit::component::setting::SettingGroup;
-use gpui_kit::component::setting::SettingItem;
-use gpui_kit::component::setting::SettingPage;
-use gpui_kit::component::setting::Settings;
 use gpui_kit::prelude::FluentBuilder;
 use gupi_resources::pi_resources::Kind;
 
@@ -21,27 +17,130 @@ pub(super) enum Domain {
     Pi,
 }
 
-// Page order within each domain, shared by the panel and navigation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum PageId {
+    General,
+    Appearance,
+    Notifications,
+    Keyboard,
+    About,
+    Connection,
+    Conversation,
+    Network,
+    Tools,
+    Models,
+    Auth,
+    Mcp,
+    Packages,
+    Skills,
+    Prompts,
+}
+impl PageId {
+    pub fn pages(domain: Domain) -> &'static [Self] {
+        match domain {
+            Domain::Gupi => &[
+                Self::General,
+                Self::Appearance,
+                Self::Notifications,
+                Self::Keyboard,
+                Self::About,
+            ],
+            Domain::Pi => &[
+                Self::Connection,
+                Self::Conversation,
+                Self::Network,
+                Self::Tools,
+                Self::Models,
+                Self::Auth,
+                Self::Mcp,
+                Self::Packages,
+                Self::Skills,
+                Self::Prompts,
+            ],
+        }
+    }
+    pub fn index(self) -> usize {
+        match self {
+            Self::General | Self::Connection => 0,
+            Self::Appearance | Self::Conversation => 1,
+            Self::Notifications | Self::Network => 2,
+            Self::Keyboard | Self::Tools => 3,
+            Self::About | Self::Models => 4,
+            Self::Auth => 5,
+            Self::Mcp => 6,
+            Self::Packages => 7,
+            Self::Skills => 8,
+            Self::Prompts => 9,
+        }
+    }
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::General => "settings-general",
+            Self::Appearance => "settings-appearance",
+            Self::Notifications => "settings-notifications",
+            Self::Keyboard => "settings-keyboard",
+            Self::About => "settings-about",
+            Self::Connection => "settings-connection",
+            Self::Conversation => "settings-conversation",
+            Self::Network => "settings-network",
+            Self::Tools => "settings-tools",
+            Self::Models => "settings-models",
+            Self::Auth => "settings-auth",
+            Self::Mcp => "settings-mcp",
+            Self::Packages => "settings-packages",
+            Self::Skills => "settings-skills",
+            Self::Prompts => "settings-prompts",
+        }
+    }
+}
 #[cfg(test)]
-pub(super) const KEYBOARD_PAGE: usize = 3;
+pub(super) const KEYBOARD_PAGE: PageId = PageId::Keyboard;
 #[cfg(test)]
 pub(super) const DOMAIN_PAGES: [(Domain, usize); 2] = [(Domain::Gupi, 5), (Domain::Pi, 10)];
-pub(super) const PI_PAGE: usize = 0;
-pub(super) const CONVERSATION_PAGE: usize = 1;
-pub(super) const PACKAGES_PAGE: usize = 7;
-pub(super) const MODELS_PAGE: usize = 4;
-pub(super) const AUTH_PAGE: usize = 5;
+pub(super) const PI_PAGE: PageId = PageId::Connection;
+pub(super) const CONVERSATION_PAGE: PageId = PageId::Conversation;
+pub(super) const PACKAGES_PAGE: PageId = PageId::Packages;
+pub(super) const MODELS_PAGE: PageId = PageId::Models;
+pub(super) const AUTH_PAGE: PageId = PageId::Auth;
 
 impl SettingsView {
-    /// Settings selection lives in the component's keyed state; a new key
-    /// re-creates it with the requested page.
-    pub(super) fn open_page(&mut self, domain: Domain, page_ix: usize, cx: &mut Context<Self>) {
+    /// Direct navigation owns page selection and clears a query that could hide it.
+    pub(super) fn open_page(
+        &mut self,
+        domain: Domain,
+        page: PageId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let entering_pi = self.domain != domain && domain == Domain::Pi;
         self.domain = domain;
-        if domain == Domain::Pi {
+        self.navigation = page;
+        self.query.clear();
+        self.search
+            .update(cx, |input, cx| input.set_value("", window, cx));
+        self.settings_scroll.set_offset(Point::default());
+        if entering_pi {
             self.pi_config.update(cx, |config, cx| config.activate(cx));
         }
-        self.navigation = (self.navigation.0 + 1, page_ix);
         cx.notify();
+    }
+    pub(super) fn search_changed(&mut self, query: String, cx: &mut Context<Self>) {
+        self.query = query;
+        let query = self.query.trim().to_lowercase();
+        let pages = self.settings_pages(cx);
+        if !pages[self.navigation.index()].matches(&query)
+            && let Some(ix) = pages.iter().position(|page| page.matches(&query))
+        {
+            self.navigation = PageId::pages(self.domain)[ix];
+        }
+        self.settings_scroll.set_offset(Point::default());
+        cx.notify();
+    }
+    fn clear_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search_changed(String::new(), cx);
+        self.search
+            .update(cx, |input, cx| input.set_value("", window, cx));
+        self.search.focus_handle(cx).focus(window, cx);
     }
 
     pub(super) fn navigate_credentials(
@@ -57,7 +156,7 @@ impl SettingsView {
             confirm_unsaved(
                 resources,
                 config,
-                move |_, cx| {
+                move |window, cx| {
                     let _ = this.update(cx, |this, cx| {
                         this.open_page(
                             Domain::Pi,
@@ -65,6 +164,7 @@ impl SettingsView {
                                 CredentialPage::Models => MODELS_PAGE,
                                 CredentialPage::Auth => AUTH_PAGE,
                             },
+                            window,
                             cx,
                         )
                     });
@@ -81,7 +181,7 @@ impl SettingsView {
             return;
         }
         if domain == Domain::Pi || !self.has_unsaved_pi(cx) {
-            self.open_page(domain, 0, cx);
+            self.open_page(domain, PageId::pages(domain)[0], window, cx);
             return;
         }
         let this = cx.entity().downgrade();
@@ -91,8 +191,10 @@ impl SettingsView {
             confirm_unsaved(
                 resources,
                 pi_config,
-                move |_, cx| {
-                    let _ = this.update(cx, |this, cx| this.open_page(domain, 0, cx));
+                move |window, cx| {
+                    let _ = this.update(cx, |this, cx| {
+                        this.open_page(domain, PageId::pages(domain)[0], window, cx)
+                    });
                 },
                 window,
                 cx,
@@ -148,7 +250,7 @@ impl SettingsView {
                 &resources,
                 move |window, cx| {
                     let _ = this.update(cx, |this, cx| {
-                        this.open_page(Domain::Pi, CONVERSATION_PAGE, cx);
+                        this.open_page(Domain::Pi, CONVERSATION_PAGE, window, cx);
                         let pi_config = this.pi_config.clone();
                         window.defer(cx, move |window, cx| {
                             pi_config::request_scope(&pi_config, scope, window, cx)
@@ -204,24 +306,25 @@ impl SettingsView {
             cx,
         );
     }
-    pub(super) fn settings_panel(&self, cx: &mut Context<Self>) -> Settings {
+    pub(super) fn settings_pages(&self, cx: &mut Context<Self>) -> Vec<SettingsPage> {
         let this = cx.entity().downgrade();
         let item = |key: &'static str,
                     aliases: &'static str,
                     render: fn(
             &mut SettingsView,
+            &PageLayout,
             &mut Window,
             &mut Context<SettingsView>,
         ) -> AnyElement| {
             let this = this.clone();
-            SettingItem::render(move |_, window, cx| {
-                this.update(cx, |this, cx| render(this, window, cx))
+            SettingsRow::content(move |layout, window, cx| {
+                this.update(cx, |this, cx| render(this, layout, window, cx))
                     .unwrap_or_else(|_| div().into_any_element())
             })
             .keywords(vec![t(cx, key), aliases.to_owned()])
         };
-        let page = |key: &'static str, items: Vec<SettingItem>| {
-            SettingPage::new(t(cx, key))
+        let page = |key: &'static str, items: Vec<SettingsRow>| {
+            SettingsPage::new(t(cx, key))
                 .icon(match key {
                     "settings-page-general" => IconName::Settings,
                     "settings-theme" => IconName::Sparkles,
@@ -232,56 +335,67 @@ impl SettingsView {
                     "settings-page-prompts" => IconName::FileText,
                     _ => IconName::Info,
                 })
-                .resettable(false)
-                .group(SettingGroup::new().items(items))
+                .group(SettingsSection::new().items(items))
         };
-        let general = SettingPage::new(t(cx, "settings-page-general"))
+        let general = SettingsPage::new(t(cx, "settings-page-general"))
             .icon(IconName::Settings)
-            .resettable(false)
-            .group(SettingGroup::new().title(t(cx, "settings-language")).item({
-                let this = this.clone();
-                SettingItem::new(
-                    t(cx, "settings-app-language"),
-                    SettingField::render(move |_, _, cx| {
-                        this.update(cx, |this, cx| {
-                            Select::new(&this.language)
-                                .id("settings-language")
-                                .w_full()
-                                .max_w(rems(14.))
-                                .accessibility_label(t(cx, "settings-app-language"))
-                                .cleanable(false)
-                                .disabled(this.controller.read(cx).busy(cx))
-                                .into_any_element()
-                        })
-                        .unwrap_or_else(|_| div().into_any_element())
-                    }),
-                )
-                .description(t(cx, "settings-native-language-help"))
-                .keywords(["通用 general language locale 语言"])
-            }))
             .group(
-                SettingGroup::new()
+                SettingsSection::new()
+                    .title(t(cx, "settings-language"))
+                    .item({
+                        let this = this.clone();
+                        SettingsRow::new(
+                            "settings-app-language",
+                            t(cx, "settings-app-language"),
+                            control(move |_, _, cx| {
+                                this.update(cx, |this, cx| {
+                                    Select::new(&this.language)
+                                        .id("settings-language")
+                                        .w(rems(12.))
+                                        .accessibility_label(t(cx, "settings-app-language"))
+                                        .cleanable(false)
+                                        .disabled(this.controller.read(cx).busy(cx))
+                                        .into_any_element()
+                                })
+                                .unwrap_or_else(|_| div().into_any_element())
+                            }),
+                        )
+                        .description(t(cx, "settings-native-language-help"))
+                        .keywords(["通用 general language locale 语言"])
+                    }),
+            )
+            .group(
+                SettingsSection::new()
                     .title(t(cx, "settings-config-heading"))
                     .item({
                         let this = this.clone();
-                        SettingItem::new(
+                        SettingsRow::new(
+                            "settings-config-location",
                             t(cx, "settings-config-location"),
-                            SettingField::render(move |options, _, cx| {
+                            control(move |options, _, cx| {
                                 this.update(cx, |this, cx| this.render_config_actions(options, cx))
                                     .unwrap_or_else(|_| div().into_any_element())
                             }),
+                        )
+                        .description(
+                            self.controller
+                                .read(cx)
+                                .path()
+                                .map(|path| path.display().to_string())
+                                .unwrap_or_default(),
                         )
                         .keywords(["通用 general config file 配置文件 reload 重新读取"])
                     }),
             );
         let general = general.group(
-            SettingGroup::new()
+            SettingsSection::new()
                 .title(t(cx, "settings-temporary-storage"))
                 .item({
                     let controller = self.controller.clone();
-                    SettingItem::new(
+                    SettingsRow::new(
+                        "temporary-prewarm",
                         t(cx, "temporary-prewarm"),
-                        SettingField::render(move |_, _, cx| {
+                        control(move |_, _, cx| {
                             let checked = controller.read(cx).preferences(cx).prewarm_temporary;
                             let controller = controller.clone();
                             gpui_kit::component::switch::Switch::new("temporary-prewarm")
@@ -302,13 +416,15 @@ impl SettingsView {
                     .keywords(["temporary prewarm 临时对话 预热"])
                 })
                 .item(
-                    SettingItem::new(
+                    SettingsRow::new(
+                        "temporary-clean-released",
                         t(cx, "temporary-clean-released"),
-                        SettingField::render(|_, _, cx| {
+                        control(|_, _, cx| {
                             let owner = cx.try_global::<crate::app::temporary::Temporary>();
                             let busy = owner.is_some_and(|s| s.cleanup.is_some());
                             let result = owner.and_then(|s| s.cleanup_result.clone());
                             v_flex()
+                                .items_start()
                                 .gap_1()
                                 .child(
                                     Button::new("temporary-clean-released")
@@ -352,21 +468,20 @@ impl SettingsView {
                 ),
         );
         #[cfg(target_os = "macos")]
-        let general = general.group(SettingGroup::new().title(t(cx, "settings-permissions")).item(
-            SettingItem::new(t(cx, "settings-accessibility"), SettingField::render(|_, _, cx| {
-                Button::new("accessibility-settings").small().label(t(cx, "settings-open-system-settings"))
-                    .on_click(|_, _, cx| cx.open_url("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"))
+        let general = general.group(SettingsSection::new().title(t(cx, "settings-permissions")).item(
+            SettingsRow::new("settings-accessibility", t(cx, "settings-accessibility"), control(|_, _, cx| {
+                h_flex().child(Button::new("accessibility-settings").small().label(t(cx, "settings-open-system-settings"))
+                    .on_click(|_, _, cx| cx.open_url("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")))
             })).description(t(cx, "settings-accessibility-help"))
         ));
         let notifications = self.notification_settings(cx);
-        let appearance = SettingPage::new(t(cx, "settings-theme"))
+        let appearance = SettingsPage::new(t(cx, "settings-theme"))
             .icon(IconName::Sparkles)
-            .resettable(false)
-            .group(SettingGroup::new().title(t(cx, "setup-color-mode")).item({
+
+            .group(SettingsSection::new().title(t(cx, "setup-color-mode")).item({
                 let this = this.clone();
-                SettingItem::new(
-                    t(cx, "settings-color-mode-label"),
-                    SettingField::render(move |_, _, cx| {
+                SettingsRow::new("settings-color-mode-label", t(cx, "settings-color-mode-label"),
+                    control(move |_, _, cx| {
                         this.update(cx, |this, cx| this.render_mode(cx))
                             .unwrap_or_else(|_| div().into_any_element())
                     }),
@@ -377,33 +492,33 @@ impl SettingsView {
                 ])
             }))
             .group(
-                SettingGroup::new()
+                SettingsSection::new()
                     .title(t(cx, "settings-icon-theme"))
                     .description(t(cx, icon_help_key()))
                     .item(item(
                         "settings-icon-theme",
                         "icon logo dock 图标 标记 配色",
-                        |this, _, cx| this.render_icon_themes(false, cx),
+                        |this, _, _, cx| this.render_icon_themes(false, cx),
                     )),
             )
             .group(
-                SettingGroup::new()
+                SettingsSection::new()
                     .title(t(cx, "light-themes"))
                     .description(theme_group_help(Mode::Light, cx))
                     .item(item(
                         "light-themes",
                         "外观 appearance light theme 浅色主题",
-                        |this, _, cx| this.render_theme_choices(Mode::Light, cx),
+                        |this, layout, _, cx| this.render_theme_choices(Mode::Light, layout.width, cx),
                     )),
             )
             .group(
-                SettingGroup::new()
+                SettingsSection::new()
                     .title(t(cx, "dark-themes"))
                     .description(theme_group_help(Mode::Dark, cx))
                     .item(item(
                         "dark-themes",
                         "外观 appearance dark theme 深色主题",
-                        |this, _, cx| this.render_theme_choices(Mode::Dark, cx),
+                        |this, layout, _, cx| this.render_theme_choices(Mode::Dark, layout.width, cx),
                     )),
             );
         let pi = page(
@@ -411,7 +526,7 @@ impl SettingsView {
             vec![item(
                 "settings-pi-command",
                 "pi executable path environment version 路径 环境 检查",
-                |this, _, cx| {
+                |this, layout, _, cx| {
                     let probe = this.applied_pi.clone();
                     let command = this.controller.read(cx).preferences(cx).pi_command;
                     if !probe.read(cx).matches_command(command.as_deref()) {
@@ -419,7 +534,7 @@ impl SettingsView {
                             probe.update(cx, |probe, cx| probe.request(command, false, cx))
                         });
                     }
-                    this.render_pi_settings(cx)
+                    this.render_pi_settings(layout, cx)
                 },
             )],
         );
@@ -453,27 +568,60 @@ impl SettingsView {
                         items.push(keys::KeysView::item(&self.keys, index, cx));
                     }
                 }
-                (!items.is_empty())
-                    .then(|| SettingGroup::new().title(t(cx, group.label())).items(items))
+                (!items.is_empty()).then(|| {
+                    SettingsSection::new()
+                        .bindings()
+                        .title(t(cx, group.label()))
+                        .items(items)
+                })
             })
             .collect();
-        let keyboard = SettingPage::new(t(cx, "settings-page-keys"))
+        let keyboard = SettingsPage::new(t(cx, "settings-page-keys"))
             .icon(IconName::Keyboard)
-            .resettable(false)
-            .group(keys::KeysView::actions(&keys, &self.global_keys))
+            .group(keys::KeysView::actions(&keys))
             .groups(global_keys::GlobalKeys::groups(
                 &self.global_keys,
                 keys_view,
                 cx,
             ))
+            .groups((!command_groups.is_empty()).then(|| {
+                SettingsSection::new().item(
+                    SettingsRow::content(|_, _, cx| {
+                        v_flex()
+                            .w_full()
+                            .min_w_0()
+                            .border_t_1()
+                            .border_color(cx.theme().border)
+                            .pt_6()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .child(t(cx, "settings-key-app-heading")),
+                            )
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(t(cx, "settings-key-app-help")),
+                            )
+                    })
+                    .keywords(vec![
+                        t(cx, "settings-key-app-heading"),
+                        t(cx, "settings-key-app-help"),
+                    ]),
+                )
+            }))
             .groups(command_groups);
         let resource_page = |key, kind, keywords: &str| {
             let resource_view = self.resources.downgrade();
             let section = |section, aliases: &str| {
                 let resources = resource_view.clone();
-                SettingItem::render(move |_, _, cx| {
+                SettingsRow::content(move |layout, _, cx| {
                     resources
-                        .update(cx, |view, cx| view.render_page(kind, section, cx))
+                        .update(cx, |view, cx| {
+                            view.render_page(kind, section, layout.width, cx)
+                        })
                         .unwrap_or_else(|_| div().into_any_element())
                 })
                 .keywords(vec![
@@ -486,40 +634,44 @@ impl SettingsView {
             // Resource pages follow one shared Pi scope.
             let scope = self.pi_config.clone();
             let project = kind != Kind::Extension && self.resources.read(cx).in_project_scope();
-            let mut page = SettingPage::new(t(cx, key))
-                .resettable(false)
+            let mut page = SettingsPage::new(t(cx, key))
                 .icon(match kind {
                     Kind::Extension => IconName::Puzzle,
                     Kind::Skill => IconName::BookOpen,
                     _ => IconName::FileText,
                 })
-                .group(
-                    SettingGroup::new()
-                        .border_0()
-                        .p_0()
-                        .item(SettingItem::render(move |_, _, cx| {
-                            let scope = scope.update(cx, |config, cx| config.render_scope(cx));
-                            let toolbar = header
-                                .update(cx, |view, cx| view.render_header(kind, cx))
-                                .unwrap_or_else(|_| div().into_any_element());
-                            management_header(scope, Some(toolbar), div().into_any_element())
-                        })),
-                );
+                .scope(move |_, window, cx| {
+                    scope.update(cx, |config, cx| config.render_scope(false, window, cx))
+                })
+                .actions(move |_, _, cx| {
+                    header
+                        .update(cx, |view, cx| view.render_header(kind, cx))
+                        .unwrap_or_else(|_| div().into_any_element())
+                });
             if self.resources.read(cx).has_status(kind, cx) {
-                page = page.group(SettingGroup::new().item(section(
+                page = page.group(SettingsSection::new().item(section(
                     resources::Section::Overview,
                     "refresh reload 刷新 重新读取",
                 )));
             }
             if kind == Kind::Extension {
-                return page.group(SettingGroup::new()
+                let resources = self.resources.clone();
+                page = page.header(move |_, _, cx| {
+                    resources.update(cx, |view, cx| {
+                        h_flex()
+                            .w_full()
+                            .justify_end()
+                            .child(view.render_packages_tabs(cx))
+                    })
+                });
+                return page.group(SettingsSection::new()
                     .item(section(resources::Section::Packages,"package extension skill theme template install update remove source version 包 扩展 技能 主题 模板 安装 更新 移除 来源 版本")));
             }
             let inherited_title = t(cx, "settings-resource-group-inherited");
             if kind == Kind::Prompt {
                 page = page
                     .group(
-                        SettingGroup::new()
+                        SettingsSection::new()
                             .title(t(cx, "settings-system-heading"))
                             .items(resources::ResourcesView::system_prompt_items(
                                 &self.resources,
@@ -527,7 +679,7 @@ impl SettingsView {
                             )),
                     )
                     .group(
-                        SettingGroup::new()
+                        SettingsSection::new()
                             .title(t(cx, "settings-template-heading"))
                             .item(section(resources::Section::Catalog, keywords))
                             .items(resources::ResourcesView::prompt_items(
@@ -537,13 +689,13 @@ impl SettingsView {
                             )),
                     );
                 if project {
-                    page = page.group(SettingGroup::new().title(inherited_title).items(
+                    page = page.group(SettingsSection::new().title(inherited_title).items(
                         resources::ResourcesView::prompt_items(&self.resources, true, cx),
                     ));
                 }
                 return page;
             }
-            let mut own = SettingGroup::new();
+            let mut own = SettingsSection::new();
             if project {
                 own = own.title(t(cx, "settings-resource-group-project"));
             }
@@ -556,7 +708,7 @@ impl SettingsView {
                     )),
             );
             if project {
-                page = page.group(SettingGroup::new().title(inherited_title).items(
+                page = page.group(SettingsSection::new().title(inherited_title).items(
                     resources::ResourcesView::skill_items(&self.resources, true, cx),
                 ));
             }
@@ -579,6 +731,14 @@ impl SettingsView {
                 "about pi version 关于 版本",
             ),
             (
+                "settings-about-path",
+                probe
+                    .data()
+                    .map(|data| data.command.display().to_string())
+                    .unwrap_or_else(|| unavailable.clone()),
+                "about pi path executable 关于 路径",
+            ),
+            (
                 "settings-about-status",
                 if probe.is_running() {
                     t(cx, "startup-checking")
@@ -594,11 +754,13 @@ impl SettingsView {
         ]
         .into_iter()
         .map(|(key, value, aliases)| {
-            SettingItem::new(
+            let navigate = this.clone();
+            SettingsRow::new(
+                key,
                 t(cx, key),
-                SettingField::render(move |_, _, _| {
+                control(move |_, _, cx| {
                     let tooltip = value.clone();
-                    div()
+                    let value = div()
                         .id(key)
                         .max_w(rems(20.))
                         .min_w_0()
@@ -608,7 +770,26 @@ impl SettingsView {
                         .tooltip(move |window, cx| {
                             gpui_kit::component::tooltip::Tooltip::new(tooltip.clone())
                                 .build(window, cx)
-                        })
+                        });
+                    h_flex().min_w_0().flex_wrap().gap_2().child(value).when(
+                        key == "settings-about-status",
+                        |row| {
+                            let navigate = navigate.clone();
+                            row.child(
+                                Button::new("about-open-pi")
+                                    .small()
+                                    .outline()
+                                    .label(t(cx, "settings-open-pi"))
+                                    .on_click(move |_, window, cx| {
+                                        navigate
+                                            .update(cx, |this, cx| {
+                                                this.open_page(Domain::Pi, PI_PAGE, window, cx)
+                                            })
+                                            .ok();
+                                    }),
+                            )
+                        },
+                    )
                 }),
             )
             .keywords(vec![aliases])
@@ -617,50 +798,25 @@ impl SettingsView {
         let gupi_item = about_items.remove(0);
         let updates = self.updates.clone();
         let controller = self.controller.clone();
-        let about = SettingPage::new(t(cx, "settings-page-about"))
+        let about = SettingsPage::new(t(cx, "settings-page-about"))
             .icon(IconName::Info)
-            .resettable(false)
             .group(
-                SettingGroup::new().title("Gupi").item(gupi_item).item(
-                    SettingItem::new(
-                        t(cx, "settings-diagnostics"),
-                        SettingField::render(|_, _, cx| {
-                            h_flex()
-                                .w_full()
-                                .min_w_0()
-                                .flex_wrap()
-                                .gap_2()
-                                .child(
-                                    Button::new("diagnostics-copy")
-                                        .small()
-                                        .label(t(cx, "menu-copy-diagnostics"))
-                                        .on_click(|_, _, cx| {
-                                            crate::app::menus::copy_diagnostics(cx)
-                                        }),
-                                )
-                                .child(
-                                    Button::new("diagnostics-logs")
-                                        .small()
-                                        .icon(IconName::FolderOpen)
-                                        .label(t(cx, "menu-logs"))
-                                        .on_click(|_, _, cx| crate::app::menus::show_logs(cx)),
-                                )
-                        }),
-                    )
-                    .description(t(cx, "settings-diagnostics-help")),
-                ),
-            )
-            .group(
-                SettingGroup::new()
-                    .title(t(cx, "updates-title"))
+                SettingsSection::new()
+                    .title("Gupi")
+                    .item(gupi_item)
                     .item(
-                        SettingItem::render(move |_, _, _| updates.clone())
-                            .keywords(["updates version download 更新 版本 下载"]),
+                        SettingsRow::content(move |layout, _, cx| {
+                            updates.update(cx, |view, _| view.set_settings_axis(layout.axis));
+                            updates.clone()
+                        })
+                        .framed(true)
+                        .keywords(["updates version download 更新 版本 下载"]),
                     )
                     .item(
-                        SettingItem::new(
+                        SettingsRow::new(
+                            "updates-automatic",
                             t(cx, "updates-automatic"),
-                            SettingField::render(move |_, _, cx| {
+                            control(move |_, _, cx| {
                                 let checked = controller
                                     .read(cx)
                                     .preferences(cx)
@@ -685,142 +841,334 @@ impl SettingsView {
                     ),
             )
             .group(
-                SettingGroup::new()
-                    .title("Pi")
-                    .description(t(cx, "settings-about-help"))
-                    .items(about_items)
-                    .item({
-                        let this = this.clone();
-                        SettingItem::new(
-                            t(cx, "settings-page-pi"),
-                            SettingField::render(move |_, _, cx| {
-                                let this = this.clone();
-                                Button::new("about-open-pi")
-                                    .small()
-                                    .label(t(cx, "settings-open-pi"))
-                                    .on_click(move |_, _, cx| {
-                                        this.update(cx, |this, cx| {
-                                            this.open_page(Domain::Pi, PI_PAGE, cx)
-                                        })
-                                        .ok();
-                                    })
+                SettingsSection::new()
+                    .title(t(cx, "settings-diagnostics"))
+                    .item(
+                        SettingsRow::new(
+                            "settings-diagnostics",
+                            t(cx, "settings-diagnostics"),
+                            control(|_, _, cx| {
+                                h_flex()
+                                    .w_full()
+                                    .min_w_0()
+                                    .flex_wrap()
+                                    .gap_2()
+                                    .child(
+                                        Button::new("diagnostics-copy")
+                                            .small()
+                                            .label(t(cx, "menu-copy-diagnostics"))
+                                            .on_click(|_, _, cx| {
+                                                crate::app::menus::copy_diagnostics(cx)
+                                            }),
+                                    )
+                                    .child(
+                                        Button::new("diagnostics-logs")
+                                            .small()
+                                            .icon(IconName::FolderOpen)
+                                            .label(t(cx, "menu-logs"))
+                                            .on_click(|_, _, cx| crate::app::menus::show_logs(cx)),
+                                    )
                             }),
                         )
-                        .keywords(["about pi settings open 关于 打开 Pi 设置"])
-                    }),
+                        .description(t(cx, "settings-diagnostics-help")),
+                    ),
+            )
+            .group(
+                SettingsSection::new()
+                    .title("Pi")
+                    .description(t(cx, "settings-about-help"))
+                    .items(about_items),
             );
-        let id = match self.domain {
-            Domain::Gupi => "gupi-settings",
-            Domain::Pi => "pi-settings",
+        let pages = match self.domain {
+            Domain::Gupi => vec![general, appearance, notifications, keyboard, about],
+            Domain::Pi => vec![
+                pi.title(t(cx, "settings-page-connection")),
+                pi_config::PiConfig::page(&self.pi_config, pi_config::Page::Conversation, cx),
+                pi_config::PiConfig::page(&self.pi_config, pi_config::Page::Network, cx),
+                pi_config::PiConfig::page(&self.pi_config, pi_config::Page::Tools, cx),
+                super::config_files::FilePages::page(
+                    &self.pi_config.read(cx).file_pages,
+                    gupi_resources::pi_config_files::Kind::Models,
+                    &self.pi_config,
+                    cx,
+                ),
+                super::auth::AuthPage::page(&self.auth, cx),
+                super::config_files::FilePages::page(
+                    &self.pi_config.read(cx).file_pages,
+                    gupi_resources::pi_config_files::Kind::Mcp,
+                    &self.pi_config,
+                    cx,
+                ),
+                resource_page(
+                    "settings-page-packages",
+                    Kind::Extension,
+                    "package plugin extension install update remove source version path enable disable browse search npm 插件 扩展 包 安装 更新 移除 启停 浏览 搜索",
+                ),
+                resource_page(
+                    "settings-page-skills",
+                    Kind::Skill,
+                    "skill name description source path create edit delete enable disable 技能 创建 编辑 删除 启停",
+                ),
+                resource_page(
+                    "settings-page-prompts",
+                    Kind::Prompt,
+                    "prompt template 创建 编辑 删除 模板",
+                ),
+            ],
         };
-        let settings = Settings::new((id, self.navigation.0))
-            .default_selected_index(SelectIndex {
-                page_ix: self.navigation.1,
-                group_ix: None,
+        pages
+            .into_iter()
+            .zip(PageId::pages(self.domain))
+            .map(|(page, id)| {
+                let page = if matches!(id, PageId::Connection | PageId::Auth) {
+                    let config = self.pi_config.clone();
+                    page.scope(move |_, window, cx| {
+                        config.update(cx, |config, cx| config.render_scope(true, window, cx))
+                    })
+                } else {
+                    page
+                };
+                page.description(t(cx, &format!("{}-description", id.id())))
             })
-            .with_group_variant(GroupBoxVariant::Normal);
-        match self.domain {
-            Domain::Gupi => settings
-                .page(general)
-                .page(appearance)
-                .page(notifications)
-                .page(keyboard)
-                .page(about),
-            Domain::Pi => settings
-                .page(pi.title(t(cx, "settings-page-connection")))
-                .page(pi_config::PiConfig::page(&self.pi_config, pi_config::Page::Conversation, cx))
-                .page(pi_config::PiConfig::page(&self.pi_config, pi_config::Page::Network, cx))
-                .page(pi_config::PiConfig::page(&self.pi_config, pi_config::Page::Tools, cx))
-                .page(super::config_files::FilePages::page(&self.pi_config.read(cx).file_pages, gupi_resources::pi_config_files::Kind::Models, &self.pi_config, cx))
-                .page(super::auth::AuthPage::page(&self.auth, cx))
-                .page(super::config_files::FilePages::page(&self.pi_config.read(cx).file_pages, gupi_resources::pi_config_files::Kind::Mcp, &self.pi_config, cx))
-                .page(resource_page("settings-page-packages",Kind::Extension,"package plugin extension install update remove source version path enable disable browse search npm 插件 扩展 包 安装 更新 移除 启停 浏览 搜索"))
-                .page(resource_page("settings-page-skills",Kind::Skill,"skill name description source path create edit delete enable disable 技能 创建 编辑 删除 启停"))
-                .page(resource_page("settings-page-prompts",Kind::Prompt,"prompt template 创建 编辑 删除 模板")),
-        }
+            .collect()
     }
-    pub(super) fn render_settings(&self, cx: &mut Context<Self>) -> AnyElement {
-        let panel = self.settings_panel(cx);
+    pub(super) fn render_settings(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        use gpui_kit::component::empty::{
+            Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle,
+        };
+        use gpui_kit::component::resizable::{h_resizable, resizable_panel};
+        use gpui_kit::component::scroll::ScrollableElement as _;
+        use gpui_kit::component::sidebar::{SidebarItem as _, SidebarMenuItem};
+        let pages = self.settings_pages(cx);
+        let query = self.query.trim().to_lowercase();
+        let matches = pages
+            .iter()
+            .map(|page| page.matches(&query))
+            .collect::<Vec<_>>();
+        let empty = !matches.iter().any(|value| *value);
+        let selected = if matches[self.navigation.index()] || empty {
+            self.navigation
+        } else {
+            PageId::pages(self.domain)[matches
+                .iter()
+                .position(|value| *value)
+                .expect("matching page")]
+        };
+        let mut menu = v_flex().gap_1();
+        for (ix, page) in pages.iter().enumerate() {
+            if !empty && !matches[ix] {
+                continue;
+            }
+            let id = PageId::pages(self.domain)[ix];
+            let domain = self.domain;
+            let item = SidebarMenuItem::new(page.title.clone())
+                .active(selected == id)
+                .when_some(page.icon.clone(), |item, icon| item.icon(icon))
+                .on_click(
+                    cx.listener(move |this, _, window, cx| this.open_page(domain, id, window, cx)),
+                );
+            menu = menu.child(item.render(
+                SharedString::from(format!("settings-nav-{}", id.id())),
+                window,
+                cx,
+            ));
+        }
+        let sidebar = v_flex()
+            .id("settings-sidebar")
+            .size_full()
+            .min_w_0()
+            .min_h_0()
+            .bg(cx.theme().sidebar)
+            .child(
+                div().p_4().child(
+                    Input::new(&self.search)
+                        .aria_label(t(cx, "settings-search"))
+                        .id("settings-search")
+                        .prefix(gpui_kit::component::Icon::new(IconName::Search))
+                        .cleanable(true),
+                ),
+            )
+            .child(
+                v_flex()
+                    .id("settings-navigation")
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .track_scroll(&self.settings_nav_scroll)
+                    .vertical_scrollbar(&self.settings_nav_scroll)
+                    .child(div().px_2().pb_2().child(menu)),
+            );
+        let page = pages
+            .into_iter()
+            .nth(selected.index())
+            .expect("settings destination");
+        let scroll = self.settings_scroll.clone();
         let problem = self
             .controller
             .read(cx)
             .configuration()
             .read(cx, |op| op.problem().map(|p| p.key()));
-        v_flex()
-            .size_full()
-            .min_h_0()
-            .children(
-                self.error
-                    .as_deref()
-                    .or(problem)
-                    .map(|key| div().text_color(cx.theme().danger).child(t(cx, key))),
+        let error = self.error.as_deref().or(problem).map(|key| t(cx, key));
+        let mut args = fluent_bundle::FluentArgs::new();
+        args.set(
+            "domain",
+            t(
+                cx,
+                if self.domain == Domain::Gupi {
+                    "settings-domain-gupi"
+                } else {
+                    "settings-domain-pi"
+                },
+            ),
+        );
+        args.set("query", self.query.clone());
+        let empty_description =
+            gupi_settings::i18n::t_with_args(cx, "settings-search-empty-description", &args);
+        let empty_title = t(cx, "settings-search-empty");
+        let clear = Button::new("settings-clear-search")
+            .outline()
+            .label(t(cx, "settings-clear-search"))
+            .on_click(cx.listener(|this, _, window, cx| this.clear_search(window, cx)));
+        let content = container_query(move |size, window, cx| {
+            let rem = window.rem_size();
+            let max_width = if matches!(
+                selected,
+                PageId::Keyboard
+                    | PageId::Models
+                    | PageId::Mcp
+                    | PageId::Packages
+                    | PageId::Skills
+                    | PageId::Prompts
+            ) {
+                rem * 59.
+            } else {
+                rem * 52.
+            };
+            let width = (size.width - rem * 4.).max(Pixels::ZERO).min(max_width);
+            let layout = PageLayout::new(width, rem);
+            let content = if empty {
+                Empty::new()
+                    .min_h(rems(24.))
+                    .header(
+                        EmptyHeader::new()
+                            .title(EmptyTitle::new().child(empty_title))
+                            .description(EmptyDescription::new().child(empty_description)),
+                    )
+                    .content(EmptyContent::new().child(clear))
+                    .into_any_element()
+            } else {
+                page.content(query, layout).into_any_element()
+            };
+            div()
+                .id(selected.id())
+                .relative()
+                .size_full()
+                .min_w_0()
+                .min_h_0()
+                .overflow_y_scroll()
+                .track_scroll(&scroll)
+                .vertical_scrollbar(&scroll)
+                .child(
+                    v_flex()
+                        .w_full()
+                        .max_w(width)
+                        .mx_auto()
+                        .py_8()
+                        .gap_4()
+                        .when_some(error, |body, text| {
+                            body.child(div().text_sm().text_color(cx.theme().danger).child(text))
+                        })
+                        .child(content),
+                )
+        });
+        let rem = window.rem_size();
+        h_resizable("settings-split")
+            .with_state(&self.settings_split)
+            .child(
+                resizable_panel()
+                    .size(rem * 15.625)
+                    .size_range(rem * 10. ..rem * 22.5)
+                    .child(sidebar),
             )
-            .child(div().flex_1().min_h_0().child(panel))
+            .child(
+                resizable_panel()
+                    .size_range(rem * 24. ..Pixels::MAX)
+                    .child(content),
+            )
             .into_any_element()
     }
+
     pub(super) fn render_icon_themes(&self, heading: bool, cx: &Context<Self>) -> AnyElement {
         use gupi_settings::icons::IconTheme;
         let config = self.controller.read(cx).preferences(cx);
         let busy = self.controller.read(cx).busy(cx);
-        let mut group = gpui_kit::base::RadioGroup::new("icon-themes")
-            .aria_label(t(cx, "settings-icon-theme"))
-            .axis(Axis::Horizontal)
-            .flex()
-            .flex_wrap()
-            .gap_2();
+        let mut group = h_flex().w_full().items_start().flex_wrap().gap_3();
         for icon in IconTheme::ALL {
             let controller = self.controller.clone();
             let selected = config.icon_theme == icon;
+            let hover_group: SharedString = format!("icon-preview-{}", icon.label()).into();
             group = group.child(
-                gpui_kit::base::Radio::new(icon.label())
-                    .checked(selected)
-                    .disabled(busy)
-                    .accessibility_label(t(cx, icon.label()))
-                    .tooltip(move |window, cx| {
-                        gpui_kit::component::tooltip::Tooltip::new(t(cx, icon.label()))
-                            .build(window, cx)
-                    })
-                    .p_2()
-                    .w(rems(7.))
-                    .min_h(rems(7.5))
-                    .rounded(cx.theme().radius)
-                    .border_1()
-                    .border_color(if selected {
-                        cx.theme().primary
-                    } else {
-                        cx.theme().border
-                    })
-                    .focus(|s| s.border_color(cx.theme().ring))
-                    .on_change(move |_, _, _, cx| {
-                        controller.update(cx, |owner, cx| {
-                            owner.set_preference(PreferenceChange::IconTheme(icon), cx)
-                        });
-                    })
+                div()
+                    .id(hover_group.clone())
+                    .group(hover_group.clone())
+                    .w(rems(5.75))
+                    .min_w_0()
                     .child(
-                        v_flex()
-                            .items_center()
-                            .gap_1()
-                            .child(img(SharedString::from(icon.preview())).size_10())
+                        Button::new(icon.label())
+                            .custom(gpui_kit::component::button::ButtonCustomVariant::new(cx))
+                            .w_full()
+                            .h_auto()
+                            .p_1()
+                            .whitespace_normal()
+                            .selected(selected)
+                            .toggled(selected)
+                            .disabled(busy)
+                            .accessibility_label(t(cx, icon.label()))
                             .child(
-                                h_flex()
+                                v_flex()
                                     .w_full()
-                                    .items_start()
-                                    .gap_1()
+                                    .min_w_0()
+                                    .items_center()
+                                    .gap_2()
                                     .child(
                                         div()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .text_sm()
-                                            .line_clamp(2)
-                                            .child(t(cx, icon.label())),
+                                            .size(rems(4.75))
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .border_1()
+                                            .rounded_lg()
+                                            .border_color(if selected {
+                                                cx.theme().primary
+                                            } else {
+                                                cx.theme().transparent
+                                            })
+                                            .when(!selected, |preview| {
+                                                preview.group_hover(hover_group, |style| {
+                                                    style.border_color(cx.theme().muted_foreground)
+                                                })
+                                            })
+                                            .child(
+                                                img(SharedString::from(icon.preview()))
+                                                    .size(rems(3.5)),
+                                            ),
                                     )
-                                    .child(div().w_4().flex_shrink_0().when(selected, |slot| {
-                                        slot.child(
-                                            gpui_kit::component::Icon::new(IconName::Check)
-                                                .size_4(),
-                                        )
-                                    })),
-                            ),
+                                    .child(preferences::preview_caption(
+                                        t(cx, icon.label()).into(),
+                                        selected,
+                                        cx,
+                                    )),
+                            )
+                            .on_click(move |_, _, cx| {
+                                controller.update(cx, |owner, cx| {
+                                    owner.set_preference(PreferenceChange::IconTheme(icon), cx)
+                                })
+                            }),
                     ),
             );
         }
@@ -861,9 +1209,9 @@ impl SettingsView {
             }))
             .into_any_element()
     }
-    fn render_theme_choices(&self, mode: Mode, cx: &Context<Self>) -> AnyElement {
+    fn render_theme_choices(&self, mode: Mode, width: Pixels, cx: &Context<Self>) -> AnyElement {
         let draft = self.controller.read(cx).preferences(cx);
-        preferences::theme_grid(
+        preferences::theme_grid_content(
             (
                 if mode == Mode::Light {
                     "light-themes"
@@ -875,22 +1223,25 @@ impl SettingsView {
             ),
             &draft,
             &self.controller,
+            preferences::theme_columns(width.as_f32()),
             self.controller.read(cx).busy(cx),
+            cx,
         )
     }
 }
 
 impl SettingsView {
-    fn notification_settings(&self, cx: &Context<Self>) -> SettingPage {
+    fn notification_settings(&self, cx: &Context<Self>) -> SettingsPage {
         use gupi_settings::notifications::CompletionMode;
         use gupi_settings::notifications::Preferences;
         let controller = self.controller.clone();
         type Toggle = (&'static str, fn(&mut Preferences) -> &mut bool);
         let toggle = |(label, field): Toggle| {
             let controller = controller.clone();
-            SettingItem::new(
+            SettingsRow::new(
+                label,
                 t(cx, label),
-                SettingField::render(move |_, _, cx| {
+                control(move |_, _, cx| {
                     let mut p = controller.read(cx).preferences(cx).notifications;
                     let controller = controller.clone();
                     gpui_kit::component::switch::Switch::new(label)
@@ -908,7 +1259,7 @@ impl SettingsView {
             )
             .keywords(["notifications background 提醒 通知 后台"])
         };
-        let background = SettingGroup::new()
+        let background = SettingsSection::new()
             .title(t(cx, "settings-notification-background-heading"))
             .description(t(cx, "settings-notification-help"))
             .items(
@@ -929,12 +1280,13 @@ impl SettingsView {
                 ]
                 .map(toggle),
             );
-        let completion = SettingGroup::new()
+        let completion = SettingsSection::new()
             .title(t(cx, "settings-notification-completion-heading"))
             .item(
-                SettingItem::new(
+                SettingsRow::new(
+                    "settings-notification-completion",
                     t(cx, "settings-notification-completion"),
-                    SettingField::render(move |_, _, cx| {
+                    control(move |_, _, cx| {
                         let modes = [
                             CompletionMode::Off,
                             CompletionMode::Background,
@@ -963,19 +1315,17 @@ impl SettingsView {
                 )
                 .keywords(["notifications completion 回答完成 通知"]),
             );
-        let page = SettingPage::new(t(cx, "settings-notifications"))
+        let page = SettingsPage::new(t(cx, "settings-notifications"))
             .icon(IconName::Bell)
-            .resettable(false)
             .group(background)
             .group(completion);
         #[cfg(any(target_os = "macos", target_os = "windows"))]
         let page = page.group(
-            SettingGroup::new()
+            SettingsSection::new()
                 .title(t(cx, "settings-permissions"))
                 .item(
-                    SettingItem::new(
-                        t(cx, "settings-notification-permission-open"),
-                        SettingField::render(|_, _, cx| {
+                    SettingsRow::new("settings-notification-permission-open", t(cx, "settings-notification-permission-open"),
+                        control(|_, _, cx| {
                             Button::new("notification-system-settings")
                                 .small()
                                 .label(t(cx, "settings-open-system-settings"))

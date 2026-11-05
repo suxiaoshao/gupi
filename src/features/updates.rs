@@ -5,6 +5,7 @@ use gpui_kit::component::WindowExt;
 use gpui_kit::component::button::Button;
 use gpui_kit::component::link::Link;
 use gpui_kit::component::v_flex;
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use gupi_settings::config::ConfigController;
 use gupi_settings::i18n::t;
@@ -47,10 +48,21 @@ pub(crate) fn open(
 pub(crate) struct UpdatesView {
     owner: Entity<Updates>,
     config: Entity<ConfigController>,
+    settings: bool,
+    settings_axis: Axis,
     _subscriptions: [Subscription; 2],
 }
 
 impl UpdatesView {
+    pub(crate) fn in_settings(mut self) -> Self {
+        self.settings = true;
+        self
+    }
+
+    pub(crate) fn set_settings_axis(&mut self, axis: Axis) {
+        self.settings_axis = axis;
+    }
+
     pub fn new(config: Entity<ConfigController>, cx: &mut Context<Self>) -> Self {
         let owner = updates::get(cx);
         let subscription = cx.observe(&owner, |_, _, cx| cx.notify());
@@ -58,6 +70,8 @@ impl UpdatesView {
         Self {
             owner,
             config,
+            settings: false,
+            settings_axis: Axis::Horizontal,
             _subscriptions: [subscription, config_subscription],
         }
     }
@@ -78,10 +92,7 @@ impl Render for UpdatesView {
             Status::InstallFailed(_) => t(cx, "updates-install-failed"),
             Status::Failed(problem) => t(cx, problem.key()),
         };
-        let mut view = v_flex()
-            .gap_2()
-            .items_start()
-            .child(div().text_sm().child(status));
+        let mut view = v_flex().gap_2().items_start();
         if let Some(release) = owner.installable_release() {
             if crate::app::updater::available(cx) {
                 view = view.child(
@@ -120,7 +131,7 @@ impl Render for UpdatesView {
                     .on_click(|_, _, cx| cx.defer(crate::app::updater::install)),
             );
         }
-        view.child(
+        let view = view.child(
             Button::new("updates-check")
                 .label(t(cx, "updates-check"))
                 .loading(checking)
@@ -128,6 +139,41 @@ impl Render for UpdatesView {
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.owner.update(cx, |owner, cx| owner.check(true, cx));
                 })),
-        )
+        );
+        if !self.settings {
+            return v_flex()
+                .gap_2()
+                .child(div().text_sm().child(status))
+                .child(view)
+                .into_any_element();
+        }
+        gpui_kit::component::h_flex()
+            .w_full()
+            .min_w_0()
+            .py_4()
+            .gap_6()
+            .when(self.settings_axis == Axis::Vertical, |row| {
+                row.flex_col().items_start().gap_3()
+            })
+            .child(
+                v_flex()
+                    .min_w_0()
+                    .flex_1()
+                    .gap_1()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(t(cx, "updates-title")),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(status),
+                    ),
+            )
+            .child(view)
+            .into_any_element()
     }
 }

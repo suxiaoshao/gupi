@@ -23,3 +23,5 @@ dhat-heap.json
 /build-assets/icon/app-icon.ico
 /build-assets/icon/app-icon.iconset/
 /build-assets/icon/*.icon/Assets/app-icon-liquid-glass.png
+
+/build/

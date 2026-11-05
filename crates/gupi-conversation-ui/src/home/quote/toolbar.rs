@@ -610,7 +610,7 @@ pub(in crate::home) fn events(owner: WeakEntity<HomeView>) -> impl IntoElement {
                 }
             });
             let scroll = owner.clone();
-            window.on_mouse_event(move |event: &ScrollWheelEvent, phase, _, cx| {
+            window.on_mouse_event(move |event: &ScrollEvent, phase, _, cx| {
                 if phase.capture() {
                     let _ = scroll.update(cx, |home, cx| {
                         let inside = home.quote_tools.active.as_ref().is_some_and(|active| {

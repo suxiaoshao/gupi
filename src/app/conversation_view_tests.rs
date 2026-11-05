@@ -754,7 +754,8 @@ fn user_message_images_are_compact_separate_and_open_preview(cx: &mut TestAppCon
             gpui_kit::point(px(-65.), px(55.))
         );
         window.dispatch_event(
-            gpui_kit::ScrollWheelEvent {
+            gpui_kit::ScrollEvent {
+                source: gpui_kit::ScrollSource::Pointer,
                 position,
                 delta: gpui_kit::ScrollDelta::Pixels(gpui_kit::point(px(21.), px(-17.))),
                 modifiers: Default::default(),

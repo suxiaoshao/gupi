@@ -107,7 +107,7 @@ impl ListDelegate for HistoryDelegate {
                 .h(px(graph::ROW_HEIGHT))
                 .flex_shrink_0()
                 .overflow_hidden()
-                .on_scroll_wheel(cx.listener(|list, event: &ScrollWheelEvent, window, cx| {
+                .on_scroll(cx.listener(|list, event: &ScrollEvent, window, cx| {
                     let delta = event.delta.pixel_delta(window.line_height());
                     let horizontal = if event.modifiers.shift {
                         delta.x + delta.y

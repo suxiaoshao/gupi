@@ -625,7 +625,7 @@ impl Render for ImageCanvas {
                     cx.notify();
                 }
             }))
-            .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, window, cx| {
+            .on_scroll(cx.listener(|this, event: &ScrollEvent, window, cx| {
                 let delta = event.delta.pixel_delta(window.line_height()).map(f32::from);
                 if event.modifiers.control || event.modifiers.platform {
                     this.set_zoom(

@@ -1,10 +1,10 @@
 use super::*;
 use crate::features::settings::composition::{PageLayout, SettingsRow, SettingsSection, control};
-use gpui_kit::component::Selectable;
 use gpui_kit::component::Sizable;
 use gpui_kit::component::WindowExt;
 use gpui_kit::component::kbd::Kbd;
 use gpui_kit::component::tag::Tag;
+use gpui_kit::component::{FocusableExt, Selectable};
 use gpui_kit::prelude::FluentBuilder;
 use gupi_settings::commands::Kind;
 use gupi_settings::keybindings;
@@ -90,10 +90,10 @@ pub(super) fn scope_key(kind: Kind) -> &'static str {
 }
 
 /// Keycaps for a stored binding; `None` when nothing is bound or it does not parse.
-pub(super) fn keycaps(value: &str) -> Option<AnyElement> {
+pub(super) fn keycaps(value: &str, cx: &App) -> Option<AnyElement> {
     let strokes = value
         .split_whitespace()
-        .map(Keystroke::parse)
+        .map(|text| Keystroke::parse_with_os(text, cx.platform_info().os))
         .collect::<Result<Vec<_>, _>>()
         .ok()?;
     (!strokes.is_empty()).then(|| {
@@ -112,8 +112,11 @@ pub(super) fn key_area(
     command: &str,
     recording: bool,
     cx: &App,
-) -> gpui_kit::base::Button {
-    gpui_kit::base::Button::new(id)
+) -> Button {
+    Button::new(id)
+        .small()
+        .ghost()
+        .focus_ring(false)
         .track_focus(focus)
         .accessibility_label({
             let mut args = fluent_bundle::FluentArgs::new();
@@ -137,6 +140,7 @@ pub(super) fn key_area(
                 &args,
             )
         })
+        .h_auto()
         .min_h_7()
         .max_w_full()
         .min_w_0()
@@ -153,7 +157,7 @@ pub(super) fn key_area(
                 .child(t(cx, "settings-key-recording"))
                 .into_any_element()
         } else {
-            keycaps(value).unwrap_or_else(|| {
+            keycaps(value, cx).unwrap_or_else(|| {
                 div()
                     .text_sm()
                     .text_color(cx.theme().muted_foreground)
@@ -172,7 +176,7 @@ pub(super) fn binding_capsule(
     id: impl Into<ElementId>,
     group: SharedString,
     focus: &FocusHandle,
-    area: gpui_kit::base::Button,
+    area: Button,
     clear: Option<Button>,
     window: &Window,
     cx: &App,
@@ -400,7 +404,7 @@ impl KeysView {
             let first = value
                 .split_whitespace()
                 .next()
-                .and_then(|text| Keystroke::parse(text).ok());
+                .and_then(|text| Keystroke::parse_with_os(text, cx.platform_info().os).ok());
             if first.as_ref() != Some(key) {
                 return false;
             }
@@ -485,10 +489,10 @@ impl KeysView {
             .collect();
         let first = sessions
             .first()
-            .and_then(|c| keycaps(c.value(&config.keybindings)));
+            .and_then(|c| keycaps(c.value(&config.keybindings), cx));
         let last = sessions
             .last()
-            .and_then(|c| keycaps(c.value(&config.keybindings)));
+            .and_then(|c| keycaps(c.value(&config.keybindings), cx));
         let open = self.sessions_open;
         h_flex()
             .gap_2()
@@ -670,11 +674,17 @@ impl KeysView {
                 true
             }
             Err(error) => {
-                let conflict = Keystroke::parse(text).ok().and_then(|key| {
-                    let other =
-                        keybindings::conflicting_command(command.id, &key, &config.keybindings)?;
-                    COMMANDS.iter().position(|c| c.id == other.id)
-                });
+                let conflict = Keystroke::parse_with_os(text, cx.platform_info().os)
+                    .ok()
+                    .and_then(|key| {
+                        let other = keybindings::conflicting_command(
+                            command.id,
+                            &key,
+                            &config.keybindings,
+                            cx,
+                        )?;
+                        COMMANDS.iter().position(|c| c.id == other.id)
+                    });
                 let message = if let Some(other) = conflict {
                     let mut args = fluent_bundle::FluentArgs::new();
                     args.set("command", t(cx, COMMANDS[other].label));
@@ -734,7 +744,7 @@ impl KeysView {
             cx.stop_propagation();
             // Escape ends recording without becoming the binding.
             if event.keystroke.key != "escape" {
-                this.set_draft(index, event.keystroke.unparse(), cx);
+                this.set_draft(index, event.keystroke.unparse(cx.platform_info().os), cx);
             }
             this.capture = None;
             cx.notify();
@@ -1469,20 +1479,20 @@ mod tests {
                 this.search
                     .update(cx, |input, cx| input.set_value("SUMMARIZE", window, cx));
                 assert!(visible(this, cx));
-                this.key_query = Keystroke::parse("ctrl-alt-l").ok();
+                this.key_query = Keystroke::parse_with_os("ctrl-alt-l", cx.platform_info().os).ok();
                 assert!(!visible(this, cx));
-                this.key_query = Keystroke::parse("ctrl-alt-s").ok();
+                this.key_query = Keystroke::parse_with_os("ctrl-alt-s", cx.platform_info().os).ok();
                 assert!(visible(this, cx));
                 this.customized_only = true;
                 assert!(visible(this, cx));
                 this.search
                     .update(cx, |input, cx| input.set_value("launcher", window, cx));
                 assert!(!visible(this, cx));
-                this.key_query = Keystroke::parse("ctrl-alt-l").ok();
+                this.key_query = Keystroke::parse_with_os("ctrl-alt-l", cx.platform_info().os).ok();
                 assert!(visible(this, cx));
                 this.search
                     .update(cx, |input, cx| input.set_value("", window, cx));
-                this.key_query = Keystroke::parse("ctrl-alt-z").ok();
+                this.key_query = Keystroke::parse_with_os("ctrl-alt-z", cx.platform_info().os).ok();
                 assert!(!visible(this, cx));
             });
         });
@@ -1500,7 +1510,8 @@ mod tests {
                 assert!(this.matches(palette, cx));
                 assert!(!this.matches(quick_open, cx));
                 this.customized_only = false;
-                this.key_query = gpui_kit::Keystroke::parse("secondary-p").ok();
+                this.key_query =
+                    gpui_kit::Keystroke::parse_with_os("secondary-p", cx.platform_info().os).ok();
                 assert!(this.matches(quick_open, cx));
                 assert!(!this.matches(palette, cx));
                 assert!(this.filtering(cx));

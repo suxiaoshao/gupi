@@ -410,7 +410,7 @@ impl BindingInput {
             cx.stop_propagation();
             // Escape ends recording without becoming the binding.
             if event.keystroke.key != "escape" {
-                this.draft = event.keystroke.unparse();
+                this.draft = event.keystroke.unparse(cx.platform_info().os);
             }
             this.capture = None;
             cx.notify();

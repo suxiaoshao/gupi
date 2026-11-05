@@ -117,7 +117,10 @@ pub(super) fn cleanup_own(root: &Path) {
 }
 fn has_running_executable(root: &Path) -> bool {
     use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
-    let mut system = System::new();
+    let Ok(mut system) = System::new() else {
+        // Keep the gallery when process inspection is unavailable.
+        return true;
+    };
     // Only executable/user fields are requested. No cwd, command or environment
     // refresh, permission-completeness policy, or process-control operations.
     system.refresh_processes_specifics(

@@ -554,7 +554,7 @@ impl Render for HistoryCanvas {
                             this.space = false;
                         }
                     }))
-                    .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, window, cx| {
+                    .on_scroll(cx.listener(|this, event: &ScrollEvent, window, cx| {
                         let delta = event.delta.pixel_delta(window.line_height()).map(f32::from);
                         if event.modifiers.platform || event.modifiers.control {
                             this.zoom((-delta.y * 0.005).exp(), this.local(event.position), cx);

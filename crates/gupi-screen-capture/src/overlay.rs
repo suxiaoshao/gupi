@@ -21,8 +21,7 @@ impl Overlay {
         focus.focus(window, cx);
         let activation = cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active() {
-                // GPUI applies the cursor style while drawing a key window; without
-                // a redraw the panel keeps its initial arrow until the mouse moves.
+                // Refresh the selection cursor when the panel becomes active.
                 window.refresh();
             } else {
                 capture::activation_changed(this.generation, cx);

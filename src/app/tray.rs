@@ -111,7 +111,8 @@ pub fn refresh(_cx: &App) {
                 _ => None,
             };
             let binding = if key == "temporary-title" {
-                super::shortcuts::launcher_binding(_cx).and_then(|key| Keystroke::parse(key).ok())
+                super::shortcuts::launcher_binding(_cx)
+                    .and_then(|key| Keystroke::parse_with_os(key, _cx.platform_info().os).ok())
             } else {
                 action.and_then(|action| {
                     _cx.key_bindings()

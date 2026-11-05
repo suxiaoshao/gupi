@@ -419,6 +419,8 @@ mod tests {
         std::fs::write(&file, "fn main() {}\n").unwrap();
         cx.update(|cx| {
             gpui_kit::init(cx);
+            // This test covers insertion/cancellation ownership, not modal motion.
+            cx.set_reduce_motion(true);
             crate::host::install_headless(cx);
             app_theme::init(cx);
             gupi_settings::theme::init(cx);

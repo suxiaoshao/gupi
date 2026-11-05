@@ -176,7 +176,7 @@ Open the right-hand workspace and choose **Files** from its New Tab page to brow
 
 ![Tabbed Files workspace with a project tree, Markdown preview, and local image](docs/screenshots/files-en.jpg)
 
-Text previews support syntax highlighting, line numbers, selection, copying, search and line wrapping. Markdown can switch between source and reading view, with local images resolved relative to the Markdown file; remote images appear as browser links. Unsupported types offer **Open with default app**. Previews show snapshots: use **Reload** to read changes from disk. Opening the same file again preserves its reading position and search state. Previewing does not edit or save the file, or send its content to the model; use `@` in the composer to reference it in a message.
+Text previews support syntax highlighting, line numbers, selection, copying, search and line wrapping. Markdown can switch between source and reading view, with local images resolved relative to the Markdown file; inline and reference-style remote images load through the GPUI HTTP client. Unsupported types offer **Open with default app**. Previews show snapshots: use **Reload** to read changes from disk. Opening the same file again preserves its reading position and search state. Previewing does not edit or save the file, or send its content to the model; use `@` in the composer to reference it in a message.
 
 Images open on a zoomable canvas in Files and attachment previews. Drag with the **left or middle mouse button**, or scroll, to pan. Pinch or hold **Cmd/Ctrl** while scrolling to zoom. Fit keeps small images at their original size and shrinks larger images to the available area.
 

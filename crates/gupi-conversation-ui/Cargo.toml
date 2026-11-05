@@ -10,7 +10,7 @@ performance = []
 
 [dependencies]
 regex = "1.13.1"
-similar = "2.7.0"
+similar = "3.2.1"
 # UI and workspace services.
 app-theme = { workspace = true, features = ["system-accent"] }
 gpui-kit = { workspace = true, features = ["syntect"] }
@@ -23,7 +23,7 @@ smol = "2.0.2"
 # Configuration, session data and local resources.
 base64 = "0.23.1"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
-ignore = "0.4.33"
+ignore = "0.4.34"
 markdown = "1.0.0"
 serde_json = "1.0.154"
 time = { version = "0.3.55", features = ["parsing", "formatting", "local-offset"] }
@@ -41,7 +41,7 @@ gupi-conversation.workspace = true
 [dev-dependencies]
 gupi-resources = { workspace = true, features = ["test-support"] }
 tempfile = "3.27.0"
-two-face = { version = "0.4.5", default-features = false, features = ["syntect-fancy"] }
+two-face = { version = "0.5.2", default-features = false, features = ["syntect-fancy"] }
 gupi-settings = { workspace = true, features = ["test-support"] }
 gupi-conversation = { workspace = true, features = ["test-support"] }
 gpui-kit = { workspace = true, features = ["test-support"] }

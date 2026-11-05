@@ -272,24 +272,25 @@ impl Command {
             .map(String::as_str)
             .unwrap_or(self.default)
     }
-    fn bindings(&self, text: &str) -> Vec<KeyBinding> {
+    fn bindings(&self, text: &str, cx: &App) -> Vec<KeyBinding> {
         if text.is_empty() {
             return vec![];
         }
         if self.kind.temporary_only() {
             let plain_enter = self.kind == Kind::PasteAnswer
-                && Keystroke::parse(text)
-                    .is_ok_and(|key| key == Keystroke::parse("enter").unwrap());
+                && Keystroke::parse_with_os(text, cx.platform_info().os).is_ok_and(|key| {
+                    key == Keystroke::parse_with_os("enter", cx.platform_info().os).unwrap()
+                });
             let context = if plain_enter {
                 "GupiTemporary && !Input && !Command && !GupiExtension && !GupiErrorDetails && !GupiQuoteComment && !GupiQuoteAttachment && !GupiShell"
             } else {
                 "GupiTemporary"
             };
-            let mut bindings = vec![KeyBinding::new(text, Run(self.kind), Some(context))];
+            let mut bindings = vec![binding(text, Run(self.kind), Some(context), cx)];
             if self.kind == Kind::PasteAnswer {
                 // Inputs handle plain Enter through their submit event; lists
                 // otherwise consume it as selection confirmation.
-                bindings.push(KeyBinding::new(
+                bindings.push(binding(
                     text,
                     Run(self.kind),
                     Some(if plain_enter {
@@ -297,23 +298,24 @@ impl Command {
                     } else {
                         "GupiTemporary > List"
                     }),
+                    cx,
                 ));
             }
             return bindings;
         }
         match self.kind {
-            Kind::Settings => vec![KeyBinding::new(text, menus::ShowSettings, None)],
-            Kind::ShowMain => vec![KeyBinding::new(text, menus::ShowMainWindow, None)],
-            Kind::Quit => vec![KeyBinding::new(text, menus::Quit, None)],
+            Kind::Settings => vec![binding(text, menus::ShowSettings, None, cx)],
+            Kind::ShowMain => vec![binding(text, menus::ShowMainWindow, None, cx)],
+            Kind::Quit => vec![binding(text, menus::Quit, None, cx)],
             Kind::Palette => vec![
-                KeyBinding::new(text, menus::ShowCommandPalette, Some("GupiApplication")),
-                KeyBinding::new(text, Run(self.kind), Some("Gupi")),
-                KeyBinding::new(text, Run(self.kind), Some("GupiPalette")),
+                binding(text, menus::ShowCommandPalette, Some("GupiApplication"), cx),
+                binding(text, Run(self.kind), Some("Gupi"), cx),
+                binding(text, Run(self.kind), Some("GupiPalette"), cx),
             ],
-            Kind::Find => vec![KeyBinding::new(text, Run(self.kind), Some("GupiMessages"))],
-            Kind::Stop => vec![KeyBinding::new(text, Run(self.kind), Some("Gupi"))],
+            Kind::Find => vec![binding(text, Run(self.kind), Some("GupiMessages"), cx)],
+            Kind::Stop => vec![binding(text, Run(self.kind), Some("Gupi"), cx)],
             _ => ["Gupi", "GupiPalette"]
-                .map(|context| KeyBinding::new(text, Run(self.kind), Some(context)))
+                .map(|context| binding(text, Run(self.kind), Some(context), cx))
                 .to_vec(),
         }
     }
@@ -322,7 +324,7 @@ impl Command {
 /// They only invoke the temporary primary action if Enter is still configured.
 pub fn uses_enter(kind: Kind, cx: &App) -> bool {
     use gpui_kit::AsKeystroke;
-    let enter = Keystroke::parse("enter").unwrap();
+    let enter = Keystroke::parse_with_os("enter", cx.platform_info().os).unwrap();
     cx.key_bindings().borrow().bindings().any(|binding| {
         binding
             .action()
@@ -354,7 +356,7 @@ pub fn syntax(text: &str) -> Result<(), &'static str> {
     if text.chars().any(char::is_whitespace) {
         return Err("settings-key-invalid");
     }
-    Keystroke::parse(text)
+    Keystroke::parse_with_os(text, native_os())
         .map(|_| ())
         .map_err(|_| "settings-key-invalid")
 }
@@ -366,8 +368,9 @@ pub fn validate(id: &str, text: &str, overrides: &Overrides, cx: &App) -> Result
     if text.is_empty() {
         return Ok(());
     }
-    let candidate = Keystroke::parse(text).map_err(|_| "settings-key-invalid".to_owned())?;
-    if let Some(other) = conflicting_command(id, &candidate, overrides) {
+    let candidate = Keystroke::parse_with_os(text, cx.platform_info().os)
+        .map_err(|_| "settings-key-invalid".to_owned())?;
+    if let Some(other) = conflicting_command(id, &candidate, overrides, cx) {
         return Err(other.label.into());
     }
     // Evaluate component bindings only in focus stacks that coexist with application actions.
@@ -406,10 +409,11 @@ pub fn conflicting_command(
     id: &str,
     candidate: &Keystroke,
     overrides: &Overrides,
+    cx: &App,
 ) -> Option<&'static Command> {
     COMMANDS.iter().filter(|c| c.id != id).find(|other| {
         other
-            .bindings(other.value(overrides))
+            .bindings(other.value(overrides), cx)
             .iter()
             .any(|binding| starts_with(binding, candidate))
     })
@@ -420,7 +424,8 @@ pub fn validate_global(text: &str, cx: &App) -> Result<(), String> {
     if text.is_empty() {
         return Ok(());
     }
-    let candidate = Keystroke::parse(text).map_err(|_| "settings-key-invalid".to_owned())?;
+    let candidate = Keystroke::parse_with_os(text, cx.platform_info().os)
+        .map_err(|_| "settings-key-invalid".to_owned())?;
     if cx
         .key_bindings()
         .borrow()
@@ -456,7 +461,7 @@ pub fn apply(overrides: &Overrides, cx: &mut App) {
     for binding in old {
         if let Some(command) = command_for(binding.action()) {
             if replaced.insert(command.id) {
-                bindings.extend(command.bindings(command.value(overrides)));
+                bindings.extend(command.bindings(command.value(overrides), cx));
             }
         } else {
             bindings.push(binding);
@@ -464,13 +469,42 @@ pub fn apply(overrides: &Overrides, cx: &mut App) {
     }
     for command in COMMANDS {
         if replaced.insert(command.id) {
-            bindings.extend(command.bindings(command.value(overrides)));
+            bindings.extend(command.bindings(command.value(overrides), cx));
         }
     }
     cx.clear_key_bindings();
     cx.bind_keys(bindings);
     cx.set_global(Applied(overrides.clone()));
     crate::host::refresh_menus(cx);
+}
+
+/// Configuration normalization runs before App initialization and on background I/O.
+pub(crate) fn native_os() -> OperatingSystem {
+    if cfg!(target_os = "macos") {
+        OperatingSystem::Mac
+    } else if cfg!(target_os = "windows") {
+        OperatingSystem::Windows
+    } else if cfg!(target_os = "linux") {
+        OperatingSystem::Linux
+    } else {
+        OperatingSystem::Unknown
+    }
+}
+
+fn binding(text: &str, action: impl Action, context: Option<&str>, cx: &App) -> KeyBinding {
+    KeyBinding::load(
+        text,
+        Box::new(action),
+        context.map(|s| {
+            KeyBindingContextPredicate::parse(s)
+                .expect("command context")
+                .into()
+        }),
+        false,
+        None,
+        cx,
+    )
+    .expect("validated command binding")
 }
 
 #[cfg(test)]
@@ -484,6 +518,57 @@ mod tests {
     use gpui_kit::AsKeystroke;
     use gpui_kit::Keystroke;
     use gpui_kit::TestAppContext;
+    // A persisted secondary binding must register and conflict against the
+    // runtime OS, even when that OS differs from the machine running this test.
+    #[gpui_kit::test]
+    fn persisted_bindings_follow_runtime_os(cx: &mut TestAppContext) {
+        use gpui_kit::{OperatingSystem, PlatformInfo, PlatformTarget};
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            cx.set_global(crate::host::Host::headless());
+            crate::i18n::apply(Default::default(), cx);
+        });
+        for os in [
+            OperatingSystem::Mac,
+            OperatingSystem::Windows,
+            OperatingSystem::Linux,
+        ] {
+            cx.set_platform_info(PlatformInfo {
+                os,
+                target: PlatformTarget::Native,
+            });
+            cx.update(|cx| {
+                apply(&Overrides::new(), cx);
+                let overrides =
+                    Overrides::from([("new".into(), String::from("secondary-shift-j"))]);
+                apply(&overrides, cx);
+                let keymap = cx.key_bindings();
+                let keymap = keymap.borrow();
+                let bindings = keymap
+                    .bindings()
+                    .filter(|binding| {
+                        command_for(binding.action()).is_some_and(|command| command.id == "new")
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(bindings.len(), 2);
+                for binding in bindings {
+                    let key = binding.keystrokes()[0].as_keystroke();
+                    assert_eq!(key.key, "j");
+                    assert!(key.modifiers.shift);
+                    assert_eq!(key.modifiers.platform, os == OperatingSystem::Mac);
+                    assert_eq!(key.modifiers.control, os != OperatingSystem::Mac);
+                }
+                drop(keymap);
+                let conflicting = if os == OperatingSystem::Mac {
+                    "cmd-shift-j"
+                } else {
+                    "ctrl-shift-j"
+                };
+                assert!(validate("find", conflicting, &overrides, cx).is_err());
+                assert!(validate("find", "alt-shift-j", &overrides, cx).is_ok());
+            });
+        }
+    }
     #[gpui_kit::test]
     fn temporary_trash_rebinding_removes_the_old_key_and_stays_in_its_window(
         cx: &mut TestAppContext,
@@ -506,7 +591,7 @@ mod tests {
             assert_eq!(bindings.len(), 1);
             assert_eq!(
                 bindings[0].keystrokes()[0].as_keystroke(),
-                &Keystroke::parse("ctrl-alt-d").unwrap()
+                &Keystroke::parse_with_os("ctrl-alt-d", cx.platform_info().os).unwrap()
             );
             let temp = gpui_kit::KeyContext::parse("Gupi GupiTemporary").unwrap();
             let main = gpui_kit::KeyContext::parse("Gupi").unwrap();
@@ -552,7 +637,7 @@ mod tests {
                 .collect();
             assert_eq!(new.len(), 2);
             assert!(new.iter().all(|b| b.keystrokes()[0].as_keystroke()
-                == &Keystroke::parse("secondary-shift-n").unwrap()));
+                == &Keystroke::parse_with_os("secondary-shift-n", cx.platform_info().os).unwrap()));
             assert_eq!(
                 unrelated,
                 keys.bindings()
@@ -571,7 +656,8 @@ mod tests {
                     .bindings()
                     .filter(|b| command_for(b.action()).is_some_and(|c| c.id == "new"))
                     .all(|b| b.keystrokes()[0].as_keystroke()
-                        == &Keystroke::parse("secondary-n").unwrap())
+                        == &Keystroke::parse_with_os("secondary-n", cx.platform_info().os)
+                            .unwrap())
             );
         });
     }

@@ -401,7 +401,19 @@ async fn login_dialog_updates_result_and_close_button_without_reopening(cx: &mut
             window.click("mcp-login-close", cx);
         });
         cx.run_until_parked();
-        cx.update(|window, cx| assert!(!window.has_active_dialog(cx)));
+        // GPUI animations now use the executor clock. Finish this dialog's
+        // exit before opening the next login result in the same window.
+        cx.update(|window, cx| {
+            window.render_frame(cx);
+            assert!(!window.has_active_dialog(cx));
+        });
+        cx.executor().advance_clock(
+            *gpui_kit::component::dialog::ANIMATION_DURATION + std::time::Duration::from_millis(1),
+        );
+        cx.update(|window, cx| {
+            window.render_frame(cx);
+            assert!(window.try_find("mcp-login-close").is_none());
+        });
     }
 }
 

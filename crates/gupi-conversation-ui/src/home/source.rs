@@ -5,7 +5,6 @@ use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{Icon, Selectable};
 
-mod markdown;
 use gpui_kit::component::button::{Toggle, ToggleGroup};
 use gpui_kit::component::text::TextViewState;
 
@@ -541,7 +540,7 @@ impl Render for Preview {
                     let image_base = base.clone();
                     view.child(
                         div().flex_1().min_w_0().min_h_0().child(
-                            gpui_kit::base::TextView::new(state)
+                            gpui_kit::component::text::TextView::new(state)
                                 .px_3()
                                 .py_3()
                                 .image_source(move |uri| {
@@ -549,7 +548,6 @@ impl Render for Preview {
                                         .map(ImageSource::from)
                                         .unwrap_or_else(|| ImageSource::from(uri.clone()))
                                 })
-                                .plugin(markdown::RemoteImages)
                                 .when_some(context, |view, context| {
                                     let link_context = context.clone();
                                     let link_base = base.clone();
@@ -661,8 +659,8 @@ mod tests {
     use gpui_kit::test::TestWindowExt;
     use gpui_kit::{AppContext, ClipboardItem, TestAppContext, px, size};
 
-    // Switching modes must not reread disk, and local/reference pictures must
-    // resolve as file assets while remote pictures remain explicit links.
+    // Switching modes must not reread disk, and relative pictures must resolve
+    // as file assets through the public component resolver.
     #[gpui_kit::test]
     async fn markdown_modes_keep_snapshot_and_render_file_relative_images(cx: &mut TestAppContext) {
         use gpui_kit::test::TestAppContextExt as _;
@@ -672,7 +670,7 @@ mod tests {
         image::RgbaImage::from_pixel(800, 400, image::Rgba([255, 128, 0, 255]))
             .save(&image)
             .unwrap();
-        let text = "# Frozen snapshot\n\n![local](local%20image.png)\n\n![remote](https://example.com/remote.png)\n";
+        let text = "# Frozen snapshot\n\n![local](local%20image.png)\n";
         std::fs::write(&path, text).unwrap();
         cx.update(|cx| {
             gpui_kit::init(cx);
@@ -700,10 +698,9 @@ mod tests {
             window.click("preview-markdown", cx);
             assert!(!preview.read(cx).is_source());
         });
-        let remote = format!("preview-image-{}", text.find("![remote]").unwrap());
         cx.wait_for(handle, std::time::Duration::from_secs(2), |window, cx| {
-            window.try_find(remote.clone()).is_some()
-                && gpui_kit::ImageSource::from(image.clone()).is_asset_cached(cx)
+            window.render_frame(cx);
+            gpui_kit::ImageSource::from(image.clone()).is_asset_cached(cx)
         })
         .await;
         let reading = preview.read_with(cx, |preview, _| match preview.body.as_ref().unwrap() {

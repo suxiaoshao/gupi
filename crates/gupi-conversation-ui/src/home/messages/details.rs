@@ -552,7 +552,7 @@ impl Render for DetailsView {
                     cx.defer_in(window, |this, window, cx| this.update_follow(window, cx))
                 }),
             )
-            .on_scroll_wheel(cx.listener(|_, _, window, cx| {
+            .on_scroll(cx.listener(|_, _, window, cx| {
                 cx.defer_in(window, |this, window, cx| this.update_follow(window, cx))
             }))
     }

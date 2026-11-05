@@ -1424,7 +1424,6 @@ quote-clear = 인용 모두 지우기
 quote-edit-label = 댓글 { $number } 편집: { $source }
 files-unavailable = 미리 볼 수 없음
 files-open-external = 기본 앱으로 열기
-files-open-remote-image = 브라우저에서 이미지 열기
 image-preview-fit = 화면에 맞춤
 image-preview-actual-size = 실제 크기
 

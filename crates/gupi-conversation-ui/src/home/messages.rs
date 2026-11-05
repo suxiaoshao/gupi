@@ -44,7 +44,7 @@ use activity::RunSection;
 use activity::ToolStatus;
 use presentation::Disclosure;
 
-// The list and reading-anchor geometry share the same viewport inset.
+// MessageScroller carries this spacing on the first/last rows, inside its viewport.
 const MESSAGE_INSET_REM: f32 = 0.5;
 
 #[derive(Clone, PartialEq)]
@@ -643,11 +643,9 @@ impl HomeView {
                     .when(temporary, |body| body.child(navigator.clone()))
                     .on_children_prepainted(move |bounds, window, cx| {
                         if let Some(bounds) = bounds.get(1) {
-                            let inset = window.rem_size() * MESSAGE_INSET_REM;
-                            viewport.set(Some(Bounds::from_corners(
-                                point(bounds.left(), bounds.top() + inset),
-                                point(bounds.right(), bounds.bottom() - inset),
-                            )));
+                            // In Kit 0.9 list padding belongs to the boundary rows;
+                            // autoscroll compares against the full list viewport.
+                            viewport.set(Some(*bounds));
                             let rows = measurement.borrow().rows.clone();
                             let host = if temporary {
                                 *bounds

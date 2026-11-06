@@ -1149,7 +1149,6 @@ mod layout_tests {
     fn packages_bound_scrolling_and_retain_navigation(cx: &mut TestAppContext) {
         cx.update(|cx| {
             gpui_kit::init(cx);
-            gpui_tokio::init(cx);
             crate::app::init_capability_hosts(cx);
             app_theme::init(cx);
             gupi_settings::theme::init(cx);
@@ -1179,7 +1178,14 @@ mod layout_tests {
                     });
                     let entries: Vec<_> = (0..20).map(|ix| serde_json::json!({"package":{"name":format!("package-{ix}"),"version":"1.0.0","description":"Example package","keywords":["pi-package"]}})).collect();
                     view.browse.page = Some(catalog::parse_search(&serde_json::to_vec(&serde_json::json!({"objects": entries,"total":40})).unwrap(),0).unwrap());
-                    view.browse.details.insert("package-0".into(), DetailState::Failed(Problem::Network));
+                    // Selecting failed details retries through Tokio; this layout test uses a
+                    // completed manifest and deliberately has no Tokio runtime, so accidental
+                    // catalog requests fail immediately instead of escaping the test scheduler.
+                    let details = catalog::parse_details(
+                        br#"{"name":"package-0","version":"1.0.0","description":"Example package","pi":{"skills":["skills/*/SKILL.md"]}}"#,
+                        "package-0",
+                    ).unwrap();
+                    view.browse.details.insert("package-0".into(), DetailState::Ready(details));
                 });
             });
             settings = Some(view.clone());

@@ -4682,7 +4682,7 @@ dependencies = [
 
 [[package]]
 name = "gupi"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "app-theme",
  "base64 0.23.1",
@@ -4725,7 +4725,7 @@ dependencies = [
 
 [[package]]
 name = "gupi-conversation"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "base64 0.23.1",
  "gpui-kit",
@@ -4750,7 +4750,7 @@ dependencies = [
 
 [[package]]
 name = "gupi-conversation-ui"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "app-theme",
  "base64 0.23.1",
@@ -4794,7 +4794,7 @@ dependencies = [
 
 [[package]]
 name = "gupi-resources"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "dirs-next",
  "globset",
@@ -4821,7 +4821,7 @@ dependencies = [
 
 [[package]]
 name = "gupi-screen-capture"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "gpui-kit",
  "image",
@@ -4835,7 +4835,7 @@ dependencies = [
 
 [[package]]
 name = "gupi-settings"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "app-theme",
  "fluent-bundle",
@@ -4862,7 +4862,7 @@ dependencies = [
 
 [[package]]
 name = "gupi-updates"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "cc",
  "gpui-kit",

@@ -219,7 +219,7 @@ The titlebar shows the session directory's Git branch, or a short commit ID for 
 
 File references appear as path tokens inside the message. Images appear as separate attachments; click a thumbnail for a larger preview. Image support and limits depend on the selected Pi model.
 
-Select text in a message, a read-only file preview, or one side of a diff to quote it into the composer. The selection toolbar opens an optional comment editor; the context menu and command palette can add the quote directly. Quotes collect in one attachment pill, where you can review, edit or remove them. Editing a comment highlights its source in messages or file previews; diff and restored-draft quotes do not show that highlight. Saved quotes and comments precede your draft when sent, survive send failures and are saved with persistent-session drafts. Quotes cannot be combined with slash commands or prompt templates.
+Select text in a message, a read-only file preview, or one side of a diff to quote it into the composer. The selection toolbar opens an optional comment editor; the context menu and command palette can add the quote directly. Quotes collect in one attachment pill, where you can review, edit or remove them. Editing a comment highlights its source in messages, file previews or the selected side of a diff; restored-draft quotes do not show that highlight. Saved quotes and comments precede your draft when sent, survive send failures and are saved with persistent-session drafts. Quotes cannot be combined with slash commands or prompt templates.
 
 When sending fails, Gupi keeps the draft and attachments for you to retry. Queued messages follow Pi's queue behavior.
 
@@ -290,7 +290,7 @@ Open **Settings → Pi** for connection, conversation, network and resource sett
 
 With Pi 1.2.0 or later, **Tools & environment** edits default tools, Codemode, shell/command options, installation telemetry and the global default project-trust policy. Conversation settings include per-model thinking and compaction overrides; network settings include timeouts and provider-specific retries. The startup tool preview follows Pi's configuration rules and does not restrict what extensions or MCP may enable.
 
-Values show their source: default, global or project. A project inherits global values unless it overrides them. Field menus let you set an explicit project value or restore inheritance. Changes remain drafts until you choose **Save** for that page; leaving with unsaved changes offers Save, Discard or Cancel. If another program changed the same field, reload before editing again. Saving preserves unrelated settings.
+Values show their source: default, global or project. A project inherits global values unless it overrides them. Edit a field to override its inherited value; fields set in the current scope show a direct Restore default / Use global value button. Changes remain drafts until you choose **Save** for that page; leaving with unsaved changes offers Save, Discard or Cancel. If another program changed the same field, reload before editing again. Saving preserves unrelated settings.
 
 An untrusted project is marked as such. **Trust project…** explicitly allows Pi to load that folder's settings/resources and execute its project extensions; saving settings alone does not trust the project. Reconnect running conversations when they need to load saved settings or resources. New conversations read the new configuration.
 
@@ -311,7 +311,7 @@ The **Packages**, **Skills**, and **Prompts** pages share the selected global/pr
 - Create or edit your own Skills, prompt templates, `SYSTEM.md` and `APPEND_SYSTEM.md` in the selected scope. Project files live under `.pi/`; personal resources come from `PI_CODING_AGENT_DIR` (normally `~/.pi/agent`) and personal `~/.agents/skills`.
 - Inspect resource origins, disabled states and project/global groups. Package-owned and external file contents are read-only; project extensions, themes and explicit resource paths are displayed without executing them. Switch to Global to enable/disable personal resources.
 
-Browsing contacts the npm registry. At narrow widths, package details replace the list and provide a Back action; at wider widths, drag the divider to adjust the detail area. After external changes, refresh the page and reconnect conversations that need to load the changes.
+Browsing contacts the npm registry. Installed and Browse share a list/detail layout and action bar; package resource switches appear in the detail. Search and pagination stay visible while the Browse list scrolls. At narrow widths, package details replace the list and provide a Back action; at wider widths, drag the divider to adjust the detail area. Selection, list position and split width are kept when switching tabs. After external changes, refresh the page and reconnect conversations that need to load the changes.
 
 Under **Tools & environment → Resource paths**, edit the current scope's ordered `extensions`, `skills`, `prompts` and `themes` arrays. Missing keys and explicit empty lists remain distinct; these arrays are not shown as merged inheritance. Project-owned resources and resources from project packages support enable/disable switches. Inherited global resources and project package-filter editing remain read-only.
 
@@ -347,7 +347,7 @@ On **Pi → MCP**, save or discard edits before using a server's **Log in** or *
 
 Here **Cmd** is used on macOS and **Ctrl** on Windows/Linux. Customize bindings in **Settings → Keyboard shortcuts**. Menu items and button hints display the current bindings.
 
-Search shortcuts by command name or key combination, or show only customized bindings. Record a replacement inline, then save or cancel it; conflict feedback links to the command already using that shortcut. Scope descriptions explain where each command applies.
+Settings provides Gupi-owned navigation, search and grouped pages; an empty search keeps the navigation available. Search shortcuts by command name or key combination, or show only customized bindings. Record a replacement inline, then save or cancel it; conflict feedback links to the command already using that shortcut. Scope descriptions explain where each command applies.
 
 ### Appearance, language, and notifications
 

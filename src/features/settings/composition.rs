@@ -291,6 +291,7 @@ pub(super) struct SettingsPage {
     scope: Option<Content>,
     actions: Option<Content>,
     description: Option<SharedString>,
+    bounded_body: Option<Content>,
 }
 impl SettingsPage {
     pub fn new(title: impl Into<SharedString>) -> Self {
@@ -302,6 +303,7 @@ impl SettingsPage {
             scope: None,
             actions: None,
             description: None,
+            bounded_body: None,
         }
     }
     pub fn title(mut self, title: impl Into<SharedString>) -> Self {
@@ -345,6 +347,13 @@ impl SettingsPage {
         self.description = Some(description.into());
         self
     }
+    pub fn bounded_body<E: IntoElement>(
+        mut self,
+        render: impl Fn(&PageLayout, &mut Window, &mut App) -> E + 'static,
+    ) -> Self {
+        self.bounded_body = Some(control(render));
+        self
+    }
     pub fn matches(&self, query: &str) -> bool {
         query.is_empty()
             || contains(&self.title, query)
@@ -370,7 +379,12 @@ pub(super) struct PageContent {
 impl RenderOnce for PageContent {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let whole_page = self.query.is_empty() || contains(&self.page.title, &self.query);
-        let mut body = v_flex().w_full().min_w_0().gap_6();
+        let bounded = self.page.bounded_body.is_some();
+        let mut body = v_flex()
+            .w_full()
+            .min_w_0()
+            .gap_6()
+            .when(bounded, |body| body.flex_1().min_h_0().gap_3());
         let mut heading = h_flex()
             .w_full()
             .min_w_0()
@@ -394,19 +408,34 @@ impl RenderOnce for PageContent {
         if let Some(actions) = self.page.actions {
             heading = heading.child(actions(&self.layout, window, cx));
         }
-        body = body.child(v_flex().gap_2().child(heading).when_some(
-            self.page.description,
-            |header, description| {
-                header.child(
-                    div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(description),
-                )
-            },
-        ));
+        body = body.child(
+            v_flex()
+                .when(bounded, |body| body.flex_shrink_0())
+                .gap_2()
+                .child(heading)
+                .when_some(self.page.description, |header, description| {
+                    header.child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(description),
+                    )
+                }),
+        );
         if let Some(header) = self.page.header {
-            body = body.child(header(&self.layout, window, cx));
+            let header = header(&self.layout, window, cx);
+            body = if bounded {
+                body.child(div().flex_shrink_0().child(header))
+            } else {
+                body.child(header)
+            };
+        }
+        if let Some(render) = self.page.bounded_body {
+            return body.child(div().flex_1().min_h_0().min_w_0().child(render(
+                &self.layout,
+                window,
+                cx,
+            )));
         }
         for (index, section) in self.page.sections.into_iter().enumerate() {
             let whole_section = whole_page || section.heading_matches(&self.query);

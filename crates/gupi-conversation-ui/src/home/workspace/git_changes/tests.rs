@@ -1319,3 +1319,208 @@ fn modified_file_becoming_conflict_selects_projected_row(cx: &mut TestAppContext
         })
     });
 }
+
+#[gpui_kit::test]
+fn diff_comment_highlight_ends_with_editing_or_source_owner(cx: &mut TestAppContext) {
+    let (home, visual, fixture) = mount(cx);
+    assert!(
+        std::process::Command::new("git")
+            .args(["init", "--quiet"])
+            .arg(fixture.path())
+            .status()
+            .unwrap()
+            .success()
+    );
+    let repository = smol::block_on(gupi_resources::git::discover(fixture.path()))
+        .unwrap()
+        .unwrap();
+    visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            home.state.update(cx, |state, cx| {
+                let session = state.sessions_for_test().get_mut("fixture").unwrap();
+                *session.state_for_test() = Some(
+                    serde_json::from_value(serde_json::json!({
+                        "sessionId":"diff-comment","isStreaming":false,"isCompacting":false
+                    }))
+                    .unwrap(),
+                );
+                gupi_conversation::conversation::test_support::notify_session("fixture", cx);
+            });
+            home.git_mut().unwrap().repository = Some(repository);
+            ready(home, window, cx);
+        })
+    });
+    visual.run_until_parked();
+    let (state, source, id, selection) = visual.update(|window, cx| {
+        home.update(cx, |home, cx| {
+            let block = home
+                .active_git()
+                .unwrap()
+                .current_body()
+                .unwrap()
+                .block
+                .as_ref()
+                .unwrap();
+            let state = block.state().unwrap().clone();
+            let path = state.read(cx).files()[0].path().clone();
+            let selection = DiffLineRange::new(path, DiffSide::Modified, 1, 1);
+            state.update(cx, |state, cx| {
+                state.set_selected_lines(Some(selection.clone()), cx)
+            });
+            state.read(cx).focus_handle(cx).focus(window, cx);
+            let source = block.quote_source(cx).unwrap();
+            assert!(home.quote_allowed(cx));
+            assert!(
+                home.workspace_quote(window, cx).is_some(),
+                "Git reader must capture focused Diff; visible={}, width={}, focused={}",
+                home.pane_layout.visible(Panel::Workspace),
+                home.workspace_layout.main_width,
+                state.read(cx).focus_handle(cx).contains_focused(window, cx)
+            );
+            let capture = home.capture_quote(window, cx).unwrap();
+            home.quote(&quote::Quote(Some(capture)), window, cx);
+            let id = home.state.read(cx).current().unwrap().quotes()[0]
+                .id
+                .clone();
+            let cards = home.views["fixture"].quote_attachments.clone();
+            cards.update(cx, |cards, cx| {
+                cards.open_floating(
+                    &id,
+                    Bounds::new(point(px(60.), px(100.)), size(px(150.), px(30.))),
+                    window,
+                    cx,
+                )
+            });
+            (state, source, id, selection)
+        })
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        window.render_frame(cx);
+        let block = home
+            .read(cx)
+            .active_git()
+            .unwrap()
+            .current_body()
+            .unwrap()
+            .block
+            .as_ref()
+            .unwrap();
+        assert_eq!(block.quote_highlight(), Some(selection.clone()));
+        assert_eq!(state.read(cx).selected_lines(), Some(selection.clone()));
+        assert_eq!(state.read(cx).selected_text(cx), "new\n");
+        window.press("escape", cx);
+    });
+    visual.run_until_parked();
+    visual.update(|_, cx| {
+        let block = home
+            .read(cx)
+            .active_git()
+            .unwrap()
+            .current_body()
+            .unwrap()
+            .block
+            .as_ref()
+            .unwrap();
+        assert!(block.quote_highlight().is_none());
+        assert!(source.valid(cx));
+    });
+    visual.update(|window, cx| {
+        home.read(cx).views["fixture"]
+            .quote_attachments
+            .clone()
+            .update(cx, |cards, cx| {
+                cards.open_floating(
+                    &id,
+                    Bounds::new(point(px(60.), px(100.)), size(px(150.), px(30.))),
+                    window,
+                    cx,
+                )
+            });
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        window.render_frame(cx);
+        assert!(
+            home.read(cx)
+                .active_git()
+                .unwrap()
+                .current_body()
+                .unwrap()
+                .block
+                .as_ref()
+                .unwrap()
+                .quote_highlight()
+                .is_some()
+        );
+        window.click("quote-comment-save", cx);
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        assert!(
+            home.read(cx)
+                .active_git()
+                .unwrap()
+                .current_body()
+                .unwrap()
+                .block
+                .as_ref()
+                .unwrap()
+                .quote_highlight()
+                .is_none()
+        );
+        home.read(cx).views["fixture"]
+            .quote_attachments
+            .clone()
+            .update(cx, |cards, cx| {
+                cards.open_floating(
+                    &id,
+                    Bounds::new(point(px(60.), px(100.)), size(px(150.), px(30.))),
+                    window,
+                    cx,
+                )
+            });
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        window.render_frame(cx);
+        home.update(cx, |home, cx| {
+            // Same path, new authoritative contents: keep the quote snapshot and editor.
+            display(
+                home.git_mut().unwrap(),
+                ChangeContent::for_test("old\n".into(), "changed\n".into()),
+                cx,
+            );
+            cx.notify();
+        });
+    });
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        window.render_frame(cx);
+        assert!(!source.valid(cx));
+        assert!(
+            home.read(cx)
+                .active_git()
+                .unwrap()
+                .current_body()
+                .unwrap()
+                .block
+                .as_ref()
+                .unwrap()
+                .quote_highlight()
+                .is_none()
+        );
+        assert!(
+            window.try_find("quote-comment-save").is_some(),
+            "source loss preserves comment editing"
+        );
+        assert_eq!(
+            home.read(cx).state.read(cx).current().unwrap().quotes()[0]
+                .selection
+                .text,
+            "new\n"
+        );
+        window.click("quote-comment-cancel", cx);
+    });
+    visual.run_until_parked();
+}

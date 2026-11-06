@@ -1,11 +1,11 @@
+use super::packages::{package_detail, package_panes, package_row};
 use super::*;
-use gpui_kit::component::Selectable;
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::component::link::Link;
 use gpui_kit::component::menu::DropdownMenu;
 use gpui_kit::component::menu::PopupMenuItem;
 use gpui_kit::component::resizable::ResizableState;
-use gpui_kit::component::resizable::h_resizable;
-use gpui_kit::component::resizable::resizable_panel;
+use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::tag::Tag;
 use gpui_tokio::Tokio;
@@ -17,7 +17,6 @@ use gupi_resources::catalog::SearchPage;
 use std::time::Duration;
 
 /// Below this body width the browse view shows the list or one package.
-const SPLIT_MIN_WIDTH: f32 = 640.;
 /// Below this body width the list footer uses its shortest form.
 const COMPACT_FOOTER_WIDTH: f32 = 420.;
 
@@ -48,8 +47,23 @@ pub(super) struct Browse {
     showing_detail: bool,
     /// Divider position between the result list and the package details.
     split: Entity<ResizableState>,
+    list_scroll: ScrollHandle,
+    detail_scroll: ScrollHandle,
+    focus: FocusHandle,
 }
 impl Browse {
+    pub(super) fn search_input(&self) -> Input {
+        Input::new(&self.query).small()
+    }
+
+    pub(super) fn reset_scope(&mut self, cx: &mut App) {
+        self.selected = None;
+        self.showing_detail = false;
+        self.list_scroll = ScrollHandle::new();
+        self.detail_scroll = ScrollHandle::new();
+        self.split = cx.new(|_| ResizableState::default());
+    }
+
     pub(super) fn refresh_language(&self, window: &mut Window, cx: &mut Context<ResourcesView>) {
         let placeholder = t(cx, "packages-search");
         self.query.update(cx, |input, cx| {
@@ -76,6 +90,9 @@ impl Browse {
                 details: Default::default(),
                 showing_detail: false,
                 split: cx.new(|_| ResizableState::default()),
+                list_scroll: ScrollHandle::new(),
+                detail_scroll: ScrollHandle::new(),
+                focus: cx.focus_handle().tab_stop(true),
             },
             subscription,
         )
@@ -85,6 +102,7 @@ impl Browse {
 impl ResourcesView {
     fn schedule_search(&mut self, cx: &mut Context<Self>) {
         // Invalidate the old query immediately, including its in-flight response.
+        self.browse.list_scroll.set_offset(Point::default());
         self.browse.serial += 1;
         self.browse.searching = None;
         self.browse.page = None;
@@ -110,6 +128,7 @@ impl ResourcesView {
         self.browse.debounce = None;
         self.browse.problem = None;
         self.browse.page = None;
+        self.browse.list_scroll.set_offset(Point::default());
         self.browse.serial += 1;
         let serial = self.browse.serial;
         let request = Tokio::spawn(cx, catalog::search(query.clone(), from));
@@ -140,6 +159,9 @@ impl ResourcesView {
     }
 
     fn select_package(&mut self, name: String, cx: &mut Context<Self>) {
+        if self.browse.selected.as_deref() != Some(&name) {
+            self.browse.detail_scroll.set_offset(Point::default());
+        }
         self.browse.selected = Some(name.clone());
         self.browse.showing_detail = true;
         if !matches!(
@@ -204,39 +226,24 @@ impl ResourcesView {
                 });
             });
         }
-        let width = width.as_f32();
-        let split = width >= SPLIT_MIN_WIDTH;
-        let compact = width < COMPACT_FOOTER_WIDTH;
-        let search = Input::new(&self.browse.query)
-            .prefix(gpui_kit::component::Icon::new(IconName::Search))
-            .when(self.browse.searching.is_some(), |input| {
-                input.suffix(Spinner::new().small())
-            });
-        let selected = self.browse.selected.clone();
-        let body = match selected {
-            Some(name) if split => h_resizable("packages-browse")
-                .with_state(&self.browse.split)
-                .child(
-                    resizable_panel()
-                        .size(px((width * 0.45).max(280.)))
-                        .size_range(px(260.)..px((width - 320.).max(260.)))
-                        .child(self.render_list_pane(compact, cx)),
-                )
-                .child(resizable_panel().child(self.render_detail_pane(&name, false, cx)))
-                .into_any_element(),
-            Some(name) if self.browse.showing_detail => self.render_detail_pane(&name, true, cx),
-            _ => self.render_list_pane(compact, cx),
-        };
-        v_flex()
-            .size_full()
-            .min_h_0()
-            .gap_3()
-            .child(search)
-            .child(body)
-            .into_any_element()
+        let compact = width < px(COMPACT_FOOTER_WIDTH);
+        let list = self.render_list_pane(compact, cx);
+        let detail = self
+            .browse
+            .selected
+            .clone()
+            .map(|name| self.render_detail_pane(&name, width < px(640.), cx));
+        package_panes(
+            "packages-browse",
+            width,
+            &self.browse.split,
+            list,
+            detail,
+            self.browse.showing_detail,
+        )
     }
 
-    /// Results and paging share the page scroller.
+    /// Only results scroll; pagination remains at the list boundary.
     fn render_list_pane(&self, compact: bool, cx: &mut Context<Self>) -> AnyElement {
         v_flex()
             .size_full()
@@ -244,17 +251,29 @@ impl ResourcesView {
             .child(
                 div()
                     .id("packages-results")
+                    .test_support()
+                    .debug_selector(|| "packages-results".into())
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
                     .min_w_0()
-                    .pr_2()
-                    .child(self.render_results(cx)),
+                    .overflow_y_scroll()
+                    .track_scroll(&self.browse.list_scroll)
+                    .vertical_scrollbar(&self.browse.list_scroll)
+                    .child(div().pr_3().child(self.render_results(cx))),
             )
-            .child(self.render_list_footer(compact, cx))
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .child(self.render_list_footer(compact, cx)),
+            )
             .into_any_element()
     }
 
     fn render_list_footer(&self, compact: bool, cx: &mut Context<Self>) -> AnyElement {
         let source = h_flex()
             .id("packages-source")
+            .debug_selector(|| "packages-pager".into())
             .min_w_0()
             .gap_2()
             .text_sm()
@@ -316,6 +335,7 @@ impl ResourcesView {
                 )
         });
         h_flex()
+            .debug_selector(|| "packages-footer".into())
             .flex_shrink_0()
             .pt_2()
             .gap_3()
@@ -328,7 +348,7 @@ impl ResourcesView {
             .into_any_element()
     }
 
-    /// Package details in the page scroller; Close (split) or Back (narrow).
+    /// Fixed heading and actions surround the independently scrolling details.
     fn render_detail_pane(&self, name: &str, narrow: bool, cx: &mut Context<Self>) -> AnyElement {
         let refreshing = matches!(self.browse.details.get(name), Some(DetailState::Loading(_)));
         let target = name.to_owned();
@@ -348,52 +368,61 @@ impl ResourcesView {
                     .small()
                     .icon(IconName::ChevronLeft)
                     .label(t(cx, "packages-back"))
-                    .on_click(cx.listener(|this, _, _, cx| {
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.browse.focus.focus(window, cx);
                         this.browse.showing_detail = false;
                         cx.notify();
                     })),
             )
         } else {
-            h_flex()
-                .gap_2()
-                .items_center()
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .text_lg()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .child(name.to_owned()),
-                )
-                .child(
-                    Button::new("packages-close")
-                        .ghost()
-                        .small()
-                        .icon(IconName::X)
-                        .tooltip(t(cx, "packages-close"))
-                        .accessibility_label(t(cx, "packages-close"))
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.browse.selected = None;
-                            this.browse.showing_detail = false;
-                            cx.notify();
-                        })),
-                )
-        };
-        let header = header.child(refresh);
-        v_flex()
-            .size_full()
-            .min_h_0()
-            .when(!narrow, |pane| pane.pl_4())
-            .gap_3()
-            .child(header)
-            .child(
+            h_flex().gap_2().items_center().child(
                 div()
-                    .id("packages-detail")
+                    .flex_1()
                     .min_w_0()
-                    .child(self.render_package_detail(name, narrow, cx)),
+                    .truncate()
+                    .text_lg()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(name.to_owned()),
             )
-            .into_any_element()
+        };
+        let header = header.child(refresh).when(!narrow, |header| {
+            header.child(
+                Button::new("packages-close")
+                    .ghost()
+                    .small()
+                    .icon(IconName::X)
+                    .tooltip(t(cx, "packages-close"))
+                    .accessibility_label(t(cx, "packages-close"))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.packages_focus.focus(window, cx);
+                        this.browse.selected = None;
+                        this.browse.showing_detail = false;
+                        cx.notify();
+                    })),
+            )
+        });
+        let body = self.render_package_detail(name, narrow, cx);
+        let ready = match self.browse.details.get(name) {
+            Some(DetailState::Ready(d)) => Some(d),
+            _ => None,
+        };
+        let entry = self
+            .browse
+            .page
+            .as_ref()
+            .and_then(|page| page.entries.iter().find(|entry| entry.name == name));
+        let repository = ready
+            .and_then(|d| d.repository.clone())
+            .or_else(|| entry.and_then(|e| e.repository.clone()));
+        let npm = entry.and_then(|entry| entry.npm.clone());
+        package_detail(
+            "packages-detail",
+            narrow,
+            header.into_any_element(),
+            body,
+            self.render_detail_actions(name, repository, npm, cx),
+            &self.browse.detail_scroll,
+        )
     }
 
     fn render_results(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -449,60 +478,56 @@ impl ResourcesView {
             let installed = self.installed_package(&entry.name, cx).is_some();
             let name = entry.name.clone();
             view = view.child(
-                Button::new(SharedString::from(format!("package-entry-{}", entry.name)))
-                    .ghost()
-                    .selected(selected)
-                    .w_full()
-                    .h_auto()
-                    .py_2()
-                    .justify_start()
-                    .on_click(
-                        cx.listener(move |this, _, _, cx| this.select_package(name.clone(), cx)),
-                    )
-                    .child(
-                        v_flex()
-                            .w_full()
-                            .min_w_0()
-                            .gap_1()
-                            .child(
-                                h_flex()
-                                    .w_full()
-                                    .gap_2()
-                                    .child(
-                                        div()
-                                            .min_w_0()
-                                            .flex_1()
-                                            .text_left()
-                                            .truncate()
-                                            .font_weight(FontWeight::MEDIUM)
-                                            .child(entry.name.clone()),
+                package_row(
+                    SharedString::from(format!("package-entry-{}", entry.name)),
+                    selected,
+                    v_flex()
+                        .w_full()
+                        .min_w_0()
+                        .gap_1()
+                        .child(
+                            h_flex()
+                                .w_full()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .min_w_0()
+                                        .flex_1()
+                                        .text_left()
+                                        .truncate()
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .child(entry.name.clone()),
+                                )
+                                .child(
+                                    div()
+                                        .flex_shrink_0()
+                                        .text_sm()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(entry.version.clone()),
+                                )
+                                .when(installed, |row| {
+                                    row.child(
+                                        Tag::secondary()
+                                            .small()
+                                            .outline()
+                                            .child(t(cx, "packages-installed")),
                                     )
-                                    .child(
-                                        div()
-                                            .flex_shrink_0()
-                                            .text_sm()
-                                            .text_color(cx.theme().muted_foreground)
-                                            .child(entry.version.clone()),
-                                    )
-                                    .when(installed, |row| {
-                                        row.child(
-                                            Tag::secondary()
-                                                .small()
-                                                .outline()
-                                                .child(t(cx, "packages-installed")),
-                                        )
-                                    }),
-                            )
-                            .children(entry.description.clone().map(|description| {
-                                div()
-                                    .w_full()
-                                    .text_left()
-                                    .text_sm()
-                                    .truncate()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(description)
-                            })),
-                    ),
+                                }),
+                        )
+                        .children(entry.description.clone().map(|description| {
+                            div()
+                                .w_full()
+                                .text_left()
+                                .text_sm()
+                                .truncate()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(description)
+                        }))
+                        .into_any_element(),
+                )
+                .border_color(cx.theme().border)
+                .when(selected, |row| row.track_focus(&self.browse.focus))
+                .on_click(cx.listener(move |this, _, _, cx| this.select_package(name.clone(), cx))),
             );
         }
         view.into_any_element()
@@ -607,8 +632,9 @@ impl ResourcesView {
                     .child(source.clone()),
             ),
         );
-        view = view.child(self.render_detail_actions(name, repository, npm, cx));
-        view.into_any_element()
+
+        view.child(self.render_detail_status(name, cx))
+            .into_any_element()
     }
 
     fn render_declared(&self, details: Option<&DetailState>, cx: &mut Context<Self>) -> AnyElement {
@@ -685,28 +711,14 @@ impl ResourcesView {
             .into_any_element()
     }
 
-    fn render_detail_actions(
-        &self,
-        name: &str,
-        repository: Option<String>,
-        npm: Option<String>,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    fn render_detail_status(&self, name: &str, cx: &mut Context<Self>) -> AnyElement {
         let configured = self.config.read(cx).preferences(cx).pi_command;
         let pi_ready = self
             .applied_pi
             .read(cx)
             .ready_for(configured.as_deref())
             .is_some();
-        let installed = self.installed_package(name, cx).cloned();
-        let source = installed
-            .as_ref()
-            .map(|package| package.source.clone())
-            .unwrap_or_else(|| catalog::source(name));
-        let mutation = self.active().read(cx).mutation();
-        let updating = mutation.package_running(&source, "update");
-        let installing = mutation.package_running(&source, "install");
-        let removing = mutation.package_running(&source, "remove");
+        let installed = self.installed_package(name, cx);
         let mut view = v_flex().gap_2();
         if let Some(package) = &installed {
             let mut state = h_flex().gap_2().items_center().child(
@@ -813,6 +825,25 @@ impl ResourcesView {
                     .into_any_element(),
             });
         }
+        view.into_any_element()
+    }
+
+    fn render_detail_actions(
+        &self,
+        name: &str,
+        repository: Option<String>,
+        npm: Option<String>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let installed = self.installed_package(name, cx).cloned();
+        let source = installed
+            .as_ref()
+            .map(|package| package.source.clone())
+            .unwrap_or_else(|| catalog::source(name));
+        let mutation = self.active().read(cx).mutation();
+        let updating = mutation.package_running(&source, "update");
+        let installing = mutation.package_running(&source, "install");
+        let removing = mutation.package_running(&source, "remove");
         let disabled = !self.package_available(cx);
         let delta = installed.as_ref().is_some_and(|package| package.is_delta());
         let actions = if delta && self.in_project_scope() {
@@ -836,6 +867,7 @@ impl ResourcesView {
                 })
                 .child(
                     Button::new("package-detail-remove")
+                        .danger()
                         .small()
                         .label(t(cx, "settings-package-remove-ellipsis"))
                         .loading(removing)
@@ -859,7 +891,7 @@ impl ResourcesView {
             )
         };
         let copy = source.clone();
-        let actions = actions.child(
+        let actions = actions.flex_wrap().child(
             Button::new("package-detail-more")
                 .ghost()
                 .small()
@@ -892,7 +924,7 @@ impl ResourcesView {
                     menu
                 }),
         );
-        view.child(actions).into_any_element()
+        actions.into_any_element()
     }
 }
 
@@ -1098,6 +1130,166 @@ mod tests {
                 view.browse.debounce = None;
             });
             EmptyView
+        });
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+    use crate::features::settings::layout::{Domain, PageId};
+    use crate::features::settings::{
+        AppConfig, AppLanguage, ConfigController, PiProbeController, SettingsView,
+    };
+    use core::prelude::v1::test;
+    use gpui_form::Form;
+    use gpui_kit::test::TestWindowExt as _;
+
+    #[gpui_kit::test]
+    fn packages_bound_scrolling_and_retain_navigation(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            crate::app::init_capability_hosts(cx);
+            app_theme::init(cx);
+            gupi_settings::theme::init(cx);
+            gupi_settings::i18n::apply(AppLanguage::English, cx);
+        });
+        let agent = tempfile::tempdir().unwrap();
+        let mut settings = None;
+        let (_, visual) = cx.add_window_view(|window, cx| {
+            let form = cx.new(|_| Form::new(AppConfig::default()));
+            let config = cx.new(|cx| ConfigController::new(&form, cx));
+            let draft = cx.new(|_| PiProbeController::new());
+            let applied = cx.new(|_| { let mut probe = PiProbeController::new(); probe.stop(); probe });
+            let view = cx.new(|cx| SettingsView::new(form, config, draft, applied, cx.focus_handle(), window, cx));
+            view.update(cx, |view, cx| {
+                view.auth.update(cx, |auth, _| auth.set_agent_for_test(agent.path().to_owned()));
+                view.pi_config.update(cx, |config, cx| config.set_agent_for_test(agent.path().to_owned(), cx));
+                view.open_page(Domain::Pi, PageId::Packages, window, cx);
+                view.resources.update(cx, |view, cx| {
+                    view.controller.update(cx, |owner, _| {
+                        let mut catalog = io::Catalog::default();
+                        catalog.packages = (0..60).map(|ix| io::Package::new(format!("npm:package-{ix}"), agent.path().to_owned())).collect();
+                        catalog.resources = (0..60).map(|ix| {
+                            let mut r = Resource::new(Kind::Skill, agent.path().join(format!("skill-{ix}.md")), agent.path().to_owned(), format!("Skill {ix}"));
+                            r.package = Some("npm:package-0".into()); r
+                        }).collect();
+                        owner.set_catalog_for_test(catalog);
+                    });
+                    let entries: Vec<_> = (0..20).map(|ix| serde_json::json!({"package":{"name":format!("package-{ix}"),"version":"1.0.0","description":"Example package","keywords":["pi-package"]}})).collect();
+                    view.browse.page = Some(catalog::parse_search(&serde_json::to_vec(&serde_json::json!({"objects": entries,"total":40})).unwrap(),0).unwrap());
+                    // Selecting failed details retries through Tokio; this layout test uses a
+                    // completed manifest and deliberately has no Tokio runtime, so accidental
+                    // catalog requests fail immediately instead of escaping the test scheduler.
+                    let details = catalog::parse_details(
+                        br#"{"name":"package-0","version":"1.0.0","description":"Example package","pi":{"skills":["skills/*/SKILL.md"]}}"#,
+                        "package-0",
+                    ).unwrap();
+                    view.browse.details.insert("package-0".into(), DetailState::Ready(details));
+                });
+            });
+            settings = Some(view.clone());
+            gpui_kit::component::Root::new(view, window, cx)
+        });
+        let settings = settings.unwrap();
+        visual.simulate_resize(size(px(1500.), px(760.)));
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            window.render_frame(cx);
+            window.click(
+                ElementId::NamedChild(
+                    std::sync::Arc::new(ElementId::from(SharedString::from("false:npm:package-0"))),
+                    "select".into(),
+                ),
+                cx,
+            );
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| window.render_frame(cx));
+        let toolbar = visual.debug_bounds("packages-toolbar").unwrap();
+        let header = visual.debug_bounds("package-detail-heading").unwrap();
+        let actions = visual.debug_bounds("package-detail-actions").unwrap();
+        let list = visual.debug_bounds("packages-installed").unwrap();
+        assert!(list.size.height > px(100.) && list.bottom() <= px(760.));
+        assert!(header.top() >= toolbar.bottom() && actions.bottom() <= px(760.));
+        visual.update(|window, cx| {
+            window.scroll(
+                "packages-installed",
+                ScrollDelta::Pixels(point(px(0.), px(-240.))),
+                cx,
+            );
+            window.scroll(
+                "installed-package-detail",
+                ScrollDelta::Pixels(point(px(0.), px(-180.))),
+                cx,
+            );
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| window.render_frame(cx));
+        assert_eq!(visual.debug_bounds("packages-toolbar").unwrap(), toolbar);
+        assert_eq!(
+            visual.debug_bounds("package-detail-heading").unwrap(),
+            header
+        );
+        assert_eq!(
+            visual.debug_bounds("package-detail-actions").unwrap(),
+            actions
+        );
+        visual.update(|window, cx| {
+            window.within("packages-view").click(1usize, cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| window.render_frame(cx));
+        visual.update(|window, cx| window.click("package-entry-package-0", cx));
+        visual.run_until_parked();
+        visual.update(|window, cx| window.render_frame(cx));
+        let footer = visual.debug_bounds("packages-footer").unwrap();
+        visual.update(|window, cx| {
+            window.scroll(
+                "packages-results",
+                ScrollDelta::Pixels(point(px(0.), px(-160.))),
+                cx,
+            )
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| window.render_frame(cx));
+        assert_eq!(visual.debug_bounds("packages-footer").unwrap(), footer);
+        let offset = visual.update(|_, cx| {
+            settings
+                .read(cx)
+                .resources
+                .read(cx)
+                .browse
+                .list_scroll
+                .offset()
+        });
+        assert!(offset.y < px(0.));
+        visual.simulate_resize(size(px(800.), px(760.)));
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            window.render_frame(cx);
+            window.click("packages-back", cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            window.render_frame(cx);
+            let view = settings.read(cx).resources.read(cx);
+            assert_eq!(view.browse.selected.as_deref(), Some("package-0"));
+            assert_eq!(view.browse.list_scroll.offset(), offset);
+            assert!(view.browse.focus.is_focused(window));
+            window.within("packages-view").click(0usize, cx);
+        });
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            window.render_frame(cx);
+            window.click("installed-back", cx);
+        });
+        visual.run_until_parked();
+        visual.simulate_resize(size(px(1500.), px(760.)));
+        visual.run_until_parked();
+        visual.update(|window, cx| {
+            window.render_frame(cx);
+            assert!(window.try_find("installed-close").is_some());
         });
     }
 }

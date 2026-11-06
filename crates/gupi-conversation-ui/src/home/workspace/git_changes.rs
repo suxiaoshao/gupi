@@ -1090,7 +1090,7 @@ impl HomeView {
                 content = content.child(match (tab.quote_path(), tab.quote_kind()) {
                     (Some(path), Some(kind)) => quote::diff_body(
                         body,
-                        block.state(),
+                        block,
                         path,
                         kind,
                         cx.weak_entity(),
@@ -1178,7 +1178,7 @@ impl HomeView {
         &self,
         window: &Window,
         cx: &App,
-    ) -> Option<Result<quote::Selection, quote::Unavailable>> {
+    ) -> Option<quote::LocatedSelection> {
         let tab = self.active_git()?;
         let block = tab.current_body()?.block.as_ref()?;
         let state = block.state()?;
@@ -1188,6 +1188,6 @@ impl HomeView {
             .read(cx)
             .focus_handle(cx)
             .contains_focused(window, cx)
-            .then(|| quote::diff_selection(state, path, kind, cx))
+            .then(|| quote::capture_diff(block.quote_owner().as_ref(), path, kind, cx))
     }
 }

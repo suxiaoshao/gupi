@@ -546,7 +546,7 @@ impl HomeView {
             } else if let Some(block) = &state.combined {
                 body = body.child(div().flex_1().min_h_0().child(quote::diff_body(
                     block.render_reader(tab.options.wrap),
-                    block.state(),
+                    block,
                     PathBuf::from(file.path()),
                     quote::FileKind::Turn,
                     cx.weak_entity(),
@@ -599,7 +599,7 @@ impl HomeView {
                         operations = operations.child(v_flex().min_w_0().child(header).child(
                             quote::diff_body(
                                 block.render_reader_bounded(tab.options.wrap),
-                                block.state(),
+                                block,
                                 PathBuf::from(file.path()),
                                 quote::FileKind::Turn,
                                 cx.weak_entity(),
@@ -755,7 +755,7 @@ impl HomeView {
         &self,
         window: &Window,
         cx: &App,
-    ) -> Option<Result<quote::Selection, quote::Unavailable>> {
+    ) -> Option<quote::LocatedSelection> {
         let tab = self.active_changes()?;
         if !tab.in_scope {
             return None;
@@ -778,8 +778,17 @@ impl HomeView {
         };
         blocks
             .into_iter()
-            .filter_map(|b| b.state())
-            .find(|s| s.read(cx).focus_handle(cx).contains_focused(window, cx))
-            .map(|s| quote::diff_selection(s, PathBuf::from(path), quote::FileKind::Turn, cx))
+            .find(|b| {
+                b.state()
+                    .is_some_and(|s| s.read(cx).focus_handle(cx).contains_focused(window, cx))
+            })
+            .map(|block| {
+                quote::capture_diff(
+                    block.quote_owner().as_ref(),
+                    PathBuf::from(path),
+                    quote::FileKind::Turn,
+                    cx,
+                )
+            })
     }
 }

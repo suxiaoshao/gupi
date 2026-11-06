@@ -670,14 +670,12 @@ mod tests {
                 assert!(!view.previews.contains_key(&own_key));
                 assert!(view.previews.contains_key(&inherited_key));
                 view.toggle_preview(inherited_key, cx);
-                view.expanded_packages.clear();
                 view.reveal_package(source.clone(), Row::Inherited, cx);
-                assert!(view.expanded_packages.contains(&format!("true:{source}")));
-                assert!(!view.expanded_packages.contains(&format!("false:{source}")));
-                view.expanded_packages.clear();
+                assert!(view.installed.is_selected(true, &source));
+                assert!(!view.installed.is_selected(false, &source));
                 view.reveal_package(source.clone(), Row::Own, cx);
-                assert!(view.expanded_packages.contains(&format!("false:{source}")));
-                assert!(!view.expanded_packages.contains(&format!("true:{source}")));
+                assert!(view.installed.is_selected(false, &source));
+                assert!(!view.installed.is_selected(true, &source));
             }
         });
         // A project delta changes the inherited display only after trust, and

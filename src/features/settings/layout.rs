@@ -642,13 +642,15 @@ impl SettingsView {
                 })
                 .scope(move |_, window, cx| {
                     scope.update(cx, |config, cx| config.render_scope(false, window, cx))
-                })
-                .actions(move |_, _, cx| {
+                });
+            if kind != Kind::Extension {
+                page = page.actions(move |_, _, cx| {
                     header
                         .update(cx, |view, cx| view.render_header(kind, cx))
                         .unwrap_or_else(|_| div().into_any_element())
                 });
-            if self.resources.read(cx).has_status(kind, cx) {
+            }
+            if kind != Kind::Extension && self.resources.read(cx).has_status(kind, cx) {
                 page = page.group(SettingsSection::new().item(section(
                     resources::Section::Overview,
                     "refresh reload 刷新 重新读取",
@@ -656,17 +658,18 @@ impl SettingsView {
             }
             if kind == Kind::Extension {
                 let resources = self.resources.clone();
+                // The searchable section keeps package keywords; the bounded body owns layout.
                 page = page.header(move |_, _, cx| {
-                    resources.update(cx, |view, cx| {
-                        h_flex()
-                            .w_full()
-                            .justify_end()
-                            .child(view.render_packages_tabs(cx))
-                    })
+                    resources.update(cx, |view, cx| view.render_packages_toolbar(cx))
                 });
-                return page.group(SettingsSection::new()
-                    .item(section(resources::Section::Packages,"package extension skill theme template install update remove source version 包 扩展 技能 主题 模板 安装 更新 移除 来源 版本")));
+                let resources = self.resources.clone();
+                return page.group(SettingsSection::new().item(section(resources::Section::Packages,
+                    "package extension skill theme template install update remove source version 包 扩展 技能 主题 模板 安装 更新 移除 来源 版本")))
+                    .bounded_body(move |layout, _, cx| resources.update(cx, |view, cx| {
+                        view.render_page(Kind::Extension, resources::Section::Packages, layout.width, cx)
+                    }));
             }
+
             let inherited_title = t(cx, "settings-resource-group-inherited");
             if kind == Kind::Prompt {
                 page = page
@@ -928,7 +931,11 @@ impl SettingsView {
                 } else {
                     page
                 };
-                page.description(t(cx, &format!("{}-description", id.id())))
+                if *id == PageId::Connection {
+                    page.description(t(cx, "settings-connection-description"))
+                } else {
+                    page
+                }
             })
             .collect()
     }
@@ -1034,6 +1041,7 @@ impl SettingsView {
             .outline()
             .label(t(cx, "settings-clear-search"))
             .on_click(cx.listener(|this, _, window, cx| this.clear_search(window, cx)));
+        let bounded = selected == PageId::Packages && !empty;
         let content = container_query(move |size, window, cx| {
             let rem = window.rem_size();
             let max_width = if matches!(
@@ -1070,15 +1078,18 @@ impl SettingsView {
                 .size_full()
                 .min_w_0()
                 .min_h_0()
-                .overflow_y_scroll()
-                .track_scroll(&scroll)
-                .vertical_scrollbar(&scroll)
+                .when(!bounded, |body| {
+                    body.overflow_y_scroll()
+                        .track_scroll(&scroll)
+                        .vertical_scrollbar(&scroll)
+                })
                 .child(
                     v_flex()
                         .w_full()
                         .max_w(width)
                         .mx_auto()
                         .py_8()
+                        .when(bounded, |body| body.h_full().min_h_0())
                         .gap_4()
                         .when_some(error, |body, text| {
                             body.child(div().text_sm().text_color(cx.theme().danger).child(text))

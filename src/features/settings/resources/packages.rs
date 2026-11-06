@@ -1,9 +1,13 @@
 use super::*;
+use gpui_kit::base::StyledExt as _;
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::component::Icon;
-use gpui_kit::component::collapsible::Collapsible;
+use gpui_kit::component::Selectable;
 use gpui_kit::component::group_box::GroupBox;
 use gpui_kit::component::group_box::GroupBoxVariants;
 use gpui_kit::component::menu::DropdownMenu;
+use gpui_kit::component::resizable::{ResizableState, h_resizable, resizable_panel};
+use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::tooltip::Tooltip;
 
 const RESOURCE_KINDS: [(Kind, &str, IconName); 4] = [
@@ -29,13 +33,166 @@ const RESOURCE_KINDS: [(Kind, &str, IconName); 4] = [
     ),
 ];
 
+/// Transient installed-package navigation, reset when the scope owner changes.
+pub(super) struct Installed {
+    selected: Option<(bool, String)>,
+    showing_detail: bool,
+    list_scroll: ScrollHandle,
+    detail_scroll: ScrollHandle,
+    split: Entity<ResizableState>,
+    focus: FocusHandle,
+}
+impl Installed {
+    #[cfg(test)]
+    pub(super) fn is_selected(&self, inherited: bool, source: &str) -> bool {
+        self.selected
+            .as_ref()
+            .is_some_and(|(owner, selected)| *owner == inherited && selected == source)
+    }
+
+    pub fn new(cx: &mut App) -> Self {
+        Self {
+            selected: None,
+            showing_detail: false,
+            list_scroll: ScrollHandle::new(),
+            detail_scroll: ScrollHandle::new(),
+            split: cx.new(|_| ResizableState::default()),
+            focus: cx.focus_handle().tab_stop(true),
+        }
+    }
+    pub fn select(&mut self, inherited: bool, source: String) {
+        if self.selected.as_ref() != Some(&(inherited, source.clone())) {
+            self.detail_scroll.set_offset(Point::default());
+        }
+        self.selected = Some((inherited, source));
+        self.showing_detail = true;
+    }
+}
+
+pub(super) fn package_row(id: impl Into<ElementId>, selected: bool, content: AnyElement) -> Button {
+    Button::new(id)
+        .ghost()
+        .selected(selected)
+        .w_full()
+        .h_auto()
+        .py_2()
+        .justify_start()
+        .border_b_1()
+        .child(content)
+}
+
+pub(super) fn package_panes(
+    id: &'static str,
+    width: Pixels,
+    split: &Entity<ResizableState>,
+    list: AnyElement,
+    detail: Option<AnyElement>,
+    showing_detail: bool,
+) -> AnyElement {
+    match detail {
+        Some(detail) if width >= px(640.) => h_resizable(id)
+            .with_state(split)
+            .child(
+                resizable_panel()
+                    .size(px((width.as_f32() * 0.45).max(280.)))
+                    .size_range(px(260.)..px((width.as_f32() - 320.).max(260.)))
+                    .child(list),
+            )
+            .child(resizable_panel().child(detail))
+            .into_any_element(),
+        Some(detail) if showing_detail => detail,
+        _ => list,
+    }
+}
+
+pub(super) fn package_detail(
+    id: &'static str,
+    narrow: bool,
+    header: AnyElement,
+    body: AnyElement,
+    footer: AnyElement,
+    scroll: &ScrollHandle,
+) -> AnyElement {
+    v_flex()
+        .id(format!("{id}-pane"))
+        .size_full()
+        .min_h_0()
+        .min_w_0()
+        .gap_3()
+        .when(!narrow, |pane| pane.pl_4())
+        .child(
+            div()
+                .flex_shrink_0()
+                .debug_selector(|| "package-detail-heading".into())
+                .child(header),
+        )
+        .child(
+            div()
+                .id(id)
+                .test_support()
+                .debug_selector(|| "package-detail-body".into())
+                .relative()
+                .flex_1()
+                .min_h_0()
+                .min_w_0()
+                .overflow_y_scroll()
+                .track_scroll(scroll)
+                .vertical_scrollbar(scroll)
+                .child(div().pr_3().child(body)),
+        )
+        .child(
+            div()
+                .flex_shrink_0()
+                .debug_selector(|| "package-detail-actions".into())
+                .child(footer),
+        )
+        .into_any_element()
+}
+
 impl ResourcesView {
     /// The Packages body; `width` is its own measured width.
     pub(super) fn render_packages(&mut self, width: Pixels, cx: &mut Context<Self>) -> AnyElement {
-        if self.browsing {
+        let status = self
+            .has_status(Kind::Extension, cx)
+            .then(|| self.render_page(Kind::Extension, Section::Overview, width, cx));
+        let body = if self.browsing {
             self.render_browse(width, cx)
         } else {
-            self.render_installed(cx)
+            self.render_installed(width, cx)
+        };
+        v_flex()
+            .size_full()
+            .min_h_0()
+            .min_w_0()
+            .gap_3()
+            .children(status.map(|status| div().flex_shrink_0().child(status)))
+            .child(div().flex_1().min_h_0().min_w_0().child(body))
+            .into_any_element()
+    }
+
+    pub(super) fn reconcile_package_selection(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let missing =
+            self.installed
+                .selected
+                .as_ref()
+                .is_some_and(|(inherited, source)| {
+                    let owner = if *inherited {
+                        &self.controller
+                    } else {
+                        self.active()
+                    };
+                    owner.read(cx).catalog().data().is_some_and(|catalog| {
+                        !catalog.packages.iter().any(|p| &p.source == source)
+                    })
+                });
+        if missing {
+            self.installed.selected = None;
+            self.installed.showing_detail = false;
+            self.packages_focus.focus(window, cx);
         }
     }
 
@@ -58,6 +215,46 @@ impl ResourcesView {
             .into_any_element()
     }
 
+    pub(in crate::features::settings) fn render_packages_toolbar(
+        &self,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        h_flex()
+            .debug_selector(|| "packages-toolbar".into())
+            .w_full()
+            .min_w_0()
+            .flex_wrap()
+            .gap_2()
+            .child(
+                div()
+                    .track_focus(&self.packages_focus)
+                    .child(self.render_packages_tabs(cx)),
+            )
+            .child(div().flex_1().min_w_0().when(self.browsing, |body| {
+                body.child(
+                    self.browse
+                        .search_input()
+                        .prefix(Icon::new(IconName::Search)),
+                )
+            }))
+            .when(!self.browsing, |bar| {
+                bar.child(
+                    Button::new("package-add")
+                        .small()
+                        .icon(IconName::Plus)
+                        .label(t(cx, "settings-package-install-source"))
+                        .disabled(!self.package_available(cx) || self.installing)
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.installing = true;
+                            this.source.focus_handle(cx).focus(window, cx);
+                            cx.notify();
+                        })),
+                )
+            })
+            .child(self.render_header(Kind::Extension, cx))
+            .into_any_element()
+    }
+
     pub(super) fn package_install_label(&self, cx: &App) -> String {
         if let Some(project) = &self.project
             && let Target::Project(cwd) = project.read(cx).target()
@@ -75,10 +272,25 @@ impl ResourcesView {
         t(cx, "packages-install")
     }
 
-    fn render_installed(&self, cx: &Context<Self>) -> AnyElement {
+    fn render_installed(&self, width: Pixels, cx: &Context<Self>) -> AnyElement {
         let controller = self.active().read(cx);
         let Some(catalog) = controller.catalog().data() else {
-            return div().into_any_element();
+            return h_flex()
+                .gap_2()
+                .text_sm()
+                .text_color(cx.theme().muted_foreground)
+                .when(controller.catalog().is_running(), |body| {
+                    body.child(gpui_kit::component::spinner::Spinner::new().small())
+                })
+                .child(t(
+                    cx,
+                    if controller.catalog().is_running() {
+                        "settings-resource-loading"
+                    } else {
+                        "packages-local-unavailable"
+                    },
+                ))
+                .into_any_element();
         };
         let busy = controller.busy() || self.config.read(cx).busy(cx);
         let configured = self.config.read(cx).preferences(cx).pi_command;
@@ -87,32 +299,7 @@ impl ResourcesView {
             .read(cx)
             .ready_for(configured.as_deref())
             .is_some();
-        let mut toolbar = v_flex().flex_shrink_0().gap_3().child(
-            h_flex()
-                .justify_between()
-                .gap_2()
-                .child(
-                    div()
-                        .text_sm()
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(cx.theme().muted_foreground)
-                        .debug_selector(|| "package-heading".into())
-                        .child(t(cx, "settings-package-heading")),
-                )
-                .child(
-                    Button::new("package-add")
-                        .small()
-                        .icon(IconName::Plus)
-                        .label(t(cx, "settings-package-install-source"))
-                        .disabled(!self.package_available(cx) || self.installing)
-                        .debug_selector(|| "package-add".into())
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.installing = true;
-                            this.source.focus_handle(cx).focus(window, cx);
-                            cx.notify();
-                        })),
-                ),
-        );
+        let mut toolbar = v_flex().flex_shrink_0().gap_3();
         if !pi_ready {
             toolbar = toolbar.child(
                 div()
@@ -191,7 +378,7 @@ impl ResourcesView {
             );
         }
         for package in &catalog.packages {
-            view = view.child(self.render_package(package, catalog, busy, false, cx));
+            view = view.child(self.render_package(package, catalog, false, cx));
         }
         view = view.child(self.render_independent_resources(catalog, self.row(false), busy, cx));
         if self.in_project_scope()
@@ -206,18 +393,59 @@ impl ResourcesView {
                     .child(t(cx, "settings-resource-group-inherited")),
             );
             for package in &global.packages {
-                view = view.child(self.render_package(package, global, busy, true, cx));
+                view = view.child(self.render_package(package, global, true, cx));
             }
             view = view.child(self.render_independent_resources(global, Row::Inherited, busy, cx));
         }
 
-        // The page owns vertical scrolling; the body keeps its natural height.
+        let list = div()
+            .id("packages-installed")
+            .test_support()
+            .debug_selector(|| "packages-installed".into())
+            .relative()
+            .size_full()
+            .min_h_0()
+            .min_w_0()
+            .overflow_y_scroll()
+            .track_scroll(&self.installed.list_scroll)
+            .vertical_scrollbar(&self.installed.list_scroll)
+            .child(div().pr_3().child(view))
+            .into_any_element();
+        let detail = self
+            .installed
+            .selected
+            .as_ref()
+            .and_then(|(inherited, source)| {
+                let owner = if *inherited {
+                    &self.controller
+                } else {
+                    self.active()
+                };
+                let catalog = owner.read(cx).catalog().data()?;
+                let package = catalog.packages.iter().find(|p| &p.source == source)?;
+                Some(self.render_installed_detail(
+                    package,
+                    catalog,
+                    busy,
+                    *inherited,
+                    width < px(640.),
+                    cx,
+                ))
+            });
         v_flex()
             .size_full()
             .min_h_0()
+            .min_w_0()
             .gap_3()
             .child(toolbar)
-            .child(div().id("packages-installed").min_w_0().child(view))
+            .child(div().flex_1().min_h_0().min_w_0().child(package_panes(
+                "packages-installed-split",
+                width,
+                &self.installed.split,
+                list,
+                detail,
+                self.installed.showing_detail,
+            )))
             .into_any_element()
     }
 
@@ -225,55 +453,62 @@ impl ResourcesView {
         &self,
         package: &io::Package,
         catalog: &io::Catalog,
-        busy: bool,
         inherited: bool,
         cx: &Context<Self>,
     ) -> AnyElement {
         let source = package.source.clone();
         let key = format!("{inherited}:{source}");
-        let expanded = self.expanded_packages.contains(&key);
+        let selected = self.installed.selected.as_ref() == Some(&(inherited, source.clone()));
         let id = |part: &str| {
             ElementId::NamedChild(
                 std::sync::Arc::new(ElementId::from(SharedString::from(key.clone()))),
                 part.to_owned().into(),
             )
         };
-        let toggle = key.clone();
-        let reveal = package.path.clone();
-        let update = source.clone();
-        let remove = source.clone();
+
         let name = package_name(package);
         let tooltip = source.clone();
-        let mut heading = v_flex().min_w_0().flex_1().gap_1().child(
-            h_flex()
-                .gap_2()
-                .min_w_0()
-                .child(
-                    div()
-                        .id(id("name"))
-                        .min_w_0()
-                        .flex_1()
-                        .truncate()
-                        .font_weight(FontWeight::MEDIUM)
-                        .child(name)
-                        .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx)),
-                )
-                .children(package.version.clone().map(|version| {
-                    div()
-                        .flex_shrink_0()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(version)
-                })),
-        );
+        let mut heading = v_flex()
+            .w_full()
+            .min_w_0()
+            .flex_1()
+            .gap_1()
+            .text_left()
+            .child(
+                h_flex()
+                    .gap_2()
+                    .min_w_0()
+                    .child(
+                        div()
+                            .id(id("name"))
+                            .min_w_0()
+                            .flex_1()
+                            .truncate()
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(name)
+                            .tooltip(move |window, cx| {
+                                Tooltip::new(tooltip.clone()).build(window, cx)
+                            }),
+                    )
+                    .children(package.version.clone().map(|version| {
+                        div()
+                            .flex_shrink_0()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(version)
+                    })),
+            );
         heading = heading.child(
             div()
                 .id(id("source"))
                 .min_w_0()
-                .text_xs()
+                .text_sm()
                 .truncate()
                 .text_color(cx.theme().muted_foreground)
-                .child(source.clone())
+                .child(match io_counts(catalog, &source, cx) {
+                    Some(counts) => format!("{} · {source}", counts.join(" · ")),
+                    None => source.clone(),
+                })
                 .tooltip({
                     let source = source.clone();
                     move |window, cx| Tooltip::new(source.clone()).build(window, cx)
@@ -331,52 +566,39 @@ impl ResourcesView {
                 ),
             );
         }
-        if let Some(counts) = io_counts(catalog, &source, cx) {
-            heading = heading.child(
-                div()
-                    .text_sm()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(counts.join(" · ")),
-            );
-        }
-        let expand = Button::new(id("expand"))
-            .ghost()
-            .small()
-            .icon(if expanded {
-                IconName::ChevronUp
-            } else {
-                IconName::ChevronDown
-            })
-            .tooltip(t(
-                cx,
-                if expanded {
-                    "settings-package-collapse"
-                } else {
-                    "settings-package-expand"
-                },
-            ))
-            .accessibility_label(t(
-                cx,
-                if expanded {
-                    "settings-package-collapse"
-                } else {
-                    "settings-package-expand"
-                },
-            ))
+        package_row(id("select"), selected, heading.into_any_element())
+            .border_color(cx.theme().border)
+            .when(selected, |row| row.track_focus(&self.installed.focus))
             .debug_selector({
                 let source = source.clone();
-                move || format!("package-expand-{source}")
+                move || format!("package-select-{inherited}-{source}")
             })
             .on_click(cx.listener(move |this, _, _, cx| {
-                if !this.expanded_packages.remove(&toggle) {
-                    this.expanded_packages.insert(toggle.clone());
-                }
+                this.installed.select(inherited, source.clone());
                 cx.notify();
-            }));
+            }))
+            .into_any_element()
+    }
+
+    fn render_installed_detail(
+        &self,
+        package: &io::Package,
+        catalog: &io::Catalog,
+        busy: bool,
+        inherited: bool,
+        narrow: bool,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let source = package.source.clone();
+        let reveal = package.path.clone();
+        let update = source.clone();
+        let remove = source.clone();
+        let id = |part: &str| SharedString::from(format!("installed-detail-{part}"));
         let package_disabled = !self.package_available(cx);
         let mutable = !inherited && !(self.in_project_scope() && package.is_delta());
         let update_visible = !self.in_project_scope();
         let pi_config = self.pi_config.clone();
+        let edit_global = self.pi_config.clone();
         let pending = self
             .active()
             .read(cx)
@@ -419,106 +641,170 @@ impl ResourcesView {
                     )
                 })
             };
-        let mut card = Collapsible::new().open(expanded).gap_3().child(
-            h_flex().gap_2().child(heading).child(
-                h_flex()
-                    .flex_shrink_0()
-                    .gap_1()
-                    .when(update_visible, |row| {
-                        row.child(
-                            Button::new(id("update"))
-                                .small()
-                                .ghost()
-                                .icon(IconName::RotateCw)
-                                .tooltip(t(cx, "settings-package-update"))
-                                .accessibility_label(t(cx, "settings-package-update"))
-                                .loading(pending)
-                                .disabled(!self.package_available(cx))
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    this.package("update", update.clone(), cx);
-                                })),
-                        )
-                    })
-                    .when(mutable, |row| {
-                        row.child(
-                            Button::new(id("remove"))
-                                .ghost()
-                                .small()
-                                .icon(IconName::Trash)
-                                .tooltip(t(cx, "settings-package-remove-ellipsis"))
-                                .accessibility_label(t(cx, "settings-package-remove-ellipsis"))
-                                .disabled(package_disabled)
-                                .on_click(cx.listener(move |this, _, window, cx| {
-                                    this.confirm_remove(None, remove.clone(), window, cx)
-                                })),
-                        )
-                    })
-                    .child(
-                        Button::new(id("more"))
-                            .ghost()
-                            .small()
-                            .icon(IconName::Ellipsis)
-                            .tooltip(t(cx, "settings-resource-actions"))
-                            .accessibility_label(t(cx, "settings-resource-actions"))
-                            .dropdown_menu_with_anchor(Anchor::TopRight, menu),
-                    )
-                    .child(expand),
-            ),
-        );
-        if expanded {
-            let mut contents = v_flex()
-                .gap_3()
-                .pt_3()
-                .border_t_1()
-                .border_color(cx.theme().border);
-            let mut has_resources = false;
-            for (kind, label, icon) in RESOURCE_KINDS {
-                let resources: Vec<_> = catalog
-                    .resources
-                    .iter()
-                    .filter(|r| r.package.as_deref() == Some(source.as_str()) && r.kind == kind)
-                    .collect();
-                if resources.is_empty() {
-                    continue;
-                }
-                has_resources = true;
-                contents = contents.child(
-                    v_flex()
-                        .gap_2()
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(t(cx, label)),
-                        )
-                        .children(resources.into_iter().map(|resource| {
-                            self.render_package_resource(
-                                resource,
-                                self.row(inherited),
-                                icon,
-                                false,
-                                busy,
-                                cx,
-                            )
+        let actions = h_flex()
+            .gap_2()
+            .flex_wrap()
+            .when(inherited, |row| {
+                row.child(
+                    Button::new(id("global"))
+                        .small()
+                        .label(t(cx, "settings-resource-edit-global"))
+                        .on_click(move |_, window, cx| {
+                            if let Some(config) = &edit_global {
+                                super::super::pi_config::request_scope(
+                                    config,
+                                    Scope::Global,
+                                    window,
+                                    cx,
+                                );
+                            }
+                        }),
+                )
+            })
+            .when(update_visible && !inherited, |row| {
+                row.child(
+                    Button::new(id("update"))
+                        .small()
+                        .label(t(cx, "settings-package-update"))
+                        .loading(pending)
+                        .disabled(package_disabled)
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.package("update", update.clone(), cx)
                         })),
-                );
-            }
-            if !has_resources {
-                contents = contents.child(
+                )
+            })
+            .when(mutable, |row| {
+                row.child(
+                    Button::new(id("remove"))
+                        .danger()
+                        .small()
+                        .label(t(cx, "settings-package-remove-ellipsis"))
+                        .disabled(package_disabled)
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.confirm_remove(None, remove.clone(), window, cx)
+                        })),
+                )
+            })
+            .child(
+                Button::new(id("more"))
+                    .ghost()
+                    .small()
+                    .icon(IconName::Ellipsis)
+                    .tooltip(t(cx, "settings-resource-actions"))
+                    .accessibility_label(t(cx, "settings-resource-actions"))
+                    .dropdown_menu_with_anchor(Anchor::TopRight, menu),
+            );
+        let header = h_flex()
+            .gap_2()
+            .min_w_0()
+            .when(narrow, |header| {
+                header.child(
+                    Button::new("installed-back")
+                        .ghost()
+                        .small()
+                        .icon(IconName::ChevronLeft)
+                        .label(t(cx, "packages-back"))
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.installed.showing_detail = false;
+                            this.installed.focus.focus(window, cx);
+                            cx.notify();
+                        })),
+                )
+            })
+            .when(!narrow, |header| {
+                header.child(
                     div()
-                        .text_sm()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(t(cx, "settings-package-resources-empty")),
-                );
-            }
-            card = card.content(contents);
-        }
-        div()
-            .py_4()
-            .border_b_1()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_lg()
+                        .font_semibold()
+                        .child(package_name(package)),
+                )
+            })
+            .child(self.render_header(Kind::Extension, cx))
+            .when(!narrow, |header| {
+                header.child(
+                    Button::new("installed-close")
+                        .ghost()
+                        .small()
+                        .icon(IconName::X)
+                        .tooltip(t(cx, "packages-close"))
+                        .accessibility_label(t(cx, "packages-close"))
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.packages_focus.focus(window, cx);
+                            this.installed.selected = None;
+                            this.installed.showing_detail = false;
+                            cx.notify();
+                        })),
+                )
+            });
+        let mut contents = v_flex()
+            .gap_3()
+            .pt_3()
+            .border_t_1()
             .border_color(cx.theme().border)
-            .child(card)
-            .into_any_element()
+            .when(narrow, |body| {
+                body.child(div().text_lg().font_semibold().child(package_name(package)))
+            })
+            .children(package.version.clone().map(|version| {
+                let mut args = fluent_bundle::FluentArgs::new();
+                args.set("version", version);
+                div().text_sm().child(gupi_settings::i18n::t_with_args(
+                    cx,
+                    "packages-installed-version",
+                    &args,
+                ))
+            }))
+            .child(div().text_sm().child(source.clone()));
+        let mut has_resources = false;
+        for (kind, label, icon) in RESOURCE_KINDS {
+            let resources: Vec<_> = catalog
+                .resources
+                .iter()
+                .filter(|r| r.package.as_deref() == Some(source.as_str()) && r.kind == kind)
+                .collect();
+            if resources.is_empty() {
+                continue;
+            }
+            has_resources = true;
+            contents = contents.child(
+                v_flex()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(t(cx, label)),
+                    )
+                    .children(resources.into_iter().map(|resource| {
+                        self.render_package_resource(
+                            resource,
+                            self.row(inherited),
+                            icon,
+                            false,
+                            busy,
+                            cx,
+                        )
+                    })),
+            );
+        }
+        if !has_resources {
+            contents = contents.child(
+                div()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(t(cx, "settings-package-resources-empty")),
+            );
+        }
+        package_detail(
+            "installed-package-detail",
+            narrow,
+            header.into_any_element(),
+            contents.into_any_element(),
+            actions.into_any_element(),
+            &self.installed.detail_scroll,
+        )
     }
 
     fn render_independent_resources(

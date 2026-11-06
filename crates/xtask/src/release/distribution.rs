@@ -7,7 +7,7 @@ use crate::cli::MacosSigning;
 use crate::error::{Result, XtaskError};
 
 const IDENTIFIER: &str = "suxiaoshao.Gupi";
-const SCHEMA: &str = "1.10.0";
+const SCHEMA: &str = "1.28.0";
 
 impl Release {
     pub(super) fn distribution(

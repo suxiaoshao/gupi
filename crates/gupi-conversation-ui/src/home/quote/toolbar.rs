@@ -19,6 +19,7 @@ pub(in crate::home) enum Target {
     Source(WeakEntity<source::Preview>),
     Diff {
         state: WeakEntity<DiffState>,
+        source: Option<WeakEntity<highlight::DiffOwner>>,
         path: PathBuf,
         kind: FileKind,
     },
@@ -36,36 +37,38 @@ impl Target {
             Self::Diff { state, .. } => state.entity_id(),
         }
     }
-    fn selection(&self, cx: &App) -> Result<Selection, Unavailable> {
+    fn capture(&self, cx: &App) -> LocatedSelection {
         match self {
-            Self::Text { state, role, .. } => state
-                .read_with(cx, |state, _| {
-                    Selection::new(
-                        Origin::Message { role: role.clone() },
-                        state.selected_text(),
-                    )
-                })
-                .map_err(|_| Unavailable::Selection),
-            Self::Source(state) => state
-                .read_with(cx, |state, cx| state.quote_selection(cx))
-                .unwrap_or(Err(Unavailable::Selection)),
-            Self::Diff { state, path, kind } => state
-                .upgrade()
-                .ok_or(Unavailable::Selection)
-                .and_then(|state| diff_selection(&state, path.clone(), *kind, cx)),
-        }
-    }
-    fn source(&self, cx: &App) -> Option<highlight::Source> {
-        match self {
-            Self::Text { markdown, .. } => markdown
-                .read_with(cx, |state, cx| state.quote_source(markdown.clone(), cx))
-                .ok()
-                .flatten(),
-            Self::Source(state) => state
-                .read_with(cx, |preview, cx| preview.quote_source(state.clone(), cx))
-                .ok()
-                .flatten(),
-            Self::Diff { .. } => None,
+            Self::Text {
+                state,
+                role,
+                markdown,
+            } => (
+                state
+                    .read_with(cx, |state, _| {
+                        Selection::new(
+                            Origin::Message { role: role.clone() },
+                            state.selected_text(),
+                        )
+                    })
+                    .map_err(|_| Unavailable::Selection),
+                markdown
+                    .read_with(cx, |state, cx| state.quote_source(markdown.clone(), cx))
+                    .ok()
+                    .flatten(),
+            ),
+            Self::Source(state) => (
+                state
+                    .read_with(cx, |state, cx| state.quote_selection(cx))
+                    .unwrap_or(Err(Unavailable::Selection)),
+                state
+                    .read_with(cx, |preview, cx| preview.quote_source(state.clone(), cx))
+                    .ok()
+                    .flatten(),
+            ),
+            Self::Diff {
+                source, path, kind, ..
+            } => capture_diff(source.as_ref(), path.clone(), *kind, cx),
         }
     }
     fn metadata(&self, cx: &App) -> Metadata {
@@ -380,12 +383,11 @@ impl HomeView {
         if text.is_empty() {
             return;
         }
-        let capture = self
-            .bind_quote(lease.target.selection(cx), cx)
-            .map(|mut snapshot| {
-                snapshot.source = lease.target.source(cx);
-                snapshot
-            });
+        let (selection, source) = lease.target.capture(cx);
+        let capture = self.bind_quote(selection, cx).map(|mut snapshot| {
+            snapshot.source = source;
+            snapshot
+        });
         self.quote_tools.active = Some(Active {
             region: region.downgrade(),
             point,

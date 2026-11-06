@@ -996,7 +996,7 @@ impl HomeView {
         &self,
         window: &Window,
         cx: &App,
-    ) -> Option<Result<quote::Selection, quote::Unavailable>> {
+    ) -> Option<quote::LocatedSelection> {
         if !self.pane_layout.visible(Panel::Workspace) || self.workspace_layout.main_width <= 0. {
             return None;
         }

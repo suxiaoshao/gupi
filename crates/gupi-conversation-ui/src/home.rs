@@ -1451,7 +1451,19 @@ impl Render for HomeView {
                 && view.workspace.active.is_none()
                 && self.workspace_layout.main_width > 0.;
             view.quote_attachments.update(cx, |cards, cx| {
-                cards.paint_source(|source| source.visible(view, conversation, file), cx)
+                cards.paint_source(
+                    |source| {
+                        source.visible(
+                            view,
+                            conversation,
+                            file,
+                            shown
+                                && self.pane_layout.visible(panes::Panel::Workspace)
+                                && self.workspace_layout.main_width > 0.,
+                        )
+                    },
+                    cx,
+                )
             });
         }
         let quote_tools = self.render_quote_tools(window, cx);

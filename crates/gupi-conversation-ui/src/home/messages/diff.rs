@@ -2,7 +2,7 @@
 use super::edited_files::ChangeBody;
 use super::presentation::code_fence;
 use gpui_kit::component::diff::{
-    Diff, DiffEvent, DiffFile, DiffInlineUnit, DiffLineRange, DiffMode, DiffState,
+    Diff, DiffDecoration, DiffEvent, DiffFile, DiffInlineUnit, DiffLineRange, DiffMode, DiffState,
 };
 use gpui_kit::component::text::{TextView, TextViewState, TextViewStyle};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -11,7 +11,9 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 pub(in crate::home) struct DiffBlock {
+    quote_owner: Option<Entity<crate::home::quote::highlight::DiffOwner>>,
     source: Source,
+    quote_range: Rc<RefCell<Option<DiffLineRange>>>,
     height_rem: f32,
     reader_collapsed: Cell<bool>,
     state: Option<Entity<DiffState>>,
@@ -27,6 +29,10 @@ enum Source {
     Comparison,
 }
 impl DiffBlock {
+    #[cfg(test)]
+    pub(in crate::home) fn quote_highlight(&self) -> Option<DiffLineRange> {
+        self.quote_range.borrow().clone()
+    }
     #[cfg(test)]
     pub(super) fn state_id(&self) -> Option<EntityId> {
         self.state.as_ref().map(Entity::entity_id)
@@ -46,6 +52,30 @@ impl DiffBlock {
         self.state.as_ref()
     }
 
+    pub(in crate::home) fn quote_owner(
+        &self,
+    ) -> Option<WeakEntity<crate::home::quote::highlight::DiffOwner>> {
+        self.quote_owner.as_ref().map(Entity::downgrade)
+    }
+    #[cfg(test)]
+    pub(in crate::home) fn quote_source(
+        &self,
+        cx: &App,
+    ) -> Option<crate::home::quote::highlight::Source> {
+        let owner = self.quote_owner()?;
+        owner
+            .read_with(cx, |state, cx| state.source(owner.clone(), cx))
+            .ok()
+            .flatten()
+    }
+    fn quote_decorations(&self) -> Vec<DiffDecoration> {
+        self.quote_range
+            .borrow()
+            .clone()
+            .map(DiffDecoration::new)
+            .into_iter()
+            .collect()
+    }
     pub fn new(body: &Rc<ChangeBody>, path: &str, cx: &mut App) -> Self {
         let (text, files) = match body.as_ref() {
             ChangeBody::Patch { source, files } => (source.as_str(), Some(files.clone())),
@@ -102,6 +132,9 @@ impl DiffBlock {
             ChangeBody::Text { content } => (content.as_str(), None),
         };
         if let (Some(state), Some(files)) = (&self.state, files) {
+            if let Some(owner) = &self.quote_owner {
+                owner.update(cx, |owner, _| owner.invalidate());
+            }
             state.update(cx, |state, cx| state.set_files(files, cx));
             self.source = Source::Operation {
                 body: body.clone(),
@@ -151,7 +184,13 @@ impl DiffBlock {
                 }
             }));
         }
+        let quote_range = Rc::new(RefCell::new(None));
+        let quote_owner = state.as_ref().map(|state| {
+            cx.new(|_| crate::home::quote::highlight::DiffOwner::new(state, quote_range.clone()))
+        });
         Self {
+            quote_owner,
+            quote_range,
             height_rem: (source.lines().count() as f32 * 1.25 + 3.5).clamp(6., 18.),
             reader_collapsed: Cell::new(false),
             gutter_selection,
@@ -319,6 +358,7 @@ impl DiffBlock {
         }
         if let Some(state) = &self.state {
             Diff::new(state)
+                .decorations(self.quote_decorations())
                 .soft_wrap(wrap)
                 .header_visible(false)
                 .size_full()
@@ -349,6 +389,7 @@ impl DiffBlock {
     pub fn render(&self) -> AnyElement {
         if let Some(state) = &self.state {
             Diff::new(state)
+                .decorations(self.quote_decorations())
                 .h(rems(self.height_rem))
                 .w_full()
                 .min_w_0()
@@ -546,6 +587,56 @@ mod tests {
             assert_eq!(
                 file.status(),
                 gpui_kit::component::diff::DiffFileStatus::Unchanged
+            );
+        });
+    }
+}
+
+#[cfg(test)]
+mod quote_revision_tests {
+    use super::*;
+    use core::prelude::v1::test;
+    use gpui_kit::component::diff::DiffSide;
+
+    #[gpui_kit::test]
+    fn operation_quote_revision_tracks_data_only(cx: &mut TestAppContext) {
+        cx.update(gpui_kit::init);
+        cx.update(|cx| {
+            let body = Rc::new(ChangeBody::Written {
+                content: "one\ntwo\n".into(),
+            });
+            let mut block = DiffBlock::new(&body, "source.rs", cx);
+            let state = block.state().unwrap().clone();
+            state.update(cx, |state, cx| {
+                state.set_selected_lines(
+                    Some(DiffLineRange::new("source.rs", DiffSide::Modified, 1, 2)),
+                    cx,
+                )
+            });
+            let source = block.quote_source(cx).unwrap();
+            let mut active = crate::home::quote::highlight::Active::new(source.clone());
+            active.paint(true, cx);
+            assert!(block.quote_highlight().is_some());
+            block.configure(true, true, true, false, cx);
+            block.update(&Rc::new(body.as_ref().clone()), "source.rs", cx);
+            assert!(
+                source.valid(cx),
+                "equal data and presentation preserve the live reference"
+            );
+            block.update(
+                &Rc::new(ChangeBody::Written {
+                    content: "changed\n".into(),
+                }),
+                "source.rs",
+                cx,
+            );
+            assert_eq!(block.state().unwrap().entity_id(), state.entity_id());
+            assert!(!source.valid(cx));
+            assert!(block.quote_highlight().is_none());
+            active.paint(true, cx);
+            assert!(
+                block.quote_highlight().is_none(),
+                "a stale reference never revives"
             );
         });
     }

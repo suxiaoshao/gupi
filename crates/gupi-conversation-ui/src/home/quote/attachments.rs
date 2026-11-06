@@ -35,6 +35,7 @@ struct Editing {
 pub(in crate::home) struct Attachments {
     state: Entity<ConversationState>,
     key: String,
+    binding: Option<u64>,
     composer: Entity<TextareaState>,
     trigger_focus: FocusHandle,
     pill_bounds: Rc<std::cell::Cell<Option<Bounds<Pixels>>>>,
@@ -58,7 +59,29 @@ impl Attachments {
         composer: Entity<TextareaState>,
         cx: &mut Context<Self>,
     ) -> Self {
+        let binding = state
+            .read(cx)
+            .sessions()
+            .get(&key)
+            .map(|session| session.binding());
         let subscription = cx.observe(&state, |this, _, cx| {
+            let binding = this
+                .state
+                .read(cx)
+                .sessions()
+                .get(&this.key)
+                .map(|session| session.binding());
+            if this.binding != binding {
+                this.binding = binding;
+                this.sources
+                    .retain(|_, source| !matches!(source, highlight::Source::Diff(_)));
+                if let Some(editing) = &mut this.editing
+                    && !this.sources.contains_key(&editing.id)
+                    && let Some(mut highlight) = editing.highlight.take()
+                {
+                    highlight.clear(cx);
+                }
+            }
             if this.quotes(cx).is_empty() {
                 this.list_open = false;
                 this.trigger_hovered = false;
@@ -83,6 +106,7 @@ impl Attachments {
         Self {
             state,
             key,
+            binding,
             composer,
             trigger_focus: cx.focus_handle(),
             pill_bounds: Rc::default(),

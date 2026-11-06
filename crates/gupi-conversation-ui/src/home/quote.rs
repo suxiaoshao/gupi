@@ -197,8 +197,11 @@ impl HomeView {
                     snapshot.source = source.read(cx).quote_source(source.downgrade(), cx);
                     snapshot
                 });
-        } else if let Some(selection) = self.workspace_quote(window, cx) {
-            selection
+        } else if let Some((selection, source)) = self.workspace_quote(window, cx) {
+            return self.bind_quote(selection, cx).map(|mut snapshot| {
+                snapshot.source = source;
+                snapshot
+            });
         } else {
             if let Some((selection, source)) = view.markdown.quote_selection(window, cx) {
                 return self.bind_quote(Ok(selection), cx).map(|mut snapshot| {
@@ -324,6 +327,24 @@ pub(crate) fn menu(
     )
     .when_some(reason, |menu, reason| menu.label(t(cx, reason.key())))
 }
+pub(in crate::home) type LocatedSelection =
+    (Result<Selection, Unavailable>, Option<highlight::Source>);
+
+pub(in crate::home) fn capture_diff(
+    owner: Option<&WeakEntity<highlight::DiffOwner>>,
+    path: PathBuf,
+    kind: FileKind,
+    cx: &App,
+) -> LocatedSelection {
+    owner
+        .and_then(|owner| {
+            owner
+                .read_with(cx, |state, cx| state.capture(owner.clone(), path, kind, cx))
+                .ok()
+        })
+        .unwrap_or((Err(Unavailable::Selection), None))
+}
+
 pub(crate) fn diff_selection(
     state: &Entity<DiffState>,
     path: PathBuf,
@@ -352,21 +373,23 @@ pub(crate) fn diff_selection(
         text,
     ))
 }
-pub(crate) fn diff_body(
+pub(in crate::home) fn diff_body(
     body: AnyElement,
-    state: Option<&Entity<DiffState>>,
+    block: &super::messages::diff::DiffBlock,
     path: PathBuf,
     kind: FileKind,
     owner: WeakEntity<HomeView>,
     key: String,
     fill: bool,
 ) -> AnyElement {
-    let Some(state) = state.cloned() else {
+    let Some(state) = block.state().cloned() else {
         return body;
     };
+    let source = block.quote_owner();
     let events = toolbar::region(
         toolbar::Target::Diff {
             state: state.downgrade(),
+            source: source.clone(),
             path: path.clone(),
             kind,
         },
@@ -384,16 +407,11 @@ pub(crate) fn diff_body(
         .child(events)
         .context_menu(move |menu, window, cx| {
             let text = state.read(cx).selected_text(cx);
+            let (selection, source) = capture_diff(source.as_ref(), path.clone(), kind, cx);
             self::menu(
                 menu,
                 owner.clone(),
-                capture(
-                    &owner,
-                    &key,
-                    diff_selection(&state, path.clone(), kind, cx),
-                    None,
-                    cx,
-                ),
+                capture(&owner, &key, selection, source, cx),
                 text,
                 window,
                 cx,

@@ -133,9 +133,10 @@ pub(super) struct ResourcesView {
     open_generation: u64,
     creating: Option<Kind>,
     installing: bool,
-    expanded_packages: std::collections::BTreeSet<String>,
+    installed: packages::Installed,
     /// Packages page view: the catalog when true, installed packages otherwise.
     browsing: bool,
+    packages_focus: FocusHandle,
     browse: browse::Browse,
     /// The latest Pi operation result per registry package name, shown in details.
     package_results: std::collections::BTreeMap<String, Result<(), io::Error>>,
@@ -148,8 +149,7 @@ impl ResourcesView {
     /// Shows a package on the installed packages page.
     fn reveal_package(&mut self, source: String, row: Row, cx: &mut Context<Self>) {
         let inherited = row == Row::Inherited;
-        self.expanded_packages
-            .insert(format!("{inherited}:{source}"));
+        self.installed.select(inherited, source);
         self.browsing = false;
         cx.emit(Navigate::Package);
         cx.notify();
@@ -462,8 +462,9 @@ impl ResourcesView {
             open_generation: 0,
             creating: None,
             installing: false,
-            expanded_packages: Default::default(),
+            installed: packages::Installed::new(cx),
             browsing: false,
+            packages_focus: cx.focus_handle(),
             browse,
             package_results: Default::default(),
             error: None,
@@ -480,6 +481,7 @@ impl ResourcesView {
     ) {
         match event {
             ResourceEvent::CatalogChanged => {
+                self.reconcile_package_selection(window, cx);
                 let catalogs: Vec<io::Catalog> = std::iter::once(&self.controller)
                     .chain(self.project.as_ref())
                     .filter_map(|c| c.read(cx).catalog().data().cloned())
@@ -634,7 +636,8 @@ impl ResourcesView {
             .update(cx, |source, cx| source.set_value("", window, cx));
         self.error = None;
         self.package_results.clear();
-        self.expanded_packages.clear();
+        self.installed = packages::Installed::new(cx);
+        self.browse.reset_scope(cx);
         self.project = None;
         if let Target::Project(cwd) = target {
             if !self.projects.contains_key(&cwd) {

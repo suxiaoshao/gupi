@@ -125,6 +125,11 @@ fn collect_reads_msi_identity_and_removes_stale_cask_on_development_rebuild() {
             [Path::new("winget/manifests/s/suxiaoshao/Gupi/1.2.3/suxiaoshao.Gupi.installer.yaml")],
         installers.as_bytes()
     );
+    let locale = &archived
+        [Path::new("winget/manifests/s/suxiaoshao/Gupi/1.2.3/suxiaoshao.Gupi.locale.en-US.yaml")];
+    assert!(std::str::from_utf8(locale).unwrap().lines().any(|line| {
+        line == "PrivacyUrl: https://github.com/suxiaoshao/gupi/blob/main/PRIVACY.md"
+    }));
 
     for arch in ["aarch64", "x86_64"] {
         for ext in ["dmg", "zip"] {

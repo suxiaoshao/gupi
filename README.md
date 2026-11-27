@@ -384,6 +384,8 @@ If the install button is unavailable, use the release page or your original pack
 
 ### Data and diagnostics
 
+See the [Privacy Policy](PRIVACY.md) for the data Gupi stores and the services it contacts.
+
 Connection, history-read, submission and final model failures write structured diagnostic metadata to the existing local log. These new failure records do not include response text, credentials or raw stderr; original error details remain available in the interface.
 
 | Data | Location |
